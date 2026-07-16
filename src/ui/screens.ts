@@ -174,12 +174,19 @@ function injectStyles(): void {
   document.head.appendChild(style);
 }
 
+/** The slice of Input the screen manager needs (edge-latch hygiene). */
+export interface EdgeClearer {
+  clearEdges(): void;
+}
+
 export class ScreenManager {
   private readonly overlay: HTMLDivElement;
   private readonly screens = new Map<string, ScreenDef>();
+  private readonly input: EdgeClearer;
   private active: string | null = null;
 
-  constructor(hud: HTMLElement) {
+  constructor(hud: HTMLElement, input: EdgeClearer) {
+    this.input = input;
     injectStyles();
     this.overlay = document.createElement('div');
     this.overlay.className = 'wt-screen-overlay';
@@ -207,6 +214,9 @@ export class ScreenManager {
     this.active = id;
     this.overlay.style.display = 'flex';
     document.exitPointerLock();
+    // Drop any jump/dash/rocket edge latched just before opening — state()
+    // is not read while a screen is open, so it would fire stale on close.
+    this.input.clearEdges();
     this.renderActive();
   }
 
@@ -214,6 +224,9 @@ export class ScreenManager {
     this.active = null;
     this.overlay.style.display = 'none';
     this.overlay.replaceChildren();
+    // Keydown listeners stay live while a screen is open, so edges latched
+    // during it must be dropped too — clear on close as well as open.
+    this.input.clearEdges();
   }
 
   toggle(id: string): void {
@@ -360,14 +373,16 @@ export function createCraftScreen(
       panel.appendChild(subhead);
 
       const tiers = [0, 1, 2, 3] as const;
-      const rpByTier: Record<(typeof tiers)[number], number> = { 0: 0, 1: 25, 2: 75, 3: 180 };
       for (const tier of tiers) {
         const recipes = RECIPES.filter((r) => r.tier === tier);
         if (recipes.length === 0) continue;
 
+        // Tier header RP comes from the recipe data itself (rpRequired is
+        // uniform within a tier by construction), never a duplicated literal.
+        const rpRequired = recipes[0]!.rpRequired;
         const label = document.createElement('div');
         label.className = 'wt-tier-label';
-        label.textContent = tier === 0 ? 'Tier 0 — Start' : `Tier ${tier} — ${rpByTier[tier]} RP`;
+        label.textContent = tier === 0 ? 'Tier 0 — Start' : `Tier ${tier} — ${rpRequired} RP`;
         panel.appendChild(label);
 
         const grid = document.createElement('div');

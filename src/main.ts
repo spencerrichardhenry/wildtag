@@ -79,8 +79,10 @@ if (!hud) throw new Error('#hud not found');
 // is open, pointer lock is released and the player controller is not
 // stepped (see `update()` below) — the sim otherwise keeps running (chunk
 // streaming, prop upkeep) so nothing pops in when the player closes the menu.
+// Input is passed so open/close drop latched jump/dash/rocket edges (state()
+// isn't read while paused, so they'd otherwise fire stale on close).
 // ---------------------------------------------------------------------------
-const screens = new ScreenManager(hud);
+const screens = new ScreenManager(hud, input);
 screens.register(createCraftScreen(inventory, player.unlocks, screens));
 
 // Dev hook: `?screen=craft` forces the crafting screen open on boot — used

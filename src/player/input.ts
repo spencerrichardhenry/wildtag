@@ -26,6 +26,43 @@ export type Action =
   | { type: 'lmb' }
   | { type: 'rmb' };
 
+/**
+ * The one-shot movement-edge latch (jump/dash/rocket), extracted from Input
+ * so it is unit-testable without DOM. A keydown latches an edge; `consume()`
+ * returns and clears all three (exactly-one-edge-per-press); `clear()` drops
+ * any pending edges without firing them — called by the screen manager on
+ * both screen open AND close, because `Input.state()` is not read while a
+ * screen is open (main.ts skips `player.update`), so a press made just
+ * before opening — or while the screen is open, since the keydown listeners
+ * stay live — would otherwise stay latched the whole time and fire a stale
+ * dash/jump/rocket on the first sim step after closing.
+ */
+export class EdgeLatch {
+  private jump = false;
+  private dash = false;
+  private rocket = false;
+
+  latch(kind: 'jump' | 'dash' | 'rocket'): void {
+    this[kind] = true;
+  }
+
+  /** Return the pending edges and clear them (one edge per press). */
+  consume(): { jump: boolean; dash: boolean; rocket: boolean } {
+    const out = { jump: this.jump, dash: this.dash, rocket: this.rocket };
+    this.jump = false;
+    this.dash = false;
+    this.rocket = false;
+    return out;
+  }
+
+  /** Drop any pending edges without firing them. */
+  clear(): void {
+    this.jump = false;
+    this.dash = false;
+    this.rocket = false;
+  }
+}
+
 export class Input {
   private readonly canvas: HTMLCanvasElement;
   private readonly held = new Set<string>();
@@ -34,10 +71,9 @@ export class Input {
   yaw = 0;
   pitch = 0;
 
-  // Latched movement edges — set on keydown, cleared by the next state() read.
-  private jumpEdge = false;
-  private dashEdge = false;
-  private rocketEdge = false;
+  // Latched movement edges — set on keydown, cleared by the next state() read
+  // (or dropped by clearEdges() when a screen opens/closes).
+  private readonly edges = new EdgeLatch();
 
   private readonly actions: Action[] = [];
 
@@ -110,14 +146,14 @@ export class Input {
 
     switch (code) {
       case 'Space':
-        this.jumpEdge = true;
+        this.edges.latch('jump');
         e.preventDefault();
         break;
       case 'KeyQ':
-        this.dashEdge = true;
+        this.edges.latch('dash');
         break;
       case 'KeyR':
-        this.rocketEdge = true;
+        this.edges.latch('rocket');
         break;
       case 'KeyF':
         this.actions.push({ type: 'interact' });
@@ -162,21 +198,27 @@ export class Input {
     // strafe > 0 = move right; right = (cos yaw, 0, -sin yaw). D is right, A left.
     const strafe = (this.held.has('KeyD') ? 1 : 0) - (this.held.has('KeyA') ? 1 : 0);
 
-    const out: MoveInput = {
+    const edges = this.edges.consume();
+    return {
       forward,
       strafe,
       yaw: this.yaw,
       sprint: this.held.has('ShiftLeft') || this.held.has('ShiftRight'),
-      jump: this.jumpEdge,
+      jump: edges.jump,
       jumpHeld: this.held.has('Space'),
-      dash: this.dashEdge,
-      rocket: this.rocketEdge,
+      dash: edges.dash,
+      rocket: edges.rocket,
     };
+  }
 
-    this.jumpEdge = false;
-    this.dashEdge = false;
-    this.rocketEdge = false;
-    return out;
+  /**
+   * Drop any latched jump/dash/rocket edges without firing them. Called by
+   * the ScreenManager on both screen open and close so presses made just
+   * before opening, or while a screen is open, never fire a stale edge on
+   * the first sim step after the screen closes.
+   */
+  clearEdges(): void {
+    this.edges.clear();
   }
 
   /** True while the right mouse button is held and the pointer is locked. */
