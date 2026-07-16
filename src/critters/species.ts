@@ -56,7 +56,9 @@ export const SPECIES: SpeciesDef[] = [
     biomes: ['forest'],
     size: 2.2,
     walkSpeed: 5.5,
-    fleeSpeed: 5.5, // never panics — just strides away fast
+    // Intentional exception to the 6-11 flee band: the bellowbuck never
+    // panics (fleeStyle 'none'), it just keeps striding at its fast walk.
+    fleeSpeed: 5.5,
     awareness: 10,
     fleeStyle: 'none',
     trackRadius: 15,

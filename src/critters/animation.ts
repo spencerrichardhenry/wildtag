@@ -1,3 +1,4 @@
+import { ANIM } from '../core/constants.ts';
 import type { CritterParts } from './models.ts';
 
 // Pure procedural critter animation: sinusoidal leg swing with alternating
@@ -5,11 +6,10 @@ import type { CritterParts } from './models.ts';
 // flyers. Everything is math on existing Object3D rotations/positions — no
 // per-frame allocation. `t` is absolute time (s); `speed` is current ground
 // speed (m/s) so amplitude/frequency scale with how fast the critter moves.
+// All tuning coefficients live in constants.ts `ANIM` (project convention).
 //
-// Baselines captured on first touch (via userData) so we can offset from the
-// model's authored rest pose rather than assuming zero.
-
-const MOVING = 0.05; // m/s above which we consider the critter "walking"
+// Baselines captured on first touch (via a stashed __rest) so we offset from
+// the model's authored rest pose rather than assuming zero.
 
 interface Rest {
   __rest?: { rx: number; ry: number; rz: number; py: number };
@@ -38,11 +38,14 @@ export function animateCritter(
   t: number,
   _dt?: number,
 ): void {
-  const moving = speed > MOVING;
+  const moving = speed > ANIM.movingThreshold;
+  const capped = Math.min(speed, ANIM.speedCap);
   // Gait frequency & swing grow with speed but saturate so a sprint doesn't
   // turn into a blur.
-  const freq = moving ? 4 + Math.min(speed, 10) * 0.9 : 1.4;
-  const swing = moving ? Math.min(0.35 + speed * 0.06, 0.85) : 0;
+  const freq = moving ? ANIM.gaitFreqBase + capped * ANIM.gaitFreqPerSpeed : ANIM.gaitFreqIdle;
+  const swing = moving
+    ? Math.min(ANIM.swingBase + speed * ANIM.swingPerSpeed, ANIM.swingMax)
+    : 0;
   const phase = t * freq;
 
   // Legs: alternate diagonal phase (index parity) so it reads as a trot.
@@ -54,30 +57,31 @@ export function animateCritter(
     li++;
   }
 
-  // Body: vertical bob at twice the stride frequency when moving, a slow
-  // breathing bob when idle.
+  // Body: vertical bob at stride frequency when moving, a slow breathing bob
+  // when idle.
   const b = rest(parts.body);
   if (moving) {
-    parts.body.position.y = b.py + Math.abs(Math.sin(phase)) * (0.02 + speed * 0.004);
+    parts.body.position.y =
+      b.py + Math.abs(Math.sin(phase)) * (ANIM.bobBase + speed * ANIM.bobPerSpeed);
   } else {
-    parts.body.position.y = b.py + Math.sin(t * 1.6) * 0.012;
+    parts.body.position.y = b.py + Math.sin(t * ANIM.idleBobFreq) * ANIM.idleBobAmp;
   }
 
   // Head: subtle bob while moving; occasional idle tilt/glance when still.
   const h = rest(parts.head);
   if (moving) {
-    parts.head.rotation.x = h.rx + Math.sin(phase * 0.5) * 0.05;
+    parts.head.rotation.x = h.rx + Math.sin(phase * 0.5) * ANIM.headBobAmp;
     parts.head.rotation.z = h.rz;
   } else {
-    // Slow triangle-ish glance every few seconds.
-    parts.head.rotation.z = h.rz + Math.sin(t * 0.7) * 0.12;
-    parts.head.rotation.x = h.rx + Math.sin(t * 0.5 + 1.3) * 0.06;
+    // Slow glance every few seconds.
+    parts.head.rotation.z = h.rz + Math.sin(t * ANIM.glanceFreq) * ANIM.glanceAmp;
+    parts.head.rotation.x = h.rx + Math.sin(t * ANIM.nodFreq + 1.3) * ANIM.nodAmp;
   }
 
   // Tail sway (about Y), gentle at rest, livelier while moving.
   if (parts.tail) {
     const ta = rest(parts.tail);
-    const amp = moving ? 0.25 : 0.12;
+    const amp = moving ? ANIM.tailMoveAmp : ANIM.tailIdleAmp;
     parts.tail.rotation.y = ta.ry + Math.sin(phase * 0.5 + 0.5) * amp;
   }
 
@@ -85,8 +89,8 @@ export function animateCritter(
   // the ground fold to rest; airborne flap is driven by the (>0) speed the
   // manager feeds in.
   if (parts.wings) {
-    const flapFreq = 14 + Math.min(speed, 10) * 1.5;
-    const flapAmp = moving ? 0.5 + Math.min(speed, 10) * 0.06 : 0.06;
+    const flapFreq = ANIM.flapFreqBase + capped * ANIM.flapFreqPerSpeed;
+    const flapAmp = moving ? ANIM.flapAmpBase + capped * ANIM.flapAmpPerSpeed : ANIM.flapIdleAmp;
     const f = Math.sin(t * flapFreq) * flapAmp;
     let wi = 0;
     for (const wing of parts.wings) {

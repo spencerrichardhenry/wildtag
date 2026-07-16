@@ -334,3 +334,64 @@ export const ENV = {
   waterColor: 0x3a6b82,
   waterOpacity: 0.72,
 } as const;
+
+/**
+ * Procedural critter animation tuning (critters/animation.ts). Pure math on
+ * Object3D poses; gait/flap frequency and amplitude scale with move speed and
+ * saturate at `speedCap` so sprints don't blur.
+ */
+export const ANIM = {
+  /** Speed (m/s) above which a critter counts as "moving" (walk gait kicks in). */
+  movingThreshold: 0.05,
+  /** Speed (m/s) beyond which gait/flap scaling saturates. */
+  speedCap: 10,
+
+  /** Leg gait: frequency (Hz-ish) = base + speed * perSpeed; idle wobble rate. */
+  gaitFreqBase: 4,
+  gaitFreqPerSpeed: 0.9,
+  gaitFreqIdle: 1.4,
+  /** Leg swing amplitude (rad) = base + speed * perSpeed, clamped to max. */
+  swingBase: 0.35,
+  swingPerSpeed: 0.06,
+  swingMax: 0.85,
+
+  /** Body bob while moving: height (m) = base + speed * perSpeed, at stride rate. */
+  bobBase: 0.02,
+  bobPerSpeed: 0.004,
+  /** Idle breathing bob: rate (rad/s) and amplitude (m). */
+  idleBobFreq: 1.6,
+  idleBobAmp: 0.012,
+
+  /** Moving head bob amplitude (rad, at half stride rate). */
+  headBobAmp: 0.05,
+  /** Idle head glance (about Z) and nod (about X): rates (rad/s) + amplitudes (rad). */
+  glanceFreq: 0.7,
+  glanceAmp: 0.12,
+  nodFreq: 0.5,
+  nodAmp: 0.06,
+
+  /** Tail sway amplitude (rad) moving / idle, at half stride rate. */
+  tailMoveAmp: 0.25,
+  tailIdleAmp: 0.12,
+
+  /** Wing flap: frequency = base + speed * perSpeed; amplitude likewise; folded idle amp. */
+  flapFreqBase: 14,
+  flapFreqPerSpeed: 1.5,
+  flapAmpBase: 0.5,
+  flapAmpPerSpeed: 0.06,
+  flapIdleAmp: 0.06,
+} as const;
+
+/**
+ * Per-individual critter model variation (critters/models.ts): uniform scale
+ * in [scaleMin, scaleMin + scaleRange) and slight per-part colour jitter so a
+ * herd never looks cloned. Geometry dimensions/tessellation stay in models.ts
+ * — they're shape definitions, not tuning.
+ */
+export const CRITTER_VARIATION = {
+  scaleMin: 0.9,
+  scaleRange: 0.2,
+  /** Default hue jitter (fraction of the hue wheel) and lightness jitter. */
+  hueJitter: 0.04,
+  lightnessJitter: 0.08,
+} as const;

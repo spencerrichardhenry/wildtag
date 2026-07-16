@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { CRITTER_VARIATION } from '../core/constants.ts';
 
 // Procedural blocky critter models. Each species is assembled from a handful of
 // Box/Cone/Sphere/Cylinder primitives with flat-shaded MeshLambertMaterial, in
@@ -108,7 +109,12 @@ function eyes(sep: number, y: number, z: number, r: number): THREE.Mesh[] {
 // --- per-individual variation -------------------------------------------------
 
 /** Jitter a hex colour's hue/lightness slightly for per-individual variety. */
-function jitterColor(hex: number, rng: () => number, hueAmt = 0.04, litAmt = 0.08): number {
+function jitterColor(
+  hex: number,
+  rng: () => number,
+  hueAmt: number = CRITTER_VARIATION.hueJitter,
+  litAmt: number = CRITTER_VARIATION.lightnessJitter,
+): number {
   const c = new THREE.Color(hex);
   const hsl = { h: 0, s: 0, l: 0 };
   c.getHSL(hsl);
@@ -131,10 +137,13 @@ function buildPuffle(rng: () => number): { group: THREE.Group; parts: CritterPar
   body.scale.set(1, 0.92, 1);
   body.position.y = 0.42;
   g.add(body);
-  // tuft on top
+  // Tuft on top — parented to the group root, NOT the body: the body's 0.92
+  // Y-squash would scale the tuft's offset and leave it floating. Squashed body
+  // top sits at 0.42 + 0.42*0.92 ≈ 0.81, so centre the tuft just below that to
+  // keep it embedded in the fluff.
   const tuft = sphere(0.16, fur);
-  tuft.position.set(0, 0.86, 0.02);
-  body.add(tuft);
+  tuft.position.set(0, 0.84, 0.02);
+  g.add(tuft);
   // head fused into the fluff — big eyes + tiny nose on the front
   const head = new THREE.Group();
   head.position.set(0, 0.5, 0.28);
@@ -489,7 +498,8 @@ export function buildCritterModel(
   const build = BUILDERS[speciesId];
   if (!build) throw new Error(`buildCritterModel: unknown species '${speciesId}'`);
   const out = build(rng);
-  const s = 0.9 + rng() * 0.2; // ±10% per-individual scale
+  // Per-individual uniform scale (±10% by default; see CRITTER_VARIATION).
+  const s = CRITTER_VARIATION.scaleMin + rng() * CRITTER_VARIATION.scaleRange;
   out.group.scale.setScalar(s);
   return out;
 }
