@@ -162,9 +162,14 @@ export class MountSystem {
       } else {
         this.spaceHeldFor = 0;
       }
-      // Pin the model under the camera (at the player's feet), facing the yaw.
+      // Pin the model under/ahead of the camera, facing the camera yaw: the
+      // rider sits on the rear, the body + 16 skittering legs extend forward.
       const p = controller.pos;
-      this.actor.group.position.set(p.x, this.ground.heightAt(p.x, p.z), p.z);
+      const fx = -Math.sin(input.yaw);
+      const fz = -Math.cos(input.yaw);
+      const mx = p.x + fx * MOUNT.rideForwardOffset;
+      const mz = p.z + fz * MOUNT.rideForwardOffset;
+      this.actor.group.position.set(mx, this.ground.heightAt(mx, mz), mz);
       this.faceYaw(input.yaw, dt);
       const v = controller.vel;
       const speed = Math.hypot(v.x, v.z);

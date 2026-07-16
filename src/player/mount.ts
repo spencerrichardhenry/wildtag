@@ -42,6 +42,10 @@ export const MOUNT = {
   dismountHold: 0.5,
   /** Walk within this distance (m) of your idle mount to mount up with KeyV. */
   mountRange: 4,
+  /** While riding, the model sits this far (m) ahead of the camera along the
+   *  heading — you ride the rear, its crystal body + skittering legs extend
+   *  forward into view rather than enveloping the eye. */
+  rideForwardOffset: 0.9,
   /** The idle actor loosely follows the player and never lags beyond this (m). */
   followRange: 30,
   /** Idle-follow ground speed (m/s) — a lazy trail behind the player. */
