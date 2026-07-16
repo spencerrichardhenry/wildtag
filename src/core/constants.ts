@@ -96,6 +96,63 @@ export const TERRAIN = {
 } as const;
 
 /**
+ * Player movement tuning (m, m/s, m/s², seconds). Consumed by the pure
+ * movement core in `src/player/movement.ts`. Unlock gating (glider/rocket
+ * crafted?) lives in the controller, which masks input flags — the core
+ * assumes an ability is allowed iff its input flag is set.
+ */
+export const MOVE = {
+  /** Target ground speed while walking. */
+  walk: 6,
+  /** Target ground speed while sprinting (not exhausted). */
+  sprint: 9.5,
+  /** Horizontal acceleration on the ground (also friction decel rate). */
+  accelGround: 40,
+  /** Horizontal acceleration while airborne. */
+  accelAir: 12,
+  /** Planar speed forced along facing while a dash is active. */
+  dashSpeed: 18,
+  /** Dash active window (s); gravity is skipped while dashing. */
+  dashDuration: 0.18,
+  /** Flat stamina cost per dash. */
+  dashCost: 25,
+  /** Minimum time between dashes (s). */
+  dashCooldown: 0.6,
+  /** Vertical takeoff speed for a jump. */
+  jumpVel: 8.5,
+  /** Gravity (m/s², negative = down). */
+  gravity: -24,
+  /** Grace window (s) to jump after walking off a ledge. */
+  coyoteTime: 0.12,
+  /** Window (s) a jump press is buffered before landing. */
+  jumpBufferTime: 0.15,
+  /** Stamina pool cap. */
+  staminaMax: 100,
+  /** Stamina drain per second while sprinting and moving. */
+  sprintDrain: 10,
+  /** Stamina regen per second once the delay has elapsed. */
+  regenRate: 22,
+  /** Seconds after any drain before regen resumes. */
+  regenDelay: 0.8,
+  /** Entering exhaustion below this stamina. */
+  exhaustEnterBelow: 1,
+  /** Exhaustion clears at/above this stamina. */
+  exhaustExitAbove: 20,
+  /** Vertical sink rate while gliding (vy floor, m/s). */
+  glideSink: -2,
+  /** Target horizontal speed along facing while gliding. */
+  glideForward: 14,
+  /** Vertical impulse added by the rocket. */
+  rocketImpulseY: 14,
+  /** Horizontal impulse along facing added by the rocket. */
+  rocketImpulseFwd: 4,
+  /** Flat stamina cost per rocket. */
+  rocketCost: 40,
+  /** Minimum time between rockets (s). */
+  rocketCooldown: 4,
+} as const;
+
+/**
  * Streaming terrain-mesh chunks. The world is tiled into `size`-metre square
  * chunks; each is a `verts`×`verts` grid sampled from `heightAt`. Chunks within
  * `radius` chunks of the player (Chebyshev distance) are kept resident.
