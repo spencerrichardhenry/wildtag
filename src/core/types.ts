@@ -73,7 +73,7 @@ export interface MoveState {
   rocketCooldown: number;
   gliding: boolean;
   staminaRegenDelay: number;
-  mode: 'normal' | 'zipline' | 'swim';
+  mode: 'normal' | 'zipline' | 'swim' | 'mount';
 }
 
 export interface GroundQuery {

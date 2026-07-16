@@ -23,6 +23,7 @@ export type Action =
   | { type: 'tab' }
   | { type: 'toggleC' }
   | { type: 'roster' }
+  | { type: 'mount' }
   | { type: 'escape' }
   | { type: 'lmb' }
   | { type: 'rmb' };
@@ -185,6 +186,10 @@ export class Input {
         break;
       case 'KeyB':
         this.actions.push({ type: 'roster' });
+        break;
+      case 'KeyV':
+        // Mount: ride/dismount, or summon your Prismhorse (Haven V6).
+        this.actions.push({ type: 'mount' });
         break;
       case 'Escape':
         this.actions.push({ type: 'escape' });

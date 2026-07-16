@@ -10,13 +10,15 @@ import { PlayerController } from './player/controller.ts';
 import { createInventory, addResource } from './craft/inventory.ts';
 import { ScreenManager, createCraftScreen, createHelpScreen } from './ui/screens.ts';
 import { createGuideScreen } from './ui/guide.ts';
-import { createRosterScreen } from './ui/roster.ts';
+import { createRosterScreen, setRosterActions } from './ui/roster.ts';
 import { HUD } from './ui/hud.ts';
 import { runCritterPreview } from './critters/preview.ts';
 import { CritterManager, type CritterView } from './critters/manager.ts';
 import { speciesById } from './critters/species.ts';
 import { mulberry32 } from './core/rng.ts';
 import { bond, release, byId, type RosterEntry } from './critters/roster.ts';
+import { MountSystem } from './player/mount-system.ts';
+import { canMount, canSummon, setActiveMount, MOUNT } from './player/mount.ts';
 import { DartSystem } from './tracking/darts.ts';
 import { updateTracking } from './tracking/tracker.ts';
 import { toast } from './ui/toasts.ts';
@@ -247,6 +249,11 @@ function bootGame(): void {
   const drones = new DroneSystem(scene, ground, anchors, inventory);
   const placement = new PlacementSystem(scene, camera, ground, inventory, ziplines, drones);
 
+  // Prismhorse mount (Haven V6): owns the single active-mount actor + ride
+  // state. Set from the roster (Mount button) or a barter'd Saddle; ridden via
+  // KeyV. The pure kinematics + eligibility gates live in player/mount.ts.
+  const mounts = new MountSystem(scene, ground);
+
   // -------------------------------------------------------------------------
   // Save/load (Task 14): apply a stored save (if any) BEFORE the world primes
   // around the player below, so streamed critters/props reflect the restored
@@ -285,6 +292,10 @@ function bootGame(): void {
       input.yaw = loaded.player.yaw;
       hudUi.setHintFlags(loaded.hints);
       primePos = { ...loaded.player.pos };
+      // Mount (Haven V6): respawn the active-mount actor at its saved position
+      // (or near the player if the field is absent but a roster entry still
+      // carries the 'mount' status). Saddle mesh iff the Saddle reward is owned.
+      mounts.load(loaded.mount ?? null, roster, player.pos, getRewards().has('saddle'));
     } catch (err) {
       // Belt and braces: decodeSave shape-guards the save, but any remaining
       // within-v1 drift must never break boot — unwind whatever half-applied
@@ -343,6 +354,9 @@ function bootGame(): void {
       })),
       pens: pens.serialize(),
       rewards: [...grantedRewards()],
+      // Mount (Haven V6): only surfaced when a mount is active, so pre-mount
+      // saves round-trip to exactly their old shape.
+      ...(mounts.saveState() ? { mount: mounts.saveState()! } : {}),
     };
   }
 
@@ -535,6 +549,87 @@ function bootGame(): void {
   lantern.visible = false;
   scene.add(lantern);
 
+  // -------------------------------------------------------------------------
+  // Prismhorse mount (Haven V6). The roster Mount button sets a rideable bonded
+  // critter as the single active mount (spec: only one at a time). KeyV rides
+  // (within 4m), dismounts (while riding), or summons (with the Whistle) — else
+  // it toasts how far away the mount wandered. The pure gates/kinematics/roster
+  // transition live in player/mount.ts; the actor + ride live in the MountSystem.
+  // -------------------------------------------------------------------------
+  function activateMount(id: number): void {
+    const entry = byId(roster, id);
+    if (!canMount(getRewards(), entry) || !entry) {
+      toast('Needs a Saddle and a rideable critter (barter for the Saddle).');
+      return;
+    }
+    if (player.mounted) mounts.dismount(player); // hop off any current ride first
+    roster = setActiveMount(roster, id); // previous mount → idle (single active)
+    const p = player.pos;
+    mounts.setActive(
+      { id: entry.id, speciesId: entry.speciesId, nickname: entry.nickname },
+      { x: p.x + 2, y: 0, z: p.z },
+      getRewards().has('saddle'),
+    );
+    toast(`${entry.nickname} is your mount — press V near it to ride`);
+    screens.refresh();
+  }
+
+  /** KeyV: dismount / mount-up / summon / locate, per the spec ladder. */
+  function handleMountKey(): void {
+    if (player.mounted) {
+      mounts.dismount(player);
+      return;
+    }
+    if (!mounts.active()) {
+      toast('No active mount — set a rideable critter as your mount in the Roster (B).');
+      return;
+    }
+    if (player.mode === 'swim') {
+      toast("Can't mount while swimming.");
+      return;
+    }
+    const nick = mounts.nickname() ?? 'Your mount';
+    const ap = mounts.actorPos()!;
+    const p = player.pos;
+    const dist = Math.hypot(ap.x - p.x, ap.z - p.z);
+    if (dist <= MOUNT.mountRange) {
+      mounts.startRide(player);
+      toast(`Riding ${nick}!`);
+    } else if (canSummon(getRewards())) {
+      mounts.summon(p);
+      toast(`${nick} whistles to your side!`);
+    } else {
+      toast(`${nick} is ${Math.round(dist)}m away — walk over or barter for the Whistle.`);
+    }
+  }
+
+  /** Debug (§6): summon the active mount to the player's side. */
+  function debugSummonMount(): void {
+    if (!mounts.active()) {
+      toast('No active mount to summon.');
+      return;
+    }
+    mounts.summon(player.pos);
+    toast(`${mounts.nickname() ?? 'Your mount'} whistles to your side!`);
+  }
+
+  /** Debug (V6 e2e): instantly ride — activating a rideable mount if needed. */
+  function debugRide(): boolean {
+    if (player.mounted) return true;
+    if (!mounts.active()) {
+      const entry = roster.find((e) => canMount(getRewards(), e));
+      if (!entry) return false;
+      activateMount(entry.id);
+    }
+    return mounts.startRide(player);
+  }
+
+  // Wire the roster Mount button (merges with the farm task's Assign handler).
+  setRosterActions({
+    mount: (id: number) => activateMount(id),
+    mountEnabled: (id: number) => canMount(getRewards(), byId(roster, id)),
+  });
+
   /** Advance simulation state by a fixed timestep. Systems hook in here. */
   function update(dt: number): void {
     worldTime += dt;
@@ -549,14 +644,18 @@ function bootGame(): void {
     // screenshot while the world keeps streaming.
     const debugFrozen = debugGrapple || debugStructures || debugVillage;
     if (!paused && !debugFrozen) {
-      // Zipline ride / mount / recall runs first: while riding it drives the
-      // controller's pos/vel and the controller skips its normal pipeline.
-      ziplines.updateRide(dt, player, player.pos, input);
+      // Zipline ride / recall runs first: while riding it drives the controller's
+      // pos/vel and the controller skips its normal pipeline. Suppressed while
+      // riding a mount so a nearby post can't hijack the ride.
+      if (!player.mounted) ziplines.updateRide(dt, player, player.pos, input);
       // Feed the controller trees/rocks near the player before it integrates,
       // plus the static village building/lamp collision circles.
       const prev = player.pos;
       player.obstacles = props.getObstacles(prev.x, prev.z).concat(villageObs);
       player.update(dt);
+      // Prismhorse mount: pin/animate the actor under the camera while riding,
+      // or loosely trail the player while idle (also handles hold-Space dismount).
+      mounts.update(dt, player, input);
     }
 
     // Structure cosmetics + placement ghost always tick (drones bob/spin even
@@ -615,7 +714,18 @@ function bootGame(): void {
         else screens.open('help');
         continue;
       }
+      if (action.type === 'mount') {
+        // KeyV: ride/dismount your Prismhorse, or summon/locate it (Haven V6).
+        if (!paused) handleMountKey();
+        continue;
+      }
       if (paused) continue; // gameplay actions (interact/hotbar/lmb/rmb) freeze while a screen is open
+      // While mounted: dart-throw and structure placement are masked (F still
+      // talks/collects; the grapple is already gated off in the controller).
+      if (player.mounted && (action.type === 'hotbar' || action.type === 'lmb')) {
+        if (action.type === 'hotbar') hudUi.selectHotbar(action.slot);
+        continue;
+      }
       // Hotbar: HUD highlight for every slot; 3/4 also toggle placement mode.
       // Slot 2 (grapple) isn't a selectable tool — it lives on RMB — so
       // selecting it explains the controls instead of silently doing nothing.
@@ -854,6 +964,8 @@ function bootGame(): void {
     },
     fulfillRequest: (npcId: string) => fulfillRequestFor(npcId, true),
     grantReward: (id: string) => grantRewardById(id),
+    summonMount: debugSummonMount,
+    ride: debugRide,
     save: doSave,
     resetSave,
   });

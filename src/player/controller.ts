@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { GRAPPLE, INPUT, MOVE, TERRAIN } from '../core/constants.ts';
 import type { GroundQuery, MoveInput, MoveState, Vec3 } from '../core/types.ts';
 import { initialMoveState, stepMovement } from './movement.ts';
+import { MOUNT, mountStep } from './mount.ts';
 import { resolveCollision, type Obstacle } from './collision.ts';
 import type { Input } from './input.ts';
 import {
@@ -213,12 +214,70 @@ export class PlayerController {
     this.usedAirJump = false;
   }
 
+  // --- Prismhorse mount ride (Haven V6) ------------------------------------
+  // Mount mode is player-driven (unlike the fixed-path zipline): the controller
+  // runs `mountStep` in `update()` from the raw WASD/yaw/jump input, with
+  // dash/rocket/glide masked off and the grapple pipeline skipped. The camera
+  // rides `MOUNT.eyeHeightBonus` higher. The MountSystem owns the actor model
+  // and the mount/dismount/summon orchestration.
+  /** Begin riding at `pos` (atop the mount): flip to mount mode, drop the hook. */
+  mountStart(pos: Vec3): void {
+    this.hook = null;
+    this.state = {
+      ...this.state,
+      pos: { ...pos },
+      vel: { x: 0, y: 0, z: 0 },
+      grounded: false,
+      mode: 'mount',
+    };
+    this.syncCamera();
+  }
+  /** Dismount: return to normal mode standing beside the mount at `pos`. */
+  mountEnd(pos: Vec3): void {
+    this.state = {
+      ...this.state,
+      pos: { ...pos },
+      vel: { x: 0, y: 0, z: 0 },
+      grounded: false,
+      mode: 'normal',
+    };
+    this.usedAirJump = false;
+    this.syncCamera();
+  }
+  /** True while the player is riding a mount. */
+  get mounted(): boolean {
+    return this.state.mode === 'mount';
+  }
+  /** Current velocity (read-only snapshot) — the MountSystem reads ride speed. */
+  get vel(): Vec3 {
+    return { ...this.state.vel };
+  }
+
   /** Advance one fixed sim step, then place the camera. */
   update(dt: number): void {
     // Riding a zipline: kinematics are owned by the ZiplineSystem (rideStep);
     // the normal pipeline is skipped. Camera was already synced by rideStep.
     if (this.state.mode === 'zipline') {
       this.updateGrappleVisuals();
+      return;
+    }
+
+    // Riding a Prismhorse: player-driven kinematics via `mountStep`. Dash /
+    // rocket / glide are masked off (a mount has none) and the grapple pipeline
+    // is skipped entirely — only walk-style accel + jump. Obstacle pushout still
+    // applies so the mount can't clip buildings/props.
+    if (this.state.mode === 'mount') {
+      const raw = this.input.state();
+      const masked: MoveInput = { ...raw, dash: false, rocket: false, jumpHeld: false };
+      const next = mountStep(this.state, masked, dt, this.ground);
+      if (this.obstacles.length > 0) {
+        const resolved = resolveCollision(next.pos, INPUT.playerRadius, this.obstacles);
+        next.pos.x = resolved.x;
+        next.pos.z = resolved.z;
+      }
+      this.state = next;
+      this.updateGrappleVisuals(); // hides any stale rope
+      this.syncCamera();
       return;
     }
 
@@ -376,7 +435,9 @@ export class PlayerController {
   /** Place the camera at eye height with the input-owned yaw/pitch. */
   private syncCamera(): void {
     const p = this.state.pos;
-    this.camera.position.set(p.x, p.y + INPUT.eyeHeight, p.z);
+    // Riding raises the eye by MOUNT.eyeHeightBonus (you sit atop the mount).
+    const eye = INPUT.eyeHeight + (this.state.mode === 'mount' ? MOUNT.eyeHeightBonus : 0);
+    this.camera.position.set(p.x, p.y + eye, p.z);
     // YXZ euler: rotation.y = yaw matches the core facing (-sin yaw, 0, -cos yaw);
     // positive pitch looks up. Roll is always zero.
     this.camera.rotation.set(this.input.pitch, this.input.yaw, 0, 'YXZ');

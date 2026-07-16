@@ -48,6 +48,20 @@ export interface SaveV1 {
   barter?: BarterPersistEntry[];
   pens?: PenPersistEntry[];
   rewards?: string[];
+  /**
+   * Haven V6: the active mount's roster-entry id and its idle actor's last
+   * world position. Optional + shape-guarded so pre-V6 saves load losslessly;
+   * on load the actor respawns there (or near the player if the field is
+   * absent but a roster entry still carries the 'mount' status).
+   */
+  mount?: MountPersist;
+}
+
+/** Persisted active-mount state (Haven V6). */
+export interface MountPersist {
+  entryId: number;
+  x: number;
+  z: number;
 }
 
 /** Persisted per-NPC barter rotation state (Haven V4). */
@@ -212,6 +226,14 @@ export function decodeSave(json: string): SaveV1 | null {
       if (!Array.isArray(o.rewards) || !o.rewards.every((r) => typeof r === 'string')) return null;
       rewards = o.rewards as string[];
     }
+    // Mount (Haven V6): optional. A present-but-malformed value rejects the
+    // whole save (fresh start) — consistent with the other field-level guards.
+    let mount: MountPersist | undefined;
+    if (o.mount !== undefined && o.mount !== null) {
+      const m = o.mount as Record<string, unknown>;
+      if (!Number.isFinite(m.entryId) || !Number.isFinite(m.x) || !Number.isFinite(m.z)) return null;
+      mount = { entryId: m.entryId as number, x: m.x as number, z: m.z as number };
+    }
     // Sanitize structure elements: drop malformed entries, keep valid siblings
     // (and the rest of the save) so a partly-corrupt save never crashes boot.
     const sanitized: Record<string, unknown> = {
@@ -229,6 +251,7 @@ export function decodeSave(json: string): SaveV1 | null {
     if (o.barter !== undefined && o.barter !== null) sanitized.barter = barter;
     if (o.pens !== undefined && o.pens !== null) sanitized.pens = pens;
     if (o.rewards !== undefined && o.rewards !== null) sanitized.rewards = rewards;
+    if (mount !== undefined) sanitized.mount = mount;
     return sanitized as unknown as SaveV1;
   } catch {
     return null;
