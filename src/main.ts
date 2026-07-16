@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { CAMERA, MAX_FRAME_DT, SIM_DT, STRUCTURES } from './core/constants.ts';
+import { CAMERA, MAX_FRAME_DT, SIM_DT, STRUCTURES, WORLD_SEED } from './core/constants.ts';
 import { setupEnvironment } from './world/environment.ts';
 import { ChunkManager } from './world/chunks.ts';
 import { PropManager } from './world/props.ts';
@@ -10,9 +10,13 @@ import { PlayerController } from './player/controller.ts';
 import { createInventory, addResource } from './craft/inventory.ts';
 import { ScreenManager, createCraftScreen, createHelpScreen } from './ui/screens.ts';
 import { createGuideScreen } from './ui/guide.ts';
+import { createRosterScreen } from './ui/roster.ts';
 import { HUD } from './ui/hud.ts';
 import { runCritterPreview } from './critters/preview.ts';
-import { CritterManager } from './critters/manager.ts';
+import { CritterManager, type CritterView } from './critters/manager.ts';
+import { speciesById } from './critters/species.ts';
+import { mulberry32 } from './core/rng.ts';
+import { bond, release, byId, type RosterEntry } from './critters/roster.ts';
 import { DartSystem } from './tracking/darts.ts';
 import { updateTracking } from './tracking/tracker.ts';
 import { toast } from './ui/toasts.ts';
@@ -101,8 +105,15 @@ function bootGame(): void {
   player.grappleColliders = (x, z) => props.getGrappleColliders(x, z);
 
   // Inventory accumulating harvested resources + the crafting tree's currency
-  // (RP), consumables (darts) and held deployable kits.
+  // (RP), consumables (darts/charms) and held deployable kits.
   const inventory = createInventory();
+
+  // Bonded roster (Haven V2): critters captured out of the wild with a Bond
+  // Charm. Reassigned (not mutated) on each bond so the roster screen's
+  // getter always reads the live array. `rosterRng` names bonded critters
+  // deterministically from a fixed seed derived from WORLD_SEED.
+  let roster: RosterEntry[] = [];
+  const rosterRng = mulberry32((WORLD_SEED ^ 0x0b0d) >>> 0);
 
   // World clock (seconds of simulated time) driving resource-node respawns.
   let worldTime = 0;
@@ -124,6 +135,16 @@ function bootGame(): void {
   screens.register(createGuideScreen(critters, screens));
   // Pause / Help overlay (Esc): keybind reference + Resume (Task 11).
   screens.register(createHelpScreen(screens));
+  // Roster (KeyB, Haven V2): bonded critters + Release. `getRoster` reads the
+  // live array (reassigned on each bond); `release` drops the entry and returns
+  // the critter to the wild near the player.
+  screens.register(
+    createRosterScreen({
+      getRoster: () => roster,
+      release: releaseFromRoster,
+      manager: screens,
+    }),
+  );
 
   // The heads-up display (Task 11): crosshair, stamina, resources, hotbar,
   // compass and tracking rings. All DOM lives in #hud, layered below screens
@@ -133,7 +154,23 @@ function bootGame(): void {
   // Dev hook: `?screen=craft` / `?screen=guide` / `?screen=help` forces a
   // screen open on boot — used for verification screenshots.
   const screenParam = new URLSearchParams(window.location.search).get('screen');
-  if (screenParam === 'craft' || screenParam === 'guide' || screenParam === 'help') {
+  if (screenParam === 'roster') {
+    // Inject a few bonded critters so the screenshot shows a populated roster.
+    for (const [id, speciesId] of [
+      [-9001, 'puffle'],
+      [-9002, 'prismhorse'],
+      [-9003, 'snickerdoodle'],
+    ] as const) {
+      const r = bond(roster, { id, speciesId, linked: true }, rosterRng);
+      if (r) roster = r.roster;
+    }
+  }
+  if (
+    screenParam === 'craft' ||
+    screenParam === 'guide' ||
+    screenParam === 'help' ||
+    screenParam === 'roster'
+  ) {
     screens.open(screenParam);
   }
 
@@ -173,6 +210,7 @@ function bootGame(): void {
       Object.assign(inventory, applyStartingLoadout(inventory, loaded));
       for (const u of loaded.unlocks) player.unlocks.add(u);
       critters.importRegistry(loaded.critterPersist);
+      roster = (loaded.roster ?? []).map((e) => ({ ...e, status: { ...e.status } }));
       deserializeStructures(loaded.structures, ziplines, drones);
       player.teleport(loaded.player.pos.x, loaded.player.pos.y, loaded.player.pos.z);
       input.yaw = loaded.player.yaw;
@@ -185,6 +223,7 @@ function bootGame(): void {
       console.warn('[wildtag] save apply failed — starting fresh', err);
       loaded = null;
       player.unlocks.clear();
+      roster = [];
       critters.importRegistry({});
       ziplines.deserialize([]);
       drones.deserialize([]);
@@ -208,6 +247,7 @@ function bootGame(): void {
     inventory.spark = 9999;
     inventory.rp = 999;
     inventory.darts = 999;
+    inventory.charms = 999;
     inventory.kits.zipline = 9;
     inventory.kits.drone = 9;
     for (const u of ['grapple', 'boots', 'glider', 'rocket']) player.unlocks.add(u);
@@ -224,6 +264,7 @@ function bootGame(): void {
       structures: serializeStructures(ziplines, drones),
       player: { pos: player.pos, yaw: input.yaw },
       hints: hudUi.getHintFlags(),
+      roster: roster.map((e) => ({ ...e, status: { ...e.status } })),
     };
   }
 
@@ -253,6 +294,75 @@ function bootGame(): void {
   function cameraLook(): { x: number; y: number; z: number } {
     camera.getWorldDirection(_look);
     return { x: _look.x, y: _look.y, z: _look.z };
+  }
+
+  // -------------------------------------------------------------------------
+  // Bonding (Haven V2). One Bond Charm captures a Linked critter into the
+  // roster: it leaves the wild permanently (manager.consumeSlot) and gains a
+  // deterministic nickname. `bondCritter` is the shared core used by both the
+  // F-interaction and the __game.bond debug hook.
+  // -------------------------------------------------------------------------
+  const BOND_MAX_DIST = 30; // ≥ every species' trackRadius (per-species gate below)
+  const BOND_COS = Math.cos((45 * Math.PI) / 180); // aim-cone half-angle
+
+  function bondCritter(target: CritterView): boolean {
+    if (inventory.charms <= 0) return false;
+    if (!target.linked) return false;
+    const sp = speciesById(target.species);
+    if (!sp) return false;
+    const result = bond(
+      roster,
+      { id: target.id, speciesId: target.species, linked: target.linked },
+      rosterRng,
+    );
+    if (!result) return false;
+    roster = result.roster;
+    inventory.charms -= 1;
+    critters.consumeSlot(target.id);
+    toast(`${result.entry.nickname} the ${sp.name} joins you!`);
+    chime();
+    screens.refresh(); // live-update the roster screen if it's open
+    return true;
+  }
+
+  /**
+   * F-interaction bond: the nearest Linked critter in the aim cone within its
+   * own trackRadius, when the player holds a charm. Returns true if a bond
+   * happened (so the interact chain skips harvest).
+   */
+  function tryBondInteract(): boolean {
+    if (inventory.charms <= 0) return false;
+    const target = critters.nearestInCone(camera.position, cameraLook(), BOND_MAX_DIST, BOND_COS);
+    if (!target || !target.linked) return false;
+    const sp = speciesById(target.species);
+    if (!sp) return false;
+    const p = player.pos;
+    const d = Math.hypot(target.pos.x - p.x, target.pos.y - p.y, target.pos.z - p.z);
+    if (d > sp.trackRadius) return false;
+    return bondCritter(target);
+  }
+
+  /** __game.bond(id): bond a specific critter by id (verification hook). */
+  function bondById(id: number): boolean {
+    const target = critters.byId(id);
+    if (!target) return false;
+    return bondCritter(target);
+  }
+
+  /**
+   * Release a bonded critter back to the wild: drop it from the roster and
+   * re-activate it as a fresh wild slot near the player (reusing the debug-spawn
+   * ad-hoc slot path — kept simple, per the Haven V2 brief).
+   */
+  function releaseFromRoster(id: number): void {
+    const entry = byId(roster, id);
+    if (!entry) return;
+    roster = release(roster, id);
+    const p = player.pos;
+    const rx = p.x + 3;
+    const rz = p.z;
+    critters.debugSpawn(entry.speciesId, { x: rx, y: heightAt(rx, rz), z: rz });
+    toast(`${entry.nickname} released to the wild`);
   }
 
   /** Advance simulation state by a fixed timestep. Systems hook in here. */
@@ -318,6 +428,10 @@ function bootGame(): void {
         screens.toggle('guide');
         continue;
       }
+      if (action.type === 'roster') {
+        screens.toggle('roster');
+        continue;
+      }
       if (action.type === 'escape') {
         // Esc priority: cancel an in-progress placement, then close an open
         // screen, otherwise open the pause/help overlay.
@@ -343,6 +457,13 @@ function bootGame(): void {
         continue;
       }
       if (action.type === 'interact') {
+        // Interact priority chain (Haven): village-interactions > BOND > harvest.
+        // ── VILLAGE-INTERACTIONS INSERTION POINT (Haven V3, parallel task) ──
+        // A parallel task adds NPC/dialog handling here; it must run BEFORE the
+        // bond + harvest checks below (e.g. `if (village.tryInteract(...)) continue;`).
+        //
+        // BOND: aiming at a Linked critter (within trackRadius) with a charm.
+        if (tryBondInteract()) continue;
         // F near a post (mount/recall) or under a drone (recall) is owned by the
         // structure systems — don't also harvest there.
         if (!ziplines.nearMount(player.pos) && !drones.nearRecall(player.pos)) {
@@ -513,6 +634,11 @@ function bootGame(): void {
     getTimeScale: () => timeScale,
     setTimeScale: (f: number) => {
       timeScale = Math.max(0.1, Math.min(16, f));
+    },
+    bond: (id: number) => {
+      // Force-Link then bond — convenience for headless verification.
+      critters.debugBond(id);
+      return bondById(id);
     },
     save: doSave,
     resetSave,

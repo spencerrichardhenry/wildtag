@@ -18,6 +18,8 @@ export interface Inventory {
   rp: number;
   /** Tracker darts on hand (Task 10). */
   darts: number;
+  /** Bond Charms on hand (Haven V2) — consumed to bond a Linked critter. */
+  charms: number;
   /** Held-but-not-yet-placed deployable structure counts (Task 13 consumes). */
   kits: Record<DeployableId, number>;
 }
@@ -31,6 +33,7 @@ export function createInventory(): Inventory {
     spark: 0,
     rp: 0,
     darts: 0,
+    charms: 0,
     kits: { zipline: 0, beacon: 0, drone: 0 },
   };
 }

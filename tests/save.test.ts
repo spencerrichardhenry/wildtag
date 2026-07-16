@@ -32,6 +32,7 @@ function sampleSave(over: Partial<SaveV1> = {}): SaveV1 {
     },
     player: { pos: { x: 12.5, y: 3.2, z: -7.1 }, yaw: 1.23 },
     hints: ['boot', 'lock'],
+    roster: [],
     ...over,
   };
 }
@@ -155,6 +156,79 @@ describe('encodeSave / decodeSave', () => {
     const state = sampleSave();
     state.inventory.kits = { zipline: -1, beacon: 0, drone: 0 };
     expect(decodeSave(JSON.stringify(state))).toBeNull();
+  });
+
+  // --- Haven V2: charms (inventory) + roster ---------------------------------
+
+  it('round-trips a non-zero charms count', () => {
+    const state = sampleSave();
+    state.inventory.charms = 5;
+    const decoded = decodeSave(encodeSave(state));
+    expect(decoded?.inventory.charms).toBe(5);
+  });
+
+  it('defaults a missing charms field to 0 (v1 forward-compat) rather than rejecting', () => {
+    const state = sampleSave();
+    const { charms, ...invNoCharms } = state.inventory;
+    void charms;
+    const raw = { ...state, inventory: invNoCharms };
+    const decoded = decodeSave(JSON.stringify(raw));
+    expect(decoded).not.toBeNull();
+    expect(decoded?.inventory.charms).toBe(0);
+    expect(decoded?.inventory.fiber).toBe(state.inventory.fiber);
+  });
+
+  it('rejects a negative / non-finite charms count', () => {
+    const negative = sampleSave();
+    negative.inventory.charms = -3;
+    expect(decodeSave(JSON.stringify(negative))).toBeNull();
+
+    const nan = { ...sampleSave(), inventory: { ...sampleSave().inventory, charms: 'lots' } };
+    expect(decodeSave(JSON.stringify(nan))).toBeNull();
+  });
+
+  it('round-trips the bonded roster', () => {
+    const state = sampleSave({
+      roster: [
+        { id: 12, speciesId: 'puffle', nickname: 'Beans', status: { kind: 'idle' } },
+        { id: -4, speciesId: 'prismhorse', nickname: 'Doodle', status: { kind: 'mount' } },
+        { id: 7, speciesId: 'craghorn', nickname: 'Pip', status: { kind: 'farm', plotId: 2 } },
+      ],
+    });
+    const decoded = decodeSave(encodeSave(state));
+    expect(decoded?.roster).toEqual(state.roster);
+  });
+
+  it('defaults a missing roster to [] (v1 migration) rather than rejecting', () => {
+    const state = sampleSave();
+    const { roster, ...noRoster } = state;
+    void roster;
+    const decoded = decodeSave(JSON.stringify(noRoster));
+    expect(decoded).not.toBeNull();
+    expect(decoded?.roster).toEqual([]);
+    expect(decoded?.player).toEqual(state.player);
+  });
+
+  it('rejects a roster that is present but not an array', () => {
+    const raw = { ...sampleSave(), roster: 'nope' };
+    expect(decodeSave(JSON.stringify(raw))).toBeNull();
+  });
+
+  it('drops malformed roster entries while valid siblings survive', () => {
+    const good = { id: 3, speciesId: 'puffle', nickname: 'Beans', status: { kind: 'idle' } };
+    const raw = {
+      ...sampleSave(),
+      roster: [
+        {}, // empty
+        good,
+        { id: 4, speciesId: 'puffle', nickname: 'X', status: { kind: 'farm' } }, // farm w/o plotId
+        { id: 'five', speciesId: 'puffle', nickname: 'Y', status: { kind: 'idle' } }, // id not finite
+        { id: 6, speciesId: 'puffle', nickname: 'Z' }, // no status
+      ],
+    };
+    const decoded = decodeSave(JSON.stringify(raw));
+    expect(decoded).not.toBeNull();
+    expect(decoded?.roster).toEqual([good]);
   });
 
   it('drops a malformed drone element while its valid sibling survives', () => {

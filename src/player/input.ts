@@ -22,6 +22,7 @@ export type Action =
   | { type: 'hotbar'; slot: number }
   | { type: 'tab' }
   | { type: 'toggleC' }
+  | { type: 'roster' }
   | { type: 'escape' }
   | { type: 'lmb' }
   | { type: 'rmb' };
@@ -181,6 +182,9 @@ export class Input {
         break;
       case 'KeyC':
         this.actions.push({ type: 'toggleC' });
+        break;
+      case 'KeyB':
+        this.actions.push({ type: 'roster' });
         break;
       case 'Escape':
         this.actions.push({ type: 'escape' });

@@ -23,8 +23,21 @@ export const RECIPES: Recipe[] = [
     cost: { fiber: 3, resin: 1 },
     kind: 'consumable',
     batch: 10,
+    grants: 'darts',
   },
   // --- Tier 1 (25 RP) --------------------------------------------------------
+  {
+    // Haven V2: sparks make Linking feed capturing — one charm bonds one
+    // Linked critter into the roster (design spec §1).
+    id: 'charm',
+    name: 'Bond Charm',
+    tier: 1,
+    rpRequired: 25,
+    cost: { fiber: 3, shard: 1, spark: 1 },
+    kind: 'consumable',
+    batch: 2,
+    grants: 'charms',
+  },
   {
     id: 'grapple',
     name: 'Grapple Hook',
@@ -142,7 +155,10 @@ export function craft(inv: Inventory, recipeId: RecipeId, unlocks: ReadonlySet<s
 
   if (recipe.kind === 'consumable') {
     const gained = recipe.batch ?? 1;
-    return { inv: { ...paid, darts: paid.darts + gained } };
+    // Which counter the batch lands in — 'darts' by default (the original dart
+    // recipe), 'charms' for the Bond Charm. Both are plain numeric fields.
+    const target = recipe.grants ?? 'darts';
+    return { inv: { ...paid, [target]: paid[target] + gained } };
   }
 
   if (recipe.kind === 'unlock') {

@@ -31,6 +31,8 @@ export interface DebugDeps {
   isGrappling(): boolean;
   getTimeScale(): number;
   setTimeScale(f: number): void;
+  /** Bond a critter into the roster (spec §6 __game.bond). Returns success. */
+  bond(id: number): boolean;
   save(): void;
   resetSave(): void;
 }
@@ -47,6 +49,7 @@ export interface GameDebugHandle {
   spawn(speciesId: string, dist?: number): number | null;
   track(id: number): void;
   completeTracking(id: number): boolean;
+  bond(id: number): boolean;
   setTimeScale(f: number): void;
   listCritters(): CritterView[];
   save(): void;
@@ -145,6 +148,16 @@ export function buildDebugHandle(deps: DebugDeps): GameDebugHandle {
       deps.critters.setTagged(id, true);
       deps.critters.setTrackProgress(id, sp.trackTime);
       return true;
+    },
+
+    /**
+     * Bond the critter `id` into the roster (spec §6). Delegates to main.ts's
+     * bond flow (which force-Links the critter first for convenience, spends a
+     * charm if held, removes it from the wild and names it). Returns false if
+     * the critter isn't active or the bond couldn't complete.
+     */
+    bond(id: number): boolean {
+      return deps.bond(id);
     },
 
     /** Multiply the fixed-step accumulator's dt feed (clamped 0.1..16). */

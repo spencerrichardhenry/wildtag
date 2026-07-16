@@ -146,11 +146,44 @@ describe('craft — deployable kits', () => {
   });
 });
 
+describe('craft — Bond Charm (Haven V2)', () => {
+  it('is a tier-1 recipe gated at 25 RP with cost {fiber:3, shard:1, spark:1}', () => {
+    const inv = createInventory();
+    grant(inv, { fiber: 3, shard: 1, spark: 1 });
+    inv.rp = 24;
+    expect(canCraft(inv, 'charm', new Set())).toEqual({ ok: false, reason: 'rp' });
+    inv.rp = 25;
+    expect(canCraft(inv, 'charm', new Set())).toEqual({ ok: true });
+  });
+
+  it('grants charms in a batch of 2 (not darts) and spends the exact cost', () => {
+    const inv = createInventory();
+    grant(inv, { fiber: 3, shard: 1, spark: 1 });
+    inv.rp = 25;
+    const result = craft(inv, 'charm', new Set());
+    expect(result.inv.charms).toBe(2);
+    expect(result.inv.darts).toBe(0); // grants target is 'charms', not 'darts'
+    expect(result.inv.fiber).toBe(0);
+    expect(result.inv.shard).toBe(0);
+    expect(result.inv.spark).toBe(0);
+    expect(result.unlocked).toBeUndefined();
+    expect(result.kits).toBeUndefined();
+  });
+
+  it('the dart recipe still grants darts (grants target is honoured per-recipe)', () => {
+    const inv = createInventory();
+    grant(inv, { fiber: 3, resin: 1 });
+    const result = craft(inv, 'dart', new Set());
+    expect(result.inv.darts).toBe(10);
+    expect(result.inv.charms).toBe(0);
+  });
+});
+
 describe('full crafting tree — affordability walk', () => {
-  it('every recipe is craftable in tier order once granted its resources + RP, and the final state matches all unlocks/kits/darts', () => {
+  it('every recipe is craftable in tier order once granted its resources + RP, and the final state matches all unlocks/kits/darts/charms', () => {
     const inv = createInventory();
     inv.rp = 200; // clears every tier's RP gate up front
-    grant(inv, { fiber: 33, resin: 19, shard: 32, spark: 16 }); // sum of every recipe's cost below
+    grant(inv, { fiber: 36, resin: 19, shard: 33, spark: 17 }); // sum of every recipe's cost below (incl. charm)
 
     const unlocks = new Set<string>();
     const order: RecipeId[] = RECIPES
@@ -170,6 +203,7 @@ describe('full crafting tree — affordability walk', () => {
     expect(unlocks).toEqual(new Set(['grapple', 'boots', 'glider', 'rocket']));
     expect(working.kits).toEqual({ zipline: 1, beacon: 0, drone: 1 });
     expect(working.darts).toBe(10);
+    expect(working.charms).toBe(2);
     expect(working.fiber).toBe(0);
     expect(working.resin).toBe(0);
     expect(working.shard).toBe(0);

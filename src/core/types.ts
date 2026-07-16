@@ -11,9 +11,10 @@ export type ResourceKind = 'fiber' | 'resin' | 'shard' | 'spark';
 // tasks (hotbar slots, structure placement) reference `RecipeId` too.
 // ---------------------------------------------------------------------------
 
-/** Ids of the 8 craftable recipes across all 3 tiers. */
+/** Ids of the craftable recipes across all tiers (+ Haven V2 Bond Charm). */
 export type RecipeId =
   | 'dart'
+  | 'charm'
   | 'grapple'
   | 'boots'
   | 'glider'
@@ -37,6 +38,12 @@ export interface Recipe {
   kind: RecipeKind;
   /** Units produced per craft for consumables (e.g. darts craft in batches of 4). */
   batch?: number;
+  /**
+   * For `consumable` recipes: which inventory counter the batch lands in.
+   * Defaults to 'darts' when absent (the original dart recipe). Generalized in
+   * Haven V2 so the Bond Charm recipe can stock `charms` through the same path.
+   */
+  grants?: 'darts' | 'charms';
 }
 
 export interface MoveInput {
