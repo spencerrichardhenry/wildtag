@@ -328,7 +328,22 @@ export class PlayerController {
         // occlusion, then auto-zip / hang.
         if (this.hook.anchorDrone && this.anchors) {
           const p = this.anchors.getAnchorPos(this.hook.anchorDrone);
-          if (p) this.hook = { ...this.hook, anchor: p };
+          if (p) {
+            this.hook = { ...this.hook, anchor: p };
+          } else {
+            // Drone recalled/unregistered mid-latch: the anchor no longer
+            // exists — release immediately. Keeping the stale point would
+            // leave the player hanging on thin air (levitation).
+            this.hook = null;
+          }
+        }
+        if (this.hook === null) {
+          // Released this step (anchor vanished) — fall through to the common
+          // tail below; `next` already carries the free-fall integration.
+          this.state = next;
+          this.updateGrappleVisuals();
+          this.syncCamera();
+          return;
         }
         const occluded = this.segmentOccluded(next.pos, this.hook.anchor!);
         this.hookOccludedFor = occluded ? this.hookOccludedFor + dt : 0;
@@ -336,7 +351,7 @@ export class PlayerController {
           this.hook = null;
         } else {
           this.grappleSteps++; // latched work done — enables the release boost
-          const res = stepAttached(this.hook, next, dt);
+          const res = stepAttached(this.hook, next, dt, this.ground.heightAt);
           this.hook = res.h;
           if (res.pin) {
             // Hang: pinned to real geometry, gravity suspended (not flight).

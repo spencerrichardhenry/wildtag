@@ -239,6 +239,32 @@ describe('hangPin', () => {
   });
 });
 
+describe('stepAttached — hang-pin approach & ground clamp', () => {
+  it('closes half the radial gap per step instead of teleporting when hang starts far out', () => {
+    // Player is 6m from the anchor when the zip crosses hangLength (fast swing
+    // lag). The pin must approach (d*0.5 = 3m), not snap straight to 1.2m.
+    const h = latched(ANCHOR, GRAPPLE.hangLength, { hang: true });
+    const s = state({ x: 6, y: 10, z: 0 }, { x: 0, y: 0, z: 0 });
+    const res = stepAttached(h, s, DT);
+    const d = Math.hypot(res.pin!.x - ANCHOR.x, res.pin!.y - ANCHOR.y, res.pin!.z - ANCHOR.z);
+    expect(d).toBeCloseTo(3, 6);
+    // Converges: repeating from the pin halves again until the hangLength floor.
+    const res2 = stepAttached(res.h, { ...s, pos: res.pin! }, DT);
+    const d2 = Math.hypot(res2.pin!.x - ANCHOR.x, res2.pin!.y - ANCHOR.y, res2.pin!.z - ANCHOR.z);
+    expect(d2).toBeCloseTo(1.5, 6);
+  });
+
+  it('clamps the pinned position above the terrain surface when heightAt is supplied', () => {
+    // Terrain anchor approached from below: without the clamp the pin would
+    // land hangLength below an anchor that sits only anchorLift above ground.
+    const h = latched(ANCHOR, GRAPPLE.hangLength, { hang: true });
+    const s = state({ x: 0, y: 10 - GRAPPLE.hangLength, z: 0 }, { x: 0, y: 0, z: 0 });
+    const groundY = 9.5; // surface just below the anchor at y=10
+    const res = stepAttached(h, s, DT, () => groundY);
+    expect(res.pin!.y).toBeGreaterThanOrEqual(groundY + 0.1 - 1e-9);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Rope constraint physics (constant-length pendulum, exercised directly)
 // ---------------------------------------------------------------------------

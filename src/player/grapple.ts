@@ -260,6 +260,33 @@ export function hangPin(anchor: Vec3, pos: Vec3): Vec3 {
 }
 
 /**
+ * Per-step hang pin with a soft approach + ground clamp. Instead of snapping
+ * straight to `hangLength` (a visible teleport when the zip crosses hangLength
+ * while the player is still lagging far/overstretched behind), the pin closes
+ * half the remaining radial gap per step — converging in ~2 steps from any
+ * realistic entry distance. When `heightAt` is supplied, the pinned y is
+ * clamped to the surface + 0.1 so a terrain-anchored hang (anchor only
+ * anchorLift = 0.45 above ground, hangLength = 1.2) never buries the player
+ * (mirrors the zipline ride's ground clamp).
+ */
+function approachPin(anchor: Vec3, pos: Vec3, heightAt?: (x: number, z: number) => number): Vec3 {
+  const dx = pos.x - anchor.x;
+  const dy = pos.y - anchor.y;
+  const dz = pos.z - anchor.z;
+  const d = Math.hypot(dx, dy, dz);
+  let pin: Vec3;
+  if (d < 1e-6) {
+    pin = { x: anchor.x, y: anchor.y - GRAPPLE.hangLength, z: anchor.z };
+  } else {
+    const target = Math.max(GRAPPLE.hangLength, d * 0.5);
+    const s = target / d;
+    pin = { x: anchor.x + dx * s, y: anchor.y + dy * s, z: anchor.z + dz * s };
+  }
+  if (heightAt) pin.y = Math.max(pin.y, heightAt(pin.x, pin.z) + 0.1);
+  return pin;
+}
+
+/**
  * Soft-spring rope constraint (taut only): edits velocity, never position.
  * Exported so the pendulum-physics tests can exercise a constant-length rope
  * directly (the auto-zip in `stepAttached` continuously shortens the rope, so a
@@ -317,11 +344,12 @@ export function stepAttached(
   h: HookState,
   s: MoveState,
   dt: number,
+  heightAt?: (x: number, z: number) => number,
 ): { h: HookState; vel: Vec3; pin: Vec3 | null } {
   const anchor = h.anchor!;
 
   if (h.hang) {
-    return { h, vel: { x: 0, y: 0, z: 0 }, pin: hangPin(anchor, s.pos) };
+    return { h, vel: { x: 0, y: 0, z: 0 }, pin: approachPin(anchor, s.pos, heightAt) };
   }
 
   const length = h.length - GRAPPLE.zipSpeed * dt;
@@ -329,7 +357,7 @@ export function stepAttached(
     return {
       h: { ...h, length: GRAPPLE.hangLength, hang: true },
       vel: { x: 0, y: 0, z: 0 },
-      pin: hangPin(anchor, s.pos),
+      pin: approachPin(anchor, s.pos, heightAt),
     };
   }
 
