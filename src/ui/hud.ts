@@ -56,6 +56,7 @@ const RES_COLOR: Record<string, string> = {
   shard: hex(SCATTER.colors.shard),
   spark: hex(SCATTER.colors.spark),
   dart: '#66e0ff',
+  charm: '#d98cff', // Bond Charm — distinct violet
   rp: '#9fd8b8',
 };
 
@@ -165,7 +166,7 @@ export class HUD {
 
     // --- Resource strip (top-left) -----------------------------------------
     const res = el('div', 'wt-resources');
-    for (const kind of ['fiber', 'resin', 'shard', 'spark', 'dart', 'rp'] as const) {
+    for (const kind of ['fiber', 'resin', 'shard', 'spark', 'dart', 'charm', 'rp'] as const) {
       const item = el('div', 'wt-res');
       const dot = el('span', 'wt-res-dot');
       if (kind === 'rp') dot.classList.add('wt-res-rp');
@@ -173,7 +174,8 @@ export class HUD {
       const count = el('span', 'wt-res-count');
       count.textContent = '0';
       const tag = el('span', 'wt-res-tag');
-      tag.textContent = kind === 'rp' ? 'RP' : kind === 'dart' ? 'darts' : '';
+      tag.textContent =
+        kind === 'rp' ? 'RP' : kind === 'dart' ? 'darts' : kind === 'charm' ? 'charms' : '';
       item.append(dot, count, tag);
       res.appendChild(item);
       this.resEls.set(kind, { dot, count, last: -1 });
@@ -373,6 +375,7 @@ export class HUD {
       shard: inv.shard,
       spark: inv.spark,
       dart: inv.darts,
+      charm: inv.charms,
       rp: inv.rp,
     };
     for (const [kind, ref] of this.resEls) {

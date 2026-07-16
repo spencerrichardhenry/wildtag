@@ -2,6 +2,7 @@ import type { Vec3 } from './types.ts';
 import { PLAYER_START } from './constants.ts';
 import type { Inventory } from '../craft/inventory.ts';
 import type { StructuresSave } from '../structures/placement.ts';
+import type { RosterEntry } from '../critters/roster.ts';
 
 // ---------------------------------------------------------------------------
 // Save v1 (Task 14). Plain JSON, version-guarded. `encodeSave`/`decodeSave`
@@ -31,6 +32,12 @@ export interface SaveV1 {
   player: { pos: Vec3; yaw: number };
   /** Ids of first-run HUD hints already shown (see ui/hud.ts get/setHintFlags). */
   hints: string[];
+  /**
+   * Haven V2: bonded critters. Optional + shape-guarded (defaults []) so v1
+   * saves written before Haven load losslessly. The save version stays 1 until
+   * Haven V7 bumps it.
+   */
+  roster?: RosterEntry[];
 }
 
 export const SAVE_KEY = 'wildtag-save-v1';
@@ -65,6 +72,25 @@ function isDroneEntry(d: unknown): boolean {
 }
 
 /**
+ * Element-shape guard for a roster entry (Haven V2). A malformed entry is
+ * dropped while valid siblings — and the rest of the save — survive. Only the
+ * reachable-this-task 'idle' status plus the forward-declared 'farm'/'mount'
+ * shapes are accepted.
+ */
+function isRosterEntry(r: unknown): boolean {
+  if (!r || typeof r !== 'object') return false;
+  const e = r as Record<string, unknown>;
+  if (!Number.isFinite(e.id) || typeof e.speciesId !== 'string' || typeof e.nickname !== 'string') {
+    return false;
+  }
+  const st = e.status as Record<string, unknown> | undefined;
+  if (!st || typeof st !== 'object') return false;
+  if (st.kind === 'idle' || st.kind === 'mount') return true;
+  if (st.kind === 'farm' && Number.isFinite(st.plotId)) return true;
+  return false;
+}
+
+/**
  * Parse + validate a save JSON string. Returns `null` (never throws) for
  * garbage input, a missing/wrong `v` (version guard), or any structurally
  * unsound shape — the caller always falls back to a fresh start.
@@ -85,6 +111,11 @@ export function decodeSave(json: string): SaveV1 | null {
     for (const f of ['fiber', 'resin', 'shard', 'spark', 'rp', 'darts'] as const) {
       if (!isCount(inv[f])) return null;
     }
+    // `charms` mirrors `darts` but is forward-compat: a v1 save written before
+    // Haven has no `charms`, so a missing value defaults to 0; any present
+    // value is still validated (a tampered/negative count rejects the save).
+    if (inv.charms !== undefined && !isCount(inv.charms)) return null;
+    const charms = isCount(inv.charms) ? (inv.charms as number) : 0;
     const kits: Inventory['kits'] = { zipline: 0, beacon: 0, drone: 0 };
     if (inv.kits !== undefined && inv.kits !== null) {
       if (typeof inv.kits !== 'object') return null;
@@ -102,6 +133,7 @@ export function decodeSave(json: string): SaveV1 | null {
       spark: inv.spark as number,
       rp: inv.rp as number,
       darts: inv.darts as number,
+      charms,
       kits,
     };
     if (!Array.isArray(o.unlocks) || !o.unlocks.every((u) => typeof u === 'string')) return null;
@@ -113,6 +145,14 @@ export function decodeSave(json: string): SaveV1 | null {
     const player = o.player as Record<string, unknown>;
     if (!isVec3(player.pos) || typeof player.yaw !== 'number') return null;
     if (!Array.isArray(o.hints) || !o.hints.every((h) => typeof h === 'string')) return null;
+    // Roster (Haven V2): optional, defaults []. Missing/absent on a v1 save is
+    // fine; a present non-array rejects; malformed elements are dropped while
+    // valid siblings survive (mirrors the structures element guards).
+    let roster: RosterEntry[] = [];
+    if (o.roster !== undefined && o.roster !== null) {
+      if (!Array.isArray(o.roster)) return null;
+      roster = o.roster.filter(isRosterEntry) as RosterEntry[];
+    }
     // Sanitize structure elements: drop malformed entries, keep valid siblings
     // (and the rest of the save) so a partly-corrupt save never crashes boot.
     const sanitized = {
@@ -122,6 +162,7 @@ export function decodeSave(json: string): SaveV1 | null {
         ziplines: structures.ziplines.filter(isZiplineEntry),
         drones: structures.drones.filter(isDroneEntry),
       },
+      roster,
     };
     return sanitized as unknown as SaveV1;
   } catch {

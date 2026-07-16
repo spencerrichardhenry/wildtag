@@ -364,6 +364,7 @@ const KEYBINDS: [string, string][] = [
   ['LMB', 'Throw tracker dart'],
   ['1 – 4', 'Hotbar'],
   ['C', 'Crafting'],
+  ['B', 'Roster'],
   ['Tab', 'Field Guide'],
   ['Esc', 'Pause / Close'],
 ];

@@ -7,6 +7,7 @@ import { SPECIES, speciesById } from './species.ts';
 import { buildCritterModel, type CritterParts } from './models.ts';
 import { animateCritter } from './animation.ts';
 import { stepAI, type AIContext } from './ai.ts';
+import { inVillage } from '../village/layout.ts';
 
 // ---------------------------------------------------------------------------
 // CritterManager — the world's living population.
@@ -109,6 +110,9 @@ export function spawnSlotsForCell(cx: number, cz: number): SpawnSlot[] {
     const overWater = biomeAt(x, z) === 'water';
     if (overWater && def.fleeStyle !== 'swim' && def.fleeStyle !== 'fly') continue;
 
+    // Nothing spawns inside Haven Village — the plaza is for villagers.
+    if (inVillage(x, z)) continue;
+
     const y = heightAt(x, z);
     // The bumblewhale is a flyer but a low, placid one: it drifts just above
     // the terrain (spec §5) rather than cruising the high band like the finch.
@@ -127,6 +131,12 @@ interface PersistState {
   trackProgress: number;
   /** Species id, remembered so `linkedSpecies()` can resolve linked slots. */
   species?: string;
+  /**
+   * Haven V2: this slot was bonded into the roster and has permanently left
+   * the wild — the streaming loop never re-activates a consumed slot. Persists
+   * via the registry export so the slot stays empty across save/load.
+   */
+  consumed?: boolean;
 }
 
 interface ActiveCritter {
@@ -187,6 +197,8 @@ export class CritterManager {
     for (const { slot, dist } of withDist) {
       if (this.active.size >= AI.maxActive) break;
       if (dist > AI.activeRadius) break; // sorted — the rest are farther
+      // A bonded (consumed) slot has permanently left the wild — never respawn it.
+      if (this.registry.get(slot.id)?.consumed) continue;
       if (!this.active.has(slot.id)) this.activate(slot);
     }
 
@@ -365,6 +377,30 @@ export class CritterManager {
         entry.state.farTime = 0;
       }
     }
+  }
+
+  /**
+   * Haven V2: mark slot `id` as bonded — it leaves the wild permanently. The
+   * live model (if any) is deactivated now, and the persistent `consumed` flag
+   * (surviving save/load via the registry export) keeps the streaming loop from
+   * ever re-activating it.
+   */
+  consumeSlot(id: number): void {
+    const p = this.persistFor(id);
+    const entry = this.active.get(id);
+    if (entry) p.species = entry.state.species;
+    p.consumed = true;
+    if (entry) this.deactivate(id); // deactivate reuses the same registry object
+  }
+
+  /**
+   * Debug convenience (Haven V2): force a critter Linked, then return its view.
+   * Lets a verification script bond a spawned critter without the tracking loop.
+   * Returns undefined if the critter is not currently active.
+   */
+  debugBond(id: number): CritterView | undefined {
+    this.setLinked(id, true);
+    return this.byId(id);
   }
 
   /**
