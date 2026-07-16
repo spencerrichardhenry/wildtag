@@ -1,9 +1,12 @@
 import * as THREE from 'three';
-import { INPUT, MOVE, TERRAIN } from '../core/constants.ts';
+import { GRAPPLE, INPUT, MOVE, TERRAIN } from '../core/constants.ts';
 import type { GroundQuery, MoveInput, MoveState, Vec3 } from '../core/types.ts';
-import { initialMoveState, stepMovement } from './movement.ts';
+import { drainStamina, initialMoveState, stepMovement } from './movement.ts';
 import { resolveCollision, type Obstacle } from './collision.ts';
 import type { Input } from './input.ts';
+import { fireGrapple, raycastTerrain, stepGrapple, type GrappleState } from './grapple.ts';
+import { GrappleVisuals } from './grapple-visuals.ts';
+import type { AnchorRegistry } from '../structures/anchors.ts';
 
 // ---------------------------------------------------------------------------
 // Bridges raw input → pure movement core → camera. Owns the MoveState and the
@@ -54,17 +57,101 @@ export class PlayerController {
   /** Spent once a mid-air (boots) jump is used; reset on landing. */
   private usedAirJump = false;
 
+  // --- Grapple (Task 12) ---------------------------------------------------
+  /** Optional anchor registry (drones, Task 13) raycast alongside the terrain. */
+  private readonly anchors: AnchorRegistry | null;
+  /** Optional rope/hook renderer (present only when a scene is supplied). */
+  private readonly visuals: GrappleVisuals | null;
+  /** Active rope, or null when not grappling. */
+  private grapple: GrappleState | null = null;
+  /** Previous RMB-held sample, for edge detection (press fires / release drops). */
+  private prevRmb = false;
+  /** Scratch camera look-direction (allocation-free). */
+  private readonly _look = new THREE.Vector3();
+
   constructor(
     camera: THREE.PerspectiveCamera,
     input: Input,
     ground: GroundQuery,
     spawn: Vec3,
+    scene?: THREE.Scene,
+    anchors?: AnchorRegistry,
   ) {
     this.camera = camera;
     this.input = input;
     this.ground = ground;
     this.state = initialMoveState(spawn);
+    this.anchors = anchors ?? null;
+    this.visuals = scene ? new GrappleVisuals(scene) : null;
     this.syncCamera();
+  }
+
+  /** True while a rope is attached — main.ts suppresses dart throws when so. */
+  isGrappling(): boolean {
+    return this.grapple !== null && this.grapple.active;
+  }
+
+  /** Camera look direction as a plain vector (unit). */
+  private lookDir(): Vec3 {
+    this.camera.getWorldDirection(this._look);
+    return { x: this._look.x, y: this._look.y, z: this._look.z };
+  }
+
+  /**
+   * Raycast terrain + the anchor registry from the eye; return the nearest hit
+   * within maxRange, or null. Anchor spheres win ties only if genuinely nearer.
+   */
+  private grappleTarget(origin: Vec3, dir: Vec3): Vec3 | null {
+    const terrain = raycastTerrain(origin, dir, this.ground.heightAt, GRAPPLE.maxRange);
+    const anchor = this.anchors?.raycastAnchors(origin, dir, GRAPPLE.maxRange) ?? null;
+    if (!terrain) return anchor ? anchor.point : null;
+    if (!anchor) return terrain;
+    const dt = Math.hypot(terrain.x - origin.x, terrain.y - origin.y, terrain.z - origin.z);
+    const da = Math.hypot(
+      anchor.point.x - origin.x,
+      anchor.point.y - origin.y,
+      anchor.point.z - origin.z,
+    );
+    return da < dt ? anchor.point : terrain;
+  }
+
+  /** True if terrain rises above the player→anchor segment (rope occluded). */
+  private segmentOccluded(a: Vec3, b: Vec3): boolean {
+    const n = GRAPPLE.occlusionSamples;
+    for (let i = 1; i < n; i++) {
+      const t = i / n;
+      const x = a.x + (b.x - a.x) * t;
+      const y = a.y + (b.y - a.y) * t;
+      const z = a.z + (b.z - a.z) * t;
+      if (y < this.ground.heightAt(x, z)) return true;
+    }
+    return false;
+  }
+
+  /** Debug: attach a rope to a fixed world point (used by `?debug=grapple`). */
+  debugFireGrapple(anchor: Vec3): void {
+    const eye = { x: this.camera.position.x, y: this.camera.position.y, z: this.camera.position.z };
+    this.grapple = fireGrapple(eye, this.lookDir(), anchor);
+    this.updateGrappleVisuals();
+  }
+
+  /** Sync the rope renderer to the current grapple state (no-op without a scene). */
+  private updateGrappleVisuals(): void {
+    if (!this.visuals) return;
+    if (this.grapple && this.grapple.active) {
+      // Originate the rope from a "hand" just in front of and below the eye so
+      // its near end isn't clipped by the camera near plane.
+      const eye = this.camera.position;
+      const f = this.lookDir();
+      const hand = {
+        x: eye.x + f.x * 0.6,
+        y: eye.y + f.y * 0.6 - 0.35,
+        z: eye.z + f.z * 0.6,
+      };
+      this.visuals.update(hand, this.grapple.anchor, this.grapple.length);
+    } else {
+      this.visuals.hide();
+    }
   }
 
   /** Advance one fixed sim step, then place the camera. */
@@ -87,6 +174,41 @@ export class PlayerController {
       }
     }
 
+    // --- Grapple: fire / hold / release edges (RMB), reel (LMB) ------------
+    // RMB press fires (only with the 'grapple' unlock), stays attached while
+    // held, releases on RMB release. LMB held reels while attached.
+    const rmb = this.input.rmbHeld && this.state.mode === 'normal';
+    if (rmb && !this.prevRmb && this.unlocks.has('grapple') && !this.grapple) {
+      const eye = {
+        x: this.camera.position.x,
+        y: this.camera.position.y,
+        z: this.camera.position.z,
+      };
+      const dir = this.lookDir();
+      this.grapple = fireGrapple(eye, dir, this.grappleTarget(eye, dir));
+    } else if (!rmb && this.grapple) {
+      this.grapple = null; // released the button → drop the rope
+    }
+    this.prevRmb = rmb;
+
+    // Movement-feel guards: gliding conflicts with the rope (wing wins →
+    // release); a jump releases with a small upward boost for flow. Dashing is
+    // allowed — the dash burst runs in the core, then the rope re-constrains.
+    if (
+      this.grapple &&
+      masked.jumpHeld &&
+      this.unlocks.has('glider') &&
+      !this.state.grounded
+    ) {
+      this.grapple = null;
+    }
+    let jumpRelease = false;
+    if (this.grapple && masked.jump) {
+      this.grapple = null;
+      masked.jump = false; // consume the edge so it doesn't buffer post-release
+      jumpRelease = true;
+    }
+
     // --- Double jump (boots): open a coyote window for one air jump --------
     let airJumped = false;
     if (
@@ -103,7 +225,7 @@ export class PlayerController {
 
     // --- Step the pure core ------------------------------------------------
     const prev = this.state;
-    const next = stepMovement(prev, masked, dt, this.ground);
+    let next = stepMovement(prev, masked, dt, this.ground);
 
     if (airJumped) this.usedAirJump = true;
     // Reset the boots charge on landing — including a buffered-jump landing,
@@ -123,7 +245,26 @@ export class PlayerController {
       next.pos.z = resolved.z;
     }
 
+    // --- Grapple rope constraint (post-processes velocity after the core) --
+    if (this.grapple && this.grapple.active) {
+      const occluded = this.segmentOccluded(next.pos, this.grapple.anchor);
+      this.grapple = {
+        ...this.grapple,
+        occludedFor: occluded ? this.grapple.occludedFor + dt : 0,
+      };
+      // Reel while LMB held; masked off when exhausted (no reel on empty tank).
+      const reelHeld = this.input.lmbHeld && !next.exhausted;
+      const res = stepGrapple(this.grapple, next, reelHeld, dt);
+      next.vel = res.vel;
+      this.grapple = res.g.active ? res.g : null;
+      if (res.staminaCost > 0) next = drainStamina(next, res.staminaCost);
+    }
+
+    // Jump-release boost: a bit of lift so the release flows into a leap.
+    if (jumpRelease) next.vel.y += GRAPPLE.jumpReleaseBoost;
+
     this.state = next;
+    this.updateGrappleVisuals();
     this.syncCamera();
   }
 
