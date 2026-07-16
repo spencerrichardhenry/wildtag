@@ -2,10 +2,12 @@ import * as THREE from 'three';
 import { CAMERA, MAX_FRAME_DT, SIM_DT } from './core/constants.ts';
 import { setupEnvironment } from './world/environment.ts';
 import { ChunkManager } from './world/chunks.ts';
+import { PropManager } from './world/props.ts';
 import { biomeAt, groundNormalAt, heightAt } from './world/terrain.ts';
 import type { GroundQuery } from './core/types.ts';
 import { Input } from './player/input.ts';
 import { PlayerController } from './player/controller.ts';
+import { createInventory, addResource } from './craft/inventory.ts';
 
 // ---------------------------------------------------------------------------
 // Boot scene: renderer, camera, environment (lighting/fog/sky/water) and the
@@ -37,6 +39,7 @@ const camera = new THREE.PerspectiveCamera(
 setupEnvironment(scene);
 
 const chunks = new ChunkManager(scene);
+const props = new PropManager(scene);
 const skyDome = scene.getObjectByName('skyDome');
 
 function resize(): void {
@@ -60,6 +63,19 @@ const spawn = { x: 0, y: heightAt(0, 0), z: 0 };
 const input = new Input(canvas);
 const player = new PlayerController(camera, input, ground, spawn);
 
+// Placeholder inventory (Task 7 replaces this) accumulating harvested resources.
+const inventory = createInventory();
+
+// World clock (seconds of simulated time) driving resource-node respawns.
+let worldTime = 0;
+
+// Reusable scratch for the camera look direction (harvest aim).
+const _look = new THREE.Vector3();
+function cameraLook(): { x: number; y: number; z: number } {
+  camera.getWorldDirection(_look);
+  return { x: _look.x, y: _look.y, z: _look.z };
+}
+
 // ---------------------------------------------------------------------------
 // Debug HUD: a tiny dev line (pos / stamina / grounded / biome), refreshed at
 // ~4 Hz. Replaced by the real HUD in Task 11.
@@ -70,6 +86,10 @@ debugLine.style.cssText =
   'position:fixed;top:8px;left:8px;font:12px monospace;color:#cfe;text-shadow:0 1px 2px #000;white-space:pre;';
 hud?.appendChild(debugLine);
 
+function capitalize(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
 let hudTimer = 0;
 function updateHud(dt: number): void {
   hudTimer += dt;
@@ -77,17 +97,36 @@ function updateHud(dt: number): void {
   hudTimer = 0;
   const p = player.pos;
   const b = biomeAt(p.x, p.z);
+  const aimed = props.findHarvestable(camera.position, cameraLook(), worldTime);
+  const prompt = aimed ? `\nF — Harvest ${capitalize(aimed.kind)}` : '';
   debugLine.textContent =
     `pos ${p.x.toFixed(1)}, ${p.y.toFixed(1)}, ${p.z.toFixed(1)}  ` +
     `stamina ${player.stamina.toFixed(0)}  ` +
-    `${player.grounded ? 'grounded' : 'air'}  ${player.mode}  biome ${b}`;
+    `${player.grounded ? 'grounded' : 'air'}  ${player.mode}  biome ${b}  ` +
+    `[fib ${inventory.fiber} res ${inventory.resin} shd ${inventory.shard} spk ${inventory.spark}]` +
+    prompt;
 }
 
 /** Advance simulation state by a fixed timestep. Systems hook in here. */
 function update(dt: number): void {
+  worldTime += dt;
+
+  // Feed the controller trees/rocks near the player before it integrates.
+  const prev = player.pos;
+  player.obstacles = props.getObstacles(prev.x, prev.z);
   player.update(dt);
+
   const p = player.pos;
   chunks.update(p.x, p.z);
+  props.update(p.x, p.z, worldTime);
+
+  // Harvest on the KeyF interact edge: nearest node in range + look cone.
+  for (const action of input.consumeActions()) {
+    if (action.type !== 'interact') continue;
+    const gained = props.harvestAt(camera.position, cameraLook(), worldTime);
+    if (gained) addResource(inventory, gained, 1);
+  }
+
   // Keep the sky dome centred on the camera so its gradient never parallaxes.
   if (skyDome) skyDome.position.set(camera.position.x, 0, camera.position.z);
   updateHud(dt);
@@ -98,8 +137,9 @@ function render(): void {
   renderer.render(scene, camera);
 }
 
-// Prime the chunk field at spawn before the first frame so nothing pops in.
+// Prime the chunk field + props at spawn before the first frame so nothing pops in.
 chunks.update(spawn.x, spawn.z);
+props.primeAround(spawn.x, spawn.z, worldTime);
 
 // ---------------------------------------------------------------------------
 // Debug handle for later tasks (Task 14 expands this into a full debug menu).

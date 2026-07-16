@@ -184,6 +184,106 @@ export const CHUNKS = {
 } as const;
 
 /**
+ * Deterministic scatter + harvestable-resource tuning. Every chunk is diced
+ * into a `grid`×`grid` sub-cell lattice; each sub-cell rolls (via hash2) for a
+ * single prop whose kind depends on the biome at the jittered sample point.
+ * Trees/rocks emit collision cylinders; fiber/resin/shard/spark are harvestable
+ * nodes with a `respawnS`-second cooldown. Nothing is placed on the `water`
+ * biome or below `minPlacementY`.
+ */
+export const SCATTER = {
+  /** Sub-cells per chunk edge (grid² candidate slots per chunk). */
+  grid: 8,
+  /** Max fraction of a sub-cell a sample point jitters from its cell centre. */
+  jitter: 0.42,
+  /** Never place a prop where the ground is below this height (m). */
+  minPlacementY: 0.4,
+
+  /** Resource node respawn cooldown after harvest (s). */
+  respawnS: 180,
+  /** Max distance (m) from the camera to harvest a node. */
+  harvestRange: 3,
+  /** Look-cone half-angle (deg): a node harvests only when within this of the aim. */
+  harvestConeDeg: 60,
+  /** Instance scale applied to a depleted node until it respawns. */
+  depletedScale: 0.2,
+
+  /** Keep-resident radius (chunks) for prop meshes — smaller than terrain. */
+  radius: 5,
+  /** Max prop chunks built per update() call (steady state builds none). */
+  buildsPerUpdate: 6,
+  /** Obstacles are supplied to the player only within this many chunks. */
+  obstacleRangeChunks: 2,
+
+  /** Chance per chunk of a single rare spark mote (placed anywhere valid). */
+  sparkChancePerChunk: 0.15,
+  /** Chance a forest tree also spawns a resin node at its base. */
+  resinChancePerTree: 0.35,
+  /** Horizontal offset (m) of a resin node from its host tree's base. */
+  resinOffset: 0.75,
+
+  /**
+   * Per-biome scatter table: ordered cumulative roll thresholds. A sub-cell's
+   * roll r in [0,1) picks the first entry with r < p; if it exceeds every
+   * threshold the sub-cell stays empty. Tuned so a solid forest chunk yields
+   * ~14 trees (0.22 × 64), meadow ~14 flowers + ~10 fiber, etc.
+   */
+  biomeScatter: {
+    meadow: [
+      { kind: 'flower', p: 0.22 },
+      { kind: 'fiber', p: 0.38 },
+    ],
+    forest: [
+      { kind: 'tree', p: 0.22 },
+      { kind: 'flower', p: 0.27 },
+    ],
+    wetland: [
+      { kind: 'flower', p: 0.2 },
+      { kind: 'fiber', p: 0.4 },
+    ],
+    crags: [
+      { kind: 'rock', p: 0.18 },
+      { kind: 'crystal', p: 0.28 },
+      { kind: 'shard', p: 0.34 },
+    ],
+    highlands: [
+      { kind: 'rock', p: 0.16 },
+      { kind: 'crystal', p: 0.26 },
+      { kind: 'shard', p: 0.32 },
+    ],
+  },
+
+  /** Per-kind instance scale range [min, max] (uniform hash pick). */
+  scale: {
+    tree: [0.85, 1.6],
+    rock: [0.6, 1.5],
+    crystal: [0.5, 1.15],
+    flower: [0.7, 1.3],
+    fiber: [0.7, 1.2],
+    resin: [0.7, 1.1],
+    shard: [0.7, 1.35],
+    spark: [0.85, 1.2],
+  },
+
+  /** Collision-cylinder radius factor (× scale) for blocking props. */
+  obstacleRadius: { tree: 0.5, rock: 0.9 },
+
+  /** Per-kind base colours (hex) for flat-shaded instanced meshes. */
+  colors: {
+    trunk: 0x6b4a2f,
+    foliage: 0x2f6d3a,
+    rock: 0x8b8378,
+    crystal: 0x7fb0d8,
+    flower: 0xe27ba8,
+    reed: 0x8aa15b,
+    fiber: 0xbcae6b,
+    resin: 0xe0932a,
+    shard: 0xb07fe0,
+    spark: 0xffe06a,
+  },
+} as const;
+
+/**
  * Environment visuals: lighting, fog, sky dome and water plane. Colors are
  * hex ints. The per-biome ground palette (+ sand near the shore) lives with
  * the chunk mesh builder.
