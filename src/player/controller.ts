@@ -325,7 +325,7 @@ export class PlayerController {
     return this.state.mode;
   }
 
-  /** Debug teleport (Task 14 expands this). Velocity is zeroed on arrival. */
+  /** Debug teleport. Velocity is zeroed on arrival. */
   teleport(x: number, y: number, z: number): void {
     this.state = {
       ...this.state,
@@ -335,5 +335,11 @@ export class PlayerController {
     };
     this.usedAirJump = false;
     this.syncCamera();
+  }
+
+  /** Debug-only (Task 14): force the stamina pool to `n`, clamped to [0, staminaMax]. */
+  setStamina(n: number): void {
+    const clamped = Math.max(0, Math.min(MOVE.staminaMax, n));
+    this.state = { ...this.state, stamina: clamped };
   }
 }

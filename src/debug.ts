@@ -1,0 +1,164 @@
+import type { GroundQuery, Vec3 } from './core/types.ts';
+import type { Inventory } from './craft/inventory.ts';
+import { RECIPES } from './craft/recipes.ts';
+import type { PlayerController } from './player/controller.ts';
+import type { Input } from './player/input.ts';
+import type { CritterManager, CritterView } from './critters/manager.ts';
+import { speciesById } from './critters/species.ts';
+import type { ZiplineSystem } from './structures/ziplines.ts';
+import type { DroneSystem } from './structures/drones.ts';
+
+// ---------------------------------------------------------------------------
+// window.__game (Task 14): the full debug handle backbone for Task 15's
+// Playwright verification. Every method here operates on the *live* systems
+// wired in main.ts — nothing here is cosmetic, all of it actually mutates
+// game state so a verification script can drive the whole loop (grant
+// resources → craft → unlock; spawn a critter → track → complete → see the
+// reward land; fast-forward time; save/reset) without a real mouse/keyboard.
+// ---------------------------------------------------------------------------
+
+export interface DebugDeps {
+  player: PlayerController;
+  input: Input;
+  inventory: Inventory;
+  ground: GroundQuery;
+  critters: CritterManager;
+  ziplines: ZiplineSystem;
+  drones: DroneSystem;
+  /** True while a structure placement ghost is active (hotbar 3/4). */
+  isPlacing(): boolean;
+  getTimeScale(): number;
+  setTimeScale(f: number): void;
+  save(): void;
+  resetSave(): void;
+}
+
+export interface GameDebugHandle {
+  state(): unknown;
+  player: {
+    pos(): Vec3;
+    teleport(x: number, y: number, z: number): void;
+    setStamina(n: number): void;
+  };
+  grant(kind: string, n?: number): void;
+  unlockAll(): void;
+  spawn(speciesId: string, dist?: number): number | null;
+  track(id: number): void;
+  completeTracking(id: number): boolean;
+  setTimeScale(f: number): void;
+  listCritters(): CritterView[];
+  save(): void;
+  reset(): void;
+}
+
+/** Build the `window.__game` debug handle from the live systems main.ts owns. */
+export function buildDebugHandle(deps: DebugDeps): GameDebugHandle {
+  return {
+    state(): unknown {
+      const inv = deps.inventory;
+      return {
+        pos: deps.player.pos,
+        stamina: deps.player.stamina,
+        exhausted: deps.player.exhausted,
+        inventory: { ...inv, kits: { ...inv.kits } },
+        unlocks: [...deps.player.unlocks],
+        linkedSpeciesCount: deps.critters.linkedSpecies().size,
+        activeCritters: deps.critters.count(),
+        structures: {
+          ziplines: deps.ziplines.count,
+          drones: deps.drones.count,
+          riding: deps.ziplines.riding,
+          placing: deps.isPlacing(),
+        },
+        timeScale: deps.getTimeScale(),
+      };
+    },
+
+    player: {
+      pos: (): Vec3 => deps.player.pos,
+      teleport: (x, y, z): void => deps.player.teleport(x, y, z),
+      setStamina: (n): void => deps.player.setStamina(n),
+    },
+
+    /**
+     * Grant `n` (default 1) of a plain numeric inventory field (fiber, resin,
+     * shard, spark, rp, darts), or a kit via the `kit:<id>` prefix (e.g.
+     * `grant('kit:zipline', 2)`). Unknown kinds are a silent no-op.
+     */
+    grant(kind: string, n = 1): void {
+      if (kind.startsWith('kit:')) {
+        const kitKind = kind.slice(4);
+        const kits = deps.inventory.kits as unknown as Record<string, number>;
+        const current = kits[kitKind];
+        if (typeof current === 'number') kits[kitKind] = current + n;
+        return;
+      }
+      const inv = deps.inventory as unknown as Record<string, unknown>;
+      if (Object.hasOwn(inv, kind) && typeof inv[kind] === 'number') {
+        inv[kind] = (inv[kind] as number) + n;
+      }
+    },
+
+    /** Unlock every craftable ability (grapple/boots/glider/rocket). */
+    unlockAll(): void {
+      for (const r of RECIPES) {
+        if (r.kind === 'unlock') deps.player.unlocks.add(r.id);
+      }
+    },
+
+    /**
+     * Force-activate a critter of `speciesId` `dist` metres in front of the
+     * player (along the current look yaw, at ground height there). Returns
+     * the new critter id, or null if `speciesId` is unknown.
+     */
+    spawn(speciesId: string, dist = 8): number | null {
+      const yaw = deps.input.yaw;
+      const dirX = -Math.sin(yaw);
+      const dirZ = -Math.cos(yaw);
+      const p = deps.player.pos;
+      const x = p.x + dirX * dist;
+      const z = p.z + dirZ * dist;
+      const y = deps.ground.heightAt(x, z);
+      return deps.critters.debugSpawn(speciesId, { x, y, z });
+    },
+
+    /** Tag a critter (starts the normal tracking-ring accrual toward Link). */
+    track(id: number): void {
+      deps.critters.setTagged(id, true);
+    },
+
+    /**
+     * Force a tagged critter's tracking progress to done. The very next sim
+     * step's normal `updateTracking` call then Links it through the regular
+     * path — rewards, the onLink chime/toast, everything — exactly once.
+     * Returns false if `id` isn't a currently-active critter or its species
+     * is unknown.
+     */
+    completeTracking(id: number): boolean {
+      const view = deps.critters.byId(id);
+      if (!view) return false;
+      const sp = speciesById(view.species);
+      if (!sp) return false;
+      deps.critters.setTagged(id, true);
+      deps.critters.setTrackProgress(id, sp.trackTime);
+      return true;
+    },
+
+    /** Multiply the fixed-step accumulator's dt feed (clamped 0.1..16). */
+    setTimeScale(f: number): void {
+      deps.setTimeScale(f);
+    },
+
+    listCritters(): CritterView[] {
+      return deps.critters.list();
+    },
+
+    save(): void {
+      deps.save();
+    },
+
+    reset(): void {
+      deps.resetSave();
+    },
+  };
+}

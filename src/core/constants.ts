@@ -578,3 +578,14 @@ export const TRACKING = {
   /** Progress decay rate outside the ring, as a fraction of the accrual rate. */
   trackDecayFactor: 0.5,
 } as const;
+
+/**
+ * Player starting loadout (Task 14). Applied by main.ts only on a brand-new
+ * game (no valid save present, or `?fresh=1`) — a loaded save's own inventory
+ * counts always win, and `createInventory()` itself stays a pure zero ctor
+ * (tests treat it as the empty-inventory constructor).
+ */
+export const PLAYER_START = {
+  /** Tracker darts granted at the very start of a fresh game. */
+  startingDarts: 4,
+} as const;

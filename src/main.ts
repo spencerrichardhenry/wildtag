@@ -4,7 +4,7 @@ import { setupEnvironment } from './world/environment.ts';
 import { ChunkManager } from './world/chunks.ts';
 import { PropManager } from './world/props.ts';
 import { groundNormalAt, heightAt } from './world/terrain.ts';
-import type { GroundQuery } from './core/types.ts';
+import type { GroundQuery, Vec3 } from './core/types.ts';
 import { Input } from './player/input.ts';
 import { PlayerController } from './player/controller.ts';
 import { createInventory, addResource } from './craft/inventory.ts';
@@ -20,8 +20,10 @@ import { chime } from './ui/audio.ts';
 import { AnchorRegistry } from './structures/anchors.ts';
 import { ZiplineSystem } from './structures/ziplines.ts';
 import { DroneSystem } from './structures/drones.ts';
-import { PlacementSystem } from './structures/placement.ts';
+import { PlacementSystem, serializeStructures, deserializeStructures } from './structures/placement.ts';
 import { raycastTerrain } from './player/grapple.ts';
+import { applyStartingLoadout, loadSave, writeSave, clearSave, type SaveV1 } from './core/save.ts';
+import { buildDebugHandle } from './debug.ts';
 
 // ---------------------------------------------------------------------------
 // Boot scene: renderer, camera, environment (lighting/fog/sky/water) and the
@@ -143,17 +145,61 @@ function bootGame(): void {
   // Deployable structures (Task 13): ziplines + drones + their placement mode.
   // Hotbar 3 → zipline (two-stage), hotbar 4 → drone. Drones register grapple
   // anchors on the shared registry, so a hovering drone is instantly
-  // grappleable. `hudHooks` exposes live counts for the Task 11 HUD to read.
+  // grappleable. Live counts/placing/riding are read straight off these
+  // systems by the Task 14 debug handle's `state()` snapshot.
   // -------------------------------------------------------------------------
   const ziplines = new ZiplineSystem(scene, ground, inventory);
   const drones = new DroneSystem(scene, ground, anchors, inventory);
   const placement = new PlacementSystem(scene, camera, ground, inventory, ziplines, drones);
-  const hudHooks = {
-    ziplineCount: (): number => ziplines.count,
-    droneCount: (): number => drones.count,
-    placing: (): boolean => placement.active,
-    riding: (): boolean => ziplines.riding,
-  };
+
+  // -------------------------------------------------------------------------
+  // Save/load (Task 14): apply a stored save (if any) BEFORE the world primes
+  // around the player below, so streamed critters/props reflect the restored
+  // state on the very first frame. `?fresh=1` skips loading (dev aid). A
+  // brand-new game (no save, or `?fresh=1`) instead grants the starting dart
+  // loadout — `createInventory()` itself stays a pure zero constructor.
+  // -------------------------------------------------------------------------
+  const freshStart = new URLSearchParams(window.location.search).get('fresh') === '1';
+  const loaded: SaveV1 | null = freshStart ? null : loadSave();
+  Object.assign(inventory, applyStartingLoadout(inventory, loaded));
+  let primePos: Vec3 = spawn;
+  if (loaded) {
+    for (const u of loaded.unlocks) player.unlocks.add(u);
+    critters.importRegistry(loaded.critterPersist);
+    deserializeStructures(loaded.structures, ziplines, drones);
+    player.teleport(loaded.player.pos.x, loaded.player.pos.y, loaded.player.pos.z);
+    input.yaw = loaded.player.yaw;
+    hudUi.setHintFlags(loaded.hints);
+    primePos = { ...loaded.player.pos };
+  }
+
+  /** Build the current in-memory state as a plain-data SaveV1 snapshot. */
+  function buildSaveState(): SaveV1 {
+    return {
+      v: 1,
+      inventory: { ...inventory, kits: { ...inventory.kits } },
+      unlocks: [...player.unlocks],
+      critterPersist: critters.exportRegistry(),
+      structures: serializeStructures(ziplines, drones),
+      player: { pos: player.pos, yaw: input.yaw },
+      hints: hudUi.getHintFlags(),
+    };
+  }
+
+  function doSave(): void {
+    writeSave(buildSaveState());
+  }
+
+  // Autosave every 10 s + on tab close/hide (mobile-safe: pagehide fires
+  // where beforeunload sometimes doesn't).
+  setInterval(doSave, 10_000);
+  window.addEventListener('beforeunload', doSave);
+  window.addEventListener('pagehide', doSave);
+
+  function resetSave(): void {
+    clearSave();
+    window.location.reload();
+  }
 
   // Reusable scratch for the camera look direction (harvest aim).
   const _look = new THREE.Vector3();
@@ -284,11 +330,12 @@ function bootGame(): void {
     });
   }
 
-  // Prime the chunk field + props + critters at spawn before the first frame so
-  // nothing pops in.
-  chunks.update(spawn.x, spawn.z);
-  props.primeAround(spawn.x, spawn.z, worldTime);
-  critters.update(SIM_DT, spawn);
+  // Prime the chunk field + props + critters around the player before the
+  // first frame so nothing pops in. `primePos` is the restored save position
+  // when a save was loaded, otherwise the fresh spawn point.
+  chunks.update(primePos.x, primePos.z);
+  props.primeAround(primePos.x, primePos.z, worldTime);
+  critters.update(SIM_DT, primePos);
 
   // -------------------------------------------------------------------------
   // Debug swing (`?debug=grapple`): drop the player onto a highlands ridge,
@@ -388,20 +435,30 @@ function bootGame(): void {
   }
 
   // -------------------------------------------------------------------------
-  // Debug handle for later tasks (Task 14 expands this into a full debug menu).
+  // Debug handle (Task 14): window.__game — the backbone for Task 15's
+  // Playwright verification (state snapshot, teleport/grant/spawn/track/
+  // completeTracking, time-scaling, save/reset). `timeScale` is read by the
+  // fixed-timestep loop below (clamped 0.1..16 in setTimeScale so a runaway
+  // value can neither stall nor explode the accumulator).
   // -------------------------------------------------------------------------
-  (window as unknown as { __game: unknown }).__game = {
-    structures: hudHooks,
-    player: {
-      pos: () => player.pos,
-      teleport: (x: number, y: number, z: number) => player.teleport(x, y, z),
-      look: (yaw: number, pitch = 0) => {
-        input.yaw = yaw;
-        input.pitch = pitch;
-      },
+  let timeScale = 1;
+
+  (window as unknown as { __game: unknown }).__game = buildDebugHandle({
+    player,
+    input,
+    inventory,
+    ground,
+    critters,
+    ziplines,
+    drones,
+    isPlacing: () => placement.active,
+    getTimeScale: () => timeScale,
+    setTimeScale: (f: number) => {
+      timeScale = Math.max(0.1, Math.min(16, f));
     },
-    critters: () => critters.list(),
-  };
+    save: doSave,
+    resetSave,
+  });
 
   // -------------------------------------------------------------------------
   // Fixed-timestep game loop: accumulator pattern, SIM_DT-sized update steps,
@@ -409,6 +466,7 @@ function bootGame(): void {
   // long stalls don't cause a spiral-of-death catch-up burst.
   // -------------------------------------------------------------------------
 
+  const MAX_STEPS_PER_FRAME = 240;
   let accumulator = 0;
   let lastTime = performance.now();
 
@@ -419,10 +477,18 @@ function bootGame(): void {
     lastTime = now;
     const frameDt = Math.min(rawDt, MAX_FRAME_DT);
 
-    accumulator += frameDt;
-    while (accumulator >= SIM_DT) {
+    // `timeScale` (debug setTimeScale, clamped 0.1..16) multiplies the sim
+    // dt fed into the accumulator — Task 15's Playwright verification fast-
+    // forwards tracking/respawn timers this way. `MAX_STEPS_PER_FRAME` is a
+    // defensive cap (never hit at the 16x ceiling with MAX_FRAME_DT=0.1: that's
+    // 96 steps) so a future change to either constant can't turn a slow frame
+    // into an unbounded catch-up spiral.
+    accumulator += frameDt * timeScale;
+    let steps = 0;
+    while (accumulator >= SIM_DT && steps < MAX_STEPS_PER_FRAME) {
       update(SIM_DT);
       accumulator -= SIM_DT;
+      steps++;
     }
 
     render();

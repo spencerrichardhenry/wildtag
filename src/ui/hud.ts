@@ -271,8 +271,31 @@ export class HUD {
     this.paintRings(frame);
   }
 
+  /**
+   * Snapshot of which first-run hints have already fired (Task 14 save/load).
+   * Ids: 'boot' | 'lock' | 'dart' | 'tag'.
+   */
+  getHintFlags(): string[] {
+    const out: string[] = [];
+    if (this.hintedBoot) out.push('boot');
+    if (this.hintedLock) out.push('lock');
+    if (this.hintedDart) out.push('dart');
+    if (this.hintedTag) out.push('tag');
+    return out;
+  }
+
+  /** Restore hint flags from a save. Call before the first `update()`. */
+  setHintFlags(flags: readonly string[]): void {
+    const set = new Set(flags);
+    this.hintedBoot = set.has('boot');
+    this.hintedLock = set.has('lock');
+    this.hintedDart = set.has('dart');
+    this.hintedTag = set.has('tag');
+  }
+
   // -------------------------------------------------------------------------
-  // First-run hint toasts (one-shot). Persistence lands in Task 14.
+  // First-run hint toasts (one-shot). Persisted via get/setHintFlags above so
+  // returning players don't see them replay every session.
   // -------------------------------------------------------------------------
   private hints(frame: HudFrame): void {
     if (!this.hintedBoot) {

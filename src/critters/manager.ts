@@ -150,6 +150,8 @@ export class CritterManager {
   private slotCache: SpawnSlot[] = [];
   private cacheCellX = NaN;
   private cacheCellZ = NaN;
+  /** Counts down from -1 so debug-spawned ids never collide with a real slot id. */
+  private debugIdCounter = -1;
 
   constructor(scene: THREE.Scene) {
     this.scene = scene;
@@ -411,6 +413,57 @@ export class CritterManager {
   /** Dispose every active model (registry state is retained). */
   dispose(): void {
     for (const id of [...this.active.keys()]) this.deactivate(id);
+  }
+
+  // ---------------------------------------------------------------------
+  // Persistence registry export/import (Task 14 save/load). Plain JSON,
+  // keyed by slot id — round-trips tagged/linked/trackProgress/species for
+  // every critter the player has ever touched, active or not.
+  // ---------------------------------------------------------------------
+
+  /** Plain-data snapshot of the persistence registry. */
+  exportRegistry(): Record<number, PersistState> {
+    const out: Record<number, PersistState> = {};
+    for (const [id, p] of this.registry) out[id] = { ...p };
+    return out;
+  }
+
+  /**
+   * Rebuild the persistence registry from plain data (replaces any current
+   * entries). Any critters already active (there normally are none this
+   * early in boot) have their live flags refreshed to match.
+   */
+  importRegistry(data: Record<number, PersistState>): void {
+    this.registry.clear();
+    for (const key of Object.keys(data)) {
+      const id = Number(key);
+      const p = data[key as unknown as number];
+      if (!Number.isFinite(id) || !p) continue;
+      this.registry.set(id, { ...p });
+    }
+    for (const [id, entry] of this.active) {
+      const p = this.registry.get(id);
+      if (!p) continue;
+      entry.state.tagged = p.tagged;
+      entry.state.linked = p.linked;
+      entry.state.trackProgress = p.trackProgress;
+    }
+  }
+
+  /**
+   * Debug-only (Task 14): force-activate a critter of `speciesId` at `pos`,
+   * bypassing the normal cell-based spawn table entirely — works for any
+   * species anywhere. Returns the new (negative, so it never collides with a
+   * real slot id) critter id, or null if `speciesId` is unknown. The critter
+   * behaves exactly like a streamed one from then on (including normal
+   * deactivate-by-distance and persistence).
+   */
+  debugSpawn(speciesId: string, pos: Vec3): number | null {
+    if (!speciesById(speciesId)) return null;
+    const id = this.debugIdCounter--;
+    const slot: SpawnSlot = { id, species: speciesId, home: { ...pos }, flightHeight: AI.flyHeightMin };
+    this.activate(slot);
+    return id;
   }
 }
 

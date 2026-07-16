@@ -1,6 +1,7 @@
 import type { Inventory } from '../craft/inventory.ts';
 import { canCraft, craft, RECIPES } from '../craft/recipes.ts';
 import type { Recipe, RecipeId, ResourceKind } from '../core/types.ts';
+import { clearSave } from '../core/save.ts';
 
 // ---------------------------------------------------------------------------
 // Screen manager: one overlay div appended to #hud, screens register a
@@ -404,8 +405,17 @@ function injectHelpStyles(): void {
   document.head.appendChild(style);
 }
 
-/** Build the ScreenDef for the pause / help overlay (Esc). */
+/**
+ * Build the ScreenDef for the pause / help overlay (Esc). "Reset Save" is a
+ * double-confirm: the first click arms it ("Really? Click again", reverting
+ * after 3 s if untouched); the second click clears the save and reloads.
+ * Confirm state is scoped to this call (one instance per ScreenManager), so
+ * it survives the `refresh()` re-render the arm/disarm triggers.
+ */
 export function createHelpScreen(manager: ScreenManager): ScreenDef {
+  let confirmingReset = false;
+  let resetTimer: ReturnType<typeof setTimeout> | null = null;
+
   return {
     id: 'help',
     render(root: HTMLElement) {
@@ -455,9 +465,22 @@ export function createHelpScreen(manager: ScreenManager): ScreenDef {
       const reset = document.createElement('button');
       reset.className = 'wt-help-btn';
       reset.type = 'button';
-      reset.textContent = 'Reset Save';
-      reset.disabled = true; // Task 14 wires save/reset.
-      reset.title = 'Coming soon';
+      reset.textContent = confirmingReset ? 'Really? Click again' : 'Reset Save';
+      reset.addEventListener('click', () => {
+        if (confirmingReset) {
+          if (resetTimer !== null) clearTimeout(resetTimer);
+          confirmingReset = false;
+          clearSave();
+          window.location.reload();
+          return;
+        }
+        confirmingReset = true;
+        resetTimer = setTimeout(() => {
+          confirmingReset = false;
+          manager.refresh();
+        }, 3000);
+        manager.refresh();
+      });
 
       actions.append(resume, reset);
       panel.appendChild(actions);
