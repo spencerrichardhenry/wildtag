@@ -1,9 +1,12 @@
 import * as THREE from 'three';
 import { CAMERA, MAX_FRAME_DT, SIM_DT } from './core/constants.ts';
+import { setupEnvironment } from './world/environment.ts';
+import { ChunkManager } from './world/chunks.ts';
 
 // ---------------------------------------------------------------------------
-// Boot scene: renderer, camera, a placeholder ground plane + spinning cube.
-// Later tasks hook their own systems into `update(dt)` / `render()` below.
+// Boot scene: renderer, camera, environment (lighting/fog/sky/water) and the
+// streaming terrain ChunkManager. Later tasks hook their own systems into
+// `update(dt)` / `render()` below.
 // ---------------------------------------------------------------------------
 
 const canvas = document.getElementById('game');
@@ -17,7 +20,6 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x87ceeb); // placeholder sky color
 
 const camera = new THREE.PerspectiveCamera(
   CAMERA.fov,
@@ -25,32 +27,10 @@ const camera = new THREE.PerspectiveCamera(
   CAMERA.near,
   CAMERA.far,
 );
-camera.position.set(0, 2, 6);
-camera.lookAt(0, 1, 0);
 
-// Lighting: hemisphere fill + a directional "sun" so the cube reads as lit.
-const hemiLight = new THREE.HemisphereLight(0xbfd9ff, 0x6b5b47, 1.0);
-scene.add(hemiLight);
+setupEnvironment(scene);
 
-const sunLight = new THREE.DirectionalLight(0xfff2d0, 1.2);
-sunLight.position.set(50, 80, 30);
-scene.add(sunLight);
-
-// Placeholder ground plane.
-const ground = new THREE.Mesh(
-  new THREE.PlaneGeometry(200, 200),
-  new THREE.MeshLambertMaterial({ color: 0x4a7c3a }),
-);
-ground.rotation.x = -Math.PI / 2;
-scene.add(ground);
-
-// Placeholder spinning cube.
-const cube = new THREE.Mesh(
-  new THREE.BoxGeometry(1, 1, 1),
-  new THREE.MeshStandardMaterial({ color: 0xcc5533 }),
-);
-cube.position.set(0, 1, 0);
-scene.add(cube);
+const chunks = new ChunkManager(scene);
 
 function resize(): void {
   const width = window.innerWidth;
@@ -62,16 +42,51 @@ function resize(): void {
 
 window.addEventListener('resize', resize);
 
+// ---------------------------------------------------------------------------
+// TEMP: fly-over — replaced by PlayerController in Task 5.
+// Camera drifts from spawn (meadow) west toward the crags at ~120 m altitude,
+// looking down ~30°, feeding its x/z to the ChunkManager so chunks stream.
+// ---------------------------------------------------------------------------
+const flyover = {
+  t: 0,
+  altitude: 120,
+  speed: 18, // m/s
+  from: new THREE.Vector3(0, 0, 0), // spawn (meadow)
+  to: new THREE.Vector3(-750, 0, 0), // crags lobe is west (−x)
+};
+
+function updateFlyover(dt: number): void {
+  flyover.t += dt;
+  const dist = flyover.from.distanceTo(flyover.to);
+  const travelled = Math.min(flyover.t * flyover.speed, dist);
+  const s = dist > 0 ? travelled / dist : 1;
+
+  const x = THREE.MathUtils.lerp(flyover.from.x, flyover.to.x, s);
+  const z = THREE.MathUtils.lerp(flyover.from.z, flyover.to.z, s);
+  camera.position.set(x, flyover.altitude, z);
+
+  // Look ~30° below horizontal, in the direction of travel.
+  const dir = new THREE.Vector3().subVectors(flyover.to, flyover.from).setY(0).normalize();
+  const look = new THREE.Vector3(x, flyover.altitude, z)
+    .addScaledVector(dir, 100)
+    .setY(flyover.altitude - 100 * Math.tan(Math.PI / 6));
+  camera.lookAt(look);
+
+  chunks.update(x, z);
+}
+
 /** Advance simulation state by a fixed timestep. Systems hook in here. */
 function update(dt: number): void {
-  cube.rotation.x += 0.6 * dt;
-  cube.rotation.y += 0.9 * dt;
+  updateFlyover(dt);
 }
 
 /** Draw the current state. Called once per animation frame. */
 function render(): void {
   renderer.render(scene, camera);
 }
+
+// Prime the chunk field at spawn before the first frame so nothing pops in.
+chunks.update(0, 0);
 
 // ---------------------------------------------------------------------------
 // Fixed-timestep game loop: accumulator pattern, SIM_DT-sized update steps,

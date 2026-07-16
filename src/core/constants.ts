@@ -94,3 +94,71 @@ export const TERRAIN = {
     highlands: { base: 82, amp: 25 },
   },
 } as const;
+
+/**
+ * Streaming terrain-mesh chunks. The world is tiled into `size`-metre square
+ * chunks; each is a `verts`×`verts` grid sampled from `heightAt`. Chunks within
+ * `radius` chunks of the player (Chebyshev distance) are kept resident.
+ */
+export const CHUNKS = {
+  /** Chunk edge length (m). */
+  size: 64,
+  /** Vertices per chunk edge (so `verts - 1` quads span `size` metres). */
+  verts: 33,
+  /** Keep-resident radius in chunks (Chebyshev) around the player. */
+  radius: 7,
+  /** Max chunk meshes built per `update()` call, to avoid frame hitches. */
+  buildsPerUpdate: 8,
+} as const;
+
+/**
+ * Environment visuals: lighting, fog, sky dome and water plane. Colors are
+ * hex ints. The per-biome ground palette (+ sand near the shore) lives with
+ * the chunk mesh builder.
+ */
+export const ENV = {
+  /** Hemisphere light: sky-facing and ground-facing tints. */
+  hemiSky: 0xbfd9ff,
+  hemiGround: 0x6b5b47,
+  hemiIntensity: 1.0,
+
+  /** Warm low-angle "golden hour" directional sun. */
+  sunColor: 0xffe8b0,
+  sunIntensity: 1.4,
+  /** Sun position (world) — low angle for long, warm light. */
+  sunPos: { x: 260, y: 180, z: 120 },
+
+  /** Linear fog: color, near and far distances (m). */
+  fogColor: 0xcfd8e8,
+  fogNear: 150,
+  fogFar: 1000,
+
+  /**
+   * Sky dome: big backface sphere with a vertical gradient. Radius sits just
+   * inside CAMERA.far (1200) so the dome renders instead of being far-plane
+   * clipped; its material ignores fog so it stays a clean gradient while
+   * distant terrain fades into the matching horizon colour.
+   */
+  skyRadius: 1150,
+  skyTop: 0x4a78c0,
+  skyHorizon: 0xcfd8e8,
+
+  /** Per-biome ground vertex colors + shore sand. */
+  biomeColors: {
+    meadow: 0x7fb069,
+    forest: 0x3e7d4f,
+    wetland: 0x6d8a5b,
+    crags: 0x8d8577,
+    highlands: 0xa8b6a0,
+    water: 0x4a6b7a,
+    sand: 0xd9c9a3,
+  },
+  /** Height (m) below which land is tinted with shore sand. */
+  sandHeight: 1.2,
+
+  /** Translucent water plane. */
+  waterY: 0.05,
+  waterSize: 2200,
+  waterColor: 0x3a6b82,
+  waterOpacity: 0.72,
+} as const;
