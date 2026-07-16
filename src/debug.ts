@@ -27,6 +27,8 @@ export interface DebugDeps {
   drones: DroneSystem;
   /** True while a structure placement ghost is active (hotbar 3/4). */
   isPlacing(): boolean;
+  /** True while a grapple rope is attached (Task 15 verification observes this). */
+  isGrappling(): boolean;
   getTimeScale(): number;
   setTimeScale(f: number): void;
   save(): void;
@@ -70,6 +72,7 @@ export function buildDebugHandle(deps: DebugDeps): GameDebugHandle {
           riding: deps.ziplines.riding,
           placing: deps.isPlacing(),
         },
+        grappling: deps.isGrappling(),
         timeScale: deps.getTimeScale(),
       };
     },

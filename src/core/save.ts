@@ -107,13 +107,31 @@ export function loadSave(storage: Storage = window.localStorage): SaveV1 | null 
   return decodeSave(raw);
 }
 
+/**
+ * Latched true by `clearSave` (the "Reset Save" path). Both reset call sites
+ * (`main.ts` resetSave, the pause-screen button) clear the save and then
+ * `location.reload()` — and that reload fires the `beforeunload`/`pagehide`
+ * autosave, which would otherwise re-create the save from the still-in-memory
+ * (un-reset) state and silently defeat the reset. Once a reset is requested the
+ * page is about to be replaced, so suppressing every subsequent write for the
+ * remainder of this page's life is exactly correct (a fresh page starts with
+ * the flag false again).
+ */
+let saveSuppressed = false;
+
 /** Encode + write a save to `storage` (defaults to `window.localStorage`). */
 export function writeSave(state: SaveV1, storage: Storage = window.localStorage): void {
+  if (saveSuppressed) return;
   storage.setItem(SAVE_KEY, encodeSave(state));
 }
 
-/** Remove the save from `storage` (defaults to `window.localStorage`). */
+/**
+ * Remove the save from `storage` (defaults to `window.localStorage`) and latch
+ * off all further writes this page life (see `saveSuppressed`) so the imminent
+ * reset-reload's unload autosave can't resurrect the cleared save.
+ */
 export function clearSave(storage: Storage = window.localStorage): void {
+  saveSuppressed = true;
   storage.removeItem(SAVE_KEY);
 }
 
