@@ -152,6 +152,7 @@ Append to `http://localhost:5199/`:
 | Query               | Effect |
 | ------------------- | ------ |
 | `?fresh=1`          | Skip loading the save (always start fresh) |
+| `?dev=1`            | Playtest mode: all unlocks, 999 darts, deep material stacks, zipline/drone kits — never saves |
 | `?screen=craft`     | Open the crafting menu on boot |
 | `?screen=guide`     | Open the Field Guide on boot |
 | `?screen=help`      | Open the pause/help overlay on boot |

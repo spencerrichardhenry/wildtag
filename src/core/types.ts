@@ -83,6 +83,10 @@ export interface SpeciesDef {
   fleeSpeed: number;
   awareness: number;
   fleeStyle: 'sprint' | 'zigzag' | 'fly' | 'swim' | 'ledge' | 'none';
+  /** Bold species ignore the player entirely until TAGGED — only a beacon on
+   *  their back spooks them (e.g. birds). Skittish species (false) alert at
+   *  their awareness radius as usual. */
+  bold: boolean;
   trackRadius: number;
   trackTime: number;
   rarity: number;

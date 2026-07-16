@@ -194,26 +194,45 @@ function latched(anchor: Vec3, length: number, over: Partial<HookState> = {}): H
   };
 }
 
-describe('stepAttached — auto-zip', () => {
-  it('shortens the rope by zipSpeed·dt each step (no stamina)', () => {
+describe('stepAttached — constant-acceleration zip', () => {
+  it('accelerates the player toward the anchor by zipAccel·dt (no stamina)', () => {
     const h = latched(ANCHOR, 8);
-    const s = state({ x: 8, y: 10, z: 0 }, { x: 0, y: 0, z: 0 });
+    const s = state({ x: 8, y: 10, z: 0 }, { x: 0, y: 0, z: 0 }); // anchor is -x
     const res = stepAttached(h, s, DT);
-    expect(res.h.length).toBeCloseTo(8 - GRAPPLE.zipSpeed * DT, 6);
+    expect(res.vel.x).toBeCloseTo(-GRAPPLE.zipAccel * DT, 6);
+    expect(res.vel.y).toBeCloseTo(0, 6);
     expect(res.h.hang).toBe(false);
     expect(res.pin).toBeNull();
+    // length tracks the live distance for the rope visual.
+    expect(res.h.length).toBeCloseTo(8, 6);
   });
 
-  it('enters hang at hangLength: pins the player, zeroes velocity', () => {
-    // One step from just above hangLength drops the rope to/under it.
-    const h = latched(ANCHOR, GRAPPLE.hangLength + GRAPPLE.zipSpeed * DT * 0.5);
-    const s = state({ x: 0, y: 10 - h.length, z: 0 }, { x: 2, y: -3, z: 1 });
+  it('caps total speed at zipMaxSpeed while attached', () => {
+    const h = latched(ANCHOR, 20);
+    const s = state({ x: 20, y: 10, z: 0 }, { x: -GRAPPLE.zipMaxSpeed - 5, y: 0, z: 0 });
+    const res = stepAttached(h, s, DT);
+    const speed = Math.hypot(res.vel.x, res.vel.y, res.vel.z);
+    expect(speed).toBeLessThanOrEqual(GRAPPLE.zipMaxSpeed + 1e-9);
+  });
+
+  it('damps the perpendicular velocity so the flight converges on the anchor', () => {
+    const h = latched(ANCHOR, 10);
+    const s = state({ x: 10, y: 10, z: 0 }, { x: 0, y: 0, z: 6 }); // pure sideways
+    const res = stepAttached(h, s, DT);
+    // Perpendicular (z) shrinks; toward-anchor (−x) grows.
+    expect(Math.abs(res.vel.z)).toBeLessThan(6);
+    expect(res.vel.x).toBeLessThan(0);
+  });
+
+  it('enters hang within hangLength of the anchor: pins the player, zeroes velocity', () => {
+    const h = latched(ANCHOR, 2);
+    // Player physically inside hangLength of the anchor.
+    const s = state({ x: 0, y: 10 - GRAPPLE.hangLength * 0.9, z: 0 }, { x: 2, y: -3, z: 1 });
     const res = stepAttached(h, s, DT);
     expect(res.h.hang).toBe(true);
-    expect(res.h.length).toBeCloseTo(GRAPPLE.hangLength, 6);
     expect(res.vel).toEqual({ x: 0, y: 0, z: 0 });
     expect(res.pin).not.toBeNull();
-    // Pinned exactly hangLength from the anchor.
+    // Pinned at (or approaching) hangLength from the anchor.
     const d = Math.hypot(
       res.pin!.x - ANCHOR.x,
       res.pin!.y - ANCHOR.y,

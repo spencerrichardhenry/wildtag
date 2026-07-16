@@ -158,16 +158,17 @@ export const MOVE = {
  * *flies* as a ballistic projectile (`hookSpeed` along the look dir under
  * `hookGravity`, capped at `hookMaxFlight` seconds — ballistics IS the range
  * limit, there is no maxRange rejection). On contact it latches to terrain,
- * trees/rocks, or a drone anchor and AUTOMATICALLY zips the player inward at
- * `zipSpeed` (no manual reel, no stamina cost — the cost is aim + travel time).
- * Arrival at `hangLength` pins the player to the anchor (a "hang"), gravity
- * suspended because the anchor is real geometry — not free flight.
+ * trees/rocks, or a drone anchor and AUTOMATICALLY pulls the player with
+ * constant acceleration `zipAccel` toward it (Terraria-style; no reel, no
+ * stamina — the cost is aim + travel time), perpendicular velocity damped at
+ * `zipPerpDamp`/s, speed capped at `zipMaxSpeed` while attached. Momentum is
+ * preserved on release, so jump/boost mid-zip → re-fire from the air chains
+ * movement. Arrival at `hangLength` pins the player to the anchor (a "hang"),
+ * gravity suspended because the anchor is real geometry — not free flight.
  *
- * The zip/hang still runs the original soft-*spring* pendulum constraint the
- * controller post-processes onto the movement core's velocity each latched
- * step: `stiffness` is inward accel (m/s²) per metre of overstretch, and
- * `radialDamping` the fraction of the remaining (inward) radial velocity bled
- * off per step. Distances in m, speeds m/s, times s.
+ * `stiffness`/`radialDamping`/`springAccelMax` remain for the exported
+ * pendulum constraint (used by tests and available for future rope modes).
+ * Distances in m, speeds m/s, times s.
  */
 export const GRAPPLE = {
   /** Projectile muzzle speed (m/s) along the look direction at fire. */
@@ -177,7 +178,14 @@ export const GRAPPLE = {
   /** Max flight time (s) before an un-latched hook fizzles (≈45m level fire). */
   hookMaxFlight: 1.4,
   /** Auto-zip rate (m/s) the rope shortens by once latched (replaces reel). */
-  zipSpeed: 26,
+  /** Constant acceleration toward the anchor while attached (m/s²) —
+   *  comfortably beats gravity (24) so upward zips build speed. */
+  zipAccel: 45,
+  /** Speed cap while attached (m/s); released momentum is uncapped. */
+  zipMaxSpeed: 32,
+  /** Perpendicular-velocity damping rate (per second) while attached, so the
+   *  flight curves onto the anchor instead of orbiting it. */
+  zipPerpDamp: 1.6,
   /** Rope length (m) at which the zip ends and the player pins into a hang. */
   hangLength: 1.2,
   /** Max distance (m) for the debug/occlusion terrain ray-march. */
@@ -580,10 +588,12 @@ export const AI = {
  * inside the ring, decays at −dt/2 outside).
  */
 export const DART = {
-  /** Muzzle speed along the look direction at throw (m/s). */
-  speed: 28,
-  /** Gravity on a dart in flight (m/s², negative = down). */
-  gravity: -24,
+  /** Muzzle speed along the look direction at throw (m/s). Crossbow-bolt
+   *  fast — a flat, aimable shot rather than a lobbed ball. */
+  speed: 55,
+  /** Gravity on a dart in flight (m/s², negative = down). Deliberately light
+   *  so the trajectory reads as a bolt with gentle drop, not an arc. */
+  gravity: -9,
   /** Max time a dart lives before it despawns (s). */
   maxLife: 3,
   /** Trail: number of recent positions kept for the fading streak. */

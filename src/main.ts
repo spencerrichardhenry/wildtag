@@ -163,7 +163,10 @@ function bootGame(): void {
   // loadout — `createInventory()` itself stays a pure zero constructor.
   // -------------------------------------------------------------------------
   const freshStart = new URLSearchParams(window.location.search).get('fresh') === '1';
-  let loaded: SaveV1 | null = freshStart ? null : loadSave();
+  // `?dev=1`: playtest mode — everything unlocked, effectively-infinite darts
+  // and materials. Implies a fresh throwaway session (never touches the save).
+  const devMode = new URLSearchParams(window.location.search).get('dev') === '1';
+  let loaded: SaveV1 | null = freshStart || devMode ? null : loadSave();
   let primePos: Vec3 = spawn;
   if (loaded) {
     try {
@@ -196,6 +199,20 @@ function bootGame(): void {
     // inventory + the starting dart loadout.
     Object.assign(inventory, applyStartingLoadout(createInventory(), null));
   }
+  if (devMode) {
+    // Playtest loadout: every unlock, deep stacks of everything. The counts
+    // are finite so all existing spend/decrement paths still exercise.
+    inventory.fiber = 9999;
+    inventory.resin = 9999;
+    inventory.shard = 9999;
+    inventory.spark = 9999;
+    inventory.rp = 999;
+    inventory.darts = 999;
+    inventory.kits.zipline = 9;
+    inventory.kits.drone = 9;
+    for (const u of ['grapple', 'boots', 'glider', 'rocket']) player.unlocks.add(u);
+    toast('DEV MODE — all unlocks, 999 darts, deep material stacks (no saving)');
+  }
 
   /** Build the current in-memory state as a plain-data SaveV1 snapshot. */
   function buildSaveState(): SaveV1 {
@@ -214,9 +231,9 @@ function bootGame(): void {
     writeSave(buildSaveState());
   }
 
-  // A dev-hook boot (?fresh=1 or any ?debug=) runs throwaway state that must
-  // never overwrite the player's real save, so skip all automatic writes here.
-  const devSession = freshStart || debugParam !== null;
+  // A dev-hook boot (?fresh=1, ?dev=1 or any ?debug=) runs throwaway state
+  // that must never overwrite the player's real save — skip automatic writes.
+  const devSession = freshStart || devMode || debugParam !== null;
 
   // Autosave every 10 s + on tab close/hide (mobile-safe: pagehide fires
   // where beforeunload sometimes doesn't).

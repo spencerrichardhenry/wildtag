@@ -84,7 +84,9 @@ export function stepAI(c: CritterState, ctx: AIContext, dt: number): CritterStat
 
   // Linked critters (permanently calm) and fleeStyle:'none' species never
   // alert or flee — they only ever idle/wander.
-  const canFlee = sp.fleeStyle !== 'none' && !c.linked;
+  // Bold species (birds etc.) don't care about the player until a tracker is
+  // on their back; skittish ones alert at awareness regardless.
+  const canFlee = sp.fleeStyle !== 'none' && !c.linked && (!sp.bold || c.tagged);
 
   // Desired heading + target ground speed produced by the active state.
   let desiredYaw = c.yaw;

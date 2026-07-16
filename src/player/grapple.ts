@@ -13,11 +13,11 @@ import type { MoveState, Vec3 } from '../core/types.ts';
 //            at `hookSpeed`, and `stepHook` sweeps its travel segment against
 //            terrain / props / drones each step. Timeout at `hookMaxFlight`
 //            with no contact → phase 'done' (a miss; zero impulse to anyone).
-//   latched  contact found. `stepAttached` auto-shortens the rope at
-//            `zipSpeed` (no reel, no stamina) while the ORIGINAL soft-spring
-//            pendulum constraint (radial-kill + damp + capped inward spring)
-//            post-processes the player's velocity — so an overhead anchor still
-//            swings, it just also zips inward.
+//   latched  contact found. `stepAttached` pulls the player toward the anchor
+//            with CONSTANT ACCELERATION `zipAccel` (Terraria-style; no reel,
+//            no stamina), damping perpendicular velocity so the flight curves
+//            onto the anchor, speed capped at `zipMaxSpeed` while attached.
+//            Momentum survives release — jump/boost mid-zip, re-fire in air.
 //   hang     rope reached `hangLength`: the player is PINNED at
 //            anchor − hangLength along the current radial, velocity zeroed,
 //            gravity suspended by the controller (anchored to real geometry,
@@ -334,11 +334,14 @@ export function applyRopeConstraint(
 }
 
 /**
- * Advance a latched hook one step. Auto-shortens the rope at `zipSpeed` and
- * post-processes the pendulum constraint onto `s.vel`; once the rope reaches
- * `hangLength` the player enters a hang. Returns the next hook, the
- * constraint-adjusted velocity, and (when hanging) the pinned position the
- * controller must write onto the player. Pure — `h`/`s` are never mutated.
+ * Advance a latched hook one step — Terraria-style constant acceleration.
+ * While attached the player accelerates toward the anchor at `zipAccel`
+ * (fighting gravity, which the movement core already integrated), with the
+ * perpendicular velocity component damped at `zipPerpDamp`/s so the path
+ * converges on the anchor, and total speed capped at `zipMaxSpeed`. Momentum
+ * is fully preserved on any release — jump or boost mid-zip and re-fire from
+ * the air to chain movement. Within `hangLength` of the anchor the player
+ * enters a hang. Pure — `h`/`s` are never mutated.
  */
 export function stepAttached(
   h: HookState,
@@ -352,8 +355,11 @@ export function stepAttached(
     return { h, vel: { x: 0, y: 0, z: 0 }, pin: approachPin(anchor, s.pos, heightAt) };
   }
 
-  const length = h.length - GRAPPLE.zipSpeed * dt;
-  if (length <= GRAPPLE.hangLength) {
+  const dx = anchor.x - s.pos.x;
+  const dy = anchor.y - s.pos.y;
+  const dz = anchor.z - s.pos.z;
+  const dist = Math.hypot(dx, dy, dz);
+  if (dist <= GRAPPLE.hangLength) {
     return {
       h: { ...h, length: GRAPPLE.hangLength, hang: true },
       vel: { x: 0, y: 0, z: 0 },
@@ -361,8 +367,36 @@ export function stepAttached(
     };
   }
 
-  const vel = applyRopeConstraint(anchor, length, s.pos, s.vel, dt);
-  return { h: { ...h, length }, vel, pin: null };
+  const ux = dx / dist;
+  const uy = dy / dist;
+  const uz = dz / dist;
+
+  // Accelerate toward the anchor.
+  const vel: Vec3 = {
+    x: s.vel.x + ux * GRAPPLE.zipAccel * dt,
+    y: s.vel.y + uy * GRAPPLE.zipAccel * dt,
+    z: s.vel.z + uz * GRAPPLE.zipAccel * dt,
+  };
+
+  // Damp the perpendicular component so the flight curves onto the anchor
+  // instead of orbiting it.
+  const vAlong = vel.x * ux + vel.y * uy + vel.z * uz;
+  const k = Math.max(0, 1 - GRAPPLE.zipPerpDamp * dt);
+  vel.x = ux * vAlong + (vel.x - ux * vAlong) * k;
+  vel.y = uy * vAlong + (vel.y - uy * vAlong) * k;
+  vel.z = uz * vAlong + (vel.z - uz * vAlong) * k;
+
+  // Cap total speed while attached (release keeps whatever you've built).
+  const speed = Math.hypot(vel.x, vel.y, vel.z);
+  if (speed > GRAPPLE.zipMaxSpeed) {
+    const c = GRAPPLE.zipMaxSpeed / speed;
+    vel.x *= c;
+    vel.y *= c;
+    vel.z *= c;
+  }
+
+  // `length` tracks the live distance so the rope visual stays taut.
+  return { h: { ...h, length: dist }, vel, pin: null };
 }
 
 /**

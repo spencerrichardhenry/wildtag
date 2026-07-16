@@ -22,6 +22,7 @@ import type { SpeciesDef } from '../core/types.ts';
 export const SPECIES: SpeciesDef[] = [
   {
     id: 'puffle',
+    bold: false,
     name: 'Puffle',
     biomes: ['meadow'],
     size: 0.5,
@@ -37,6 +38,7 @@ export const SPECIES: SpeciesDef[] = [
   },
   {
     id: 'skitterling',
+    bold: false,
     name: 'Skitterling',
     biomes: ['meadow', 'forest'],
     size: 0.45,
@@ -52,6 +54,7 @@ export const SPECIES: SpeciesDef[] = [
   },
   {
     id: 'bellowbuck',
+    bold: false,
     name: 'Bellowbuck',
     biomes: ['forest'],
     size: 2.2,
@@ -69,6 +72,7 @@ export const SPECIES: SpeciesDef[] = [
   },
   {
     id: 'mirefin',
+    bold: true,
     name: 'Mirefin',
     biomes: ['wetland', 'water'],
     size: 0.9,
@@ -84,6 +88,7 @@ export const SPECIES: SpeciesDef[] = [
   },
   {
     id: 'craghorn',
+    bold: false,
     name: 'Craghorn',
     biomes: ['crags'],
     size: 1.3,
@@ -99,6 +104,7 @@ export const SPECIES: SpeciesDef[] = [
   },
   {
     id: 'zephyrfinch',
+    bold: true,
     name: 'Zephyrfinch',
     biomes: ['meadow', 'forest', 'highlands'],
     size: 0.4,
@@ -114,6 +120,7 @@ export const SPECIES: SpeciesDef[] = [
   },
   {
     id: 'emberpup',
+    bold: false,
     name: 'Emberpup',
     biomes: ['highlands'],
     size: 0.8,
@@ -129,6 +136,7 @@ export const SPECIES: SpeciesDef[] = [
   },
   {
     id: 'lumenstag',
+    bold: false,
     name: 'Lumen Stag',
     biomes: ['forest', 'highlands', 'crags'],
     size: 2.0,

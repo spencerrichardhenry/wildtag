@@ -105,6 +105,20 @@ describe('alert threshold', () => {
     expect(out.state).not.toBe('alert');
     expect(out.state).not.toBe('flee');
   });
+
+  it('a bold species (zephyrfinch) ignores an untagged player point-blank', () => {
+    const c = makeCritter('zephyrfinch', { state: 'wander' });
+    const out = run(c, 'zephyrfinch', { x: 1, y: 0, z: 0 }, 0.1, 30);
+    expect(out.state).not.toBe('alert');
+    expect(out.state).not.toBe('flee');
+  });
+
+  it('a bold species alerts normally once tagged', () => {
+    const s = sp('zephyrfinch');
+    const c = makeCritter('zephyrfinch', { state: 'idle', tagged: true });
+    const stepped = stepAI(c, ctx('zephyrfinch', { x: s.awareness, y: 0, z: 0 }), 0.1);
+    expect(stepped.state).toBe('alert');
+  });
 });
 
 // ---------------------------------------------------------------------------
