@@ -302,9 +302,17 @@ function bootGame(): void {
       }
       if (paused) continue; // gameplay actions (interact/hotbar/lmb/rmb) freeze while a screen is open
       // Hotbar: HUD highlight for every slot; 3/4 also toggle placement mode.
+      // Slot 2 (grapple) isn't a selectable tool — it lives on RMB — so
+      // selecting it explains the controls instead of silently doing nothing.
       if (action.type === 'hotbar') {
         hudUi.selectHotbar(action.slot);
-        if (action.slot === 3) placement.toggle('zipline');
+        if (action.slot === 2) {
+          toast(
+            player.unlocks.has('grapple')
+              ? 'Grapple: hold RMB to fire · LMB reels · Space releases'
+              : 'Grapple Hook not crafted yet — open Crafting (C)',
+          );
+        } else if (action.slot === 3) placement.toggle('zipline');
         else if (action.slot === 4) placement.toggle('drone');
         continue;
       }
@@ -473,6 +481,7 @@ function bootGame(): void {
     ziplines,
     drones,
     isPlacing: () => placement.active,
+    isGrappling: () => player.isGrappling(),
     getTimeScale: () => timeScale,
     setTimeScale: (f: number) => {
       timeScale = Math.max(0.1, Math.min(16, f));
