@@ -5,6 +5,40 @@ export type Vec3 = { x: number; y: number; z: number };
 export type Biome = 'meadow' | 'forest' | 'wetland' | 'crags' | 'highlands' | 'water';
 export type ResourceKind = 'fiber' | 'resin' | 'shard' | 'spark';
 
+// ---------------------------------------------------------------------------
+// Crafting tree (Task 7). Recipe ids/tiers/RP gates are exact per the design
+// spec §5's crafting table; shared here (not craft/recipes.ts) because later
+// tasks (hotbar slots, structure placement) reference `RecipeId` too.
+// ---------------------------------------------------------------------------
+
+/** Ids of the 8 craftable recipes across all 3 tiers. */
+export type RecipeId =
+  | 'dart'
+  | 'grapple'
+  | 'boots'
+  | 'glider'
+  | 'zipline'
+  | 'beacon'
+  | 'rocket'
+  | 'drone';
+
+/** Placeable structures that accumulate as held "kits" until Task 13 spends them. */
+export type DeployableId = 'zipline' | 'beacon' | 'drone';
+
+export type RecipeKind = 'consumable' | 'unlock' | 'deployable';
+
+export interface Recipe {
+  id: RecipeId;
+  name: string;
+  tier: 0 | 1 | 2 | 3;
+  /** Research points required to unlock this tier (gate only — never spent). */
+  rpRequired: 0 | 25 | 75 | 180;
+  cost: Partial<Record<ResourceKind, number>>;
+  kind: RecipeKind;
+  /** Units produced per craft for consumables (e.g. darts craft in batches of 4). */
+  batch?: number;
+}
+
 export interface MoveInput {
   forward: number;
   strafe: number;

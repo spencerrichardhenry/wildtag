@@ -1,0 +1,178 @@
+import { describe, expect, it } from 'vitest';
+import { addResource, createInventory, spend, type Inventory } from '../src/craft/inventory.ts';
+import { canCraft, craft, RECIPES } from '../src/craft/recipes.ts';
+import type { RecipeId } from '../src/core/types.ts';
+
+function grant(inv: Inventory, amounts: Partial<Record<'fiber' | 'resin' | 'shard' | 'spark', number>>): void {
+  for (const [kind, n] of Object.entries(amounts)) {
+    addResource(inv, kind as 'fiber' | 'resin' | 'shard' | 'spark', n!);
+  }
+}
+
+describe('spend', () => {
+  it('subtracts an exact cost and returns a new object', () => {
+    const inv = createInventory();
+    grant(inv, { fiber: 5, resin: 2 });
+    const result = spend(inv, { fiber: 3, resin: 1 });
+    expect(result).not.toBeNull();
+    expect(result!.fiber).toBe(2);
+    expect(result!.resin).toBe(1);
+    expect(result).not.toBe(inv); // new object
+  });
+
+  it('returns null when any single resource is insufficient', () => {
+    const inv = createInventory();
+    grant(inv, { fiber: 2 });
+    expect(spend(inv, { fiber: 3 })).toBeNull();
+    expect(spend(inv, { fiber: 1, resin: 1 })).toBeNull(); // resin: 0 < 1
+  });
+
+  it('is pure — the input inventory is never mutated, on success or failure', () => {
+    const inv = createInventory();
+    grant(inv, { fiber: 5 });
+    const before = { ...inv, kits: { ...inv.kits } };
+
+    spend(inv, { fiber: 3 }); // affordable
+    expect(inv).toEqual(before);
+
+    spend(inv, { fiber: 999 }); // unaffordable
+    expect(inv).toEqual(before);
+  });
+});
+
+describe('canCraft — RP gating', () => {
+  it('gates a tier-1 recipe on RP even when resources are sufficient', () => {
+    const inv = createInventory();
+    grant(inv, { fiber: 8, resin: 4, shard: 6 }); // exact grapple cost
+    inv.rp = 24; // one below the 25 RP gate
+    expect(canCraft(inv, 'grapple', new Set())).toEqual({ ok: false, reason: 'rp' });
+  });
+
+  it('passes at exactly the RP threshold', () => {
+    const inv = createInventory();
+    grant(inv, { fiber: 8, resin: 4, shard: 6 });
+    inv.rp = 25;
+    expect(canCraft(inv, 'grapple', new Set())).toEqual({ ok: true });
+  });
+
+  it('tier-0 dart requires no RP', () => {
+    const inv = createInventory();
+    grant(inv, { fiber: 3, resin: 1 });
+    expect(canCraft(inv, 'dart', new Set()).ok).toBe(true);
+  });
+});
+
+describe('canCraft — cost math', () => {
+  it('reports insufficient cost when short by even one resource', () => {
+    const inv = createInventory();
+    grant(inv, { fiber: 3 }); // resin missing entirely
+    expect(canCraft(inv, 'dart', new Set())).toEqual({ ok: false, reason: 'cost' });
+  });
+
+  it('ok is true only once every cost resource is met', () => {
+    const inv = createInventory();
+    grant(inv, { fiber: 3, resin: 1 });
+    expect(canCraft(inv, 'dart', new Set())).toEqual({ ok: true });
+  });
+});
+
+describe('craft — dart batching', () => {
+  it('spends the exact recipe cost and grants darts in a batch of 4', () => {
+    const inv = createInventory();
+    grant(inv, { fiber: 3, resin: 1 });
+    const result = craft(inv, 'dart', new Set());
+    expect(result.inv.fiber).toBe(0);
+    expect(result.inv.resin).toBe(0);
+    expect(result.inv.darts).toBe(4);
+    expect(result.unlocked).toBeUndefined();
+    expect(result.kits).toBeUndefined();
+  });
+
+  it('crafting twice yields 8 darts total (each craft pays its own cost)', () => {
+    const inv = createInventory();
+    grant(inv, { fiber: 6, resin: 2 });
+    const first = craft(inv, 'dart', new Set());
+    const second = craft(first.inv, 'dart', new Set());
+    expect(second.inv.darts).toBe(8);
+    expect(second.inv.fiber).toBe(0);
+  });
+
+  it('throws if craft is called when unaffordable (UI must gate on canCraft)', () => {
+    const inv = createInventory();
+    expect(() => craft(inv, 'dart', new Set())).toThrow();
+  });
+});
+
+describe('craft — unlock once-only', () => {
+  it('crafting an unlock recipe returns its id in `unlocked` and does not mutate the unlocks set', () => {
+    const inv = createInventory();
+    grant(inv, { fiber: 8, resin: 4, shard: 6 });
+    inv.rp = 25;
+    const unlocks = new Set<string>();
+    const result = craft(inv, 'grapple', unlocks);
+    expect(result.unlocked).toBe('grapple');
+    expect(unlocks.size).toBe(0); // craft() is pure — caller must add it
+  });
+
+  it('a second craft attempt after the caller adds the unlock reports reason "owned"', () => {
+    const inv = createInventory();
+    grant(inv, { fiber: 8, resin: 4, shard: 6 });
+    inv.rp = 25;
+    const unlocks = new Set<string>();
+    const first = craft(inv, 'grapple', unlocks);
+    unlocks.add(first.unlocked!);
+
+    grant(inv, { fiber: 8, resin: 4, shard: 6 }); // pretend resources replenished
+    expect(canCraft(inv, 'grapple', unlocks)).toEqual({ ok: false, reason: 'owned' });
+    expect(() => craft(inv, 'grapple', unlocks)).toThrow();
+  });
+});
+
+describe('craft — deployable kits', () => {
+  it('increments the matching kit count and can be crafted repeatedly (no once-only gate)', () => {
+    const inv = createInventory();
+    inv.rp = 75;
+    grant(inv, { fiber: 8, shard: 4 }); // two zipline kits' worth
+    const unlocks = new Set<string>();
+
+    const first = craft(inv, 'zipline', unlocks);
+    expect(first.kits).toEqual({ zipline: 1, beacon: 0, drone: 0 });
+    expect(first.inv.kits).toEqual({ zipline: 1, beacon: 0, drone: 0 });
+
+    const second = craft(first.inv, 'zipline', unlocks);
+    expect(second.kits).toEqual({ zipline: 2, beacon: 0, drone: 0 });
+    expect(second.inv.fiber).toBe(0);
+    expect(second.inv.shard).toBe(0);
+  });
+});
+
+describe('full crafting tree — affordability walk', () => {
+  it('every recipe is craftable in tier order once granted its resources + RP, and the final state matches all unlocks/kits/darts', () => {
+    const inv = createInventory();
+    inv.rp = 200; // clears every tier's RP gate up front
+    grant(inv, { fiber: 39, resin: 21, shard: 36, spark: 16 }); // sum of every recipe's cost below
+
+    const unlocks = new Set<string>();
+    const order: RecipeId[] = RECIPES
+      .slice()
+      .sort((a, b) => a.tier - b.tier)
+      .map((r) => r.id);
+
+    let working = inv;
+    for (const id of order) {
+      const check = canCraft(working, id, unlocks);
+      expect(check).toEqual({ ok: true }); // fails loudly with the recipe id via toEqual diff
+      const result = craft(working, id, unlocks);
+      working = result.inv;
+      if (result.unlocked) unlocks.add(result.unlocked);
+    }
+
+    expect(unlocks).toEqual(new Set(['grapple', 'boots', 'glider', 'rocket']));
+    expect(working.kits).toEqual({ zipline: 1, beacon: 1, drone: 1 });
+    expect(working.darts).toBe(4);
+    expect(working.fiber).toBe(0);
+    expect(working.resin).toBe(0);
+    expect(working.shard).toBe(0);
+    expect(working.spark).toBe(0);
+  });
+});

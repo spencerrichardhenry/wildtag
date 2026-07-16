@@ -8,6 +8,7 @@ import type { GroundQuery } from './core/types.ts';
 import { Input } from './player/input.ts';
 import { PlayerController } from './player/controller.ts';
 import { createInventory, addResource } from './craft/inventory.ts';
+import { ScreenManager, createCraftScreen } from './ui/screens.ts';
 
 // ---------------------------------------------------------------------------
 // Boot scene: renderer, camera, environment (lighting/fog/sky/water) and the
@@ -63,11 +64,30 @@ const spawn = { x: 0, y: heightAt(0, 0), z: 0 };
 const input = new Input(canvas);
 const player = new PlayerController(camera, input, ground, spawn);
 
-// Placeholder inventory (Task 7 replaces this) accumulating harvested resources.
+// Inventory accumulating harvested resources + the crafting tree's currency
+// (RP), consumables (darts) and held deployable kits.
 const inventory = createInventory();
 
 // World clock (seconds of simulated time) driving resource-node respawns.
 let worldTime = 0;
+
+const hud = document.getElementById('hud');
+if (!hud) throw new Error('#hud not found');
+
+// ---------------------------------------------------------------------------
+// Screens (KeyC crafting, Esc to close): one overlay in #hud. While a screen
+// is open, pointer lock is released and the player controller is not
+// stepped (see `update()` below) — the sim otherwise keeps running (chunk
+// streaming, prop upkeep) so nothing pops in when the player closes the menu.
+// ---------------------------------------------------------------------------
+const screens = new ScreenManager(hud);
+screens.register(createCraftScreen(inventory, player.unlocks, screens));
+
+// Dev hook: `?screen=craft` forces the crafting screen open on boot — used
+// for the Task 7 verification screenshot; harmless to keep for future tasks.
+if (new URLSearchParams(window.location.search).get('screen') === 'craft') {
+  screens.open('craft');
+}
 
 // Reusable scratch for the camera look direction (harvest aim).
 const _look = new THREE.Vector3();
@@ -80,11 +100,10 @@ function cameraLook(): { x: number; y: number; z: number } {
 // Debug HUD: a tiny dev line (pos / stamina / grounded / biome), refreshed at
 // ~4 Hz. Replaced by the real HUD in Task 11.
 // ---------------------------------------------------------------------------
-const hud = document.getElementById('hud');
 const debugLine = document.createElement('div');
 debugLine.style.cssText =
   'position:fixed;top:8px;left:8px;font:12px monospace;color:#cfe;text-shadow:0 1px 2px #000;white-space:pre;';
-hud?.appendChild(debugLine);
+hud.appendChild(debugLine);
 
 function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
@@ -103,7 +122,8 @@ function updateHud(dt: number): void {
     `pos ${p.x.toFixed(1)}, ${p.y.toFixed(1)}, ${p.z.toFixed(1)}  ` +
     `stamina ${player.stamina.toFixed(0)}  ` +
     `${player.grounded ? 'grounded' : 'air'}  ${player.mode}  biome ${b}  ` +
-    `[fib ${inventory.fiber} res ${inventory.resin} shd ${inventory.shard} spk ${inventory.spark}]` +
+    `[fib ${inventory.fiber} res ${inventory.resin} shd ${inventory.shard} spk ${inventory.spark} ` +
+    `rp ${inventory.rp} darts ${inventory.darts}]` +
     prompt;
 }
 
@@ -111,20 +131,37 @@ function updateHud(dt: number): void {
 function update(dt: number): void {
   worldTime += dt;
 
-  // Feed the controller trees/rocks near the player before it integrates.
-  const prev = player.pos;
-  player.obstacles = props.getObstacles(prev.x, prev.z);
-  player.update(dt);
+  // While a screen (crafting) is open: don't step movement/collision, and
+  // ignore gameplay action edges (interact) — only the screen-toggle edges
+  // below still fire so KeyC/Esc can close it. Chunk/prop streaming keeps
+  // running so nothing pops in when the menu closes.
+  const paused = screens.isOpen();
+
+  if (!paused) {
+    // Feed the controller trees/rocks near the player before it integrates.
+    const prev = player.pos;
+    player.obstacles = props.getObstacles(prev.x, prev.z);
+    player.update(dt);
+  }
 
   const p = player.pos;
   chunks.update(p.x, p.z);
   props.update(p.x, p.z, worldTime);
 
-  // Harvest on the KeyF interact edge: nearest node in range + look cone.
   for (const action of input.consumeActions()) {
-    if (action.type !== 'interact') continue;
-    const gained = props.harvestAt(camera.position, cameraLook(), worldTime);
-    if (gained) addResource(inventory, gained, 1);
+    if (action.type === 'toggleC') {
+      screens.toggle('craft');
+      continue;
+    }
+    if (action.type === 'escape') {
+      screens.handleEscape();
+      continue;
+    }
+    if (paused) continue; // gameplay actions (interact/hotbar/lmb/rmb) freeze while a screen is open
+    if (action.type === 'interact') {
+      const gained = props.harvestAt(camera.position, cameraLook(), worldTime);
+      if (gained) addResource(inventory, gained, 1);
+    }
   }
 
   // Keep the sky dome centred on the camera so its gradient never parallaxes.

@@ -76,8 +76,8 @@ describe('withinHarvestCone', () => {
   });
 });
 
-describe('inventory stub', () => {
-  it('creates a zeroed inventory with the full key set', () => {
+describe('inventory', () => {
+  it('creates a zeroed inventory with the full key set (Task 7 expands: + kits)', () => {
     expect(createInventory()).toEqual({
       fiber: 0,
       resin: 0,
@@ -85,6 +85,7 @@ describe('inventory stub', () => {
       spark: 0,
       rp: 0,
       darts: 0,
+      kits: { zipline: 0, beacon: 0, drone: 0 },
     });
   });
 
