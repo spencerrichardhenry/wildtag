@@ -93,9 +93,23 @@ export function stepGrapple(
     length -= GRAPPLE.reelSpeed * dt;
     staminaCost = GRAPPLE.reelCostPerS * dt;
     if (length < GRAPPLE.minLength) {
+      // Reel completed: release with a lunge toward the anchor so the player
+      // arrives at the target instead of stalling minLength short of it.
+      const lx = g.anchor.x - s.pos.x;
+      const ly = g.anchor.y - s.pos.y;
+      const lz = g.anchor.z - s.pos.z;
+      const ld = Math.hypot(lx, ly, lz);
+      const lunged =
+        ld > 1e-6
+          ? {
+              x: vel.x + (lx / ld) * GRAPPLE.arrivalLunge,
+              y: vel.y + (ly / ld) * GRAPPLE.arrivalLunge,
+              z: vel.z + (lz / ld) * GRAPPLE.arrivalLunge,
+            }
+          : vel;
       return {
         g: { ...g, anchor: { ...g.anchor }, length, reeling: false, active: false },
-        vel,
+        vel: lunged,
         staminaCost,
       };
     }

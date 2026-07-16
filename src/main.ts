@@ -344,6 +344,8 @@ function bootGame(): void {
     renderer.render(scene, camera);
     const p = player.pos;
     const aimed = props.findHarvestable(camera.position, cameraLook(), worldTime);
+    // Latched-rope crosshair state (amber) so an attach is always legible.
+    hudUi.setCrosshairMode(player.isGrappling() ? 'grapple' : 'auto');
     hudUi.update({
       pos: p,
       yaw: input.yaw,

@@ -163,12 +163,20 @@ export const MOVE = {
 export const GRAPPLE = {
   /** Max fire distance (m); hits beyond this are rejected. */
   maxRange: 45,
-  /** Rope shorten rate while reeling (m/s). */
-  reelSpeed: 12,
+  /** Rope shorten rate while reeling (m/s) — well above sprint (9.5) so the
+   *  pull reads as dramatically faster than running. */
+  reelSpeed: 24,
   /** Stamina drained per second while reeling. */
-  reelCostPerS: 15,
+  reelCostPerS: 10,
   /** Auto-release once the rope reels below this length (m). */
-  minLength: 2.5,
+  minLength: 1.5,
+  /** Velocity toward the anchor (m/s) added when a reel completes (rope
+   *  reaches minLength) so the player actually arrives at the target
+   *  instead of stalling short of it. */
+  arrivalLunge: 8,
+  /** Terrain anchors are lifted this far (m) above the surface hit so the
+   *  hook mesh and rope end stay visible instead of half-burying. */
+  anchorLift: 0.45,
   /** Spring stiffness: inward accel (m/s²) per metre of overstretch. */
   stiffness: 35,
   /** Fraction of the remaining radial velocity damped per step. */

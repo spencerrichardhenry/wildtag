@@ -102,7 +102,12 @@ export class PlayerController {
    * within maxRange, or null. Anchor spheres win ties only if genuinely nearer.
    */
   private grappleTarget(origin: Vec3, dir: Vec3): Vec3 | null {
-    const terrain = raycastTerrain(origin, dir, this.ground.heightAt, GRAPPLE.maxRange);
+    const rawTerrain = raycastTerrain(origin, dir, this.ground.heightAt, GRAPPLE.maxRange);
+    // Lift terrain anchors slightly off the surface so the hook and rope end
+    // stay visible instead of half-burying in the ground.
+    const terrain = rawTerrain
+      ? { x: rawTerrain.x, y: rawTerrain.y + GRAPPLE.anchorLift, z: rawTerrain.z }
+      : null;
     const anchor = this.anchors?.raycastAnchors(origin, dir, GRAPPLE.maxRange) ?? null;
     if (!terrain) return anchor ? anchor.point : null;
     if (!anchor) return terrain;
