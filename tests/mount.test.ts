@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { mulberry32 } from '../src/core/rng.ts';
 import { bond, type Roster } from '../src/critters/roster.ts';
-import { canMount, canSummon, mountStep, setActiveMount, MOUNT } from '../src/player/mount.ts';
+import { MOUNT } from '../src/core/constants.ts';
+import { canMount, canSummon, mountStep, setActiveMount } from '../src/player/mount.ts';
 import type { GroundQuery, MoveInput, MoveState } from '../src/core/types.ts';
 
 // ---------------------------------------------------------------------------
@@ -90,6 +91,11 @@ describe('canMount', () => {
   it('is true for a rideable species with the Saddle owned', () => {
     expect(canMount(new Set(['saddle']), rideable)).toBe(true);
   });
+
+  it('is false for an entry on farm duty even with a saddle (statuses exclusive)', () => {
+    const farmed = { ...rideable, status: { kind: 'farm', plotId: 1 } as const };
+    expect(canMount(new Set(['saddle']), farmed)).toBe(false);
+  });
 });
 
 describe('canSummon', () => {
@@ -128,6 +134,18 @@ describe('setActiveMount', () => {
     r = setActiveMount(r, 1);
     const after = setActiveMount(r, 999);
     expect(after).toBe(r);
+    expect(after.find((e) => e.id === 1)!.status).toEqual({ kind: 'mount' });
+  });
+
+  it('refuses an entry on farm duty — plot assignment and current mount both survive', () => {
+    let r = rosterWith({ id: 1, speciesId: 'prismhorse' }, { id: 2, speciesId: 'prismhorse' });
+    r = setActiveMount(r, 1);
+    const farmed = r.map((e) =>
+      e.id === 2 ? { ...e, status: { kind: 'farm', plotId: 3 } as const } : e,
+    );
+    const after = setActiveMount(farmed, 2);
+    expect(after).toBe(farmed); // input returned unchanged
+    expect(after.find((e) => e.id === 2)!.status).toEqual({ kind: 'farm', plotId: 3 });
     expect(after.find((e) => e.id === 1)!.status).toEqual({ kind: 'mount' });
   });
 });

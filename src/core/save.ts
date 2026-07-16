@@ -251,6 +251,9 @@ export function decodeSave(json: string): SaveV1 | null {
     if (o.barter !== undefined && o.barter !== null) sanitized.barter = barter;
     if (o.pens !== undefined && o.pens !== null) sanitized.pens = pens;
     if (o.rewards !== undefined && o.rewards !== null) sanitized.rewards = rewards;
+    // A `mount: null` was written as "no active mount" — strip it (absent),
+    // never surface a null (the spread above would otherwise carry it through).
+    delete sanitized.mount;
     if (mount !== undefined) sanitized.mount = mount;
     return sanitized as unknown as SaveV1;
   } catch {

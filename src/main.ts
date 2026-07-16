@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { CAMERA, MAX_FRAME_DT, SIM_DT, STRUCTURES, WORLD_SEED } from './core/constants.ts';
+import { CAMERA, MAX_FRAME_DT, MOUNT, SIM_DT, STRUCTURES, WORLD_SEED } from './core/constants.ts';
 import { setupEnvironment } from './world/environment.ts';
 import { ChunkManager } from './world/chunks.ts';
 import { PropManager } from './world/props.ts';
@@ -18,7 +18,7 @@ import { speciesById } from './critters/species.ts';
 import { mulberry32 } from './core/rng.ts';
 import { bond, release, byId, type RosterEntry } from './critters/roster.ts';
 import { MountSystem } from './player/mount-system.ts';
-import { canMount, canSummon, setActiveMount, MOUNT } from './player/mount.ts';
+import { canMount, canSummon, setActiveMount } from './player/mount.ts';
 import { DartSystem } from './tracking/darts.ts';
 import { updateTracking } from './tracking/tracker.ts';
 import { toast } from './ui/toasts.ts';
@@ -252,7 +252,7 @@ function bootGame(): void {
   // Prismhorse mount (Haven V6): owns the single active-mount actor + ride
   // state. Set from the roster (Mount button) or a barter'd Saddle; ridden via
   // KeyV. The pure kinematics + eligibility gates live in player/mount.ts.
-  const mounts = new MountSystem(scene, ground);
+  const mounts = new MountSystem(scene, ground, camera);
 
   // -------------------------------------------------------------------------
   // Save/load (Task 14): apply a stored save (if any) BEFORE the world primes
@@ -593,6 +593,7 @@ function bootGame(): void {
     const p = player.pos;
     const dist = Math.hypot(ap.x - p.x, ap.z - p.z);
     if (dist <= MOUNT.mountRange) {
+      if (placement.active) placement.cancel(); // no placement ghost mid-ride
       mounts.startRide(player);
       toast(`Riding ${nick}!`);
     } else if (canSummon(getRewards())) {
@@ -621,6 +622,7 @@ function bootGame(): void {
       if (!entry) return false;
       activateMount(entry.id);
     }
+    if (placement.active) placement.cancel(); // no placement ghost mid-ride
     return mounts.startRide(player);
   }
 

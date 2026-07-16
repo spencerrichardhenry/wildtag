@@ -1,8 +1,8 @@
 import * as THREE from 'three';
-import { GRAPPLE, INPUT, MOVE, TERRAIN } from '../core/constants.ts';
+import { GRAPPLE, INPUT, MOUNT, MOVE, TERRAIN } from '../core/constants.ts';
 import type { GroundQuery, MoveInput, MoveState, Vec3 } from '../core/types.ts';
 import { initialMoveState, stepMovement } from './movement.ts';
-import { MOUNT, mountStep } from './mount.ts';
+import { mountStep } from './mount.ts';
 import { resolveCollision, type Obstacle } from './collision.ts';
 import type { Input } from './input.ts';
 import {

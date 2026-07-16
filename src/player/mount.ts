@@ -1,7 +1,8 @@
-import { MOVE } from '../core/constants.ts';
+import { MOUNT, MOVE } from '../core/constants.ts';
 import { speciesById } from '../critters/species.ts';
 import type { RosterEntry, Roster } from '../critters/roster.ts';
 import type { GroundQuery, MoveInput, MoveState } from '../core/types.ts';
+
 
 // ---------------------------------------------------------------------------
 // Prismhorse mount core (Haven V6). Pure, three-free: eligibility gates, the
@@ -20,47 +21,15 @@ import type { GroundQuery, MoveInput, MoveState } from '../core/types.ts';
 // ---------------------------------------------------------------------------
 
 /**
- * Mount tuning (m, m/s, m/s², s). Kept here (not core/constants.ts) so the whole
- * mount feature is one self-contained module — the controller imports MOUNT from
- * here. Turning is camera-yaw driven exactly like walking (no separate steer
- * rate); `turnRate` only smooths the *model's* visual facing toward the camera.
- */
-export const MOUNT = {
-  /** Target ground speed while ridden (m/s). Planar accel converges here. */
-  speed: 15,
-  /** Planar acceleration toward the target (m/s²). */
-  accel: 30,
-  /** Vertical takeoff speed for a mount jump (m/s). */
-  jumpVel: 11,
-  /** Rad/s the actor model lerps its yaw toward the camera (visual only). */
-  turnRate: 7,
-  /** Camera is raised this far (m) above the normal eye height while riding. */
-  eyeHeightBonus: 1.1,
-  /** The mount refuses to move into terrain below this height (m) — deep water. */
-  waterBlockDepth: -0.5,
-  /** Hold Space this long (s) while riding to dismount (KeyV also dismounts). */
-  dismountHold: 0.5,
-  /** Walk within this distance (m) of your idle mount to mount up with KeyV. */
-  mountRange: 4,
-  /** While riding, the model sits this far (m) ahead of the camera along the
-   *  heading — you ride the rear, its crystal body + skittering legs extend
-   *  forward into view rather than enveloping the eye. */
-  rideForwardOffset: 0.9,
-  /** The idle actor loosely follows the player and never lags beyond this (m). */
-  followRange: 30,
-  /** Idle-follow ground speed (m/s) — a lazy trail behind the player. */
-  followSpeed: 7,
-  /** Standoff distance (m) the idle actor keeps from the player while following. */
-  followStandoff: 3,
-} as const;
-
-/**
  * Can `entry` be set as the active mount? Requires the Saddle reward AND a
- * rideable species (only the prismhorse). `undefined` entry (nothing selected)
- * is never mountable. Pure — `rewards` is the owned-reward id set.
+ * rideable species (only the prismhorse) AND the entry not being on farm duty
+ * (unassign it from its plot first — the two statuses are exclusive).
+ * `undefined` entry (nothing selected) is never mountable. Pure — `rewards` is
+ * the owned-reward id set.
  */
 export function canMount(rewards: Set<string>, entry: RosterEntry | undefined): boolean {
   if (!entry) return false;
+  if (entry.status.kind === 'farm') return false;
   if (!rewards.has('saddle')) return false;
   return speciesById(entry.speciesId)?.rideable === true;
 }
@@ -74,10 +43,13 @@ export function canSummon(rewards: Set<string>): boolean {
  * Set the roster entry `id` as the single active mount: it becomes
  * status 'mount' and any OTHER entry currently on mount duty reverts to idle
  * (only one mount at a time). Pure — returns a NEW roster; if `id` isn't on the
- * roster the input is returned unchanged (never silently drops an existing mount).
+ * roster, or the entry is on farm duty (statuses are exclusive — unassign
+ * first), the input is returned unchanged (never silently drops an existing
+ * mount or a plot assignment).
  */
 export function setActiveMount(roster: Roster, id: number): Roster {
-  if (!roster.some((e) => e.id === id)) return roster;
+  const target = roster.find((e) => e.id === id);
+  if (!target || target.status.kind === 'farm') return roster;
   return roster.map((e) => {
     if (e.id === id) {
       return e.status.kind === 'mount' ? e : { ...e, status: { kind: 'mount' } };

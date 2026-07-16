@@ -717,6 +717,54 @@ export const VILLAGE = {
 } as const;
 
 /**
+ * Prismhorse mount tuning (Haven V6) — m, m/s, m/s², s. Consumed by the pure
+ * ride core (`src/player/mount.ts` mountStep/canMount) and the actor owner
+ * (`src/player/mount-system.ts`). Turning is camera-yaw driven exactly like
+ * walking (no separate steer rate); `turnRate` only smooths the *model's*
+ * visual facing toward the camera yaw.
+ */
+export const MOUNT = {
+  /** Target ground speed while ridden (m/s). Planar accel converges here. */
+  speed: 15,
+  /** Planar acceleration toward the target (m/s²). */
+  accel: 30,
+  /** Vertical takeoff speed for a mount jump (m/s). */
+  jumpVel: 11,
+  /** Rad/s the actor model lerps its yaw toward the camera (visual only). */
+  turnRate: 7,
+  /** Camera is raised this far (m) above the normal eye height while riding. */
+  eyeHeightBonus: 1.1,
+  /** The mount refuses to move into terrain below this height (m) — deep water. */
+  waterBlockDepth: -0.5,
+  /** Hold Space this long (s) while riding to dismount (KeyV also dismounts). */
+  dismountHold: 0.5,
+  /** Walk within this distance (m) of your idle mount to mount up with KeyV. */
+  mountRange: 4,
+  /** The idle actor loosely follows the player and never lags beyond this (m). */
+  followRange: 30,
+  /** Idle-follow ground speed (m/s) — a lazy trail behind the player. */
+  followSpeed: 7,
+  /** Standoff distance (m) the idle actor keeps from the player while following. */
+  followStandoff: 3,
+  /**
+   * While riding, the model sits this far (m) ahead of the camera along the
+   * heading: the rider sits above/behind mid-body looking over the head. Must
+   * clear the model's rearward rump/dorsal-ridge crystals (local z −0.15..−0.78
+   * at radius ~0.35–0.6, ×1.1 max individual scale) so the crest never wraps
+   * the eye.
+   */
+  rideForwardOffset: 2.0,
+  /**
+   * Camera-proximity fade net: any mount mesh whose origin comes within
+   * `fadeFar` of the camera fades out (opacity lerp, fully transparent by
+   * `fadeNear`); originals restored on dismount. Keeps the view legible even
+   * when terrain/turning momentarily swings a crystal through the eye.
+   */
+  fadeNear: 0.35,
+  fadeFar: 0.8,
+} as const;
+
+/**
  * Player starting loadout (Task 14). Applied by main.ts only on a brand-new
  * game (no valid save present, or `?fresh=1`) — a loaded save's own inventory
  * counts always win, and `createInventory()` itself stays a pure zero ctor

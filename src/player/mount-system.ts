@@ -1,12 +1,11 @@
 import * as THREE from 'three';
-import { WORLD_SEED } from '../core/constants.ts';
+import { MOUNT, WORLD_SEED } from '../core/constants.ts';
 import type { GroundQuery, Vec3 } from '../core/types.ts';
 import { mulberry32 } from '../core/rng.ts';
 import { buildCritterModel, type CritterParts } from '../critters/models.ts';
 import { animateCritter } from '../critters/animation.ts';
 import type { PlayerController } from './controller.ts';
 import type { Input } from './input.ts';
-import { MOUNT } from './mount.ts';
 import type { MountPersist } from '../core/save.ts';
 import type { Roster } from '../critters/roster.ts';
 
@@ -31,21 +30,35 @@ interface Actor {
   nickname: string;
   /** Smoothed visual yaw of the model (lerps toward the movement/camera yaw). */
   yaw: number;
+  /** Per-mesh material handles for the camera-proximity ride fade. */
+  fades: FadeEntry[];
+}
+
+/** One mesh's material + authored opacity, for the camera-proximity fade. */
+interface FadeEntry {
+  mesh: THREE.Mesh;
+  mat: THREE.Material & { opacity: number; transparent: boolean };
+  baseOpacity: number;
+  baseTransparent: boolean;
 }
 
 export class MountSystem {
   private readonly scene: THREE.Scene;
   private readonly ground: GroundQuery;
+  private readonly camera: THREE.Camera;
   private actor: Actor | null = null;
   private riding = false;
   /** Seconds Space has been held while riding (hold ≥ dismountHold to get off). */
   private spaceHeldFor = 0;
   /** Absolute animation clock (s). */
   private t = 0;
+  /** Scratch world-position vector for the fade distance test (no per-frame alloc). */
+  private readonly _wp = new THREE.Vector3();
 
-  constructor(scene: THREE.Scene, ground: GroundQuery) {
+  constructor(scene: THREE.Scene, ground: GroundQuery, camera: THREE.Camera) {
     this.scene = scene;
     this.ground = ground;
+    this.camera = camera;
   }
 
   /** True while an active-mount actor exists in the world. */
@@ -88,6 +101,16 @@ export class MountSystem {
     const y = this.ground.heightAt(pos.x, pos.z);
     built.group.position.set(pos.x, y, pos.z);
     this.scene.add(built.group);
+    // Collect per-mesh material handles for the camera-proximity ride fade.
+    // Model materials are per-part instances (jittered colours), so mutating
+    // opacity here never bleeds into wild critters.
+    const fades: FadeEntry[] = [];
+    built.group.traverse((obj) => {
+      const mesh = obj as THREE.Mesh;
+      if (!mesh.isMesh || Array.isArray(mesh.material)) return;
+      const mat = mesh.material as FadeEntry['mat'];
+      fades.push({ mesh, mat, baseOpacity: mat.opacity, baseTransparent: mat.transparent });
+    });
     this.actor = {
       group: built.group,
       parts: built.parts,
@@ -95,6 +118,7 @@ export class MountSystem {
       speciesId: entry.speciesId,
       nickname: entry.nickname,
       yaw: 0,
+      fades,
     };
   }
 
@@ -121,11 +145,38 @@ export class MountSystem {
     return true;
   }
 
+  /**
+   * Camera-proximity fade net (riding only): any mesh whose origin sits within
+   * MOUNT.fadeFar of the eye fades toward transparent (fully gone by fadeNear),
+   * so a crystal swinging through the camera never blocks the view. Linear
+   * opacity lerp per mesh; originals restored by `restoreFade` on dismount.
+   */
+  private applyRideFade(): void {
+    if (!this.actor) return;
+    const eye = this.camera.position;
+    for (const f of this.actor.fades) {
+      const d = f.mesh.getWorldPosition(this._wp).distanceTo(eye);
+      const k = Math.min(1, Math.max(0, (d - MOUNT.fadeNear) / (MOUNT.fadeFar - MOUNT.fadeNear)));
+      f.mat.opacity = f.baseOpacity * k;
+      f.mat.transparent = k < 1 ? true : f.baseTransparent;
+    }
+  }
+
+  /** Restore every material's authored opacity/transparency (dismount/teardown). */
+  private restoreFade(): void {
+    if (!this.actor) return;
+    for (const f of this.actor.fades) {
+      f.mat.opacity = f.baseOpacity;
+      f.mat.transparent = f.baseTransparent;
+    }
+  }
+
   /** Dismount: park the actor where you rode and step the player beside it. */
   dismount(controller: PlayerController): void {
     if (!this.riding || !this.actor) return;
     this.riding = false;
     this.spaceHeldFor = 0;
+    this.restoreFade();
     const p = controller.pos;
     const y = this.ground.heightAt(p.x, p.z);
     this.actor.group.position.set(p.x, y, p.z);
@@ -174,6 +225,9 @@ export class MountSystem {
       const v = controller.vel;
       const speed = Math.hypot(v.x, v.z);
       animateCritter(this.actor.parts, speed, this.t, dt, this.actor.speciesId);
+      // After posing: fade any mesh that ended up hugging the camera.
+      this.actor.group.updateMatrixWorld();
+      this.applyRideFade();
       return;
     }
 
