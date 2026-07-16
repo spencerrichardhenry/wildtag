@@ -3,6 +3,7 @@ import { PLAYER_START } from './constants.ts';
 import type { Inventory } from '../craft/inventory.ts';
 import type { StructuresSave } from '../structures/placement.ts';
 import type { RosterEntry } from '../critters/roster.ts';
+import type { FarmState } from '../farm/farm.ts';
 
 // ---------------------------------------------------------------------------
 // Save v1 (Task 14). Plain JSON, version-guarded. `encodeSave`/`decodeSave`
@@ -38,6 +39,12 @@ export interface SaveV1 {
    * Haven V7 bumps it.
    */
   roster?: RosterEntry[];
+  /**
+   * Haven V5: farm plots (unlock flags / assignments / hoppers / progress).
+   * Optional + shape-guarded (a malformed or absent farm is simply dropped, so
+   * pre-Haven-V5 saves load losslessly). The save version stays 1 until V7.
+   */
+  farm?: FarmState;
 }
 
 export const SAVE_KEY = 'wildtag-save-v1';
@@ -88,6 +95,44 @@ function isRosterEntry(r: unknown): boolean {
   if (st.kind === 'idle' || st.kind === 'mount') return true;
   if (st.kind === 'farm' && Number.isFinite(st.plotId)) return true;
   return false;
+}
+
+/**
+ * Shape guard for the optional farm block (Haven V5). A valid farm is
+ * `{ plots: Plot[] }` where each plot has a finite id, boolean `unlocked`,
+ * `assigned` of number|null, a plain-object hopper of finite counts, and finite
+ * progress. Anything else returns undefined so the caller drops the field and
+ * rebuilds a fresh farm — a malformed farm never rejects the whole save.
+ */
+function parseFarm(v: unknown): FarmState | undefined {
+  if (!v || typeof v !== 'object') return undefined;
+  const plots = (v as Record<string, unknown>).plots;
+  if (!Array.isArray(plots)) return undefined;
+  const out: FarmState = { plots: [] };
+  for (const raw of plots) {
+    if (!raw || typeof raw !== 'object') return undefined;
+    const p = raw as Record<string, unknown>;
+    if (!Number.isFinite(p.id)) return undefined;
+    if (typeof p.unlocked !== 'boolean') return undefined;
+    if (!(p.assigned === null || Number.isFinite(p.assigned))) return undefined;
+    if (!Number.isFinite(p.progress)) return undefined;
+    if (!p.hopper || typeof p.hopper !== 'object') return undefined;
+    const hopper: FarmState['plots'][number]['hopper'] = {};
+    for (const k of ['fiber', 'resin', 'shard', 'spark'] as const) {
+      const n = (p.hopper as Record<string, unknown>)[k];
+      if (n === undefined) continue;
+      if (typeof n !== 'number' || !Number.isFinite(n) || n < 0) return undefined;
+      hopper[k] = n;
+    }
+    out.plots.push({
+      id: p.id as number,
+      unlocked: p.unlocked as boolean,
+      assigned: (p.assigned as number | null) ?? null,
+      hopper,
+      progress: p.progress as number,
+    });
+  }
+  return out;
 }
 
 /**
@@ -153,6 +198,8 @@ export function decodeSave(json: string): SaveV1 | null {
       if (!Array.isArray(o.roster)) return null;
       roster = o.roster.filter(isRosterEntry) as RosterEntry[];
     }
+    // Farm (Haven V5): optional, shape-guarded, dropped if malformed.
+    const farm = parseFarm(o.farm);
     // Sanitize structure elements: drop malformed entries, keep valid siblings
     // (and the rest of the save) so a partly-corrupt save never crashes boot.
     const sanitized = {
@@ -163,6 +210,7 @@ export function decodeSave(json: string): SaveV1 | null {
         drones: structures.drones.filter(isDroneEntry),
       },
       roster,
+      farm,
     };
     return sanitized as unknown as SaveV1;
   } catch {

@@ -715,6 +715,55 @@ export const VILLAGE = {
 } as const;
 
 /**
+ * Farm (Task V5). Pure production/aura/hopper math lives in `src/farm/farm.ts`;
+ * these are its only tuning knobs (project convention: never inline). Plots are
+ * 2 at baseline + 2 per Plot Deed (spec §4), capped at `maxPlots`. An assigned
+ * produce-role critter accrues `producePeriod` seconds of progress (scaled by
+ * adjacent speed auras) then drops `amount` of its resource into the plot hopper
+ * (total capped at `hopperCap`, +`bumblewhaleHopperBonus` when an adjacent plot
+ * hosts a bumblewhale). Adjacency is plot index ±1 among unlocked plots.
+ */
+export const FARM = {
+  /** Plots unlocked with zero deeds (spec §4: "2 plots at start"). */
+  basePlots: 2,
+  /** Extra plots unlocked per Plot Deed reward. */
+  plotsPerDeed: 2,
+  /** Hard cap on total farm plots. */
+  maxPlots: 6,
+  /** Seconds of accrued (speed-scaled) progress per production cycle. */
+  producePeriod: 90,
+  /** Max total items a single plot hopper holds before production stalls. */
+  hopperCap: 10,
+  /** Cap on the summed speed-aura bonus (spec §4: "cap +50%"). */
+  speedCapBonus: 0.5,
+  /** Hopper-cap bump granted by each adjacent bumblewhale (hopperCap aura). */
+  bumblewhaleHopperBonus: 1,
+  // --- visuals (farm/visuals.ts) --------------------------------------------
+  /** Scale applied to the buildCritterModel puppet standing on an assigned plot. */
+  puppetScale: 0.7,
+  /** Hopper indicator: one small cube per this many items in the hopper. */
+  itemsPerCube: 2,
+  /** Hopper indicator cube edge (m) and vertical gap between stacked cubes. */
+  cubeSize: 0.22,
+  cubeGap: 0.28,
+  /** Height (m) the hopper cube stack floats above a plot corner. */
+  hopperFloat: 1.4,
+  /** Horizontal distance (m) to harvest a plot hopper with F. */
+  collectRange: 3,
+  /** Faded "deed" sign for a locked plot: post height + board size (m). */
+  signPostH: 1.1,
+  signBoardW: 0.7,
+  signBoardH: 0.5,
+  /** Per-resource hopper-cube colours (hex), matching the world palette. */
+  cubeColors: {
+    fiber: 0xbcae6b,
+    resin: 0xe0932a,
+    shard: 0xb07fe0,
+    spark: 0xffe06a,
+  },
+} as const;
+
+/**
  * Player starting loadout (Task 14). Applied by main.ts only on a brand-new
  * game (no valid save present, or `?fresh=1`) — a loaded save's own inventory
  * counts always win, and `createInventory()` itself stays a pure zero ctor
