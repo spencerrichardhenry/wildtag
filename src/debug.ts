@@ -39,6 +39,8 @@ export interface DebugDeps {
   grantReward(id: string): void;
   save(): void;
   resetSave(): void;
+  /** Live farm state snapshot (spec §6 __game.farmState()). */
+  farmState(): unknown;
 }
 
 export interface GameDebugHandle {
@@ -56,6 +58,7 @@ export interface GameDebugHandle {
   bond(id: number): boolean;
   fulfillRequest(npcId: string): boolean;
   grantReward(id: string): void;
+  farmState(): unknown;
   setTimeScale(f: number): void;
   listCritters(): CritterView[];
   save(): void;
@@ -174,6 +177,11 @@ export function buildDebugHandle(deps: DebugDeps): GameDebugHandle {
     /** Grant reward `id` (applies its effect: bundles add resources, etc.). */
     grantReward(id: string): void {
       deps.grantReward(id);
+    },
+
+    /** Live farm state (plots / assignments / hoppers / progress). */
+    farmState(): unknown {
+      return deps.farmState();
     },
 
     /** Multiply the fixed-step accumulator's dt feed (clamped 0.1..16). */

@@ -18,6 +18,8 @@ import type { ScreenDef, ScreenManager } from './screens.ts';
 export interface RosterActions {
   /** Assign a bonded critter to a farm plot (V5). Undefined ⇒ disabled. */
   assign?: (id: number) => void;
+  /** Pull a bonded critter off its farm plot (V5). Shown when status is farm. */
+  unassign?: (id: number) => void;
   /** Set a rideable bonded critter as the active mount (V6). Undefined ⇒ disabled. */
   mount?: (id: number) => void;
 }
@@ -39,7 +41,7 @@ function statusText(entry: RosterEntry): string {
     case 'idle':
       return 'Idle';
     case 'farm':
-      return `Farm plot ${entry.status.plotId}`;
+      return `Farm plot ${entry.status.plotId + 1}`;
     case 'mount':
       return 'Mount';
   }
@@ -182,16 +184,28 @@ export function createRosterScreen(deps: {
     const btns = document.createElement('div');
     btns.className = 'wt-roster-actions';
 
-    // Assign — disabled until Haven V5 provides an `assign` handler.
+    // Assign / Unassign — a farmed critter shows Unassign; an idle one Assign.
+    // Both disabled until Haven V5 provides the handlers.
+    const farmed = entry.status.kind === 'farm';
     const assign = document.createElement('button');
     assign.className = 'wt-roster-btn';
     assign.type = 'button';
-    assign.textContent = 'Assign';
-    if (actions.assign) {
-      assign.addEventListener('click', () => actions.assign!(entry.id));
+    if (farmed) {
+      assign.textContent = 'Unassign';
+      if (actions.unassign) {
+        assign.addEventListener('click', () => actions.unassign!(entry.id));
+      } else {
+        assign.disabled = true;
+        assign.title = '(farm coming soon)';
+      }
     } else {
-      assign.disabled = true;
-      assign.title = '(farm coming soon)';
+      assign.textContent = 'Assign';
+      if (actions.assign) {
+        assign.addEventListener('click', () => actions.assign!(entry.id));
+      } else {
+        assign.disabled = true;
+        assign.title = '(farm coming soon)';
+      }
     }
     btns.appendChild(assign);
 

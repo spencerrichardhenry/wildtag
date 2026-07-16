@@ -49,6 +49,18 @@ import {
   getRewards,
 } from './village/rewards.ts';
 import { PenSystem } from './village/pens.ts';
+import {
+  createFarm,
+  setDeeds,
+  assign as assignPlot,
+  unassignEntry,
+  firstFreePlot,
+  collect as collectPlot,
+  tick as tickFarm,
+  type FarmState,
+} from './farm/farm.ts';
+import { FarmVisuals } from './farm/visuals.ts';
+import { setRosterActions } from './ui/roster.ts';
 
 // ---------------------------------------------------------------------------
 // Boot scene: renderer, camera, environment (lighting/fog/sky/water) and the
@@ -168,6 +180,20 @@ function bootGame(): void {
     return st;
   }
 
+  // Farm (Haven V5): plots at the farmhouse; bonded critters produce their
+  // species resource into per-plot hoppers on a timer. Unlocked plot count is
+  // 2 + 2×(Plot Deeds owned) — deeds live on the barter reward track (V4).
+  const getDeedCount = (): number =>
+    grantedRewards().filter((r) => r === 'plotDeed').length;
+  let farm: FarmState = createFarm(getDeedCount());
+  let lastDeeds = getDeedCount();
+  const farmVisuals = new FarmVisuals(scene);
+
+  /** Replace a roster entry's status (immutably, so the screen re-reads it). */
+  function setEntryStatus(id: number, status: RosterEntry['status']): void {
+    roster = roster.map((e) => (e.id === id ? { ...e, status } : e));
+  }
+
   // World clock (seconds of simulated time) driving resource-node respawns.
   let worldTime = 0;
 
@@ -280,6 +306,10 @@ function bootGame(): void {
         });
       }
       pens.load(loaded.pens ?? []);
+      // Farm: restore saved plots, re-deriving unlock flags from the live deed
+      // count (a fresh farm if the save predates V5).
+      farm = loaded.farm ? setDeeds(loaded.farm, getDeedCount()) : createFarm(getDeedCount());
+      lastDeeds = getDeedCount();
       deserializeStructures(loaded.structures, ziplines, drones);
       player.teleport(loaded.player.pos.x, loaded.player.pos.y, loaded.player.pos.z);
       input.yaw = loaded.player.yaw;
@@ -295,6 +325,7 @@ function bootGame(): void {
       roster = [];
       barterStates.clear();
       resetRewards();
+      farm = createFarm(getDeedCount());
       critters.importRegistry({});
       ziplines.deserialize([]);
       drones.deserialize([]);
@@ -343,6 +374,7 @@ function bootGame(): void {
       })),
       pens: pens.serialize(),
       rewards: [...grantedRewards()],
+      farm: { plots: farm.plots.map((p) => ({ ...p, hopper: { ...p.hopper } })) },
     };
   }
 
@@ -441,6 +473,7 @@ function bootGame(): void {
     const p = player.pos;
     const rx = p.x + 3;
     const rz = p.z;
+    farm = unassignEntry(farm, id); // free any plot it worked
     critters.debugSpawn(entry.speciesId, { x: rx, y: heightAt(rx, rz), z: rz });
     toast(`${entry.nickname} released to the wild`);
   }
@@ -535,6 +568,29 @@ function bootGame(): void {
   lantern.visible = false;
   scene.add(lantern);
 
+  // Roster screen actions (Haven V5): Assign sends an idle critter to the first
+  // free unlocked plot; Unassign pulls a farmed critter back to idle. (Mount is
+  // still Task V6's job — left disabled.)
+  setRosterActions({
+    assign: (id: number) => {
+      const free = firstFreePlot(farm);
+      const entry = byId(roster, id);
+      if (free === null) {
+        toast('No free farm plots — earn Plot Deeds to expand the farm');
+        return;
+      }
+      farm = assignPlot(farm, free, id);
+      setEntryStatus(id, { kind: 'farm', plotId: free });
+      toast(`${entry?.nickname ?? 'Critter'} → farm plot ${free + 1}`);
+      screens.refresh();
+    },
+    unassign: (id: number) => {
+      farm = unassignEntry(farm, id);
+      setEntryStatus(id, { kind: 'idle' });
+      screens.refresh();
+    },
+  });
+
   /** Advance simulation state by a fixed timestep. Systems hook in here. */
   function update(dt: number): void {
     worldTime += dt;
@@ -573,6 +629,18 @@ function bootGame(): void {
     critters.update(dt, p);
     npcs.update(dt, p);
     pens.update(dt, worldTime);
+
+    // Farm production (Haven V5): assigned critters accrue toward their hoppers.
+    // Frozen while a screen is open (parity with tracking — no free progress).
+    // Re-derive plot unlocks if the deed count changed (V4 grants deeds).
+    if (!paused) {
+      const deeds = getDeedCount();
+      if (deeds !== lastDeeds) {
+        farm = setDeeds(farm, deeds);
+        lastDeeds = deeds;
+      }
+      farm = tickFarm(farm, roster, speciesById, dt);
+    }
 
     // Advance darts in flight and tracking progress for tagged critters. On a
     // Link the tracker grants rewards; onLink plays the chime + toast here.
@@ -640,6 +708,17 @@ function bootGame(): void {
         }
         // BOND: aiming at a Linked critter (within trackRadius) with a charm.
         if (tryBondInteract()) continue;
+        // FARM: standing by a plot whose hopper holds something → collect it.
+        const cp = farmVisuals.nearestCollectable(farm, player.pos);
+        if (cp !== null) {
+          const res = collectPlot(farm, cp);
+          farm = res.farm;
+          for (const g of res.gained) {
+            addResource(inventory, g.resource, g.n);
+            toast(`+${g.n} ${g.resource}`);
+          }
+          continue;
+        }
         // F near a post (mount/recall) or under a drone (recall) is owned by the
         // structure systems — don't also harvest there.
         if (!ziplines.nearMount(player.pos) && !drones.nearRecall(player.pos)) {
@@ -672,6 +751,7 @@ function bootGame(): void {
     } else {
       lantern.visible = false;
     }
+    farmVisuals.update(farm, roster, worldTime, SIM_DT);
     renderer.render(scene, camera);
     npcs.updateLabels(camera);
     const p = player.pos;
@@ -856,6 +936,7 @@ function bootGame(): void {
     grantReward: (id: string) => grantRewardById(id),
     save: doSave,
     resetSave,
+    farmState: () => farm,
   });
 
   // Verification aid (Haven V4): expose deterministic village anchors + a couple
