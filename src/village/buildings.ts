@@ -240,20 +240,27 @@ export function villageObstacles(): Obstacle[] {
   const layout = villageLayout();
   const out: Obstacle[] = [];
   for (const b of layout.buildings) {
+    // Full-footprint coverage with circles along the longer local axis: radius
+    // r = 1.15 × (short/2) pads slightly past the walls (buildings have no
+    // interiors), which buys each circle an interval of half-width
+    // h = (short/2)·√(1.15² − 1) ≈ 0.568·(short/2) along the long edge where the
+    // whole cross-section (corners included) is inside it. h is taken at 0.55
+    // for margin; n = ceil(a/h) circles, ends inset h, then cover [−a, a].
     const long = Math.max(b.w, b.d);
-    const shortHalf = Math.min(b.w, b.d) / 2;
-    const n = Math.min(3, Math.max(1, Math.round(long / Math.min(b.w, b.d))));
+    const a = long / 2;
+    const bHalf = Math.min(b.w, b.d) / 2;
+    const r = bHalf * 1.15;
+    const h = bHalf * 0.55;
+    const n = Math.max(1, Math.ceil(a / h));
     const alongX = b.w >= b.d;
-    // Circle centres spread along the building's longer local axis.
-    const span = long - 2 * shortHalf;
     for (let i = 0; i < n; i++) {
-      const off = n === 1 ? 0 : -span / 2 + (span * i) / (n - 1);
-      // local (off,0) on the long axis → world, via the building's Y-rotation.
+      const off = n === 1 ? 0 : -(a - h) + (2 * (a - h) * i) / (n - 1);
+      // local (off, 0) on the long axis → world, via the building's Y-rotation.
       const lx = alongX ? off : 0;
       const lz = alongX ? 0 : off;
       const wx = b.x + lx * Math.cos(b.rot) + lz * Math.sin(b.rot);
       const wz = b.z - lx * Math.sin(b.rot) + lz * Math.cos(b.rot);
-      out.push({ x: wx, z: wz, r: shortHalf });
+      out.push({ x: wx, z: wz, r });
     }
   }
   for (const l of layout.lamps) out.push({ x: l.x, z: l.z, r: 0.25 });

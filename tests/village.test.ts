@@ -5,6 +5,7 @@ import {
   inVillage,
   villageLayout,
 } from '../src/village/layout.ts';
+import { villageObstacles } from '../src/village/buildings.ts';
 import { VILLAGE } from '../src/core/constants.ts';
 import { biomeAt, heightAt } from '../src/world/terrain.ts';
 
@@ -126,6 +127,34 @@ describe('village connectivity + features', () => {
       const next = layout.fences[(i + 1) % layout.fences.length]!;
       expect(cur.x2).toBeCloseTo(next.x1, 6);
       expect(cur.z2).toBeCloseTo(next.z1, 6);
+    }
+  });
+});
+
+describe('villageObstacles coverage', () => {
+  it('covers every building footprint completely (grid inset 0.2m)', () => {
+    const layout = villageLayout();
+    const obstacles = villageObstacles();
+    const inset = 0.2;
+    const n = 9; // samples per axis
+    for (const b of layout.buildings) {
+      const cos = Math.cos(b.rot);
+      const sin = Math.sin(b.rot);
+      for (let i = 0; i < n; i++) {
+        for (let j = 0; j < n; j++) {
+          // Local footprint grid point (inset from the walls), rotated to world.
+          const lx = -b.w / 2 + inset + ((b.w - 2 * inset) * i) / (n - 1);
+          const lz = -b.d / 2 + inset + ((b.d - 2 * inset) * j) / (n - 1);
+          const wx = b.x + lx * cos + lz * sin;
+          const wz = b.z - lx * sin + lz * cos;
+          const covered = obstacles.some((o) => Math.hypot(wx - o.x, wz - o.z) <= o.r);
+          if (!covered) {
+            throw new Error(
+              `uncovered footprint point on ${b.id} at local (${lx.toFixed(2)}, ${lz.toFixed(2)})`,
+            );
+          }
+        }
+      }
     }
   });
 });
