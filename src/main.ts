@@ -520,10 +520,10 @@ function bootGame(): void {
     const c = villageCenter();
     // Camera on the origin side of the village, pulled back and lifted.
     const toOrigin = Math.atan2(-c.x, -c.z); // bearing from centre toward origin
-    const dist = 44;
+    const dist = 38;
     const cx = c.x + Math.sin(toOrigin) * dist;
     const cz = c.z + Math.cos(toOrigin) * dist;
-    const rise = heightAt(cx, cz) + 7;
+    const rise = heightAt(cx, cz) + 5.5;
     // Face the plaza: yaw so model/camera forward points centre-ward; pitch down.
     const dx = c.x - cx;
     const dz = c.z - cz;

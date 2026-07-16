@@ -64,12 +64,20 @@ function windowBox(): THREE.Mesh {
   return box(0.02, 0.8, 0.8, C.window, { emissive: C.window, emissiveIntensity: 0.35 });
 }
 
+/** A dark foundation plinth slightly overhanging the footprint (grounds walls). */
+function plinth(w: number, d: number): THREE.Mesh {
+  const p = box(w + 0.35, 0.4, d + 0.35, C.trim);
+  p.position.y = 0.16;
+  return p;
+}
+
 /** Build a closed house (farmhouse / home): 4 walls, door gap, windows, roof. */
 function buildHouse(b: BuildingPlacement): THREE.Group {
   const g = new THREE.Group();
   const { wall, roof: roofColor } = palette(b.kind);
   const h = VILLAGE.wallHeight[b.kind];
   const { w, d } = b;
+  g.add(plinth(w, d));
 
   // Back + side walls (front is local −Z, toward the plaza — it gets the door).
   const back = box(w, h, WALL_T, wall);
@@ -108,6 +116,7 @@ function buildBarter(b: BuildingPlacement): THREE.Group {
   const { wall, roof: roofColor } = palette(b.kind);
   const h = VILLAGE.wallHeight.barter;
   const { w, d } = b;
+  g.add(plinth(w, d));
 
   const back = box(w, h, WALL_T, wall);
   back.position.set(0, h / 2, d / 2);
@@ -151,12 +160,16 @@ function buildLamp(p: Point2): THREE.Group {
   post.position.y = H / 2;
   g.add(post);
   const head = new THREE.Mesh(
-    new THREE.IcosahedronGeometry(0.28, 0),
-    mat(C.lampHead, { emissive: C.lampHead, emissiveIntensity: 1.2 }),
+    new THREE.IcosahedronGeometry(0.34, 0),
+    mat(C.lampHead, { emissive: C.lampHead, emissiveIntensity: 1.8 }),
   );
   head.position.y = H + 0.1;
   g.add(head);
-  const light = new THREE.PointLight(0xffd27a, 6, 16, 1.6);
+  // A little cross-arm so the post reads as a lamp, not a pole.
+  const arm = box(0.5, 0.08, 0.08, C.lampPost);
+  arm.position.y = H - 0.2;
+  g.add(arm);
+  const light = new THREE.PointLight(0xffd27a, 7, 13, 1.8);
   light.position.set(0, H + 0.1, 0);
   g.add(light);
   g.position.set(p.x, gy, p.z);
