@@ -607,6 +607,89 @@ export const TRACKING = {
 } as const;
 
 /**
+ * Haven Village (Task V3): a fixed, seeded settlement in the NE spawn meadow.
+ * `layout.ts` derives everything deterministically from WORLD_SEED: it snaps the
+ * nominal centre to the flattest meadow pocket nearby (sampling `heightAt`), then
+ * rings 5 buildings around a central plaza with dirt paths, lamp posts, a fenced
+ * farm plot grid and a pen beside each home. All distances in metres, angles in
+ * radians. Buildings/lamps become collision obstacles (buildings.ts).
+ */
+export const VILLAGE = {
+  /** Nominal centre (m): NE of origin (+x East, −z North-ish per atan2(z,x)). */
+  nominalCenter: { x: 40, z: -40 },
+  /** Half-extent (m) of the flattest-pocket search box around the nominal centre. */
+  searchRadius: 80,
+  /** Coarse grid step (m) for the flatness search. */
+  searchStep: 8,
+  /** Footprint half-window (m) sampled for local height variance at a candidate. */
+  flatWindow: 24,
+  /** Samples per axis over the flat window (variance stencil resolution). */
+  flatSamples: 5,
+  /** Max acceptable height range (m) over the footprint — verified per building. */
+  flatThreshold: 3.0,
+  /** Village influence radius (m): inVillage() + (future) spawn exclusion. */
+  radius: 55,
+  /** Building ring radius (m) from the plaza centre. */
+  ringRadius: 16,
+  /** Central plaza radius (m). */
+  plazaRadius: 6,
+  /** Seeded placement jitter caps (radians / m) — small, so nothing overlaps. */
+  angleJitter: 0.08,
+  radiusJitter: 1.0,
+  /** Min AABB gap (m) enforced/verified between building footprints. */
+  overlapMargin: 1.0,
+  /** Building footprints (m): width (along local X) × depth (along local Z). */
+  footprints: {
+    farmhouse: { w: 8, d: 6 },
+    barter: { w: 5, d: 4 },
+    home: { w: 4.2, d: 4 },
+  },
+  /** Wall height (m) per building kind (roof sits on top). */
+  wallHeight: { farmhouse: 3.4, barter: 3.0, home: 2.8 },
+  /** Lamp posts: count ringed around the plaza + their ring radius (m) & height (m). */
+  lampCount: 6,
+  lampRadius: 9.5,
+  lampHeight: 3.2,
+  /** Farm plot grid beside the farmhouse. */
+  farm: {
+    /** Outward offset (m) of the grid centre from the farmhouse centre. */
+    offset: 8.5,
+    cols: 3,
+    rows: 2,
+    /** Centre-to-centre plot spacing (m). */
+    spacing: 2.4,
+    /** Plot tile size (m). */
+    tile: 1.8,
+    /** Plots unlocked at the start (rest emitted but locked). */
+    unlocked: 2,
+    /** Fence margin (m) around the plot grid bounding box. */
+    fenceMargin: 1.4,
+  },
+  /** Pen beside each home (traded critters live here — Task V4). */
+  pen: { w: 4, d: 3, gap: 1.4 },
+  /** Warm procedural building palette (hex) — flat-shaded Lambert. */
+  colors: {
+    farmhouseWall: 0xcaa87a,
+    barterWall: 0xbf9d6a,
+    homeWall: 0xc0a488,
+    roofFarmhouse: 0x9c4b34,
+    roofBarter: 0x7a5a3a,
+    roofHome: 0x8a5230,
+    door: 0x5a3b26,
+    window: 0x8fd0e0,
+    trim: 0x6b4a2f,
+    lampPost: 0x3f3630,
+    lampHead: 0xffd27a,
+    fence: 0x7a5a3a,
+    plaza: 0xbcae8f,
+    path: 0xb0a17c,
+    penPost: 0x6b5236,
+    plot: 0x6a4a30,
+    plotLocked: 0x554738,
+  },
+} as const;
+
+/**
  * Player starting loadout (Task 14). Applied by main.ts only on a brand-new
  * game (no valid save present, or `?fresh=1`) — a loaded save's own inventory
  * counts always win, and `createInventory()` itself stays a pure zero ctor

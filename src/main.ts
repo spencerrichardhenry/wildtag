@@ -24,6 +24,10 @@ import { PlacementSystem, serializeStructures, deserializeStructures } from './s
 import { raycastTerrain } from './player/grapple.ts';
 import { applyStartingLoadout, loadSave, writeSave, clearSave, type SaveV1 } from './core/save.ts';
 import { buildDebugHandle } from './debug.ts';
+import { buildVillage, villageObstacles } from './village/buildings.ts';
+import { NpcManager } from './village/npcs.ts';
+import { createDialogScreen, openDialog } from './village/dialog.ts';
+import { villageCenter } from './village/layout.ts';
 
 // ---------------------------------------------------------------------------
 // Boot scene: renderer, camera, environment (lighting/fog/sky/water) and the
@@ -56,6 +60,7 @@ function bootGame(): void {
   const debugParam = new URLSearchParams(window.location.search).get('debug');
   const debugGrapple = debugParam === 'grapple';
   const debugStructures = debugParam === 'structures';
+  const debugVillage = debugParam === 'village';
   const scene = new THREE.Scene();
 
   const camera = new THREE.PerspectiveCamera(
@@ -71,6 +76,13 @@ function bootGame(): void {
   const props = new PropManager(scene);
   const critters = new CritterManager(scene);
   const skyDome = scene.getObjectByName('skyDome');
+
+  // Haven Village (Task V3): static seeded settlement in the NE spawn meadow —
+  // built once (always resident near spawn), its NPCs streamed by NpcManager.
+  // Buildings/lamps expose collision circles fed into the player obstacle set.
+  buildVillage(scene);
+  const npcs = new NpcManager(scene);
+  const villageObs = villageObstacles();
 
   function resize(): void {
     const width = window.innerWidth;
@@ -124,6 +136,8 @@ function bootGame(): void {
   screens.register(createGuideScreen(critters, screens));
   // Pause / Help overlay (Esc): keybind reference + Resume (Task 11).
   screens.register(createHelpScreen(screens));
+  // Village dialog (F near an NPC): flavour + request placeholder (Task V3).
+  screens.register(createDialogScreen(screens));
 
   // The heads-up display (Task 11): crosshair, stamina, resources, hotbar,
   // compass and tracking rings. All DOM lives in #hud, layered below screens
@@ -267,14 +281,15 @@ function bootGame(): void {
 
     // `?debug=grapple`/`?debug=structures` freeze the player for a clean static
     // screenshot while the world keeps streaming.
-    const debugFrozen = debugGrapple || debugStructures;
+    const debugFrozen = debugGrapple || debugStructures || debugVillage;
     if (!paused && !debugFrozen) {
       // Zipline ride / mount / recall runs first: while riding it drives the
       // controller's pos/vel and the controller skips its normal pipeline.
       ziplines.updateRide(dt, player, player.pos, input);
-      // Feed the controller trees/rocks near the player before it integrates.
+      // Feed the controller trees/rocks near the player before it integrates,
+      // plus the static village building/lamp collision circles.
       const prev = player.pos;
-      player.obstacles = props.getObstacles(prev.x, prev.z);
+      player.obstacles = props.getObstacles(prev.x, prev.z).concat(villageObs);
       player.update(dt);
     }
 
@@ -290,6 +305,7 @@ function bootGame(): void {
     chunks.update(p.x, p.z);
     props.update(p.x, p.z, worldTime);
     critters.update(dt, p);
+    npcs.update(dt, p);
 
     // Advance darts in flight and tracking progress for tagged critters. On a
     // Link the tracker grants rewards; onLink plays the chime + toast here.
@@ -343,9 +359,12 @@ function bootGame(): void {
         continue;
       }
       if (action.type === 'interact') {
-        // F near a post (mount/recall) or under a drone (recall) is owned by the
-        // structure systems — don't also harvest there.
-        if (!ziplines.nearMount(player.pos) && !drones.nearRecall(player.pos)) {
+        // F priority: talk to a nearby village NPC (within 3m) first; else the
+        // structure systems (mount/recall) claim it; else harvest.
+        const npc = npcs.nearestNpc(player.pos, 3);
+        if (npc) {
+          openDialog(screens, npc.def);
+        } else if (!ziplines.nearMount(player.pos) && !drones.nearRecall(player.pos)) {
           const gained = props.harvestAt(camera.position, cameraLook(), worldTime);
           if (gained) addResource(inventory, gained, 1);
         }
@@ -368,6 +387,7 @@ function bootGame(): void {
   /** Draw the current state + repaint the HUD. Called once per frame. */
   function render(): void {
     renderer.render(scene, camera);
+    npcs.updateLabels(camera);
     const p = player.pos;
     const aimed = props.findHarvestable(camera.position, cameraLook(), worldTime);
     // Latched-rope crosshair state (amber) so an attach is always legible.
@@ -489,6 +509,33 @@ function bootGame(): void {
 
     chunks.update(cx, cz);
     props.primeAround(cx, cz, worldTime);
+  }
+
+  // -------------------------------------------------------------------------
+  // Debug village (`?debug=village`): stand back from the settlement on a small
+  // rise, look toward the plaza and freeze — a static cozy-hamlet frame showing
+  // the buildings, lamps, fences and NPCs with their labels. Verification-only.
+  // -------------------------------------------------------------------------
+  if (debugVillage) {
+    const c = villageCenter();
+    // Camera on the origin side of the village, pulled back and lifted.
+    const toOrigin = Math.atan2(-c.x, -c.z); // bearing from centre toward origin
+    const dist = 44;
+    const cx = c.x + Math.sin(toOrigin) * dist;
+    const cz = c.z + Math.cos(toOrigin) * dist;
+    const rise = heightAt(cx, cz) + 7;
+    // Face the plaza: yaw so model/camera forward points centre-ward; pitch down.
+    const dx = c.x - cx;
+    const dz = c.z - cz;
+    const horiz = Math.hypot(dx, dz);
+    input.yaw = Math.atan2(-dx, -dz);
+    input.pitch = Math.atan2(2 - rise, horiz); // aim at ~2m above the plaza
+    player.teleport(cx, rise, cz);
+
+    chunks.update(cx, cz);
+    props.primeAround(cx, cz, worldTime);
+    // Seat the NPCs (and their labels) for the frozen frame.
+    npcs.update(SIM_DT, player.pos);
   }
 
   // -------------------------------------------------------------------------
