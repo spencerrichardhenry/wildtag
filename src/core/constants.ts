@@ -188,6 +188,58 @@ export const GRAPPLE = {
 } as const;
 
 /**
+ * Deployable structures (Task 13): ziplines + drones + their placement mode.
+ * The pure cores (`validateZipline`/`zipRide`/`zipPoint`) consume these; the
+ * three.js systems layer them on. Distances in m, speeds m/s, times s.
+ */
+export const STRUCTURES = {
+  /** Hard cap on concurrently-placed ziplines. */
+  maxZiplines: 3,
+  /** Hard cap on concurrently-deployed drones. */
+  maxDrones: 2,
+  /** Max zipline span (m); a longer A→B is rejected. */
+  ziplineMaxLen: 80,
+  /** Base ride speed along a zipline (m/s), before slope assist. */
+  ziplineSpeed: 14,
+  /** Ride-speed bonus/penalty (m/s) at full downhill/uphill slope (±1). */
+  slopeAssist: 6,
+  /** Ride-speed floor (m/s) after slope assist — a steep uphill still crawls. */
+  minSpeed: 6,
+  /** Quadratic sag: how far (m) the cable's midpoint dips below the chord. */
+  sag: 1.5,
+  /** Minimum clearance (m) the cable must keep above terrain along its span. */
+  losClearance: 0.5,
+  /** Interior samples taken along the cable for the line-of-sight check. */
+  losSamples: 24,
+  /** Drone station-keeping altitude above the ground beneath it (m). */
+  droneHover: 25,
+  /** Radius (m) of the grapple anchor sphere a hovering drone registers. */
+  droneAnchorRadius: 1.2,
+  /** Max terrain-aim distance (m) for placing a structure. */
+  placeRange: 30,
+  /** Hold-F duration (s) at a post to recall a zipline (refund the kit). */
+  recallHold: 1.0,
+  /** Tap-F below this (s) mounts; a longer hold arms the recall. */
+  recallTap: 0.4,
+  /** A post counts as "mountable" within this distance of the player (m). */
+  mountRange: 2.5,
+  /** Height (m) of the support posts a zipline's endpoints sit atop. */
+  postHeight: 4,
+  /** Player feet hang this far (m) below the cable while riding. */
+  ziplineHang: 1.2,
+  /** Drone vertical climb rate while ascending to altitude (m/s). */
+  droneAscent: 3,
+  /** Gentle station-keeping bob amplitude (± m) once a drone is at altitude. */
+  droneBob: 0.5,
+  /** Bob angular rate (rad/s) — purely cosmetic. */
+  droneBobRate: 1.5,
+  /** Rotor spin rate (rad/s) — purely cosmetic. */
+  droneRotorRate: 30,
+  /** Recall a drone while standing within this horizontal distance beneath it (m). */
+  droneRecallRange: 8,
+} as const;
+
+/**
  * First-person input + camera tuning. Mouse look and camera placement are
  * owned by the player input/controller layer (not the pure movement core).
  */

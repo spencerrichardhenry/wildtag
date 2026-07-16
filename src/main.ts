@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { CAMERA, MAX_FRAME_DT, SIM_DT } from './core/constants.ts';
+import { CAMERA, MAX_FRAME_DT, SIM_DT, STRUCTURES } from './core/constants.ts';
 import { setupEnvironment } from './world/environment.ts';
 import { ChunkManager } from './world/chunks.ts';
 import { PropManager } from './world/props.ts';
@@ -18,6 +18,9 @@ import { updateTracking } from './tracking/tracker.ts';
 import { toast } from './ui/toasts.ts';
 import { chime } from './ui/audio.ts';
 import { AnchorRegistry } from './structures/anchors.ts';
+import { ZiplineSystem } from './structures/ziplines.ts';
+import { DroneSystem } from './structures/drones.ts';
+import { PlacementSystem } from './structures/placement.ts';
 import { raycastTerrain } from './player/grapple.ts';
 
 // ---------------------------------------------------------------------------
@@ -48,7 +51,9 @@ if (new URLSearchParams(window.location.search).get('preview') === 'critters') {
 
 /** Normal gameplay boot: scene, camera, world streaming and the FP controller. */
 function bootGame(): void {
-  const debugGrapple = new URLSearchParams(window.location.search).get('debug') === 'grapple';
+  const debugParam = new URLSearchParams(window.location.search).get('debug');
+  const debugGrapple = debugParam === 'grapple';
+  const debugStructures = debugParam === 'structures';
   const scene = new THREE.Scene();
 
   const camera = new THREE.PerspectiveCamera(
@@ -134,6 +139,22 @@ function bootGame(): void {
   // -------------------------------------------------------------------------
   const darts = new DartSystem(scene, camera, critters, inventory, ground);
 
+  // -------------------------------------------------------------------------
+  // Deployable structures (Task 13): ziplines + drones + their placement mode.
+  // Hotbar 3 → zipline (two-stage), hotbar 4 → drone. Drones register grapple
+  // anchors on the shared registry, so a hovering drone is instantly
+  // grappleable. `hudHooks` exposes live counts for the Task 11 HUD to read.
+  // -------------------------------------------------------------------------
+  const ziplines = new ZiplineSystem(scene, ground, inventory);
+  const drones = new DroneSystem(scene, ground, anchors, inventory);
+  const placement = new PlacementSystem(scene, camera, ground, inventory, ziplines, drones);
+  const hudHooks = {
+    ziplineCount: (): number => ziplines.count,
+    droneCount: (): number => drones.count,
+    placing: (): boolean => placement.active,
+    riding: (): boolean => ziplines.riding,
+  };
+
   // Reusable scratch for the camera look direction (harvest aim).
   const _look = new THREE.Vector3();
   function cameraLook(): { x: number; y: number; z: number } {
@@ -151,13 +172,25 @@ function bootGame(): void {
     // running so nothing pops in when the menu closes.
     const paused = screens.isOpen();
 
-    // `?debug=grapple` freezes the player mid-swing (rope pre-fired below) so
-    // the world keeps streaming for a clean static screenshot.
-    if (!paused && !debugGrapple) {
+    // `?debug=grapple`/`?debug=structures` freeze the player for a clean static
+    // screenshot while the world keeps streaming.
+    const debugFrozen = debugGrapple || debugStructures;
+    if (!paused && !debugFrozen) {
+      // Zipline ride / mount / recall runs first: while riding it drives the
+      // controller's pos/vel and the controller skips its normal pipeline.
+      ziplines.updateRide(dt, player, player.pos, input);
       // Feed the controller trees/rocks near the player before it integrates.
       const prev = player.pos;
       player.obstacles = props.getObstacles(prev.x, prev.z);
       player.update(dt);
+    }
+
+    // Structure cosmetics + placement ghost always tick (drones bob/spin even
+    // while frozen for the debug screenshot); interaction is gated above.
+    drones.update(dt);
+    if (!paused && !debugFrozen) {
+      drones.updateRecall(dt, player.pos, input);
+      if (placement.active) placement.update(dt);
     }
 
     const p = player.pos;
@@ -193,23 +226,37 @@ function bootGame(): void {
         continue;
       }
       if (action.type === 'escape') {
-        // Esc opens the pause/help overlay when nothing is open; while a
-        // screen is open it closes that screen (existing handleEscape).
-        if (screens.isOpen()) screens.handleEscape();
+        // Esc priority: cancel an in-progress placement, then close an open
+        // screen, otherwise open the pause/help overlay.
+        if (placement.active) placement.cancel();
+        else if (screens.isOpen()) screens.handleEscape();
         else screens.open('help');
         continue;
       }
       if (paused) continue; // gameplay actions (interact/hotbar/lmb/rmb) freeze while a screen is open
+      // Hotbar: HUD highlight for every slot; 3/4 also toggle placement mode.
       if (action.type === 'hotbar') {
         hudUi.selectHotbar(action.slot);
+        if (action.slot === 3) placement.toggle('zipline');
+        else if (action.slot === 4) placement.toggle('drone');
+        continue;
       }
       if (action.type === 'interact') {
-        const gained = props.harvestAt(camera.position, cameraLook(), worldTime);
-        if (gained) addResource(inventory, gained, 1);
+        // F near a post (mount/recall) or under a drone (recall) is owned by the
+        // structure systems — don't also harvest there.
+        if (!ziplines.nearMount(player.pos) && !drones.nearRecall(player.pos)) {
+          const gained = props.harvestAt(camera.position, cameraLook(), worldTime);
+          if (gained) addResource(inventory, gained, 1);
+        }
       }
-      if (action.type === 'lmb' && !player.isGrappling()) {
-        // LMB reels the rope while grappled; dart throws are suppressed then.
-        darts.tryThrow();
+      if (action.type === 'lmb') {
+        if (placement.active) {
+          placement.confirm(); // LMB confirms a placement
+        } else if (!player.isGrappling() && player.mode !== 'zipline') {
+          // LMB reels the rope while grappled; dart throws are suppressed then
+          // and while riding a zipline.
+          darts.tryThrow();
+        }
       }
     }
 
@@ -311,9 +358,40 @@ function bootGame(): void {
   }
 
   // -------------------------------------------------------------------------
+  // Debug structures (`?debug=structures`): grant kits, auto-place a zipline
+  // across a meadow strip and a drone hovering overhead, then frame the camera
+  // on them and freeze — a static shot of posts + sagging cable + drone.
+  // -------------------------------------------------------------------------
+  if (debugStructures) {
+    inventory.kits.zipline += 3;
+    inventory.kits.drone += 2;
+
+    const az = 10;
+    const ax = -15;
+    const bx = 35;
+    const a = { x: ax, y: heightAt(ax, az) + STRUCTURES.postHeight, z: az };
+    const b = { x: bx, y: heightAt(bx, az) + STRUCTURES.postHeight, z: az };
+    ziplines.place(a, b);
+    drones.place({ x: 10, y: heightAt(10, az), z: az }, { instant: true });
+    drones.update(SIM_DT); // register the anchor + seat the mesh at altitude
+
+    // Stand back on the -z side and look toward the structures (+z), tilted up
+    // so both the cable and the hovering drone are in frame.
+    const cx = 10;
+    const cz = -28;
+    input.yaw = Math.PI; // face +z
+    input.pitch = 0.32;
+    player.teleport(cx, heightAt(cx, cz) + 0.2, cz);
+
+    chunks.update(cx, cz);
+    props.primeAround(cx, cz, worldTime);
+  }
+
+  // -------------------------------------------------------------------------
   // Debug handle for later tasks (Task 14 expands this into a full debug menu).
   // -------------------------------------------------------------------------
   (window as unknown as { __game: unknown }).__game = {
+    structures: hudHooks,
     player: {
       pos: () => player.pos,
       teleport: (x: number, y: number, z: number) => player.teleport(x, y, z),
