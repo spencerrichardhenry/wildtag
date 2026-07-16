@@ -511,13 +511,20 @@ describe('determinism', () => {
 });
 
 describe('no-hover property', () => {
-  it('airborne jumpHeld + rocket spam cannot sustain altitude: strictly decreasing envelope after apex', () => {
+  it('airborne jumpHeld + rocket + dash spam cannot sustain altitude: strictly decreasing envelope after apex', () => {
     let s: MoveState = { ...initialMoveState({ x: 0, y: 200, z: 0 }), rocketCooldown: 0 };
-    const inp = input({ jumpHeld: true, rocket: true, forward: 1 });
     const ys: number[] = [];
     for (let i = 0; i < 600; i++) {
-      // Re-press rocket every step (edge spam) with glide held the whole time.
-      s = stepMovement(s, inp, DT, flat);
+      // Glide held the whole time, rocket edge re-pressed every step, dash
+      // edge every ~0.7s (past the 0.6s cooldown) — covers the
+      // dash-skips-gravity interaction: only one air dash/rocket can fire
+      // per airtime, so nothing sustains altitude after the apex.
+      s = stepMovement(
+        s,
+        input({ jumpHeld: true, rocket: true, forward: 1, dash: i % 42 === 0 }),
+        DT,
+        flat,
+      );
       ys.push(s.pos.y);
       if (s.grounded) break;
     }

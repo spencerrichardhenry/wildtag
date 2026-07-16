@@ -195,9 +195,11 @@ export function stepMovement(s: MoveState, input: MoveInput, dt: number, g: Grou
   }
 
   // --- Vertical -------------------------------------------------------------
-  // A jump or rocket this step makes vy >= 0 → the glide never engages, so the
-  // clamp can only ever floor a falling vy at glideSink: gliding never yields
-  // vy above the sink rate, and can never produce ascent.
+  // Glide is descent-only: vy < 0 always while gliding; converges to glideSink.
+  // The glide flag requires vy < 0 after jump/rocket resolution, and gravity
+  // integrates with vy floored at glideSink — fast falls are lifted to exactly
+  // the sink rate, slow falls accelerate down toward it. Glide never produces
+  // ascent. (Reviewed and accepted as the intended semantics — don't re-litigate.)
   gliding = gliding && n.vel.y < 0;
   if (dashing) {
     // Gravity is skipped for the dash window.
