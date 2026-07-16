@@ -18,9 +18,16 @@ export interface CritterParts {
   head: THREE.Object3D;
   body: THREE.Object3D;
   tail?: THREE.Object3D;
+  /** Long springy antennae (prismhorse): lag/spring behind movement. */
+  antennae?: THREE.Object3D[];
 }
 
-type MatOpts = { emissive?: number; emissiveIntensity?: number };
+type MatOpts = {
+  emissive?: number;
+  emissiveIntensity?: number;
+  /** Translucency (prismhorse crystal): sets transparent + opacity. */
+  opacity?: number;
+};
 
 function mat(color: number, opts: MatOpts = {}): THREE.MeshLambertMaterial {
   const m = new THREE.MeshLambertMaterial({ color, flatShading: true });
@@ -28,7 +35,16 @@ function mat(color: number, opts: MatOpts = {}): THREE.MeshLambertMaterial {
     m.emissive = new THREE.Color(opts.emissive);
     m.emissiveIntensity = opts.emissiveIntensity ?? 1;
   }
+  if (opts.opacity !== undefined) {
+    m.transparent = true;
+    m.opacity = opts.opacity;
+  }
   return m;
+}
+
+/** An octahedron primitive (crystal prism look), flat-shaded. */
+function crystal(r: number, color: number, opts: MatOpts = {}): THREE.Mesh {
+  return new THREE.Mesh(new THREE.OctahedronGeometry(r, 0), mat(color, opts));
 }
 
 function box(
@@ -475,6 +491,257 @@ function buildLumenstag(rng: () => number): { group: THREE.Group; parts: Critter
   return { group: g, parts: { legs, head, body, tail } };
 }
 
+// --- Haven Village whimsy pass (+4) ------------------------------------------
+
+/**
+ * Prismhorse — THE mount. Horse-scaled beast of clustered translucent crystal
+ * prisms, SIXTEEN thin crystalline stilt legs in two rows of eight (they
+ * skitter as a phase-offset wave, see animation.ts), two long antennae tipped
+ * with glowing bobbles that lag/spring, and a small big-eyed head. This is the
+ * tri-budget splurge (≤400 tris ok). Faces +Z; the leg rows run along Z so the
+ * wave travels head→tail.
+ */
+function buildPrismhorse(rng: () => number): { group: THREE.Group; parts: CritterParts } {
+  const g = new THREE.Group();
+  const tint = jitterColor(0xbfe4ff, rng, 0.05, 0.04); // pale iridescent
+  const deep = jitterColor(0x8fb8ff, rng, 0.05, 0.04);
+  const glow = 0xaad4ff;
+  const crys: MatOpts = { opacity: 0.85, emissive: glow, emissiveIntensity: 0.35 };
+
+  // Body: a cluster of crystal prisms around a core, floating at horse height.
+  const bodyY = 1.35;
+  const body = new THREE.Group();
+  body.position.y = bodyY;
+  const core = box(0.62, 0.6, 1.5, tint, crys);
+  body.add(core);
+  // Jutting shards along the back and flanks for a "clustered crystal" read.
+  const shards: ReadonlyArray<readonly [number, number, number, number, number]> = [
+    [0, 0.42, 0.35, 0.5, 0.0],
+    [0, 0.5, -0.15, 0.62, 0.15],
+    [-0.28, 0.34, -0.5, 0.42, -0.4],
+    [0.3, 0.36, -0.35, 0.46, 0.4],
+    [-0.32, 0.2, 0.4, 0.36, -0.5],
+    [0.32, 0.22, 0.55, 0.34, 0.5],
+  ];
+  for (const [sx, sy, sz, len, tilt] of shards) {
+    const sh = crystal(len, sx === 0 ? tint : deep, crys);
+    sh.scale.set(0.5, 1, 0.5);
+    sh.position.set(sx, sy, sz);
+    sh.rotation.z = tilt;
+    body.add(sh);
+  }
+  g.add(body);
+
+  // Head: small faceted crystal skull on a short neck, big dark eyes.
+  const head = new THREE.Group();
+  head.position.set(0, bodyY + 0.18, 0.86);
+  const neck = box(0.26, 0.44, 0.26, deep, crys);
+  neck.rotation.x = -0.5;
+  neck.position.set(0, 0.02, 0.04);
+  head.add(neck);
+  const skull = crystal(0.3, tint, crys);
+  skull.scale.set(0.9, 0.8, 1.1);
+  skull.position.set(0, 0.34, 0.34);
+  head.add(skull);
+  for (const e of eyes(0.15, 0.34, 0.5, 0.08)) head.add(e);
+
+  // Two long antennae with glowing bobbles (animated: lag/spring).
+  const antennae: THREE.Object3D[] = [];
+  for (const sx of [-1, 1]) {
+    const a = new THREE.Group();
+    a.position.set(sx * 0.12, 0.5, 0.34);
+    const stalk = cyl(0.02, 0.03, 0.7, deep, 4, { emissive: glow, emissiveIntensity: 0.4 });
+    stalk.position.y = 0.35;
+    a.add(stalk);
+    const bob = sphere(0.1, 0xdff0ff, { emissive: glow, emissiveIntensity: 1.6 });
+    bob.position.y = 0.72;
+    a.add(bob);
+    a.rotation.x = -0.25; // sweep forward at rest
+    head.add(a);
+    antennae.push(a);
+  }
+  g.add(head);
+
+  // Sixteen thin crystalline stilt legs: two rows (left/right) of eight along Z.
+  const legs: THREE.Object3D[] = [];
+  const legLen = bodyY - 0.1;
+  const zs = [0.62, 0.44, 0.26, 0.08, -0.1, -0.28, -0.46, -0.64];
+  for (const sx of [-1, 1]) {
+    for (const z of zs) {
+      const l = legGroup(sx * 0.32, legLen, z, 0.05, legLen, deep, sx * 0.14);
+      // Recolour the leg mesh crystalline + translucent.
+      const m = l.children[0] as THREE.Mesh;
+      m.material = mat(deep, crys);
+      legs.push(l);
+      g.add(l);
+    }
+  }
+
+  // Slender crystal tail.
+  const tail = new THREE.Group();
+  tail.position.set(0, bodyY, -0.78);
+  const tm = crystal(0.32, tint, crys);
+  tm.scale.set(0.4, 0.4, 1.3);
+  tm.position.z = -0.22;
+  tail.add(tm);
+  g.add(tail);
+
+  return { group: g, parts: { legs, head, body, tail, antennae } };
+}
+
+/**
+ * Bumblewhale — a rotund 2m whale-blimp that drifts. Fat two-tone body, tiny
+ * useless flippers (animated as slow "wings"), a dopey smile and big friendly
+ * eyes. The AI floats it ~3m up; here it just bobs gently (see animation.ts).
+ */
+function buildBumblewhale(rng: () => number): { group: THREE.Group; parts: CritterParts } {
+  const g = new THREE.Group();
+  const top = jitterColor(0x6b8fb0, rng, 0.04);
+  const belly = jitterColor(0xcfe0e6, rng, 0.03);
+
+  const body = new THREE.Group();
+  body.position.y = 1.15;
+  const hull = sphere(1.0, top);
+  hull.scale.set(1.35, 0.85, 1.0); // fat blimp
+  body.add(hull);
+  // Soft two-tone belly (lighter underside).
+  const under = sphere(0.98, belly);
+  under.scale.set(1.3, 0.5, 0.96);
+  under.position.y = -0.28;
+  body.add(under);
+  // Blunt tail flukes at the back.
+  const fluke = box(0.9, 0.08, 0.34, top);
+  fluke.position.set(0, 0.08, -1.3);
+  body.add(fluke);
+  g.add(body);
+
+  // Dopey face: big eyes + a wide upturned smile.
+  const head = new THREE.Group();
+  head.position.set(0, 1.25, 0.9);
+  for (const e of eyes(0.34, 0.18, 0.42, 0.13)) head.add(e);
+  // Smile: three short segments arcing upward at the corners.
+  for (const [sx, sy, rot] of [
+    [-0.26, -0.16, 0.5],
+    [0, -0.24, 0],
+    [0.26, -0.16, -0.5],
+  ] as const) {
+    const seg = box(0.2, 0.05, 0.04, 0x243038);
+    seg.position.set(sx, sy, 0.5);
+    seg.rotation.z = rot;
+    head.add(seg);
+  }
+  g.add(head);
+
+  // Tiny useless flippers (flap slowly — reuse the wing channel).
+  const wings: THREE.Object3D[] = [];
+  for (const sx of [-1, 1]) {
+    const w = new THREE.Group();
+    w.position.set(sx * 1.2, 1.05, 0.1);
+    const fin = box(0.4, 0.08, 0.5, top);
+    fin.position.x = sx * 0.2;
+    fin.rotation.y = sx * -0.3;
+    w.add(fin);
+    wings.push(w);
+    g.add(w);
+  }
+
+  return { group: g, parts: { legs: [], wings, head, body } };
+}
+
+/**
+ * Snickerdoodle — a pancake-flat meadow cat: very wide, very thin, cookie
+ * coloured with darker speckles. It moves by FLIPPING over itself (animation.ts
+ * flops the whole body 180° each ~0.5s while moving). Ears + tail flip with it.
+ */
+function buildSnickerdoodle(rng: () => number): { group: THREE.Group; parts: CritterParts } {
+  const g = new THREE.Group();
+  const dough = jitterColor(0xdcae72, rng, 0.05);
+  const speck = jitterColor(0x7a4a26, rng, 0.05);
+
+  // The whole critter lives under `body` so the flip rotates everything.
+  const body = new THREE.Group();
+  body.position.y = 0.16; // pivot just above ground so the flop clears
+  const disc = box(0.92, 0.14, 0.62, dough);
+  body.add(disc);
+  // Cookie speckles scattered on the top face.
+  const spots: ReadonlyArray<readonly [number, number]> = [
+    [-0.3, 0.16], [0.28, -0.1], [0.05, 0.2], [-0.12, -0.2], [0.36, 0.14], [-0.36, -0.08],
+  ];
+  for (const [sx, sz] of spots) {
+    const sp = blob(0.05, speck);
+    sp.position.set(sx, 0.08, sz);
+    body.add(sp);
+  }
+  // Ears at the front, tail at the back — children of body so they flip too.
+  for (const sx of [-1, 1]) {
+    const ear = cone(0.09, 0.16, dough, 4);
+    ear.position.set(sx * 0.28, 0.12, 0.3);
+    body.add(ear);
+  }
+  const tail = box(0.07, 0.07, 0.34, dough);
+  tail.position.set(0, 0.02, -0.44);
+  tail.rotation.x = 0.3;
+  body.add(tail);
+  // Face on the front edge.
+  for (const e of eyes(0.16, 0.03, 0.32, 0.055)) body.add(e);
+  const nose = box(0.07, 0.05, 0.05, speck);
+  nose.position.set(0, -0.02, 0.33);
+  body.add(nose);
+  g.add(body);
+
+  // head handle points at the body too (no separate head anim for the flopper).
+  return { group: g, parts: { legs: [], head: body, body } };
+}
+
+/**
+ * Gloomgobbler — a round forest shadow-ball on two long stilt legs, with
+ * enormous glowing lantern eyes and a wide mouth line. Legs take exaggerated
+ * slow strides (animation.ts). Faces +Z.
+ */
+function buildGloomgobbler(rng: () => number): { group: THREE.Group; parts: CritterParts } {
+  const g = new THREE.Group();
+  const shadow = jitterColor(0x241f30, rng, 0.03, 0.05);
+  const legc = jitterColor(0x15121c, rng, 0.02, 0.04);
+  const lantern = 0xffd24a;
+
+  const bodyY = 1.0;
+  const body = new THREE.Group();
+  body.position.y = bodyY;
+  const ball = sphere(0.52, shadow);
+  ball.scale.set(1.05, 1.1, 1.0);
+  body.add(ball);
+  g.add(body);
+
+  // Head handle = face cluster on the front of the ball.
+  const head = new THREE.Group();
+  head.position.set(0, bodyY + 0.06, 0.36);
+  // Enormous glowing lantern eyes.
+  for (const sx of [-1, 1]) {
+    const eye = sphere(0.17, 0xfff0b0, { emissive: lantern, emissiveIntensity: 1.7 });
+    eye.position.set(sx * 0.2, 0.08, 0.06);
+    head.add(eye);
+    const pupil = blob(0.06, 0x140f04);
+    pupil.position.set(sx * 0.2, 0.06, 0.2);
+    head.add(pupil);
+  }
+  // Wide mouth line.
+  const mouth = box(0.34, 0.05, 0.04, 0x0c0a12);
+  mouth.position.set(0, -0.2, 0.16);
+  head.add(mouth);
+  g.add(head);
+
+  // Two long stilt legs.
+  const legs: THREE.Object3D[] = [];
+  const legLen = bodyY - 0.42;
+  for (const sx of [-1, 1]) {
+    const l = legGroup(sx * 0.18, bodyY - 0.42, 0, 0.06, legLen, legc);
+    legs.push(l);
+    g.add(l);
+  }
+
+  return { group: g, parts: { legs, head, body } };
+}
+
 const BUILDERS: Record<string, (rng: () => number) => { group: THREE.Group; parts: CritterParts }> = {
   puffle: buildPuffle,
   skitterling: buildSkitterling,
@@ -484,6 +751,10 @@ const BUILDERS: Record<string, (rng: () => number) => { group: THREE.Group; part
   zephyrfinch: buildZephyrfinch,
   emberpup: buildEmberpup,
   lumenstag: buildLumenstag,
+  prismhorse: buildPrismhorse,
+  bumblewhale: buildBumblewhale,
+  snickerdoodle: buildSnickerdoodle,
+  gloomgobbler: buildGloomgobbler,
 };
 
 /**

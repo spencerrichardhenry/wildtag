@@ -110,7 +110,12 @@ export function spawnSlotsForCell(cx: number, cz: number): SpawnSlot[] {
     if (overWater && def.fleeStyle !== 'swim' && def.fleeStyle !== 'fly') continue;
 
     const y = heightAt(x, z);
-    const flightHeight = AI.flyHeightMin + h(salt + 4, cx, cz) * (AI.flyHeightMax - AI.flyHeightMin);
+    // The bumblewhale is a flyer but a low, placid one: it drifts just above
+    // the terrain (spec §5) rather than cruising the high band like the finch.
+    const flightHeight =
+      species === 'bumblewhale'
+        ? AI.hoverHeightLow
+        : AI.flyHeightMin + h(salt + 4, cx, cz) * (AI.flyHeightMax - AI.flyHeightMin);
     out.push({ id: slotId(cx, cz, i), species, home: { x, y, z }, flightHeight });
   }
   return out;
@@ -199,7 +204,7 @@ export class CritterManager {
       const s = entry.state;
       entry.group.position.set(s.pos.x, s.pos.y, s.pos.z);
       entry.group.rotation.y = s.yaw;
-      animateCritter(entry.parts, Math.hypot(s.vel.x, s.vel.z), this.worldTime);
+      animateCritter(entry.parts, Math.hypot(s.vel.x, s.vel.z), this.worldTime, dt, s.species);
 
       // Tracking beacon: shown while tagged-not-linked, blinking; removed once
       // the critter Links (or is somehow untagged).

@@ -4,18 +4,21 @@ import { SPECIES } from './species.ts';
 import { buildCritterModel, type CritterParts } from './models.ts';
 import { animateCritter } from './animation.ts';
 
-// Dev aid: `?preview=critters`. Lines up all 8 species on a flat stage before a
-// fixed camera, each on a slow turntable and animated at its walk speed, with a
-// floating DOM name label projected above it. Skips the normal player spawn.
-// Kept intentionally — the turntable + labels make model/animation regressions
-// obvious at a glance, and it's what the Task 8 verification screenshot uses.
+// Dev aid: `?preview=critters`. Lays out all 12 species on a flat stage before
+// a fixed camera in a 2×6 grid, each on a slow turntable and animated at its
+// walk speed, with a floating DOM name label projected above it. Skips the
+// normal player spawn. Kept intentionally — the turntable + labels make
+// model/animation regressions obvious at a glance, and it's what the
+// verification screenshot uses.
 
 interface Stand {
   group: THREE.Group;
   parts: CritterParts;
   walkSpeed: number;
+  speciesId: string;
   label: HTMLDivElement;
   worldX: number;
+  worldZ: number;
 }
 
 /**
@@ -57,14 +60,21 @@ export function runCritterPreview(renderer: THREE.WebGLRenderer): void {
   document.body.appendChild(overlay);
 
   const rng = mulberry32(20240808);
-  const spacing = 2.9;
-  const startX = -((SPECIES.length - 1) * spacing) / 2;
+  // 2 rows × 6 columns for the 12-species roster. Back row sits farther from
+  // camera; labels are lifted so the back row's don't collide with the front.
+  const cols = 6;
+  const colSpacing = 3.6;
+  const rowZ = [2.4, -3.4]; // [front, back]
+  const startX = -((cols - 1) * colSpacing) / 2;
   const stands: Stand[] = [];
 
   SPECIES.forEach((sp, i) => {
     const { group, parts } = buildCritterModel(sp.id, rng);
-    const worldX = startX + i * spacing;
-    group.position.set(worldX, 0, 0);
+    const rowi = Math.floor(i / cols);
+    const coli = i % cols;
+    const worldX = startX + coli * colSpacing;
+    const worldZ = rowZ[rowi] ?? 0;
+    group.position.set(worldX, 0, worldZ);
     scene.add(group);
 
     const label = document.createElement('div');
@@ -75,14 +85,12 @@ export function runCritterPreview(renderer: THREE.WebGLRenderer): void {
       'white-space:nowrap;text-shadow:0 1px 2px #000;';
     overlay.appendChild(label);
 
-    stands.push({ group, parts, walkSpeed: sp.walkSpeed, label, worldX });
+    stands.push({ group, parts, walkSpeed: sp.walkSpeed, speciesId: sp.id, label, worldX, worldZ });
   });
 
-  // Frame the whole lineup. Tallest critters (~2.4 with antlers) are the
-  // bellowbuck and lumenstag at the ends — sit low and pull back enough that
-  // the full row (incl. the wide-antlered stag) fits with margin.
-  camera.position.set(0, 1.7, 16);
-  camera.lookAt(0, 0.9, 0);
+  // Frame the whole 2×6 grid from a raised vantage so both rows read.
+  camera.position.set(0, 6.5, 20);
+  camera.lookAt(0, 1.0, -0.5);
 
   function resize(): void {
     camera.aspect = window.innerWidth / window.innerHeight;
@@ -101,10 +109,10 @@ export function runCritterPreview(renderer: THREE.WebGLRenderer): void {
 
     for (const s of stands) {
       s.group.rotation.y = t * 0.5; // slow turntable
-      animateCritter(s.parts, s.walkSpeed, t);
+      animateCritter(s.parts, s.walkSpeed, t, 1 / 60, s.speciesId);
 
       // Project a point above the critter to place its label.
-      project.set(s.worldX, 2.6, 0).project(camera);
+      project.set(s.worldX, 3.0, s.worldZ).project(camera);
       const x = (project.x * 0.5 + 0.5) * window.innerWidth;
       const y = (-project.y * 0.5 + 0.5) * window.innerHeight;
       s.label.style.left = `${x}px`;

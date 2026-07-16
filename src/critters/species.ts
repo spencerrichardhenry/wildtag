@@ -1,4 +1,5 @@
-// The game's cast: 8 procedural blocky critters. This module is pure *content*
+// The game's cast: 12 procedural blocky critters (8 phase-1 + 4 Haven whimsy).
+// This module is pure *content*
 // (data only) — the tracking params (trackRadius R / trackTime T, awareness,
 // fleeStyle) are binding per the design spec §4 and the Task 8 brief and are
 // asserted verbatim in tests/species.test.ts. Models/animation live alongside
@@ -35,6 +36,8 @@ export const SPECIES: SpeciesDef[] = [
     rarity: 1.0,
     rewardSparks: 1,
     rewardRP: 8,
+    rideable: false,
+    farmRole: { kind: 'produce', resource: 'fiber', amount: 2 },
   },
   {
     id: 'skitterling',
@@ -51,6 +54,8 @@ export const SPECIES: SpeciesDef[] = [
     rarity: 0.9,
     rewardSparks: 1,
     rewardRP: 10,
+    rideable: false,
+    farmRole: { kind: 'produce', resource: 'resin', amount: 2 },
   },
   {
     id: 'bellowbuck',
@@ -69,6 +74,8 @@ export const SPECIES: SpeciesDef[] = [
     rarity: 0.5,
     rewardSparks: 2,
     rewardRP: 14,
+    rideable: false,
+    farmRole: { kind: 'produce', resource: 'fiber', amount: 4 },
   },
   {
     id: 'mirefin',
@@ -85,6 +92,8 @@ export const SPECIES: SpeciesDef[] = [
     rarity: 0.5,
     rewardSparks: 2,
     rewardRP: 12,
+    rideable: false,
+    farmRole: { kind: 'aura', auraPct: 25 },
   },
   {
     id: 'craghorn',
@@ -101,6 +110,8 @@ export const SPECIES: SpeciesDef[] = [
     rarity: 0.4,
     rewardSparks: 3,
     rewardRP: 18,
+    rideable: false,
+    farmRole: { kind: 'produce', resource: 'shard', amount: 2 },
   },
   {
     id: 'zephyrfinch',
@@ -117,6 +128,8 @@ export const SPECIES: SpeciesDef[] = [
     rarity: 0.4,
     rewardSparks: 3,
     rewardRP: 20,
+    rideable: false,
+    farmRole: { kind: 'produce', resource: 'spark', amount: 1 },
   },
   {
     id: 'emberpup',
@@ -133,6 +146,8 @@ export const SPECIES: SpeciesDef[] = [
     rarity: 0.35,
     rewardSparks: 2,
     rewardRP: 16,
+    rideable: false,
+    farmRole: { kind: 'aura', auraPct: 25 },
   },
   {
     id: 'lumenstag',
@@ -149,6 +164,90 @@ export const SPECIES: SpeciesDef[] = [
     rarity: 0.02, // effectively unique — ~1 concurrent world-wide
     rewardSparks: 6,
     rewardRP: 40,
+    rideable: false,
+    farmRole: { kind: 'produce', resource: 'spark', amount: 2 },
+  },
+
+  // --- Haven Village whimsy pass (+4, spec §5) -------------------------------
+  {
+    // THE mount: horse-sized crystal beast, 16 skittering legs, antennae. Bold
+    // (ignores you until tagged), rare, fast sprint flee. Transport, not labour.
+    id: 'prismhorse',
+    bold: true,
+    name: 'Prismhorse',
+    biomes: ['crags', 'highlands'],
+    size: 2.1,
+    walkSpeed: 3.2,
+    fleeSpeed: 11,
+    awareness: 22,
+    fleeStyle: 'sprint',
+    trackRadius: 16,
+    trackTime: 18,
+    rarity: 0.08,
+    rewardSparks: 5,
+    rewardRP: 34,
+    rideable: true,
+    farmRole: { kind: 'none' },
+  },
+  {
+    // Placid whale-blimp drifting over the wetland; slow rise flee (reuses the
+    // flyer path). Farm role: hovers over plots and raises hopper caps.
+    id: 'bumblewhale',
+    bold: true,
+    name: 'Bumblewhale',
+    biomes: ['wetland'],
+    size: 2.0,
+    walkSpeed: 1.4,
+    fleeSpeed: 4,
+    awareness: 10,
+    fleeStyle: 'fly',
+    trackRadius: 14,
+    trackTime: 20,
+    rarity: 0.15,
+    rewardSparks: 4,
+    rewardRP: 24,
+    rideable: false,
+    farmRole: { kind: 'aura', special: 'hopperCap' },
+  },
+  {
+    // Pancake-flat meadow cat that flips itself along. Common, skittish zigzag.
+    // Farm role: fiber, doubled when adjacent to another snickerdoodle.
+    id: 'snickerdoodle',
+    bold: false,
+    name: 'Snickerdoodle',
+    biomes: ['meadow'],
+    size: 0.55,
+    walkSpeed: 2.2,
+    fleeSpeed: 8,
+    awareness: 12,
+    fleeStyle: 'zigzag',
+    trackRadius: 10,
+    trackTime: 8,
+    rarity: 0.8,
+    rewardSparks: 1,
+    rewardRP: 9,
+    rideable: false,
+    farmRole: { kind: 'produce', resource: 'fiber', amount: 1, special: 'adjacencyDouble' },
+  },
+  {
+    // Round forest shadow-ball on two stilt legs, huge lantern eyes. Skittish
+    // sprint. Farm role: resin×3 (a hearty producer).
+    id: 'gloomgobbler',
+    bold: false,
+    name: 'Gloomgobbler',
+    biomes: ['forest'],
+    size: 1.1,
+    walkSpeed: 2.0,
+    fleeSpeed: 9,
+    awareness: 15,
+    fleeStyle: 'sprint',
+    trackRadius: 12,
+    trackTime: 14,
+    rarity: 0.3,
+    rewardSparks: 3,
+    rewardRP: 17,
+    rideable: false,
+    farmRole: { kind: 'produce', resource: 'resin', amount: 3 },
   },
 ];
 

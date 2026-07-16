@@ -30,14 +30,24 @@ function rest(o: { rotation: { x: number; y: number; z: number }; position: { y:
 /**
  * Advance one critter's pose. `dt` is accepted for API symmetry / future
  * spring damping but the current animation is a pure function of `t` and
- * `speed`, so it stays deterministic and stateless across frames.
+ * `speed`, so it stays deterministic and stateless across frames. `speciesId`
+ * selects per-species specials (the 16-leg prismhorse wave, the snickerdoodle
+ * flop, the bumblewhale hover, gloomgobbler's stride); omit it for the generic
+ * quadruped gait.
  */
 export function animateCritter(
   parts: CritterParts,
   speed: number,
   t: number,
   _dt?: number,
+  speciesId?: string,
 ): void {
+  // Snickerdoodle moves by flipping over itself — a fully bespoke pose.
+  if (speciesId === 'snickerdoodle') {
+    animateSnickerdoodle(parts, speed, t);
+    return;
+  }
+
   const moving = speed > ANIM.movingThreshold;
   const capped = Math.min(speed, ANIM.speedCap);
   // Gait frequency & swing grow with speed but saturate so a sprint doesn't
@@ -48,19 +58,50 @@ export function animateCritter(
     : 0;
   const phase = t * freq;
 
-  // Legs: alternate diagonal phase (index parity) so it reads as a trot.
-  let li = 0;
-  for (const leg of parts.legs) {
-    const r = rest(leg);
-    const p = phase + (li % 2 === 0 ? 0 : Math.PI);
-    leg.rotation.x = r.rx + Math.sin(p) * swing;
-    li++;
+  // Legs.
+  if (speciesId === 'prismhorse') {
+    // Sixteen legs skitter as a phase-offset wave down each row: the legs array
+    // is [left row ×8, right row ×8], so index-within-row drives the wave and
+    // the two rows beat in antiphase for a shimmering scuttle.
+    const amp = moving ? Math.max(ANIM.prismLegAmp, swing) : ANIM.prismLegAmp * 0.25;
+    const wf = moving ? freq : ANIM.gaitFreqIdle;
+    let li = 0;
+    for (const leg of parts.legs) {
+      const r = rest(leg);
+      const row = li < 8 ? 0 : 1;
+      const withinRow = li % 8;
+      const p = t * wf + withinRow * ANIM.prismLegPhaseStep + row * Math.PI;
+      leg.rotation.x = r.rx + Math.sin(p) * amp;
+      li++;
+    }
+  } else if (speciesId === 'gloomgobbler') {
+    // Two stilt legs take exaggerated, slow strides.
+    const amp = moving ? ANIM.gloomStrideAmp : 0.08;
+    const p = t * ANIM.gloomStrideFreq;
+    let li = 0;
+    for (const leg of parts.legs) {
+      const r = rest(leg);
+      leg.rotation.x = r.rx + Math.sin(p + (li % 2 === 0 ? 0 : Math.PI)) * amp;
+      li++;
+    }
+  } else {
+    // Legs: alternate diagonal phase (index parity) so it reads as a trot.
+    let li = 0;
+    for (const leg of parts.legs) {
+      const r = rest(leg);
+      const p = phase + (li % 2 === 0 ? 0 : Math.PI);
+      leg.rotation.x = r.rx + Math.sin(p) * swing;
+      li++;
+    }
   }
 
   // Body: vertical bob at stride frequency when moving, a slow breathing bob
-  // when idle.
+  // when idle. The bumblewhale hovers, so it always bobs gently and lazily.
   const b = rest(parts.body);
-  if (moving) {
+  if (speciesId === 'bumblewhale') {
+    parts.body.position.y = b.py + Math.sin(t * ANIM.hoverBobFreq) * ANIM.hoverBobAmp;
+    parts.body.rotation.z = Math.sin(t * ANIM.hoverBobFreq * 0.6) * 0.04; // faint list
+  } else if (moving) {
     parts.body.position.y =
       b.py + Math.abs(Math.sin(phase)) * (ANIM.bobBase + speed * ANIM.bobPerSpeed);
   } else {
@@ -89,8 +130,14 @@ export function animateCritter(
   // the ground fold to rest; airborne flap is driven by the (>0) speed the
   // manager feeds in.
   if (parts.wings) {
-    const flapFreq = ANIM.flapFreqBase + capped * ANIM.flapFreqPerSpeed;
-    const flapAmp = moving ? ANIM.flapAmpBase + capped * ANIM.flapAmpPerSpeed : ANIM.flapIdleAmp;
+    // Bumblewhale's flippers flap lazily; other flyers beat fast.
+    const whale = speciesId === 'bumblewhale';
+    const flapFreq = whale ? ANIM.whaleFlapFreq : ANIM.flapFreqBase + capped * ANIM.flapFreqPerSpeed;
+    const flapAmp = whale
+      ? ANIM.whaleFlapAmp
+      : moving
+        ? ANIM.flapAmpBase + capped * ANIM.flapAmpPerSpeed
+        : ANIM.flapIdleAmp;
     const f = Math.sin(t * flapFreq) * flapAmp;
     let wi = 0;
     for (const wing of parts.wings) {
@@ -100,5 +147,43 @@ export function animateCritter(
       wing.rotation.z = r.rz + f * side;
       wi++;
     }
+  }
+
+  // Prismhorse antennae: sway gently and lag/sweep back with movement.
+  if (parts.antennae) {
+    const lag = -Math.min(speed, ANIM.speedCap) * ANIM.antennaLagPerSpeed;
+    let ai = 0;
+    for (const ant of parts.antennae) {
+      const r = rest(ant);
+      const side = ai === 0 ? 1 : -1;
+      ant.rotation.x = r.rx + lag + Math.sin(t * ANIM.antennaSwayFreq) * ANIM.antennaSwayAmp;
+      ant.rotation.z = r.rz + Math.sin(t * ANIM.antennaSwayFreq * 0.7 + ai) * ANIM.antennaSwayAmp * side;
+      ai++;
+    }
+  }
+}
+
+/**
+ * Snickerdoodle: a pancake cat that flops end-over-end to travel. Rotate the
+ * whole body about X (perpendicular to +Z travel) by 180° each `flipPeriod`
+ * while moving, with an eased tumble so each flop lands with a satisfying
+ * settle; idle, it rests flat with a soft breathing bob.
+ */
+function animateSnickerdoodle(parts: CritterParts, speed: number, t: number): void {
+  const b = rest(parts.body);
+  const moving = speed > ANIM.movingThreshold;
+  if (moving) {
+    const phase = t / ANIM.flipPeriod;
+    const n = Math.floor(phase);
+    const frac = phase - n;
+    // Ease the flip (smoothstep) so it snaps over then settles.
+    const eased = frac * frac * (3 - 2 * frac);
+    parts.body.rotation.x = b.rx + (n + eased) * Math.PI;
+    // Little hop as it flips.
+    parts.body.position.y = b.py + Math.sin(frac * Math.PI) * 0.12;
+  } else {
+    // Settle flat (nearest full rotation) with a gentle breathing bob.
+    parts.body.rotation.x = b.rx;
+    parts.body.position.y = b.py + Math.sin(t * ANIM.idleBobFreq) * ANIM.idleBobAmp;
   }
 }

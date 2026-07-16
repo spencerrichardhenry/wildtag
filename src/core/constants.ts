@@ -492,6 +492,29 @@ export const ANIM = {
   flapAmpBase: 0.5,
   flapAmpPerSpeed: 0.06,
   flapIdleAmp: 0.06,
+
+  // --- Haven Village whimsy pass (per-species specials) ---------------------
+  /** Prismhorse: extra phase (rad) added per leg index so the 16-leg gait reads
+   *  as a wave skittering head→tail rather than a synchronised trot. */
+  prismLegPhaseStep: 0.55,
+  /** Prismhorse: base leg-wave amplitude (rad) even when barely moving. */
+  prismLegAmp: 0.5,
+  /** Prismhorse antennae: sway rate (rad/s) and amplitude (rad); a movement-lag
+   *  term sweeps them back proportional to speed. */
+  antennaSwayFreq: 3,
+  antennaSwayAmp: 0.18,
+  antennaLagPerSpeed: 0.06,
+  /** Bumblewhale: gentle hover bob — rate (rad/s) and amplitude (m). Plus a
+   *  lazy flipper flap (slow, small). */
+  hoverBobFreq: 1.1,
+  hoverBobAmp: 0.14,
+  whaleFlapFreq: 2.2,
+  whaleFlapAmp: 0.35,
+  /** Snickerdoodle: flop period (s) per 180° flip and its base tumble amplitude. */
+  flipPeriod: 0.5,
+  /** Gloomgobbler: exaggerated slow stride — freq (Hz-ish) and amplitude (rad). */
+  gloomStrideFreq: 2.2,
+  gloomStrideAmp: 0.7,
 } as const;
 
 /**
@@ -545,6 +568,8 @@ export const AI = {
   /** Fly flee: cruise altitude band above terrain (m), picked per-individual. */
   flyHeightMin: 10,
   flyHeightMax: 16,
+  /** Low-hover flyers (bumblewhale) drift this far above terrain (m). */
+  hoverHeightLow: 3,
   /** Vertical approach rate toward the target flight altitude (1/s lerp). */
   flyClimbRate: 1.5,
   /** Wide-arc yaw sweep rate while a flyer loops (rad/s). */

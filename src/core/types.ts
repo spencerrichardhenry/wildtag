@@ -74,6 +74,26 @@ export interface GroundQuery {
   normalAt(x: number, z: number): Vec3;
 }
 
+/**
+ * A species' job when assigned to a farm plot (design spec §4/§5). Owned by
+ * SpeciesDef; the farm core (Task V5) reads it to compute per-tick production
+ * and speed auras.
+ *
+ * - `produce`: yields `amount` of `resource` per production cycle. `special`
+ *   'adjacencyDouble' (snickerdoodle) doubles output when a same-species plot
+ *   is adjacent.
+ * - `aura`: produces nothing; buffs neighbours. `auraPct` is a +% speed aura
+ *   (mirefin/emberpup); `special` 'hopperCap' (bumblewhale) raises hopper caps.
+ * - `none`: no farm job (the prismhorse is transport, not labour).
+ */
+export interface FarmRole {
+  kind: 'produce' | 'aura' | 'none';
+  resource?: ResourceKind;
+  amount?: number;
+  auraPct?: number;
+  special?: 'adjacencyDouble' | 'hopperCap';
+}
+
 export interface SpeciesDef {
   id: string;
   name: string;
@@ -92,6 +112,10 @@ export interface SpeciesDef {
   rarity: number;
   rewardSparks: number;
   rewardRP: number;
+  /** Can this species be ridden with a Saddle? True only for the prismhorse. */
+  rideable: boolean;
+  /** This species' farm-plot job (spec §4/§5). Every species has one. */
+  farmRole: FarmRole;
 }
 
 export interface CritterState {

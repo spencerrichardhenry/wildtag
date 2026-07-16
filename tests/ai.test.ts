@@ -306,8 +306,12 @@ describe('linking a fleeing critter', () => {
     const scene = new THREE.Scene();
     const mgr = new CritterManager(scene);
     mgr.update(1 / 60, { x: 0, y: 0, z: 0 });
-    // Pick a critter that can flee and spook it by standing on top of it.
-    const target = mgr.list().find((c) => sp(c.species).fleeStyle !== 'none');
+    // Pick a critter that can flee from an untagged player (non-bold, and not a
+    // never-flees species) and spook it by standing on top of it.
+    const target = mgr.list().find((c) => {
+      const s = sp(c.species);
+      return s.fleeStyle !== 'none' && !s.bold;
+    });
     expect(target).toBeDefined();
     const id = target!.id;
     for (let i = 0; i < 120; i++) {
