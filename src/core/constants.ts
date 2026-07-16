@@ -153,29 +153,38 @@ export const MOVE = {
 } as const;
 
 /**
- * Grapple hook (Task 12). The rope is a soft *spring* constraint the controller
- * post-processes onto the movement core's velocity each step (the pure core is
- * grapple-agnostic). Distances in m, speeds m/s; `stiffness` is inward accel
- * (m/s²) per metre of overstretch; `radialDamping` is the fraction of the
- * remaining (inward) radial velocity bled off per step; costs in stamina/s;
- * times in s.
+ * Grapple hook — Terraria-style projectile model (Task 16, reworked from the
+ * original hitscan/reel of Task 12 per direct user feedback). The hook now
+ * *flies* as a ballistic projectile (`hookSpeed` along the look dir under
+ * `hookGravity`, capped at `hookMaxFlight` seconds — ballistics IS the range
+ * limit, there is no maxRange rejection). On contact it latches to terrain,
+ * trees/rocks, or a drone anchor and AUTOMATICALLY zips the player inward at
+ * `zipSpeed` (no manual reel, no stamina cost — the cost is aim + travel time).
+ * Arrival at `hangLength` pins the player to the anchor (a "hang"), gravity
+ * suspended because the anchor is real geometry — not free flight.
+ *
+ * The zip/hang still runs the original soft-*spring* pendulum constraint the
+ * controller post-processes onto the movement core's velocity each latched
+ * step: `stiffness` is inward accel (m/s²) per metre of overstretch, and
+ * `radialDamping` the fraction of the remaining (inward) radial velocity bled
+ * off per step. Distances in m, speeds m/s, times s.
  */
 export const GRAPPLE = {
-  /** Max fire distance (m); hits beyond this are rejected. */
+  /** Projectile muzzle speed (m/s) along the look direction at fire. */
+  hookSpeed: 40,
+  /** Gravity on the hook in flight (m/s², negative = down) — a gentle arc. */
+  hookGravity: -10,
+  /** Max flight time (s) before an un-latched hook fizzles (≈45m level fire). */
+  hookMaxFlight: 1.4,
+  /** Auto-zip rate (m/s) the rope shortens by once latched (replaces reel). */
+  zipSpeed: 26,
+  /** Rope length (m) at which the zip ends and the player pins into a hang. */
+  hangLength: 1.2,
+  /** Max distance (m) for the debug/occlusion terrain ray-march. */
   maxRange: 45,
-  /** Rope shorten rate while reeling (m/s) — well above sprint (9.5) so the
-   *  pull reads as dramatically faster than running. */
-  reelSpeed: 24,
-  /** Stamina drained per second while reeling. */
-  reelCostPerS: 10,
-  /** Auto-release once the rope reels below this length (m). */
-  minLength: 1.5,
-  /** Velocity toward the anchor (m/s) added when a reel completes (rope
-   *  reaches minLength) so the player actually arrives at the target
-   *  instead of stalling short of it. */
-  arrivalLunge: 8,
   /** Terrain anchors are lifted this far (m) above the surface hit so the
-   *  hook mesh and rope end stay visible instead of half-burying. */
+   *  hook mesh and rope end stay visible instead of half-burying (terrain
+   *  latches only; prop/drone latches sit on real geometry and need no lift). */
   anchorLift: 0.45,
   /** Spring stiffness: inward accel (m/s²) per metre of overstretch. */
   stiffness: 35,

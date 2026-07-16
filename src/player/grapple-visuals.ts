@@ -62,9 +62,14 @@ export class GrappleVisuals {
     scene.add(this.group);
   }
 
-  /** Show the rope from `from` (hand) to `anchor`, sagging by the slack. */
-  update(from: Vec3, anchor: Vec3, length: number): void {
+  /**
+   * Show the rope from `from` (hand) to `anchor`, sagging by the slack.
+   * `latched` toggles the pulsing latch marker — while the hook is still
+   * flying (`latched=false`) only the rope + hook mesh trail the projectile.
+   */
+  update(from: Vec3, anchor: Vec3, length: number, latched = true): void {
     this.group.visible = true;
+    this.latchLight.visible = latched;
 
     const dist = Math.hypot(anchor.x - from.x, anchor.y - from.y, anchor.z - from.z);
     // Slack = rope not currently taut; droop the midpoint proportionally (plus a

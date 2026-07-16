@@ -1,6 +1,7 @@
 import { CHUNKS, SCATTER, WORLD_SEED } from '../core/constants.ts';
 import type { Biome } from '../core/types.ts';
 import type { Obstacle } from '../player/collision.ts';
+import type { GrappleCollider } from '../player/grapple.ts';
 import { hash2 } from '../core/rng.ts';
 import { heightAt, biomeAt } from './terrain.ts';
 
@@ -161,4 +162,20 @@ export function placementObstacle(p: PropPlacement): Obstacle | null {
   const factor = (SCATTER.obstacleRadius as Record<string, number>)[p.kind];
   if (factor === undefined) return null;
   return { x: p.x, z: p.z, r: factor * p.scale };
+}
+
+/** Approx. mesh top (m above base) per grappleable kind, × instance scale. */
+const GRAPPLE_TOP: Partial<Record<PropKind, number>> = { tree: 4.5, rock: 1.6 };
+
+/**
+ * Grapple anchor cylinder for a tree/rock (the hook latches to its trunk/body),
+ * or null for props that can't be anchored to. Radius matches the collision
+ * cylinder; the y-band spans base → an approximate mesh top so a hook can catch
+ * high on a tree's canopy or on top of a boulder.
+ */
+export function placementGrappleCollider(p: PropPlacement): GrappleCollider | null {
+  const rFactor = (SCATTER.obstacleRadius as Record<string, number>)[p.kind];
+  const top = GRAPPLE_TOP[p.kind];
+  if (rFactor === undefined || top === undefined) return null;
+  return { x: p.x, z: p.z, r: rFactor * p.scale, yBase: p.y, yTop: p.y + top * p.scale };
 }

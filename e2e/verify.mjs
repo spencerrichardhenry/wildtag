@@ -516,9 +516,9 @@ async function checkGrapple() {
     } finally {
       await page.close();
     }
-    // Reel-in displacement (LMB) needs pointer lock (unavailable headless); the
-    // rope pull/pendulum physics are covered by tests/grapple.test.ts and
-    // tests/grapple-swing.test.ts.
+    // Firing a live projectile hook + the auto-zip / hang need pointer lock
+    // (unavailable headless); the projectile flight, latch, zip and pendulum
+    // physics are covered by tests/grapple.test.ts and tests/grapple-swing.test.ts.
   });
 }
 

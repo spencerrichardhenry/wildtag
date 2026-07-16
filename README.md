@@ -40,8 +40,8 @@ with `npm run preview`.
 | `Space`      | Jump — *hold* to Glide once the Glider is crafted  |
 | `Q`          | Dash (short stamina-cost burst; available from start) |
 | `R`          | Rocket boost (once crafted)                        |
-| `RMB`        | Fire / hold Grapple (once crafted)                 |
-| `LMB`        | Throw a tracker dart · reel in while grappling · confirm a structure placement |
+| `RMB`        | Fire the Grapple hook (once crafted) — a projectile that arcs, latches to trees/rocks/terrain/drones, and auto-zips you in; tap again from a hang to re-fire |
+| `LMB`        | Throw a tracker dart · confirm a structure placement |
 | `F`          | Harvest a resource node / mount · recall a zipline · recall a drone |
 | `1` – `4`    | Hotbar (1 Darts · 2 Grapple · 3 Zipline · 4 Drone) — 3/4 enter placement mode |
 | `C`          | Crafting menu                                      |
@@ -64,8 +64,9 @@ spent currency — it only ever grows, and crafting checks it without subtractin
 3. **Track & Link** — `LMB` throws a dart; a hit *tags* a critter and opens its
    tracking ring. Stay inside the ring's radius until the ring fills to **Link**
    it — that grants Sparks + RP and adds it to your Field Guide.
-4. **Tier 1 (25 RP)** — craft the **Grapple Hook** (swing/reel to anchors and
-   terrain) or **Sky Boots** (an extra mid-air jump).
+4. **Tier 1 (25 RP)** — craft the **Grapple Hook** (a Terraria-style projectile
+   that arcs out, latches to trees/rocks/terrain/drones, and auto-zips you in —
+   hang and re-fire to climb) or **Sky Boots** (an extra mid-air jump).
 5. **Tier 2 (75 RP)** — the **Glider** (hold Space to glide) or the **Zipline Kit**
    (deployable two-post cable you can ride).
 6. **Tier 3 (180 RP)** — the **Rocket Boost** (vertical + forward impulse) and the
@@ -76,7 +77,7 @@ spent currency — it only ever grows, and crafting checks it without subtractin
 | Tier | Item          | RP gate | Cost                              | Effect                        |
 | ---- | ------------- | ------- | --------------------------------- | ----------------------------- |
 | 0    | Tracker Dart  | 0       | 3 Fibre, 1 Resin (→ ×10)          | Tag critters                  |
-| 1    | Grapple Hook  | 25      | 8 Fibre, 4 Resin, 6 Shard         | Grapple + reel (RMB/LMB)      |
+| 1    | Grapple Hook  | 25      | 8 Fibre, 4 Resin, 6 Shard         | Projectile hook + auto-zip (RMB) |
 | 1    | Sky Boots     | 25      | 6 Fibre, 8 Resin, 2 Shard         | One extra mid-air jump        |
 | 2    | Glider        | 75      | 12 Fibre, 6 Resin, 4 Shard, 2 Spark | Hold-Space glide            |
 | 2    | Zipline Kit   | 75      | 4 Fibre, 2 Shard                  | Deploy + ride a zipline       |
@@ -189,7 +190,7 @@ instead of letting the script spawn its own `npm run dev`.
 > (`--enable-unsafe-swiftshader --use-gl=angle --use-angle=swiftshader`, added
 > automatically by the script), which renders this scene at ~11–15 fps — a real
 > GPU targets 60. The environment cannot acquire pointer lock, so mouse-gated
-> actions (dart throw, grapple *reel*, zipline *confirm*) are exercised via the
+> actions (dart throw, grapple *fire*, zipline *confirm*) are exercised via the
 > debug handle / `?debug=*` hooks and the pure unit suite rather than synthetic
 > mouse input.
 

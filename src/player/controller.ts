@@ -1,10 +1,18 @@
 import * as THREE from 'three';
 import { GRAPPLE, INPUT, MOVE, TERRAIN } from '../core/constants.ts';
 import type { GroundQuery, MoveInput, MoveState, Vec3 } from '../core/types.ts';
-import { drainStamina, initialMoveState, stepMovement } from './movement.ts';
+import { initialMoveState, stepMovement } from './movement.ts';
 import { resolveCollision, type Obstacle } from './collision.ts';
 import type { Input } from './input.ts';
-import { fireGrapple, raycastTerrain, stepGrapple, type GrappleState } from './grapple.ts';
+import {
+  fireHook,
+  latchedHook,
+  stepAttached,
+  stepHook,
+  type GrappleCollider,
+  type HookQueries,
+  type HookState,
+} from './grapple.ts';
 import { GrappleVisuals } from './grapple-visuals.ts';
 import type { AnchorRegistry } from '../structures/anchors.ts';
 
@@ -62,14 +70,20 @@ export class PlayerController {
   private readonly anchors: AnchorRegistry | null;
   /** Optional rope/hook renderer (present only when a scene is supplied). */
   private readonly visuals: GrappleVisuals | null;
-  /** Active rope, or null when not grappling. */
-  private grapple: GrappleState | null = null;
+  /** Active hook (flying / latched), or null when idle. */
+  private hook: HookState | null = null;
   /**
-   * Sim steps the current rope has spent in the constraint block. Gates the
-   * jump-release boost: a rope fired and jump-released on the SAME step (a
-   * scripted RMB+Space macro) would otherwise net the +boost before the rope
-   * constraint ever ran, so the boost is only granted once this is ≥ 1. Reset
-   * to 0 on every fire.
+   * Grappleable tree/rock cylinders near a query point. Wired by main.ts from
+   * the PropManager; defaults to none so headless/unit use needs no world.
+   */
+  grappleColliders: (x: number, z: number) => GrappleCollider[] = () => [];
+  /** Seconds the latched rope has stayed occluded (auto-releases at grace). */
+  private hookOccludedFor = 0;
+  /**
+   * Sim steps the current hook has spent LATCHED (in the constraint/hang block).
+   * Gates the jump-release boost: a hook fired and jump-released before it has
+   * ever latched (grappleSteps still 0) gets no free lift, upholding the
+   * no-free-flight invariant. Reset to 0 on every fire.
    */
   private grappleSteps = 0;
   /** Previous RMB-held sample, for edge detection (press fires / release drops). */
@@ -94,9 +108,9 @@ export class PlayerController {
     this.syncCamera();
   }
 
-  /** True while a rope is attached — main.ts suppresses dart throws when so. */
+  /** True while a hook is out (flying or latched) — crosshair 'grapple' state. */
   isGrappling(): boolean {
-    return this.grapple !== null && this.grapple.active;
+    return this.hook !== null && this.hook.phase !== 'done';
   }
 
   /** Camera look direction as a plain vector (unit). */
@@ -105,27 +119,35 @@ export class PlayerController {
     return { x: this._look.x, y: this._look.y, z: this._look.z };
   }
 
-  /**
-   * Raycast terrain + the anchor registry from the eye; return the nearest hit
-   * within maxRange, or null. Anchor spheres win ties only if genuinely nearer.
-   */
-  private grappleTarget(origin: Vec3, dir: Vec3): Vec3 | null {
-    const rawTerrain = raycastTerrain(origin, dir, this.ground.heightAt, GRAPPLE.maxRange);
-    // Lift terrain anchors slightly off the surface so the hook and rope end
-    // stay visible instead of half-burying in the ground.
-    const terrain = rawTerrain
-      ? { x: rawTerrain.x, y: rawTerrain.y + GRAPPLE.anchorLift, z: rawTerrain.z }
-      : null;
-    const anchor = this.anchors?.raycastAnchors(origin, dir, GRAPPLE.maxRange) ?? null;
-    if (!terrain) return anchor ? anchor.point : null;
-    if (!anchor) return terrain;
-    const dt = Math.hypot(terrain.x - origin.x, terrain.y - origin.y, terrain.z - origin.z);
-    const da = Math.hypot(
-      anchor.point.x - origin.x,
-      anchor.point.y - origin.y,
-      anchor.point.z - origin.z,
-    );
-    return da < dt ? anchor.point : terrain;
+  /** Rope originates from a "hand" just ahead of and below the eye. */
+  private handPos(f: Vec3): Vec3 {
+    const eye = this.camera.position;
+    return { x: eye.x + f.x * 0.6, y: eye.y + f.y * 0.6 - 0.35, z: eye.z + f.z * 0.6 };
+  }
+
+  /** Launch a fresh hook along the current look; resets latch bookkeeping. */
+  private fireNewHook(): void {
+    const f = this.lookDir();
+    this.hook = fireHook(this.handPos(f), f);
+    this.grappleSteps = 0;
+    this.hookOccludedFor = 0;
+  }
+
+  /** Injected world queries for the flying-hook sweep (terrain/props/drones). */
+  private hookQueries(): HookQueries {
+    return {
+      heightAt: this.ground.heightAt,
+      getGrappleColliders: this.grappleColliders,
+      raycastDrones: this.anchors
+        ? (a, b) => {
+            const dir = { x: b.x - a.x, y: b.y - a.y, z: b.z - a.z };
+            const len = Math.hypot(dir.x, dir.y, dir.z);
+            if (len < 1e-9) return null;
+            const hit = this.anchors!.raycastAnchors(a, dir, len);
+            return hit ? { point: hit.point, anchorId: hit.anchorId } : null;
+          }
+        : undefined,
+    };
   }
 
   /** True if terrain rises above the player→anchor segment (rope occluded). */
@@ -141,30 +163,33 @@ export class PlayerController {
     return false;
   }
 
-  /** Debug: attach a rope to a fixed world point (used by `?debug=grapple`). */
+  /**
+   * Debug: instantly latch a rope to a fixed world point (used by
+   * `?debug=grapple` + e2e check f). Skips the flight so the static screenshot
+   * always shows an attached rope; `state.grappling` reads true.
+   */
   debugFireGrapple(anchor: Vec3): void {
-    const eye = { x: this.camera.position.x, y: this.camera.position.y, z: this.camera.position.z };
-    this.grapple = fireGrapple(eye, this.lookDir(), anchor);
-    this.grappleSteps = 0;
+    this.hook = latchedHook(anchor, this.state.pos);
+    this.grappleSteps = 1;
+    this.hookOccludedFor = 0;
     this.updateGrappleVisuals();
   }
 
-  /** Sync the rope renderer to the current grapple state (no-op without a scene). */
+  /** Sync the rope renderer to the current hook (no-op without a scene). */
   private updateGrappleVisuals(): void {
     if (!this.visuals) return;
-    if (this.grapple && this.grapple.active) {
-      // Originate the rope from a "hand" just in front of and below the eye so
-      // its near end isn't clipped by the camera near plane.
-      const eye = this.camera.position;
-      const f = this.lookDir();
-      const hand = {
-        x: eye.x + f.x * 0.6,
-        y: eye.y + f.y * 0.6 - 0.35,
-        z: eye.z + f.z * 0.6,
-      };
-      this.visuals.update(hand, this.grapple.anchor, this.grapple.length);
-    } else {
+    const h = this.hook;
+    if (!h || h.phase === 'done') {
       this.visuals.hide();
+      return;
+    }
+    const f = this.lookDir();
+    const hand = this.handPos(f);
+    if (h.phase === 'flying') {
+      const d = Math.hypot(h.pos.x - hand.x, h.pos.y - hand.y, h.pos.z - hand.z);
+      this.visuals.update(hand, h.pos, d, false); // rope trails the projectile
+    } else {
+      this.visuals.update(hand, h.anchor!, h.length, true);
     }
   }
 
@@ -172,9 +197,9 @@ export class PlayerController {
   // While riding, the ZiplineSystem drives pos/vel each step via `rideStep`;
   // the controller skips its entire normal pipeline (no gravity, no movement,
   // no grapple, no swim) but keeps free-look by syncing the camera.
-  /** Begin a zipline ride: flip mode and drop any active rope. */
+  /** Begin a zipline ride: flip mode and drop any active hook. */
   rideStart(): void {
-    this.grapple = null;
+    this.hook = null;
     this.state = { ...this.state, mode: 'zipline' };
   }
   /** Set the ride position/velocity for this step (external rider math). */
@@ -216,43 +241,42 @@ export class PlayerController {
       }
     }
 
-    // --- Grapple: fire / hold / release edges (RMB), reel (LMB) ------------
-    // RMB press fires (only with the 'grapple' unlock), stays attached while
-    // held, releases on RMB release. LMB held reels while attached.
+    // --- Grapple: Terraria-style projectile hook (RMB tap fires) -----------
+    // RMB is now an edge, not a hold. Idle → fire; flying → cancel (retract);
+    // zipping → plain release (keep momentum); hanging → re-fire a new hook
+    // (the climb-chaining loop). Any non-normal mode (swim) drops the hook.
     const rmb = this.input.rmbHeld && this.state.mode === 'normal';
-    if (rmb && !this.prevRmb && this.unlocks.has('grapple') && !this.grapple) {
-      const eye = {
-        x: this.camera.position.x,
-        y: this.camera.position.y,
-        z: this.camera.position.z,
-      };
-      const dir = this.lookDir();
-      this.grapple = fireGrapple(eye, dir, this.grappleTarget(eye, dir));
-      this.grappleSteps = 0;
-    } else if (!rmb && this.grapple) {
-      this.grapple = null; // released the button → drop the rope
-    }
+    const rmbEdge = rmb && !this.prevRmb;
     this.prevRmb = rmb;
 
-    // Movement-feel guards: gliding conflicts with the rope (wing wins →
-    // release); a jump releases with a small upward boost for flow. Dashing is
-    // allowed — the dash burst runs in the core, then the rope re-constrains.
-    if (
-      this.grapple &&
-      masked.jumpHeld &&
-      this.unlocks.has('glider') &&
-      !this.state.grounded
-    ) {
-      this.grapple = null;
+    if (this.hook && this.state.mode !== 'normal') this.hook = null;
+
+    if (rmbEdge && this.unlocks.has('grapple') && this.state.mode === 'normal') {
+      const h = this.hook;
+      if (!h) this.fireNewHook();
+      else if (h.phase === 'flying') this.hook = null; // cancel a hook in flight
+      else if (h.hang) this.fireNewHook(); // re-fire from a hang (climb)
+      else this.hook = null; // plain release while zipping (keep momentum)
     }
+
+    // Glide conflicts with the rope (wing wins → release).
+    if (this.hook && masked.jumpHeld && this.unlocks.has('glider') && !this.state.grounded) {
+      this.hook = null;
+    }
+    // Jump releases the hook; only a LATCHED hook that has done work on a prior
+    // step earns the upward boost (a hang counts as steps). A flying hook or a
+    // same-step fire+jump grants nothing — the no-free-flight invariant.
     let jumpRelease = false;
-    if (this.grapple && masked.jump) {
-      this.grapple = null;
+    if (this.hook && masked.jump) {
+      const latched = this.hook.phase === 'latched';
+      this.hook = null;
       masked.jump = false; // consume the edge so it doesn't buffer post-release
-      // Only reward the release with a boost if the rope actually did work on a
-      // PRIOR step — a same-step fire+release macro (grappleSteps still 0) gets
-      // no free lift, upholding the no-flight invariant.
-      jumpRelease = this.grappleSteps >= 1;
+      jumpRelease = latched && this.grappleSteps >= 1;
+    }
+    // Dash breaks a hang (a hang skips the movement core, so gravity/dash must
+    // be released explicitly; dashing while zipping is handled by the core).
+    if (this.hook && this.hook.phase === 'latched' && this.hook.hang && masked.dash) {
+      this.hook = null;
     }
 
     // --- Double jump (boots): open a coyote window for one air jump --------
@@ -291,20 +315,39 @@ export class PlayerController {
       next.pos.z = resolved.z;
     }
 
-    // --- Grapple rope constraint (post-processes velocity after the core) --
-    if (this.grapple && this.grapple.active) {
-      this.grappleSteps++; // rope did work this step — enables the release boost next step
-      const occluded = this.segmentOccluded(next.pos, this.grapple.anchor);
-      this.grapple = {
-        ...this.grapple,
-        occludedFor: occluded ? this.grapple.occludedFor + dt : 0,
-      };
-      // Reel while LMB held; masked off when exhausted (no reel on empty tank).
-      const reelHeld = this.input.lmbHeld && !next.exhausted;
-      const res = stepGrapple(this.grapple, next, reelHeld, dt);
-      next.vel = res.vel;
-      this.grapple = res.g.active ? res.g : null;
-      if (res.staminaCost > 0) next = drainStamina(next, res.staminaCost);
+    // --- Grapple hook: fly the projectile, or run the latched zip / hang ---
+    if (this.hook) {
+      if (this.hook.phase === 'flying') {
+        // The hook flies independently; the player keeps moving under gravity
+        // (already integrated in `next`). A latch resolves the rope length
+        // against the player's new position. A miss/timeout → phase 'done'.
+        const stepped = stepHook(this.hook, next.pos, this.hookQueries(), dt);
+        this.hook = stepped.phase === 'done' ? null : stepped;
+      } else {
+        // Latched: track a live drone anchor, auto-release on prolonged
+        // occlusion, then auto-zip / hang.
+        if (this.hook.anchorDrone && this.anchors) {
+          const p = this.anchors.getAnchorPos(this.hook.anchorDrone);
+          if (p) this.hook = { ...this.hook, anchor: p };
+        }
+        const occluded = this.segmentOccluded(next.pos, this.hook.anchor!);
+        this.hookOccludedFor = occluded ? this.hookOccludedFor + dt : 0;
+        if (this.hookOccludedFor >= GRAPPLE.occlusionGrace) {
+          this.hook = null;
+        } else {
+          this.grappleSteps++; // latched work done — enables the release boost
+          const res = stepAttached(this.hook, next, dt);
+          this.hook = res.h;
+          if (res.pin) {
+            // Hang: pinned to real geometry, gravity suspended (not flight).
+            next.pos = res.pin;
+            next.vel = { x: 0, y: 0, z: 0 };
+            next.grounded = false;
+          } else {
+            next.vel = res.vel;
+          }
+        }
+      }
     }
 
     // Jump-release boost: a bit of lift so the release flows into a leap.

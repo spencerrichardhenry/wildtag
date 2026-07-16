@@ -2,169 +2,346 @@ import { GRAPPLE } from '../core/constants.ts';
 import type { MoveState, Vec3 } from '../core/types.ts';
 
 // ---------------------------------------------------------------------------
-// Pure grapple rope core — the skill-expression centrepiece of movement. No
-// `three` import, no randomness: plain { x, y, z } math. The controller owns
-// the raycast that finds an anchor and post-processes the rope constraint onto
-// the movement core's velocity AFTER `stepMovement` (the core is rope-agnostic).
+// Pure grapple core — Terraria-style projectile hook (Task 16 rework). No
+// `three`, no randomness: plain { x, y, z } math on injected queries so it
+// stays unit-testable and the controller owns all the three.js wiring.
 //
-// The rope is a *soft spring* constraint, not a hard positional projection —
-// this is deliberate: it gives the rope a stretchy, weighty feel and lets us
-// edit velocity only (never position), which is what the controller pipes back
-// into the next `stepMovement` integration.
+// Lifecycle (a single serializable `HookState`):
+//   idle → flying → latched → (hang) → done
 //
-// Constraint model, applied only when the rope is TAUT (dist > length):
-//   1. Decompose velocity into radial (along the rope) + tangential.
-//   2. Kill any *outward* radial component — the rope cannot lengthen; this is
-//      the tension impulse and only ever REMOVES energy.
-//   3. Damp the remaining (inward) radial velocity by `radialDamping` so the
-//      rope doesn't bounce. Also energy-removing.
-//   4. Add a capped inward spring accel = stiffness × overstretch. This is the
-//      ONLY term that adds energy, and only in proportion to how far the rope
-//      is stretched past its length; steps 2–3 bound it into a small steady
-//      overstretch rather than a growing oscillation.
-// When SLACK (dist ≤ length) the velocity passes through untouched — you fly
-// freely inside the rope's reach.
+//   flying   the hook is a ballistic projectile: it integrates `hookGravity`
+//            at `hookSpeed`, and `stepHook` sweeps its travel segment against
+//            terrain / props / drones each step. Timeout at `hookMaxFlight`
+//            with no contact → phase 'done' (a miss; zero impulse to anyone).
+//   latched  contact found. `stepAttached` auto-shortens the rope at
+//            `zipSpeed` (no reel, no stamina) while the ORIGINAL soft-spring
+//            pendulum constraint (radial-kill + damp + capped inward spring)
+//            post-processes the player's velocity — so an overhead anchor still
+//            swings, it just also zips inward.
+//   hang     rope reached `hangLength`: the player is PINNED at
+//            anchor − hangLength along the current radial, velocity zeroed,
+//            gravity suspended by the controller (anchored to real geometry,
+//            not flight). Broken by jump / dash / a re-fire (RMB).
+//
+// The constraint model (applied only when TAUT, dist > length):
+//   1. Kill any *outward* radial velocity — the rope can't lengthen (tension,
+//      only ever removes energy).
+//   2. Damp the remaining (inward) radial velocity by `radialDamping`.
+//   3. Add a capped inward spring accel = stiffness × overstretch (the only
+//      energy-adding term, bounded by steps 1–2 into a small steady overstretch).
+// When SLACK (dist ≤ length) velocity passes through untouched.
 // ---------------------------------------------------------------------------
 
-export interface GrappleState {
-  /** False once released (below minLength, occlusion grace elapsed, controller drop). */
-  active: boolean;
-  /** World anchor point the rope is fixed to. */
-  anchor: Vec3;
-  /** Current rope length (m) — the radius of the constraint sphere. */
-  length: number;
-  /** True on the step the rope is being reeled in (shortening). */
-  reeling: boolean;
-  /** Seconds the controller has seen the rope occluded; it releases at grace. */
-  occludedFor: number;
+/** A grappleable vertical cylinder (tree/rock/post): trunk radius + y-band. */
+export interface GrappleCollider {
+  x: number;
+  z: number;
+  r: number;
+  yBase: number;
+  yTop: number;
 }
 
-/**
- * Fire a grapple from `camPos` along `lookDir` at the pre-computed ray `hit`
- * (the controller casts terrain + anchor registry and passes the nearest).
- * Returns null when there was no hit or the hit is beyond `maxRange` — the
- * initial length is the fire-time distance, so the rope starts just taut.
- */
-export function fireGrapple(camPos: Vec3, _lookDir: Vec3, hit: Vec3 | null): GrappleState | null {
-  if (!hit) return null;
-  const dx = hit.x - camPos.x;
-  const dy = hit.y - camPos.y;
-  const dz = hit.z - camPos.z;
-  const dist = Math.hypot(dx, dy, dz);
-  if (dist > GRAPPLE.maxRange || dist < 1e-6) return null;
+/** Injected world queries for the flying-hook sweep (keeps the core pure). */
+export interface HookQueries {
+  /** Ground height at a world column (terrain latch when the hook drops below). */
+  heightAt: (x: number, z: number) => number;
+  /** Grappleable prop cylinders near a query point (trees/rocks). */
+  getGrappleColliders: (x: number, z: number) => GrappleCollider[];
+  /** Drone-sphere sweep of the segment a→b; returns the live anchor id on a hit. */
+  raycastDrones?: (a: Vec3, b: Vec3) => { point: Vec3; anchorId: string } | null;
+}
+
+export interface HookState {
+  /** 'flying' projectile, 'latched' (zipping or hanging), or 'done' (missed). */
+  phase: 'flying' | 'latched' | 'done';
+  /** Hook position — the projectile head while flying, the anchor once latched. */
+  pos: Vec3;
+  /** Hook velocity while flying (unused once latched). */
+  vel: Vec3;
+  /** Fixed world anchor point once latched (null while flying). */
+  anchor: Vec3 | null;
+  /** Drone anchor id when latched to a drone (the controller tracks it live). */
+  anchorDrone: string | null;
+  /** Rope length (m): the constraint-sphere radius once latched (0 while flying). */
+  length: number;
+  /** True once the zip has finished and the player is pinned to the anchor. */
+  hang: boolean;
+  /** Seconds the hook has been in flight (for the `hookMaxFlight` timeout). */
+  flightTime: number;
+}
+
+/** Launch a hook from `origin` along `dir` (need not be unit) at `hookSpeed`. */
+export function fireHook(origin: Vec3, dir: Vec3): HookState {
+  const len = Math.hypot(dir.x, dir.y, dir.z) || 1;
+  const s = GRAPPLE.hookSpeed / len;
   return {
-    active: true,
-    anchor: { x: hit.x, y: hit.y, z: hit.z },
-    length: dist,
-    reeling: false,
-    occludedFor: 0,
+    phase: 'flying',
+    pos: { x: origin.x, y: origin.y, z: origin.z },
+    vel: { x: dir.x * s, y: dir.y * s, z: dir.z * s },
+    anchor: null,
+    anchorDrone: null,
+    length: 0,
+    hang: false,
+    flightTime: 0,
+  };
+}
+
+/** Build a latched hook directly (debug/instant-attach path — no flight). */
+export function latchedHook(anchor: Vec3, playerPos: Vec3): HookState {
+  const length = Math.hypot(
+    anchor.x - playerPos.x,
+    anchor.y - playerPos.y,
+    anchor.z - playerPos.z,
+  );
+  return {
+    phase: 'latched',
+    pos: { ...anchor },
+    vel: { x: 0, y: 0, z: 0 },
+    anchor: { ...anchor },
+    anchorDrone: null,
+    length,
+    hang: false,
+    flightTime: 0,
   };
 }
 
 /**
- * Advance the rope one step. Pure: neither `g` nor `s` is mutated. Returns the
- * next rope state, the post-constraint velocity (the controller writes this
- * back onto the MoveState), and the stamina cost of any reeling this step (the
- * controller applies it via `drainStamina`). `reelHeld` is expected to already
- * be masked off by the controller when the player is exhausted.
+ * Swept hit of the segment `prev`→`next` against a vertical cylinder. Returns
+ * the parametric entry `t` in [0,1] and the world contact point (pushed to the
+ * cylinder surface radius `r + 0.15` so the rope end doesn't clip inside), or
+ * null when the segment never crosses the cylinder inside its y-band.
  */
-export function stepGrapple(
-  g: GrappleState,
-  s: MoveState,
-  reelHeld: boolean,
-  dt: number,
-): { g: GrappleState; vel: Vec3; staminaCost: number } {
-  const vel: Vec3 = { ...s.vel };
+function hitCylinder(prev: Vec3, next: Vec3, c: GrappleCollider): { t: number; point: Vec3 } | null {
+  const R = c.r + 0.15;
+  const dx = next.x - prev.x;
+  const dy = next.y - prev.y;
+  const dz = next.z - prev.z;
+  const fx = prev.x - c.x;
+  const fz = prev.z - c.z;
 
-  // Already released: pass everything through untouched.
-  if (!g.active) return { g: { ...g, anchor: { ...g.anchor } }, vel, staminaCost: 0 };
+  // Horizontal interval [tLo, tHi] where the point lies within radius R.
+  const a = dx * dx + dz * dz;
+  let tLo: number;
+  let tHi: number;
+  if (a < 1e-12) {
+    // No horizontal travel: either always inside the disk or never.
+    if (fx * fx + fz * fz > R * R) return null;
+    tLo = 0;
+    tHi = 1;
+  } else {
+    const b = 2 * (fx * dx + fz * dz);
+    const cc = fx * fx + fz * fz - R * R;
+    const disc = b * b - 4 * a * cc;
+    if (disc < 0) return null;
+    const sq = Math.sqrt(disc);
+    tLo = (-b - sq) / (2 * a);
+    tHi = (-b + sq) / (2 * a);
+  }
+  let lo = Math.max(tLo, 0);
+  let hi = Math.min(tHi, 1);
+  if (lo > hi) return null;
 
-  // Occlusion auto-release (the controller maintains the timer; this is the
-  // pure threshold check). Velocity is preserved on release.
-  if (g.occludedFor >= GRAPPLE.occlusionGrace) {
-    return { g: { ...g, anchor: { ...g.anchor }, active: false }, vel, staminaCost: 0 };
+  // Intersect with the t-interval where y is within the cylinder's band.
+  if (Math.abs(dy) < 1e-12) {
+    if (prev.y < c.yBase || prev.y > c.yTop) return null;
+  } else {
+    const tA = (c.yBase - prev.y) / dy;
+    const tB = (c.yTop - prev.y) / dy;
+    lo = Math.max(lo, Math.min(tA, tB));
+    hi = Math.min(hi, Math.max(tA, tB));
+    if (lo > hi) return null;
   }
 
-  // --- Reel: shorten the rope, charge stamina, release below minLength -------
-  let length = g.length;
-  let staminaCost = 0;
-  const reeling = reelHeld;
-  if (reeling) {
-    length -= GRAPPLE.reelSpeed * dt;
-    staminaCost = GRAPPLE.reelCostPerS * dt;
-    if (length < GRAPPLE.minLength) {
-      // Reel completed: release with a lunge toward the anchor so the player
-      // arrives at the target instead of stalling minLength short of it.
-      const lx = g.anchor.x - s.pos.x;
-      const ly = g.anchor.y - s.pos.y;
-      const lz = g.anchor.z - s.pos.z;
-      const ld = Math.hypot(lx, ly, lz);
-      const lunged =
-        ld > 1e-6
-          ? {
-              x: vel.x + (lx / ld) * GRAPPLE.arrivalLunge,
-              y: vel.y + (ly / ld) * GRAPPLE.arrivalLunge,
-              z: vel.z + (lz / ld) * GRAPPLE.arrivalLunge,
-            }
-          : vel;
-      return {
-        g: { ...g, anchor: { ...g.anchor }, length, reeling: false, active: false },
-        vel: lunged,
-        staminaCost,
-      };
+  const t = Math.max(lo, 0);
+  const px = prev.x + t * dx;
+  const py = prev.y + t * dy;
+  const pz = prev.z + t * dz;
+  // Push the anchor just outside the trunk toward the hook so the rope end
+  // reads on the surface rather than buried in the cylinder.
+  let ox = px - c.x;
+  let oz = pz - c.z;
+  let oh = Math.hypot(ox, oz);
+  if (oh < 1e-6) {
+    // Dropped straight onto the axis: push back toward where the hook came from.
+    ox = prev.x - c.x;
+    oz = prev.z - c.z;
+    oh = Math.hypot(ox, oz) || 1;
+  }
+  const scale = (c.r + 0.15) / oh;
+  return { t, point: { x: c.x + ox * scale, y: py, z: c.z + oz * scale } };
+}
+
+/**
+ * Advance a flying hook one step: integrate gravity, sweep the travel segment
+ * against props → drones → terrain (earliest contact wins, so a hook zipping
+ * through a tree canopy latches on the way), and time out at `hookMaxFlight`.
+ * On latch, `length` is set to the fire-time player→anchor distance so the rope
+ * starts just taut. Pure: `h` is never mutated. `playerPos` is only read to set
+ * that initial length.
+ */
+export function stepHook(h: HookState, playerPos: Vec3, q: HookQueries, dt: number): HookState {
+  if (h.phase !== 'flying') return h;
+
+  const vy = h.vel.y + GRAPPLE.hookGravity * dt;
+  const prev = h.pos;
+  const nextPos: Vec3 = {
+    x: h.pos.x + h.vel.x * dt,
+    y: h.pos.y + vy * dt,
+    z: h.pos.z + h.vel.z * dt,
+  };
+  const flightTime = h.flightTime + dt;
+
+  const latch = (anchor: Vec3, drone: string | null): HookState => ({
+    phase: 'latched',
+    pos: { ...anchor },
+    vel: { x: 0, y: 0, z: 0 },
+    anchor: { ...anchor },
+    anchorDrone: drone,
+    length: Math.hypot(anchor.x - playerPos.x, anchor.y - playerPos.y, anchor.z - playerPos.z),
+    hang: false,
+    flightTime,
+  });
+
+  // Earliest contact along prev→nextPos wins (first collider on the path).
+  let bestT = Infinity;
+  let bestAnchor: Vec3 | null = null;
+  let bestDrone: string | null = null;
+
+  // (a) Props: swept vertical cylinders near the segment end.
+  for (const c of q.getGrappleColliders(nextPos.x, nextPos.z)) {
+    const hit = hitCylinder(prev, nextPos, c);
+    if (hit && hit.t < bestT) {
+      bestT = hit.t;
+      bestAnchor = hit.point;
+      bestDrone = null;
     }
   }
 
-  const outG: GrappleState = { ...g, anchor: { ...g.anchor }, length, reeling };
-
-  // --- Constraint ------------------------------------------------------------
-  const dx = s.pos.x - g.anchor.x;
-  const dy = s.pos.y - g.anchor.y;
-  const dz = s.pos.z - g.anchor.z;
-  const dist = Math.hypot(dx, dy, dz);
-
-  // Slack (or degenerate at the anchor): fly free, velocity untouched.
-  if (dist < 1e-6 || dist <= length) {
-    return { g: outG, vel, staminaCost };
+  // (b) Drones: sphere sweep of the same segment (live-tracked anchor id).
+  if (q.raycastDrones) {
+    const dhit = q.raycastDrones(prev, nextPos);
+    if (dhit) {
+      const segLen = Math.hypot(nextPos.x - prev.x, nextPos.y - prev.y, nextPos.z - prev.z) || 1;
+      const t = Math.hypot(dhit.point.x - prev.x, dhit.point.y - prev.y, dhit.point.z - prev.z) / segLen;
+      if (t < bestT) {
+        bestT = t;
+        bestAnchor = dhit.point;
+        bestDrone = dhit.anchorId;
+      }
+    }
   }
 
-  // Outward unit vector (anchor → player).
+  // (c) Terrain: endpoint drop below the ground (t≈1, so props/drones on the
+  // path always win over the ground the hook would eventually reach).
+  const groundY = q.heightAt(nextPos.x, nextPos.z);
+  if (nextPos.y <= groundY && 1 < bestT) {
+    bestAnchor = { x: nextPos.x, y: groundY + GRAPPLE.anchorLift, z: nextPos.z };
+    bestDrone = null;
+    bestT = 1;
+  }
+
+  if (bestAnchor) return latch(bestAnchor, bestDrone);
+
+  if (flightTime >= GRAPPLE.hookMaxFlight) {
+    return { ...h, pos: nextPos, vel: { x: h.vel.x, y: vy, z: h.vel.z }, phase: 'done', flightTime };
+  }
+  return { ...h, pos: nextPos, vel: { x: h.vel.x, y: vy, z: h.vel.z }, flightTime };
+}
+
+/** The pinned position for a hang: `hangLength` down the current radial. */
+export function hangPin(anchor: Vec3, pos: Vec3): Vec3 {
+  const dx = pos.x - anchor.x;
+  const dy = pos.y - anchor.y;
+  const dz = pos.z - anchor.z;
+  const d = Math.hypot(dx, dy, dz);
+  if (d < 1e-6) return { x: anchor.x, y: anchor.y - GRAPPLE.hangLength, z: anchor.z };
+  const s = GRAPPLE.hangLength / d;
+  return { x: anchor.x + dx * s, y: anchor.y + dy * s, z: anchor.z + dz * s };
+}
+
+/**
+ * Soft-spring rope constraint (taut only): edits velocity, never position.
+ * Exported so the pendulum-physics tests can exercise a constant-length rope
+ * directly (the auto-zip in `stepAttached` continuously shortens the rope, so a
+ * pure fixed-length pendulum is tested here rather than through it).
+ */
+export function applyRopeConstraint(
+  anchor: Vec3,
+  length: number,
+  pos: Vec3,
+  v: Vec3,
+  dt: number,
+): Vec3 {
+  const vel: Vec3 = { ...v };
+  const dx = pos.x - anchor.x;
+  const dy = pos.y - anchor.y;
+  const dz = pos.z - anchor.z;
+  const dist = Math.hypot(dx, dy, dz);
+  if (dist < 1e-6 || dist <= length) return vel; // slack: fly free
+
   const ux = dx / dist;
   const uy = dy / dist;
   const uz = dz / dist;
 
-  // 1. Kill the outward radial component (rope tension — energy-removing).
+  // 1. Kill outward radial (tension).
   const vRad = vel.x * ux + vel.y * uy + vel.z * uz;
   if (vRad > 0) {
     vel.x -= ux * vRad;
     vel.y -= uy * vRad;
     vel.z -= uz * vRad;
   }
-
-  // 2. Damp the remaining (now inward, ≤ 0) radial velocity.
+  // 2. Damp remaining inward radial.
   const vRadRem = vel.x * ux + vel.y * uy + vel.z * uz;
   const damp = vRadRem * GRAPPLE.radialDamping;
   vel.x -= ux * damp;
   vel.y -= uy * damp;
   vel.z -= uz * damp;
-
-  // 3. Capped inward spring accel toward the constraint surface.
+  // 3. Capped inward spring.
   const overstretch = dist - length;
   const springAccel = Math.min(GRAPPLE.stiffness * overstretch, GRAPPLE.springAccelMax);
   const dv = springAccel * dt;
   vel.x -= ux * dv;
   vel.y -= uy * dv;
   vel.z -= uz * dv;
-
-  return { g: outG, vel, staminaCost };
+  return vel;
 }
 
 /**
- * Analytic terrain ray-march: step out along `dir` sampling `heightAt`, and on
- * the first sample at or below the ground bisect the last segment to refine the
- * hit. Pure — `heightAt` is injected so this stays free of the terrain module.
- * Returns the world hit point, or null if the ground isn't struck within
- * `maxDist`.
+ * Advance a latched hook one step. Auto-shortens the rope at `zipSpeed` and
+ * post-processes the pendulum constraint onto `s.vel`; once the rope reaches
+ * `hangLength` the player enters a hang. Returns the next hook, the
+ * constraint-adjusted velocity, and (when hanging) the pinned position the
+ * controller must write onto the player. Pure — `h`/`s` are never mutated.
+ */
+export function stepAttached(
+  h: HookState,
+  s: MoveState,
+  dt: number,
+): { h: HookState; vel: Vec3; pin: Vec3 | null } {
+  const anchor = h.anchor!;
+
+  if (h.hang) {
+    return { h, vel: { x: 0, y: 0, z: 0 }, pin: hangPin(anchor, s.pos) };
+  }
+
+  const length = h.length - GRAPPLE.zipSpeed * dt;
+  if (length <= GRAPPLE.hangLength) {
+    return {
+      h: { ...h, length: GRAPPLE.hangLength, hang: true },
+      vel: { x: 0, y: 0, z: 0 },
+      pin: hangPin(anchor, s.pos),
+    };
+  }
+
+  const vel = applyRopeConstraint(anchor, length, s.pos, s.vel, dt);
+  return { h: { ...h, length }, vel, pin: null };
+}
+
+/**
+ * Analytic terrain ray-march (retained for `?debug=grapple` and the rope-
+ * occlusion check): step out along `dir` sampling `heightAt`, and on the first
+ * sample at or below the ground bisect the last segment to refine the hit.
+ * Pure — `heightAt` is injected. Returns the world hit point, or null.
  */
 export function raycastTerrain(
   origin: Vec3,
@@ -183,7 +360,6 @@ export function raycastTerrain(
   let prevT = 0;
   for (let t: number = GRAPPLE.marchStep; t <= maxDist; t += GRAPPLE.marchStep) {
     if (above(t) <= 0) {
-      // Bracket [prevT (above), t (below/at)] — bisect toward the surface.
       let lo = prevT;
       let hi = t;
       for (let i = 0; i < GRAPPLE.marchRefine; i++) {

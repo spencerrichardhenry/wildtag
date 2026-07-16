@@ -359,7 +359,7 @@ const KEYBINDS: [string, string][] = [
   ['Space', 'Jump  (hold to Glide — when crafted)'],
   ['Q', 'Dash'],
   ['R', 'Rocket  (when crafted)'],
-  ['RMB', 'Grapple  (when crafted)'],
+  ['RMB', 'Fire Grapple — auto-zips on latch  (when crafted)'],
   ['F', 'Harvest / Interact'],
   ['LMB', 'Throw tracker dart'],
   ['1 – 4', 'Hotbar'],

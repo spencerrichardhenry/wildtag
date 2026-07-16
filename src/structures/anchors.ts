@@ -33,6 +33,12 @@ export class AnchorRegistry {
     this.anchors.delete(id);
   }
 
+  /** Live position of a registered anchor (a latched hook tracks its drone). */
+  getAnchorPos(id: string): Vec3 | null {
+    const a = this.anchors.get(id);
+    return a ? a.getPos() : null;
+  }
+
   /** Number of live anchors (debug / tests). */
   get size(): number {
     return this.anchors.size;

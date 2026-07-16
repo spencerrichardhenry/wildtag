@@ -5,9 +5,11 @@ import type { Obstacle } from '../player/collision.ts';
 import {
   scatterForChunk,
   placementObstacle,
+  placementGrappleCollider,
   type PropKind,
   type PropPlacement,
 } from './scatter.ts';
+import type { GrappleCollider } from '../player/grapple.ts';
 import {
   harvest,
   isAvailable,
@@ -212,6 +214,7 @@ interface LoadedProps {
   cz: number;
   meshes: THREE.InstancedMesh[];
   obstacles: Obstacle[];
+  grappleColliders: GrappleCollider[];
   nodes: NodeEntry[];
 }
 
@@ -315,6 +318,7 @@ export class PropManager {
 
     const meshes: THREE.InstancedMesh[] = [];
     const obstacles: Obstacle[] = [];
+    const grappleColliders: GrappleCollider[] = [];
     const nodes: NodeEntry[] = [];
 
     for (const [kind, list] of byKind) {
@@ -326,6 +330,8 @@ export class PropManager {
         const { p, index } = item;
         const ob = placementObstacle(p);
         if (ob) obstacles.push(ob);
+        const gc = placementGrappleCollider(p);
+        if (gc) grappleColliders.push(gc);
 
         if (RESOURCE_KINDS.has(kind)) {
           const rkey = `${cx},${cz}:${index}`;
@@ -358,7 +364,7 @@ export class PropManager {
       meshes.push(mesh);
     }
 
-    return { cx, cz, meshes, obstacles, nodes };
+    return { cx, cz, meshes, obstacles, grappleColliders, nodes };
   }
 
   /** Restore/dim node instances whose availability changed since last sync. */
@@ -386,6 +392,19 @@ export class PropManager {
     for (const chunk of this.loaded.values()) {
       if (Math.abs(chunk.cx - pcx) > rng || Math.abs(chunk.cz - pcz) > rng) continue;
       for (const ob of chunk.obstacles) out.push(ob);
+    }
+    return out;
+  }
+
+  /** Grappleable tree/rock cylinders within SCATTER.obstacleRangeChunks of (x, z). */
+  getGrappleColliders(x: number, z: number): GrappleCollider[] {
+    const pcx = Math.floor(x / CHUNKS.size);
+    const pcz = Math.floor(z / CHUNKS.size);
+    const rng = SCATTER.obstacleRangeChunks;
+    const out: GrappleCollider[] = [];
+    for (const chunk of this.loaded.values()) {
+      if (Math.abs(chunk.cx - pcx) > rng || Math.abs(chunk.cz - pcz) > rng) continue;
+      for (const gc of chunk.grappleColliders) out.push(gc);
     }
     return out;
   }

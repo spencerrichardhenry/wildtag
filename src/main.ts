@@ -96,6 +96,9 @@ function bootGame(): void {
 
   const input = new Input(canvas as HTMLCanvasElement);
   const player = new PlayerController(camera, input, ground, spawn, scene, anchors);
+  // Feed the grapple hook the nearby grappleable tree/rock cylinders so a fired
+  // hook can latch to props, not just bare terrain.
+  player.grappleColliders = (x, z) => props.getGrappleColliders(x, z);
 
   // Inventory accumulating harvested resources + the crafting tree's currency
   // (RP), consumables (darts) and held deployable kits.
@@ -315,7 +318,7 @@ function bootGame(): void {
         if (action.slot === 2) {
           toast(
             player.unlocks.has('grapple')
-              ? 'Grapple: hold RMB to fire · LMB reels · Space releases'
+              ? 'Grapple: tap RMB to fire · auto-zips on latch · Space jumps off'
               : 'Grapple Hook not crafted yet — open Crafting (C)',
           );
         } else if (action.slot === 3) placement.toggle('zipline');
@@ -333,9 +336,9 @@ function bootGame(): void {
       if (action.type === 'lmb') {
         if (placement.active) {
           placement.confirm(); // LMB confirms a placement
-        } else if (!player.isGrappling() && player.mode !== 'zipline') {
-          // LMB reels the rope while grappled; dart throws are suppressed then
-          // and while riding a zipline.
+        } else if (player.mode !== 'zipline') {
+          // LMB throws a tracker dart (the grapple now lives entirely on RMB —
+          // no reel binding); suppressed only while riding a zipline.
           darts.tryThrow();
         }
       }
