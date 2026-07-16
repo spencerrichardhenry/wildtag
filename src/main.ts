@@ -1,12 +1,15 @@
 import * as THREE from 'three';
-import { SIM_DT } from './core/constants.ts';
+import { CAMERA, MAX_FRAME_DT, SIM_DT } from './core/constants.ts';
 
 // ---------------------------------------------------------------------------
 // Boot scene: renderer, camera, a placeholder ground plane + spinning cube.
 // Later tasks hook their own systems into `update(dt)` / `render()` below.
 // ---------------------------------------------------------------------------
 
-const canvas = document.getElementById('game') as HTMLCanvasElement;
+const canvas = document.getElementById('game');
+if (!(canvas instanceof HTMLCanvasElement)) {
+  throw new Error('canvas#game not found');
+}
 
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.shadowMap.enabled = false; // shadows off for perf
@@ -17,10 +20,10 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x87ceeb); // placeholder sky color
 
 const camera = new THREE.PerspectiveCamera(
-  75,
+  CAMERA.fov,
   window.innerWidth / window.innerHeight,
-  0.1,
-  1200,
+  CAMERA.near,
+  CAMERA.far,
 );
 camera.position.set(0, 2, 6);
 camera.lookAt(0, 1, 0);
@@ -75,8 +78,6 @@ function render(): void {
 // render every animation frame. Frame delta is clamped so tab-switches /
 // long stalls don't cause a spiral-of-death catch-up burst.
 // ---------------------------------------------------------------------------
-
-const MAX_FRAME_DT = 0.1;
 
 let accumulator = 0;
 let lastTime = performance.now();
