@@ -86,6 +86,18 @@ describe('assign / unassign', () => {
     expect(f.plots[1]!.assigned).toBeNull();
   });
 
+  it('release-while-assigned invariant: unassignEntry on a released id frees its plot', () => {
+    // main.ts releaseFromRoster calls unassignEntry(farm, id) — the farm-side
+    // invariant is that no plot keeps pointing at a roster id that left.
+    let f = assign(createFarm(1), 2, 77);
+    f = tick(f, [entry(77, 'puffle')], speciesById, FARM.producePeriod); // hopper has goods
+    f = unassignEntry(f, 77);
+    expect(f.plots.every((p) => p.assigned !== 77)).toBe(true);
+    expect(f.plots[2]!.assigned).toBeNull();
+    expect(f.plots[2]!.progress).toBe(0);
+    expect(f.plots[2]!.hopper.fiber).toBe(2); // goods survive for collection
+  });
+
   it('firstFreePlot finds the first unlocked empty plot', () => {
     let f = createFarm(0);
     expect(firstFreePlot(f)).toBe(0);
@@ -137,6 +149,62 @@ describe('tick — speed auras', () => {
   });
 });
 
+describe('tick — 2D grid adjacency (3×2 row-major)', () => {
+  // Plot ids map onto the village farm grid row-major (cols=3):
+  //   row 0: 0 1 2
+  //   row 1: 3 4 5
+  // so 2↔3 are opposite corners (row-wrap, NOT adjacent) and 0↔3 / 1↔4 / 2↔5
+  // are vertical neighbours (adjacent).
+
+  it('row-wrap pair 2↔3 is NOT adjacent: no aura across the corner', () => {
+    let f = createFarm(2); // all 6 unlocked
+    f = assign(f, 2, 1); // puffle producer at row 0, col 2
+    f = assign(f, 3, 2); // mirefin aura at row 1, col 0 — opposite corner
+    const roster = [entry(1, 'puffle'), entry(2, 'mirefin')];
+    // 90s at 1.0× exactly completes a cycle; any aura would have finished early
+    // — instead assert the un-boosted boundary behaves exactly like no aura.
+    f = tick(f, roster, speciesById, FARM.producePeriod / 1.25); // 72s ×1.0 = 72s
+    expect(f.plots[2]!.hopper.fiber ?? 0).toBe(0); // aura absent → not done yet
+  });
+
+  it('row-wrap pair 2↔3 is NOT adjacent: no snickerdoodle double', () => {
+    let f = createFarm(2);
+    f = assign(f, 2, 1);
+    f = assign(f, 3, 2);
+    const roster = [entry(1, 'snickerdoodle'), entry(2, 'snickerdoodle')];
+    f = tick(f, roster, speciesById, FARM.producePeriod);
+    expect(f.plots[2]!.hopper.fiber).toBe(1); // base amount, no double
+  });
+
+  it('vertical neighbours 1↔4 ARE adjacent: aura applies across rows', () => {
+    let f = createFarm(2);
+    f = assign(f, 1, 1); // puffle at row 0, col 1
+    f = assign(f, 4, 2); // mirefin at row 1, col 1 — directly behind
+    const roster = [entry(1, 'puffle'), entry(2, 'mirefin')];
+    f = tick(f, roster, speciesById, FARM.producePeriod / 1.25); // 72s ×1.25 = 90s
+    expect(f.plots[1]!.hopper.fiber).toBe(2);
+  });
+
+  it('vertical neighbours 0↔3 ARE adjacent: snickerdoodles knead across rows', () => {
+    let f = createFarm(2);
+    f = assign(f, 0, 1);
+    f = assign(f, 3, 2);
+    const roster = [entry(1, 'snickerdoodle'), entry(2, 'snickerdoodle')];
+    f = tick(f, roster, speciesById, FARM.producePeriod);
+    expect(f.plots[0]!.hopper.fiber).toBe(2); // doubled
+  });
+
+  it('plots 3-5 (back row) produce and stack auras like the front row', () => {
+    let f = createFarm(2);
+    f = assign(f, 4, 1); // puffle at row 1, col 1
+    f = assign(f, 3, 2); // mirefin left
+    f = assign(f, 5, 3); // emberpup right
+    const roster = [entry(1, 'puffle'), entry(2, 'mirefin'), entry(3, 'emberpup')];
+    f = tick(f, roster, speciesById, FARM.producePeriod / 1.5); // 60s ×1.5 = 90s
+    expect(f.plots[4]!.hopper.fiber).toBe(2);
+  });
+});
+
 describe('tick — snickerdoodle adjacency double', () => {
   it('doubles output when another snickerdoodle is on an adjacent plot', () => {
     let f = createFarm(0);
@@ -170,6 +238,19 @@ describe('tick — hopper cap', () => {
     const roster = [entry(1, 'puffle'), entry(2, 'bumblewhale')];
     f = tick(f, roster, speciesById, FARM.producePeriod * 20);
     expect(f.plots[0]!.hopper.fiber).toBe(FARM.hopperCap + FARM.bumblewhaleHopperBonus); // 11
+  });
+});
+
+describe('tick — full-hopper banked cycle (documented semantics)', () => {
+  it('holds exactly one finished cycle while full; it ships on the first tick after collect', () => {
+    let f = assign(createFarm(0), 0, 1); // puffle fiber x2
+    const roster = [entry(1, 'puffle')];
+    f = tick(f, roster, speciesById, FARM.producePeriod * 50); // way past cap
+    expect(f.plots[0]!.hopper.fiber).toBe(FARM.hopperCap);
+    expect(f.plots[0]!.progress).toBe(FARM.producePeriod); // one cycle banked, no more
+    f = collect(f, 0).farm;
+    f = tick(f, roster, speciesById, 0.001); // instant: the banked batch ships
+    expect(f.plots[0]!.hopper.fiber).toBe(2);
   });
 });
 

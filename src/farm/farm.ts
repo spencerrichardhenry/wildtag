@@ -1,4 +1,4 @@
-import { FARM } from '../core/constants.ts';
+import { FARM, VILLAGE } from '../core/constants.ts';
 import type { ResourceKind, SpeciesDef } from '../core/types.ts';
 import type { RosterEntry } from '../critters/roster.ts';
 
@@ -7,9 +7,17 @@ import type { RosterEntry } from '../critters/roster.ts';
 // critter that putters away producing its species resource into the plot hopper
 // on a timer (spec §4). Speed auras (mirefin/emberpup, +25% each, cap +50%) and
 // the snickerdoodle adjacency-double / bumblewhale hopper-cap aura are all
-// resolved from plot adjacency (index ±1 among unlocked plots). Everything is
-// returned as a NEW FarmState; the inputs are never mutated, so `tick` is a pure
-// function (determinism is asserted in tests).
+// resolved from true 2D grid adjacency (plot ids are row-major over the
+// VILLAGE.farm cols×rows grid: same row ±1 column or same column ±1 row — no
+// diagonals, no row-wrap pairs). Everything is returned as a NEW FarmState; the
+// inputs are never mutated, so `tick` is a pure function (determinism is
+// asserted in tests).
+//
+// FULL-HOPPER SEMANTICS (deliberate): when a hopper is at cap, the plot's
+// progress holds ("banked") at exactly one full producePeriod instead of
+// resetting — the batch that couldn't ship is considered finished work waiting
+// on space, so the first tick after a collect delivers it immediately. Only a
+// single cycle is ever banked; further progress does not accrue while full.
 // ---------------------------------------------------------------------------
 
 export interface Plot {
@@ -122,12 +130,24 @@ function plotSpecies(
   return speciesById(entry.speciesId);
 }
 
-/** Unlocked, index-adjacent (±1) neighbours of `plot`. */
+/**
+ * Unlocked grid neighbours of `plot`. Plot ids are row-major over the village's
+ * `VILLAGE.farm.cols`×rows grid (layout.ts emits them that way), so adjacency is
+ * true 2D: same row ±1 column, or same column ±1 row — never diagonal, and never
+ * the row-wrap pair (e.g. ids 2 and 3 on a 3-wide grid are opposite corners).
+ */
 function neighbours(farm: FarmState, plot: Plot): Plot[] {
+  const cols = VILLAGE.farm.cols;
+  const row = Math.floor(plot.id / cols);
+  const col = plot.id % cols;
   const out: Plot[] = [];
   for (const p of farm.plots) {
-    if (!p.unlocked) continue;
-    if (p.id === plot.id - 1 || p.id === plot.id + 1) out.push(p);
+    if (!p.unlocked || p.id === plot.id) continue;
+    const r = Math.floor(p.id / cols);
+    const c = p.id % cols;
+    const sameRowAdjacent = r === row && Math.abs(c - col) === 1;
+    const sameColAdjacent = c === col && Math.abs(r - row) === 1;
+    if (sameRowAdjacent || sameColAdjacent) out.push(p);
   }
   return out;
 }

@@ -58,6 +58,17 @@ function dominantResource(hopper: Partial<Record<ResourceKind, number>>): {
   return { resource, total };
 }
 
+/** Dispose every geometry/material under `group` (manager.ts disposeGroup pattern). */
+function disposeGroup(group: THREE.Object3D): void {
+  group.traverse((obj) => {
+    const mesh = obj as THREE.Mesh;
+    if (mesh.geometry) mesh.geometry.dispose();
+    const m = mesh.material;
+    if (Array.isArray(m)) m.forEach((x) => x.dispose());
+    else if (m) m.dispose();
+  });
+}
+
 function mat(color: number, opts: { emissive?: number; opacity?: number } = {}): THREE.MeshLambertMaterial {
   const m = new THREE.MeshLambertMaterial({ color, flatShading: true });
   if (opts.emissive !== undefined) {
@@ -136,6 +147,7 @@ export class FarmVisuals {
         }
       } else if (vis.sign) {
         vis.group.remove(vis.sign);
+        disposeGroup(vis.sign);
         vis.sign = null;
       }
 
@@ -146,6 +158,7 @@ export class FarmVisuals {
       if (wantFor !== vis.puppetFor || wantSpecies !== vis.puppetSpecies) {
         if (vis.puppet) {
           vis.group.remove(vis.puppet);
+          disposeGroup(vis.puppet);
           vis.puppet = null;
           vis.puppetParts = null;
         }
@@ -169,6 +182,7 @@ export class FarmVisuals {
       if (wantCubes !== vis.cubeCount || resource !== vis.cubeResource) {
         if (vis.cubes) {
           vis.group.remove(vis.cubes);
+          disposeGroup(vis.cubes);
           vis.cubes = null;
         }
         vis.cubeCount = wantCubes;
