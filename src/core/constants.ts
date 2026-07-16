@@ -153,6 +153,41 @@ export const MOVE = {
 } as const;
 
 /**
+ * Grapple hook (Task 12). The rope is a soft *spring* constraint the controller
+ * post-processes onto the movement core's velocity each step (the pure core is
+ * grapple-agnostic). Distances in m, speeds m/s; `stiffness` is inward accel
+ * (m/s²) per metre of overstretch; `radialDamping` is the fraction of the
+ * remaining (inward) radial velocity bled off per step; costs in stamina/s;
+ * times in s.
+ */
+export const GRAPPLE = {
+  /** Max fire distance (m); hits beyond this are rejected. */
+  maxRange: 45,
+  /** Rope shorten rate while reeling (m/s). */
+  reelSpeed: 12,
+  /** Stamina drained per second while reeling. */
+  reelCostPerS: 15,
+  /** Auto-release once the rope reels below this length (m). */
+  minLength: 2.5,
+  /** Spring stiffness: inward accel (m/s²) per metre of overstretch. */
+  stiffness: 35,
+  /** Fraction of the remaining radial velocity damped per step. */
+  radialDamping: 0.3,
+  /** Cap on spring accel (m/s²) so a large overstretch can't explode. */
+  springAccelMax: 200,
+  /** Seconds the rope may stay occluded before it auto-releases. */
+  occlusionGrace: 0.5,
+  /** Upward velocity bonus (m/s) when the grapple is released via a jump. */
+  jumpReleaseBoost: 2,
+  /** Terrain ray-march: distance (m) stepped per sample against heightAt. */
+  marchStep: 0.75,
+  /** Bisection refinement passes after a terrain-march bracket is found. */
+  marchRefine: 4,
+  /** Segment samples between player and anchor for the occlusion test. */
+  occlusionSamples: 8,
+} as const;
+
+/**
  * First-person input + camera tuning. Mouse look and camera placement are
  * owned by the player input/controller layer (not the pure movement core).
  */

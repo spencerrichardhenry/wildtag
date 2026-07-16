@@ -77,8 +77,11 @@ export class Input {
 
   private readonly actions: Action[] = [];
 
-  /** True while the right mouse button is held (grapple reel, Task 12). */
+  /** True while the right mouse button is held (grapple fire/hold, Task 12). */
   private rmbDown = false;
+
+  /** True while the left mouse button is held (grapple reel while attached). */
+  private lmbDown = false;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -119,6 +122,7 @@ export class Input {
   private readonly onMouseDown = (e: MouseEvent): void => {
     if (!this.locked) return; // clicks outside lock are UI / lock acquisition
     if (e.button === 0) {
+      this.lmbDown = true;
       this.actions.push({ type: 'lmb' });
     } else if (e.button === 2) {
       this.rmbDown = true;
@@ -127,6 +131,7 @@ export class Input {
   };
 
   private readonly onMouseUp = (e: MouseEvent): void => {
+    if (e.button === 0) this.lmbDown = false;
     if (e.button === 2) this.rmbDown = false;
   };
 
@@ -224,6 +229,11 @@ export class Input {
   /** True while the right mouse button is held and the pointer is locked. */
   get rmbHeld(): boolean {
     return this.rmbDown && this.locked;
+  }
+
+  /** True while the left mouse button is held and the pointer is locked. */
+  get lmbHeld(): boolean {
+    return this.lmbDown && this.locked;
   }
 
   /** Return and clear the queued UI-level action edges. */

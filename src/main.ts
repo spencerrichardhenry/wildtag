@@ -16,6 +16,8 @@ import { DartSystem } from './tracking/darts.ts';
 import { updateTracking, nearestTracked } from './tracking/tracker.ts';
 import { toast } from './ui/toasts.ts';
 import { chime } from './ui/audio.ts';
+import { AnchorRegistry } from './structures/anchors.ts';
+import { raycastTerrain } from './player/grapple.ts';
 
 // ---------------------------------------------------------------------------
 // Boot scene: renderer, camera, environment (lighting/fog/sky/water) and the
@@ -45,6 +47,7 @@ if (new URLSearchParams(window.location.search).get('preview') === 'critters') {
 
 /** Normal gameplay boot: scene, camera, world streaming and the FP controller. */
 function bootGame(): void {
+  const debugGrapple = new URLSearchParams(window.location.search).get('debug') === 'grapple';
   const scene = new THREE.Scene();
 
   const camera = new THREE.PerspectiveCamera(
@@ -79,8 +82,12 @@ function bootGame(): void {
   const ground: GroundQuery = { heightAt, normalAt: groundNormalAt };
   const spawn = { x: 0, y: heightAt(0, 0), z: 0 };
 
+  // Grapple anchor registry — drones (Task 13) register tracked spheres here;
+  // the controller raycasts it alongside the terrain when a grapple is fired.
+  const anchors = new AnchorRegistry();
+
   const input = new Input(canvas as HTMLCanvasElement);
-  const player = new PlayerController(camera, input, ground, spawn);
+  const player = new PlayerController(camera, input, ground, spawn, scene, anchors);
 
   // Inventory accumulating harvested resources + the crafting tree's currency
   // (RP), consumables (darts) and held deployable kits.
@@ -192,7 +199,9 @@ function bootGame(): void {
     // running so nothing pops in when the menu closes.
     const paused = screens.isOpen();
 
-    if (!paused) {
+    // `?debug=grapple` freezes the player mid-swing (rope pre-fired below) so
+    // the world keeps streaming for a clean static screenshot.
+    if (!paused && !debugGrapple) {
       // Feed the controller trees/rocks near the player before it integrates.
       const prev = player.pos;
       player.obstacles = props.getObstacles(prev.x, prev.z);
@@ -240,7 +249,8 @@ function bootGame(): void {
         const gained = props.harvestAt(camera.position, cameraLook(), worldTime);
         if (gained) addResource(inventory, gained, 1);
       }
-      if (action.type === 'lmb') {
+      if (action.type === 'lmb' && !player.isGrappling()) {
+        // LMB reels the rope while grappled; dart throws are suppressed then.
         darts.tryThrow();
       }
     }
@@ -260,6 +270,73 @@ function bootGame(): void {
   chunks.update(spawn.x, spawn.z);
   props.primeAround(spawn.x, spawn.z, worldTime);
   critters.update(SIM_DT, spawn);
+
+  // -------------------------------------------------------------------------
+  // Debug swing (`?debug=grapple`): drop the player onto a highlands ridge,
+  // scan the look for an uphill hillside within grapple range, fire the rope
+  // there and freeze — a static frame showing the rope from the eye to the
+  // slope. Verification-only; harmless otherwise.
+  // -------------------------------------------------------------------------
+  if (debugGrapple) {
+    player.unlocks.add('grapple');
+    // A low saddle in the western crags: sharp ridged spires rise within range,
+    // so the scan below can find an anchor above the eye for an upward rope.
+    let px = -300;
+    let pz = -40;
+    // Nudge to the lowest of a few nearby candidates so terrain rises around us.
+    for (const [cx, cz] of [
+      [-300, -40],
+      [-280, -80],
+      [-320, 0],
+      [-260, -30],
+      [-340, 40],
+    ] as const) {
+      if (heightAt(cx, cz) < heightAt(px, pz)) {
+        px = cx;
+        pz = cz;
+      }
+    }
+    // Sweep the aim (looking gently down at the surrounding slope) using the
+    // real camera forward, and take the longest terrain hit — the most legible
+    // rope. The camera is re-synced per candidate via a teleport so the fired
+    // anchor lands exactly along the view centre.
+    let bestYaw = 0;
+    let bestPitch = 0;
+    let bestScore = -Infinity;
+    let bestHit: { x: number; y: number; z: number } | null = null;
+    // Sweep yaw and a few upward pitches; score anchors above the eye highest.
+    for (let deg = 0; deg < 360; deg += 4) {
+      const yaw = (deg * Math.PI) / 180;
+      for (const pitch of [0.35, 0.2, 0.05, -0.1]) {
+        input.yaw = yaw;
+        input.pitch = pitch;
+        player.teleport(px, heightAt(px, pz) + 1.5, pz);
+        const eye = camera.position;
+        const dir = new THREE.Vector3();
+        camera.getWorldDirection(dir);
+        const hit = raycastTerrain({ x: eye.x, y: eye.y, z: eye.z }, dir, heightAt, 44);
+        if (!hit) continue;
+        const dist = Math.hypot(hit.x - eye.x, hit.y - eye.y, hit.z - eye.z);
+        if (dist <= 14) continue;
+        const rise = hit.y - eye.y; // reward an anchor above the eye
+        const score = rise * 6 + dist;
+        if (score > bestScore) {
+          bestScore = score;
+          bestYaw = yaw;
+          bestPitch = pitch;
+          bestHit = hit;
+        }
+      }
+    }
+    if (bestHit) {
+      input.yaw = bestYaw;
+      input.pitch = bestPitch;
+      player.teleport(px, heightAt(px, pz) + 1.5, pz); // re-sync camera to the winning aim
+      player.debugFireGrapple(bestHit);
+    }
+    chunks.update(px, pz);
+    props.primeAround(px, pz, worldTime);
+  }
 
   // -------------------------------------------------------------------------
   // Debug handle for later tasks (Task 14 expands this into a full debug menu).
