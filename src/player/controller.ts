@@ -64,6 +64,14 @@ export class PlayerController {
   private readonly visuals: GrappleVisuals | null;
   /** Active rope, or null when not grappling. */
   private grapple: GrappleState | null = null;
+  /**
+   * Sim steps the current rope has spent in the constraint block. Gates the
+   * jump-release boost: a rope fired and jump-released on the SAME step (a
+   * scripted RMB+Space macro) would otherwise net the +boost before the rope
+   * constraint ever ran, so the boost is only granted once this is ≥ 1. Reset
+   * to 0 on every fire.
+   */
+  private grappleSteps = 0;
   /** Previous RMB-held sample, for edge detection (press fires / release drops). */
   private prevRmb = false;
   /** Scratch camera look-direction (allocation-free). */
@@ -137,6 +145,7 @@ export class PlayerController {
   debugFireGrapple(anchor: Vec3): void {
     const eye = { x: this.camera.position.x, y: this.camera.position.y, z: this.camera.position.z };
     this.grapple = fireGrapple(eye, this.lookDir(), anchor);
+    this.grappleSteps = 0;
     this.updateGrappleVisuals();
   }
 
@@ -219,6 +228,7 @@ export class PlayerController {
       };
       const dir = this.lookDir();
       this.grapple = fireGrapple(eye, dir, this.grappleTarget(eye, dir));
+      this.grappleSteps = 0;
     } else if (!rmb && this.grapple) {
       this.grapple = null; // released the button → drop the rope
     }
@@ -239,7 +249,10 @@ export class PlayerController {
     if (this.grapple && masked.jump) {
       this.grapple = null;
       masked.jump = false; // consume the edge so it doesn't buffer post-release
-      jumpRelease = true;
+      // Only reward the release with a boost if the rope actually did work on a
+      // PRIOR step — a same-step fire+release macro (grappleSteps still 0) gets
+      // no free lift, upholding the no-flight invariant.
+      jumpRelease = this.grappleSteps >= 1;
     }
 
     // --- Double jump (boots): open a coyote window for one air jump --------
@@ -280,6 +293,7 @@ export class PlayerController {
 
     // --- Grapple rope constraint (post-processes velocity after the core) --
     if (this.grapple && this.grapple.active) {
+      this.grappleSteps++; // rope did work this step — enables the release boost next step
       const occluded = this.segmentOccluded(next.pos, this.grapple.anchor);
       this.grapple = {
         ...this.grapple,

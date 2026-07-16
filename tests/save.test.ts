@@ -125,6 +125,38 @@ describe('encodeSave / decodeSave', () => {
     expect(decoded?.player).toEqual(state.player);
   });
 
+  it('rejects a tampered inventory whose resource counts are missing (inventory: {})', () => {
+    const bad = { ...sampleSave(), inventory: {} };
+    expect(decodeSave(JSON.stringify(bad))).toBeNull();
+  });
+
+  it('rejects an inventory with a negative or non-finite resource count', () => {
+    const negative = sampleSave();
+    negative.inventory.shard = -5;
+    expect(decodeSave(JSON.stringify(negative))).toBeNull();
+
+    const nan = { ...sampleSave(), inventory: { ...sampleSave().inventory, fiber: 'lots' } };
+    expect(decodeSave(JSON.stringify(nan))).toBeNull();
+  });
+
+  it('defaults a missing kits object to zeros (forward-compat) rather than rejecting', () => {
+    const state = sampleSave();
+    const { kits, ...invNoKits } = state.inventory;
+    void kits;
+    const raw = { ...state, inventory: invNoKits };
+    const decoded = decodeSave(JSON.stringify(raw));
+    expect(decoded).not.toBeNull();
+    expect(decoded?.inventory.kits).toEqual({ zipline: 0, beacon: 0, drone: 0 });
+    // Every other inventory field survives untouched.
+    expect(decoded?.inventory.fiber).toBe(state.inventory.fiber);
+  });
+
+  it('rejects a kits object with a tampered (negative) kit count', () => {
+    const state = sampleSave();
+    state.inventory.kits = { zipline: -1, beacon: 0, drone: 0 };
+    expect(decodeSave(JSON.stringify(state))).toBeNull();
+  });
+
   it('drops a malformed drone element while its valid sibling survives', () => {
     const state = sampleSave();
     const good = { id: 'drone1', x: -5, z: 22 };

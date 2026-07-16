@@ -150,7 +150,7 @@ describe('full crafting tree — affordability walk', () => {
   it('every recipe is craftable in tier order once granted its resources + RP, and the final state matches all unlocks/kits/darts', () => {
     const inv = createInventory();
     inv.rp = 200; // clears every tier's RP gate up front
-    grant(inv, { fiber: 39, resin: 21, shard: 36, spark: 16 }); // sum of every recipe's cost below
+    grant(inv, { fiber: 33, resin: 19, shard: 32, spark: 16 }); // sum of every recipe's cost below
 
     const unlocks = new Set<string>();
     const order: RecipeId[] = RECIPES
@@ -168,7 +168,7 @@ describe('full crafting tree — affordability walk', () => {
     }
 
     expect(unlocks).toEqual(new Set(['grapple', 'boots', 'glider', 'rocket']));
-    expect(working.kits).toEqual({ zipline: 1, beacon: 1, drone: 1 });
+    expect(working.kits).toEqual({ zipline: 1, beacon: 0, drone: 1 });
     expect(working.darts).toBe(10);
     expect(working.fiber).toBe(0);
     expect(working.resin).toBe(0);

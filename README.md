@@ -66,8 +66,8 @@ spent currency — it only ever grows, and crafting checks it without subtractin
    it — that grants Sparks + RP and adds it to your Field Guide.
 4. **Tier 1 (25 RP)** — craft the **Grapple Hook** (swing/reel to anchors and
    terrain) or **Sky Boots** (an extra mid-air jump).
-5. **Tier 2 (75 RP)** — the **Glider** (hold Space to glide), the **Zipline Kit**
-   (deployable two-post cable you can ride), or the **Field Beacon**.
+5. **Tier 2 (75 RP)** — the **Glider** (hold Space to glide) or the **Zipline Kit**
+   (deployable two-post cable you can ride).
 6. **Tier 3 (180 RP)** — the **Rocket Boost** (vertical + forward impulse) and the
    **Sky Drone** (a hovering deployable that also registers as a grapple anchor).
 
@@ -80,7 +80,6 @@ spent currency — it only ever grows, and crafting checks it without subtractin
 | 1    | Sky Boots     | 25      | 6 Fibre, 8 Resin, 2 Shard         | One extra mid-air jump        |
 | 2    | Glider        | 75      | 12 Fibre, 6 Resin, 4 Shard, 2 Spark | Hold-Space glide            |
 | 2    | Zipline Kit   | 75      | 4 Fibre, 2 Shard                  | Deploy + ride a zipline       |
-| 2    | Field Beacon  | 75      | 6 Fibre, 2 Resin, 4 Shard         | Deployable marker             |
 | 3    | Rocket Boost  | 180     | 10 Shard, 6 Spark                 | Vertical + forward impulse    |
 | 3    | Sky Drone     | 180     | 8 Shard, 8 Spark                  | Hovering drone + grapple anchor |
 
@@ -212,3 +211,7 @@ position. A missing or malformed save always falls back to a clean fresh start
 (it never crashes boot). To wipe your save, open the pause menu (`Esc`) and use
 **Reset Save** (a double-confirm), which clears storage and reloads to a fresh
 loadout.
+
+---
+
+Known fast-follows (deferred, non-blocking) are tracked in [`FOLLOWUPS.md`](FOLLOWUPS.md).

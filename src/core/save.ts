@@ -76,6 +76,34 @@ export function decodeSave(json: string): SaveV1 | null {
     const o = data as Record<string, unknown>;
     if (o.v !== 1) return null;
     if (!o.inventory || typeof o.inventory !== 'object') return null;
+    // Field-level inventory guard: every resource/rp/darts count must be a
+    // finite number ≥ 0 (a tampered/garbage value rejects the whole save →
+    // fresh start). `kits` is forward-compat: a missing object defaults to
+    // zeros rather than rejecting, but any present kit count is validated.
+    const inv = o.inventory as Record<string, unknown>;
+    const isCount = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n) && n >= 0;
+    for (const f of ['fiber', 'resin', 'shard', 'spark', 'rp', 'darts'] as const) {
+      if (!isCount(inv[f])) return null;
+    }
+    const kits: Inventory['kits'] = { zipline: 0, beacon: 0, drone: 0 };
+    if (inv.kits !== undefined && inv.kits !== null) {
+      if (typeof inv.kits !== 'object') return null;
+      const k = inv.kits as Record<string, unknown>;
+      for (const id of ['zipline', 'beacon', 'drone'] as const) {
+        if (k[id] === undefined) continue; // missing individual kit → default 0
+        if (!isCount(k[id])) return null;
+        kits[id] = k[id] as number;
+      }
+    }
+    const inventory: Inventory = {
+      fiber: inv.fiber as number,
+      resin: inv.resin as number,
+      shard: inv.shard as number,
+      spark: inv.spark as number,
+      rp: inv.rp as number,
+      darts: inv.darts as number,
+      kits,
+    };
     if (!Array.isArray(o.unlocks) || !o.unlocks.every((u) => typeof u === 'string')) return null;
     if (!o.critterPersist || typeof o.critterPersist !== 'object') return null;
     if (!o.structures || typeof o.structures !== 'object') return null;
@@ -89,6 +117,7 @@ export function decodeSave(json: string): SaveV1 | null {
     // (and the rest of the save) so a partly-corrupt save never crashes boot.
     const sanitized = {
       ...o,
+      inventory,
       structures: {
         ziplines: structures.ziplines.filter(isZiplineEntry),
         drones: structures.drones.filter(isDroneEntry),

@@ -3,11 +3,10 @@ import { spend, type Inventory } from './inventory.ts';
 
 // ---------------------------------------------------------------------------
 // The crafting tree. Ids/tiers/RP gates/costs are exact per the design spec
-// §5's crafting table ("Crafting & structures"), with one documented gap
-// filled in: the spec marks Field Beacon a *stretch* item and never prices
-// it. Priced in-tier (75 RP) between the Zipline Kit's cheap per-unit cost
-// and Glider's full unlock cost: 6 Fiber + 2 Resin + 4 Shard — see
-// task-7-report.md self-review.
+// §5's crafting table ("Crafting & structures"). The spec's Field Beacon was
+// a *stretch* item that was never built — nothing consumes/places beacons —
+// so it has no recipe here (the `beacon` DeployableId + kit slot are kept in
+// the types/save schema so older saves referencing it still decode cleanly).
 //
 // RP is a *gate*, never a spent currency: `canCraft` checks `inv.rp >=
 // recipe.rpRequired` but crafting never subtracts it (RP only ever grows,
@@ -57,14 +56,6 @@ export const RECIPES: Recipe[] = [
     tier: 2,
     rpRequired: 75,
     cost: { fiber: 4, shard: 2 },
-    kind: 'deployable',
-  },
-  {
-    id: 'beacon',
-    name: 'Field Beacon',
-    tier: 2,
-    rpRequired: 75,
-    cost: { fiber: 6, resin: 2, shard: 4 },
     kind: 'deployable',
   },
   // --- Tier 3 (180 RP) --------------------------------------------------------

@@ -211,11 +211,17 @@ function bootGame(): void {
     writeSave(buildSaveState());
   }
 
+  // A dev-hook boot (?fresh=1 or any ?debug=) runs throwaway state that must
+  // never overwrite the player's real save, so skip all automatic writes here.
+  const devSession = freshStart || debugParam !== null;
+
   // Autosave every 10 s + on tab close/hide (mobile-safe: pagehide fires
   // where beforeunload sometimes doesn't).
-  setInterval(doSave, 10_000);
-  window.addEventListener('beforeunload', doSave);
-  window.addEventListener('pagehide', doSave);
+  if (!devSession) {
+    setInterval(doSave, 10_000);
+    window.addEventListener('beforeunload', doSave);
+    window.addEventListener('pagehide', doSave);
+  }
 
   function resetSave(): void {
     clearSave();
