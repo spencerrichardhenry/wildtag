@@ -29,9 +29,26 @@ import { raycastTerrain } from './player/grapple.ts';
 import { applyStartingLoadout, loadSave, writeSave, clearSave, type SaveV1 } from './core/save.ts';
 import { buildDebugHandle } from './debug.ts';
 import { buildVillage, villageObstacles } from './village/buildings.ts';
-import { NpcManager } from './village/npcs.ts';
-import { createDialogScreen, openDialog } from './village/dialog.ts';
+import { NpcManager, NPCS } from './village/npcs.ts';
+import { createDialogScreen, openDialog, setRequestRenderer } from './village/dialog.ts';
 import { villageCenter } from './village/layout.ts';
+import {
+  generateRequest,
+  canFulfill,
+  fulfill,
+  nextReward,
+  requestText,
+  trackingFillRate,
+  type NpcRequestState,
+} from './village/barter.ts';
+import {
+  resetRewards,
+  recordReward,
+  grantedCount,
+  grantedRewards,
+  getRewards,
+} from './village/rewards.ts';
+import { PenSystem } from './village/pens.ts';
 
 // ---------------------------------------------------------------------------
 // Boot scene: renderer, camera, environment (lighting/fog/sky/water) and the
@@ -87,6 +104,8 @@ function bootGame(): void {
   buildVillage(scene);
   const npcs = new NpcManager(scene);
   const villageObs = villageObstacles();
+  // Traded-away critters live in a pen beside their NPC (Haven V4).
+  const pens = new PenSystem(scene);
 
   function resize(): void {
     const width = window.innerWidth;
@@ -126,6 +145,28 @@ function bootGame(): void {
   // deterministically from a fixed seed derived from WORLD_SEED.
   let roster: RosterEntry[] = [];
   const rosterRng = mulberry32((WORLD_SEED ^ 0x0b0d) >>> 0);
+
+  // Barter (Haven V4): each NPC holds one live request from a seeded rotation;
+  // the global reward track (owned-rewards store) is shared across all NPCs.
+  // Requests are (re)generated deterministically from seq + the player's
+  // linked species, so a loaded save reproduces the exact live request.
+  const barterStates = new Map<string, NpcRequestState>();
+  resetRewards();
+
+  /** The live barter state for `npcId`, creating a seq-0 request on first ask. */
+  function barterStateFor(npcId: string): NpcRequestState {
+    let st = barterStates.get(npcId);
+    if (!st) {
+      st = {
+        npcId,
+        seq: 0,
+        request: generateRequest(npcId, 0, critters.linkedSpecies()),
+        fulfilled: 0,
+      };
+      barterStates.set(npcId, st);
+    }
+    return st;
+  }
 
   // World clock (seconds of simulated time) driving resource-node respawns.
   let worldTime = 0;
@@ -225,6 +266,20 @@ function bootGame(): void {
       for (const u of loaded.unlocks) player.unlocks.add(u);
       critters.importRegistry(loaded.critterPersist);
       roster = (loaded.roster ?? []).map((e) => ({ ...e, status: { ...e.status } }));
+      // Barter/pens/rewards (Haven V4): restore the granted-reward list (WITHOUT
+      // re-applying bundle resources — inventory is saved separately), the
+      // per-NPC rotation state (live request regenerated from seq + linked
+      // species), and the traded-away critters living at each pen.
+      resetRewards(loaded.rewards ?? []);
+      for (const b of loaded.barter ?? []) {
+        barterStates.set(b.npcId, {
+          npcId: b.npcId,
+          seq: b.seq,
+          request: generateRequest(b.npcId, b.seq, critters.linkedSpecies()),
+          fulfilled: b.fulfilled,
+        });
+      }
+      pens.load(loaded.pens ?? []);
       deserializeStructures(loaded.structures, ziplines, drones);
       player.teleport(loaded.player.pos.x, loaded.player.pos.y, loaded.player.pos.z);
       input.yaw = loaded.player.yaw;
@@ -238,6 +293,8 @@ function bootGame(): void {
       loaded = null;
       player.unlocks.clear();
       roster = [];
+      barterStates.clear();
+      resetRewards();
       critters.importRegistry({});
       ziplines.deserialize([]);
       drones.deserialize([]);
@@ -279,6 +336,13 @@ function bootGame(): void {
       player: { pos: player.pos, yaw: input.yaw },
       hints: hudUi.getHintFlags(),
       roster: roster.map((e) => ({ ...e, status: { ...e.status } })),
+      barter: [...barterStates.values()].map((s) => ({
+        npcId: s.npcId,
+        seq: s.seq,
+        fulfilled: s.fulfilled,
+      })),
+      pens: pens.serialize(),
+      rewards: [...grantedRewards()],
     };
   }
 
@@ -381,6 +445,96 @@ function bootGame(): void {
     toast(`${entry.nickname} released to the wild`);
   }
 
+  // -------------------------------------------------------------------------
+  // Barter fulfilment (Haven V4). Fulfilling an NPC's request consumes the
+  // goods (idle roster critters → the NPC's pen, permanently; or resources),
+  // grants the next reward on the global track, and rotates the NPC to a fresh
+  // request. `force` (debug) grants the reward + rotates even when the goods
+  // aren't on hand (no consumption in that case).
+  // -------------------------------------------------------------------------
+  function npcNameFor(npcId: string): string {
+    return NPCS.find((n) => n.id === npcId)?.name ?? 'They';
+  }
+
+  function fulfillRequestFor(npcId: string, force: boolean): boolean {
+    const st = barterStateFor(npcId);
+    const req = st.request;
+    if (canFulfill(req, roster, inventory)) {
+      const res = fulfill(req, roster, inventory);
+      if (res) {
+        roster = res.roster;
+        Object.assign(inventory, res.inventory);
+        for (const e of res.delivered) pens.add(npcId, e.speciesId, e.nickname);
+      }
+    } else if (!force) {
+      return false;
+    }
+
+    // Grant the next reward on the shared track (bundles add resources).
+    const reward = nextReward(grantedCount());
+    recordReward(reward.id);
+    if (reward.kind === 'bundle' && reward.resource && reward.amount != null) {
+      addResource(inventory, reward.resource, reward.amount);
+    }
+
+    // Rotate this NPC to a fresh request.
+    st.fulfilled += 1;
+    st.seq += 1;
+    st.request = generateRequest(npcId, st.seq, critters.linkedSpecies());
+
+    toast(`${npcNameFor(npcId)} gives you: ${reward.name}!`);
+    chime();
+    screens.refresh(); // live-update the dialog if it's open
+    return true;
+  }
+
+  /** Debug: grant a specific reward id (records it in the owned-rewards store). */
+  function grantRewardById(id: string): void {
+    recordReward(id);
+    toast(`Granted reward: ${id}`);
+    screens.refresh();
+  }
+
+  // Plug the real barter request into the dialog screen (Task V3 shipped the
+  // hook + a placeholder). The renderer reads the live per-NPC request, shows a
+  // reward preview, and enables Fulfill only when the request can be met.
+  setRequestRenderer((npc, container) => {
+    const st = barterStateFor(npc.id);
+    const req = st.request;
+
+    const body = document.createElement('div');
+    body.className = 'wt-dialog-req-body';
+    body.textContent = requestText(req);
+    container.appendChild(body);
+
+    const reward = nextReward(grantedCount());
+    const rewardLine = document.createElement('div');
+    rewardLine.className = 'wt-dialog-req-body';
+    rewardLine.style.marginTop = '6px';
+    rewardLine.style.color = '#c9b98a';
+    rewardLine.textContent = `Reward: ${reward.name} — ${reward.description}`;
+    container.appendChild(rewardLine);
+
+    const actions = document.createElement('div');
+    actions.className = 'wt-dialog-actions';
+    const btn = document.createElement('button');
+    btn.className = 'wt-craft-btn';
+    btn.type = 'button';
+    btn.textContent = 'Fulfill';
+    btn.disabled = !canFulfill(req, roster, inventory);
+    btn.addEventListener('click', () => {
+      fulfillRequestFor(npc.id, false);
+    });
+    actions.appendChild(btn);
+    container.appendChild(actions);
+  });
+
+  // Lantern Charm reward (Haven V4): a soft point light that follows the player
+  // once the charm is owned (cosmetic night glow). Created lazily on first need.
+  const lantern = new THREE.PointLight(0xffd9a0, 0, 14, 2);
+  lantern.visible = false;
+  scene.add(lantern);
+
   /** Advance simulation state by a fixed timestep. Systems hook in here. */
   function update(dt: number): void {
     worldTime += dt;
@@ -418,6 +572,7 @@ function bootGame(): void {
     props.update(p.x, p.z, worldTime);
     critters.update(dt, p);
     npcs.update(dt, p);
+    pens.update(dt, worldTime);
 
     // Advance darts in flight and tracking progress for tagged critters. On a
     // Link the tracker grants rewards; onLink plays the chime + toast here.
@@ -429,6 +584,8 @@ function bootGame(): void {
         manager: critters,
         inventory,
         playerPos: p,
+        // Golden Dart Tip reward accelerates ring fill 1.5× once owned.
+        fillRate: trackingFillRate(getRewards()),
         onLink: (view, sp) => {
           chime();
           toast(`Linked ${sp.name}!  +${sp.rewardSparks} spark  +${sp.rewardRP} RP`);
@@ -507,6 +664,14 @@ function bootGame(): void {
 
   /** Draw the current state + repaint the HUD. Called once per frame. */
   function render(): void {
+    // Lantern Charm reward: a soft glow tracking the player once owned.
+    if (getRewards().has('lanternCharm')) {
+      lantern.visible = true;
+      lantern.intensity = 1.6;
+      lantern.position.set(camera.position.x, camera.position.y + 0.3, camera.position.z);
+    } else {
+      lantern.visible = false;
+    }
     renderer.render(scene, camera);
     npcs.updateLabels(camera);
     const p = player.pos;
@@ -687,6 +852,8 @@ function bootGame(): void {
       critters.debugBond(id);
       return bondById(id);
     },
+    fulfillRequest: (npcId: string) => fulfillRequestFor(npcId, true),
+    grantReward: (id: string) => grantRewardById(id),
     save: doSave,
     resetSave,
   });

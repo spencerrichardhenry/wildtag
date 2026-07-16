@@ -140,6 +140,12 @@ function buildNpcModel(def: NpcDef): { group: THREE.Group; headY: number } {
   return { group: g, headY };
 }
 
+/** Public NPC anchor positions (Haven V4: the PenSystem places each NPC's
+ *  traded-away critters just outward of their anchor). Memoised via layout. */
+export function npcAnchors(): Record<string, Point2> {
+  return npcHomes();
+}
+
 /** Anchor each NPC to a sensible spot near their building. */
 function npcHomes(): Record<string, Point2> {
   const L = villageLayout();

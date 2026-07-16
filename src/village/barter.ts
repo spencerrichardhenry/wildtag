@@ -86,6 +86,15 @@ export function generateRequest(
   return { kind: 'resources', resource, n: 20 + Math.floor(rng() * 41) };
 }
 
+/** Human-readable request line for the dialog ("Bring me 3 Puffles"). */
+export function requestText(req: Request): string {
+  if (req.kind === 'critters') {
+    const name = speciesById(req.speciesId)?.name ?? req.speciesId;
+    return `Bring me ${req.n} ${req.n === 1 ? name : `${name}s`}`;
+  }
+  return `I need ${req.n} ${req.resource}`;
+}
+
 // --- Fulfilment ------------------------------------------------------------
 
 /** Idle roster members of `speciesId`, oldest first (roster append order). */

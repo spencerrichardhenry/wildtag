@@ -33,6 +33,10 @@ export interface DebugDeps {
   setTimeScale(f: number): void;
   /** Bond a critter into the roster (spec §6 __game.bond). Returns success. */
   bond(id: number): boolean;
+  /** Force-fulfil an NPC's barter request ignoring cost (spec §6). Returns success. */
+  fulfillRequest(npcId: string): boolean;
+  /** Grant a reward by id, applying its effect (spec §6 __game.grantReward). */
+  grantReward(id: string): void;
   save(): void;
   resetSave(): void;
 }
@@ -50,6 +54,8 @@ export interface GameDebugHandle {
   track(id: number): void;
   completeTracking(id: number): boolean;
   bond(id: number): boolean;
+  fulfillRequest(npcId: string): boolean;
+  grantReward(id: string): void;
   setTimeScale(f: number): void;
   listCritters(): CritterView[];
   save(): void;
@@ -158,6 +164,16 @@ export function buildDebugHandle(deps: DebugDeps): GameDebugHandle {
      */
     bond(id: number): boolean {
       return deps.bond(id);
+    },
+
+    /** Force-fulfil `npcId`'s current request ignoring cost, granting its reward. */
+    fulfillRequest(npcId: string): boolean {
+      return deps.fulfillRequest(npcId);
+    },
+
+    /** Grant reward `id` (applies its effect: bundles add resources, etc.). */
+    grantReward(id: string): void {
+      deps.grantReward(id);
     },
 
     /** Multiply the fixed-step accumulator's dt feed (clamped 0.1..16). */
