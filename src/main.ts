@@ -2,11 +2,17 @@ import * as THREE from 'three';
 import { CAMERA, MAX_FRAME_DT, SIM_DT } from './core/constants.ts';
 import { setupEnvironment } from './world/environment.ts';
 import { ChunkManager } from './world/chunks.ts';
+import { biomeAt, groundNormalAt, heightAt } from './world/terrain.ts';
+import type { GroundQuery } from './core/types.ts';
+import { Input } from './player/input.ts';
+import { PlayerController } from './player/controller.ts';
 
 // ---------------------------------------------------------------------------
 // Boot scene: renderer, camera, environment (lighting/fog/sky/water) and the
-// streaming terrain ChunkManager. Later tasks hook their own systems into
-// `update(dt)` / `render()` below.
+// streaming terrain ChunkManager, plus the playable first-person controller.
+// The fixed-timestep loop steps the controller (input → movement → camera) and
+// streams chunks around the player. Later tasks hook further systems into
+// `update(dt)` / `render()`.
 // ---------------------------------------------------------------------------
 
 const canvas = document.getElementById('game');
@@ -31,6 +37,7 @@ const camera = new THREE.PerspectiveCamera(
 setupEnvironment(scene);
 
 const chunks = new ChunkManager(scene);
+const skyDome = scene.getObjectByName('skyDome');
 
 function resize(): void {
   const width = window.innerWidth;
@@ -43,41 +50,47 @@ function resize(): void {
 window.addEventListener('resize', resize);
 
 // ---------------------------------------------------------------------------
-// TEMP: fly-over — replaced by PlayerController in Task 5.
-// Camera drifts from spawn (meadow) west toward the crags at ~120 m altitude,
-// looking down ~30°, feeding its x/z to the ChunkManager so chunks stream.
+// Player: first-person input + movement + camera. Spawn in the central meadow
+// at ground height. No abilities are unlocked initially — walk / sprint / jump
+// / dash are available from spawn; glider / rocket / boots / grapple are not.
 // ---------------------------------------------------------------------------
-const flyover = {
-  t: 0,
-  altitude: 120,
-  speed: 18, // m/s
-  from: new THREE.Vector3(0, 0, 0), // spawn (meadow)
-  to: new THREE.Vector3(-750, 0, 0), // crags lobe is west (−x)
-};
+const ground: GroundQuery = { heightAt, normalAt: groundNormalAt };
+const spawn = { x: 0, y: heightAt(0, 0), z: 0 };
 
-function updateFlyover(dt: number): void {
-  flyover.t += dt;
-  const dist = flyover.from.distanceTo(flyover.to);
-  const travelled = Math.min(flyover.t * flyover.speed, dist);
-  const s = dist > 0 ? travelled / dist : 1;
+const input = new Input(canvas);
+const player = new PlayerController(camera, input, ground, spawn);
 
-  const x = THREE.MathUtils.lerp(flyover.from.x, flyover.to.x, s);
-  const z = THREE.MathUtils.lerp(flyover.from.z, flyover.to.z, s);
-  camera.position.set(x, flyover.altitude, z);
+// ---------------------------------------------------------------------------
+// Debug HUD: a tiny dev line (pos / stamina / grounded / biome), refreshed at
+// ~4 Hz. Replaced by the real HUD in Task 11.
+// ---------------------------------------------------------------------------
+const hud = document.getElementById('hud');
+const debugLine = document.createElement('div');
+debugLine.style.cssText =
+  'position:fixed;top:8px;left:8px;font:12px monospace;color:#cfe;text-shadow:0 1px 2px #000;white-space:pre;';
+hud?.appendChild(debugLine);
 
-  // Look ~30° below horizontal, in the direction of travel.
-  const dir = new THREE.Vector3().subVectors(flyover.to, flyover.from).setY(0).normalize();
-  const look = new THREE.Vector3(x, flyover.altitude, z)
-    .addScaledVector(dir, 100)
-    .setY(flyover.altitude - 100 * Math.tan(Math.PI / 6));
-  camera.lookAt(look);
-
-  chunks.update(x, z);
+let hudTimer = 0;
+function updateHud(dt: number): void {
+  hudTimer += dt;
+  if (hudTimer < 0.25) return;
+  hudTimer = 0;
+  const p = player.pos;
+  const b = biomeAt(p.x, p.z);
+  debugLine.textContent =
+    `pos ${p.x.toFixed(1)}, ${p.y.toFixed(1)}, ${p.z.toFixed(1)}  ` +
+    `stamina ${player.stamina.toFixed(0)}  ` +
+    `${player.grounded ? 'grounded' : 'air'}  ${player.mode}  biome ${b}`;
 }
 
 /** Advance simulation state by a fixed timestep. Systems hook in here. */
 function update(dt: number): void {
-  updateFlyover(dt);
+  player.update(dt);
+  const p = player.pos;
+  chunks.update(p.x, p.z);
+  // Keep the sky dome centred on the camera so its gradient never parallaxes.
+  if (skyDome) skyDome.position.set(camera.position.x, 0, camera.position.z);
+  updateHud(dt);
 }
 
 /** Draw the current state. Called once per animation frame. */
@@ -86,7 +99,17 @@ function render(): void {
 }
 
 // Prime the chunk field at spawn before the first frame so nothing pops in.
-chunks.update(0, 0);
+chunks.update(spawn.x, spawn.z);
+
+// ---------------------------------------------------------------------------
+// Debug handle for later tasks (Task 14 expands this into a full debug menu).
+// ---------------------------------------------------------------------------
+(window as unknown as { __game: unknown }).__game = {
+  player: {
+    pos: () => player.pos,
+    teleport: (x: number, y: number, z: number) => player.teleport(x, y, z),
+  },
+};
 
 // ---------------------------------------------------------------------------
 // Fixed-timestep game loop: accumulator pattern, SIM_DT-sized update steps,

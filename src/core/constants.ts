@@ -153,6 +153,21 @@ export const MOVE = {
 } as const;
 
 /**
+ * First-person input + camera tuning. Mouse look and camera placement are
+ * owned by the player input/controller layer (not the pure movement core).
+ */
+export const INPUT = {
+  /** Radians of yaw/pitch per pixel of raw mouse movement. */
+  mouseSensitivity: 0.0022,
+  /** Pitch clamp (radians) so the camera can't flip past straight up/down. */
+  pitchClamp: 1.52,
+  /** Camera height above the player's feet position (m). */
+  eyeHeight: 1.65,
+  /** Player collision-cylinder radius (m) for obstacle pushout. */
+  playerRadius: 0.4,
+} as const;
+
+/**
  * Streaming terrain-mesh chunks. The world is tiled into `size`-metre square
  * chunks; each is a `verts`×`verts` grid sampled from `heightAt`. Chunks within
  * `radius` chunks of the player (Chebyshev distance) are kept resident.
