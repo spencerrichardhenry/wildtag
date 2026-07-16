@@ -20,15 +20,9 @@ const moistureNoise = makeNoise2D((WORLD_SEED * 7 + 13) >>> 0);
 
 const TWO_PI = Math.PI * 2;
 
-// Angular lobe centres (radians), using atan2(z, x): +x = East, +z = South,
-// so North = -PI/2, NW = -3PI/4, W = ±PI. Matches the required geography:
-// meadow spawn/east, forest N/NE, wetland S, crags W, highlands NW.
-const ANG_MEADOW = Math.PI / 8; // E / SE
-const ANG_FOREST = (-3 * Math.PI) / 8; // N / NE
-const ANG_WETLAND = Math.PI / 2; // S
-const ANG_CRAGS = Math.PI; // W (wraps)
-const ANG_HIGHLANDS = (-3 * Math.PI) / 4; // NW
-const LOBE_HALF_WIDTH = 2.0; // radians; lobes overlap for smooth blends
+// Angular geography (lobe centres + half-width) is tuned in TERRAIN.lobeAngles
+// / TERRAIN.lobeHalfWidth — see constants.ts.
+const LOBES = TERRAIN.lobeAngles;
 
 function clamp01(v: number): number {
   return v < 0 ? 0 : v > 1 ? 1 : v;
@@ -57,8 +51,8 @@ function angDiff(a: number, b: number): number {
 /** Smooth angular membership of `ang` in a lobe centred at `center`. */
 function lobe(ang: number, center: number): number {
   const d = Math.abs(angDiff(ang, center));
-  if (d >= LOBE_HALF_WIDTH) return 0;
-  const t = 1 - d / LOBE_HALF_WIDTH;
+  if (d >= TERRAIN.lobeHalfWidth) return 0;
+  const t = 1 - d / TERRAIN.lobeHalfWidth;
   return t * t * (3 - 2 * t);
 }
 
@@ -116,11 +110,11 @@ export function heightAt(x: number, z: number): number {
 
   // Radial mix: meadow dominates the centre, outer biomes fade in with radius.
   const outer = smoothstep(TERRAIN.outerRampStart, TERRAIN.outerRampEnd, r);
-  let wMeadow = 1 - outer + lobe(ang, ANG_MEADOW) * outer;
-  let wForest = lobe(ang, ANG_FOREST) * outer;
-  let wWetland = lobe(ang, ANG_WETLAND) * outer;
-  let wCrags = lobe(ang, ANG_CRAGS) * outer;
-  let wHighlands = lobe(ang, ANG_HIGHLANDS) * outer;
+  let wMeadow = 1 - outer + lobe(ang, LOBES.meadow) * outer;
+  let wForest = lobe(ang, LOBES.forest) * outer;
+  let wWetland = lobe(ang, LOBES.wetland) * outer;
+  let wCrags = lobe(ang, LOBES.crags) * outer;
+  let wHighlands = lobe(ang, LOBES.highlands) * outer;
 
   const wSum = wMeadow + wForest + wWetland + wCrags + wHighlands || 1;
   wMeadow /= wSum;
@@ -144,6 +138,12 @@ export function heightAt(x: number, z: number): number {
 
   const n = fbm(heightNoise, x, z, TERRAIN.baseFrequency, TERRAIN.octaves);
   let h = base + n * amp;
+
+  // Wetland lakes: amplify sub-threshold basins (weighted by wetland
+  // influence) so low ground dips below sea level and reads as lakes.
+  if (wWetland > 0.001 && h < TERRAIN.lakeThreshold) {
+    h -= wWetland * TERRAIN.lakeDip * (TERRAIN.lakeThreshold - h);
+  }
 
   // Crag spires: sharp ridged peaks weighted by crag influence.
   if (wCrags > 0.001) {
@@ -190,8 +190,12 @@ export function biomeAt(x: number, z: number): Biome {
 
   // Moisture refinement (does not remove any biome's core region):
   // dry, low forest fringes read as meadow; damp meadow lowlands as wetland.
-  if (sector === 'forest' && m < TERRAIN.dryThreshold && h < 14) return 'meadow';
-  if (sector === 'meadow' && m > TERRAIN.wetThreshold && h < 3) return 'wetland';
+  if (sector === 'forest' && m < TERRAIN.dryThreshold && h < TERRAIN.fringeForestMaxH) {
+    return 'meadow';
+  }
+  if (sector === 'meadow' && m > TERRAIN.wetThreshold && h < TERRAIN.fringeWetlandMaxH) {
+    return 'wetland';
+  }
 
   return sector;
 }

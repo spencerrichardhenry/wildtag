@@ -40,6 +40,23 @@ describe('heightAt', () => {
     expect(heightAt(123.4, -55.2)).toBe(heightAt(123.4, -55.2));
   });
 
+  it('is deterministic at negative coordinates', () => {
+    expect(heightAt(-321.5, -777.25)).toBe(heightAt(-321.5, -777.25));
+  });
+
+  it('has at least one wetland lake (south sector point below sea level)', () => {
+    let found = false;
+    for (let x = -400; x <= 400 && !found; x += 10) {
+      for (let z = 250; z <= 700; z += 10) {
+        if (heightAt(x, z) < 0) {
+          found = true;
+          break;
+        }
+      }
+    }
+    expect(found).toBe(true);
+  });
+
   it('is underwater beyond the island radius', () => {
     expect(heightAt(1020, 0)).toBeLessThan(0);
   });
