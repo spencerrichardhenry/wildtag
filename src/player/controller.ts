@@ -154,8 +154,35 @@ export class PlayerController {
     }
   }
 
+  // --- Zipline ride (Task 13) ---------------------------------------------
+  // While riding, the ZiplineSystem drives pos/vel each step via `rideStep`;
+  // the controller skips its entire normal pipeline (no gravity, no movement,
+  // no grapple, no swim) but keeps free-look by syncing the camera.
+  /** Begin a zipline ride: flip mode and drop any active rope. */
+  rideStart(): void {
+    this.grapple = null;
+    this.state = { ...this.state, mode: 'zipline' };
+  }
+  /** Set the ride position/velocity for this step (external rider math). */
+  rideStep(pos: Vec3, vel: Vec3): void {
+    this.state = { ...this.state, pos: { ...pos }, vel: { ...vel } };
+    this.syncCamera();
+  }
+  /** Dismount: return to normal mode airborne, preserving the exit velocity. */
+  rideEnd(vel: Vec3): void {
+    this.state = { ...this.state, mode: 'normal', vel: { ...vel }, grounded: false };
+    this.usedAirJump = false;
+  }
+
   /** Advance one fixed sim step, then place the camera. */
   update(dt: number): void {
+    // Riding a zipline: kinematics are owned by the ZiplineSystem (rideStep);
+    // the normal pipeline is skipped. Camera was already synced by rideStep.
+    if (this.state.mode === 'zipline') {
+      this.updateGrappleVisuals();
+      return;
+    }
+
     const raw = this.input.state();
 
     // --- Mask abilities the player hasn't unlocked -------------------------
@@ -165,7 +192,8 @@ export class PlayerController {
 
     // --- Swim mode: set from the terrain column under the feet -------------
     // heightAt < sea level → the ground here is submerged, so we surface-swim.
-    if (this.state.mode !== 'zipline') {
+    // (Zipline mode already returned above, so `mode` is only 'normal'|'swim'.)
+    {
       const submerged =
         this.ground.heightAt(this.state.pos.x, this.state.pos.z) < TERRAIN.seaLevel;
       const desired = submerged ? 'swim' : 'normal';

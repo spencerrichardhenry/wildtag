@@ -236,6 +236,19 @@ export class Input {
     return this.lmbDown && this.locked;
   }
 
+  /**
+   * Raw held-key getters (Task 13 structures): the zipline ride reads held F
+   * (mount tap / recall hold) and held Space (jump-off) directly rather than
+   * through the one-shot edge latch, since the controller skips `state()`
+   * while riding. Gated on pointer lock to match the mouse-button getters.
+   */
+  get interactHeld(): boolean {
+    return this.held.has('KeyF') && this.locked;
+  }
+  get spaceHeld(): boolean {
+    return this.held.has('Space') && this.locked;
+  }
+
   /** Return and clear the queued UI-level action edges. */
   consumeActions(): Action[] {
     const drained = this.actions.slice();
