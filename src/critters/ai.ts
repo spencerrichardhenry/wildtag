@@ -128,6 +128,13 @@ export function stepAI(c: CritterState, ctx: AIContext, dt: number): CritterStat
     }
 
     case 'alert': {
+      // A critter linked mid-alert (the Task 10 "Linked moment") stands down
+      // immediately — linked critters never chase-panic again.
+      if (!canFlee) {
+        enter(out, 'calm', ctx.rand);
+        speed = sp.walkSpeed * AI.calmSpeedFactor;
+        break;
+      }
       speed = 0;
       desiredYaw = towardYaw;
       out.targetYaw = towardYaw;
@@ -139,6 +146,13 @@ export function stepAI(c: CritterState, ctx: AIContext, dt: number): CritterStat
     }
 
     case 'flee': {
+      // Linked mid-flee → calm on the very next step (no flee speed).
+      if (!canFlee) {
+        enter(out, 'calm', ctx.rand);
+        out.farTime = 0;
+        speed = sp.walkSpeed * AI.calmSpeedFactor;
+        break;
+      }
       desiredYaw = fleeYaw(c, sp, awayYaw, ctx);
       speed = fleeSpeed(c, sp);
       // Calm once the player has stayed far for long enough.

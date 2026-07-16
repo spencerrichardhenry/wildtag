@@ -223,6 +223,106 @@ describe('land water avoidance', () => {
   });
 });
 
+describe('ledge flee', () => {
+  it('biases uphill toward the highest sampled ground', () => {
+    // Gentle climbable slope rising with +x (tan 0.3 ≈ 17°); player north so
+    // "away" alone would be pure -z. The craghorn should drift +x (uphill).
+    const slope: GroundQuery = {
+      heightAt: (x) => Math.max(0, x) * 0.3,
+      normalAt: () => ({ x: 0, y: 1, z: 0 }),
+    };
+    const player = { x: 0, y: 0, z: 10 };
+    const awayYaw = Math.atan2(0, -10);
+    let c = makeCritter('craghorn', { state: 'flee', stateTime: 0, yaw: awayYaw });
+    const dt = 0.1;
+    for (let i = 0; i < 40; i++) {
+      c = stepAI(c, { playerPos: player, species: sp('craghorn'), ground: slope, biomeAt: allMeadow, rand: mulberry32(5) }, dt);
+    }
+    expect(c.pos.x).toBeGreaterThan(2); // steered uphill
+    expect(c.pos.z).toBeLessThan(0); // while still escaping the player
+  });
+});
+
+describe('slope rejection', () => {
+  it('a walker never climbs a >50-degree face; it steers along the contour', () => {
+    // Vertical cliff wall east of x=0; player west so away-from-player points
+    // straight at the cliff.
+    const cliff: GroundQuery = {
+      heightAt: (x) => (x > 0 ? 100 : 0),
+      normalAt: () => ({ x: 0, y: 1, z: 0 }),
+    };
+    const player = { x: -10, y: 0, z: 0 };
+    const awayYaw = Math.atan2(10, 0);
+    let c = makeCritter('skitterling', {
+      state: 'flee',
+      stateTime: 0,
+      yaw: awayYaw,
+      pos: { x: -0.5, y: 0, z: 0 },
+      home: { x: -0.5, y: 0, z: 0 },
+    });
+    const dt = 0.1;
+    for (let i = 0; i < 60; i++) {
+      c = stepAI(c, { playerPos: player, species: sp('skitterling'), ground: cliff, biomeAt: allMeadow, rand: mulberry32(5) }, dt);
+      expect(c.pos.x).toBeLessThanOrEqual(0);
+      expect(c.pos.y).toBeLessThan(1); // never teleported up the wall
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Linking mid-flee (the Task 10 "Linked moment")
+// ---------------------------------------------------------------------------
+
+describe('linking a fleeing critter', () => {
+  it('a linked critter in flee drops to calm on the next step, without flee speed', () => {
+    const player = { x: 3, y: 0, z: 0 }; // point-blank — would otherwise keep fleeing
+    const c = makeCritter('skitterling', { state: 'flee', stateTime: 0.5, linked: true });
+    const out = stepAI(c, ctx('skitterling', player), 0.1);
+    expect(out.state).toBe('calm');
+    expect(horiz(out.vel)).toBeLessThan(sp('skitterling').fleeSpeed * 0.5);
+  });
+
+  it('a linked critter in alert also drops to calm', () => {
+    const c = makeCritter('skitterling', { state: 'alert', stateTime: 0.3, linked: true });
+    const out = stepAI(c, ctx('skitterling', { x: 3, y: 0, z: 0 }), 0.1);
+    expect(out.state).toBe('calm');
+  });
+
+  it('manager.setLinked immediately calms a fleeing critter', () => {
+    const scene = new THREE.Scene();
+    const mgr = new CritterManager(scene);
+    mgr.update(1 / 60, { x: 0, y: 0, z: 0 });
+    // Pick a critter that can flee and spook it by standing on top of it.
+    const target = mgr.list().find((c) => sp(c.species).fleeStyle !== 'none');
+    expect(target).toBeDefined();
+    const id = target!.id;
+    for (let i = 0; i < 120; i++) {
+      const cur = mgr.byId(id)!;
+      mgr.update(1 / 60, cur.pos);
+      if (mgr.byId(id)!.state === 'flee') break;
+    }
+    expect(mgr.byId(id)!.state).toBe('flee');
+    mgr.setLinked(id);
+    expect(mgr.byId(id)!.state).toBe('calm'); // same-frame stand-down
+    // And it never re-alerts/flees afterward, even with the player on top of it.
+    for (let i = 0; i < 240; i++) mgr.update(1 / 60, mgr.byId(id)!.pos);
+    const after = mgr.byId(id)!;
+    expect(after.state).not.toBe('alert');
+    expect(after.state).not.toBe('flee');
+  });
+});
+
+describe('persistence registry growth', () => {
+  it('does not accumulate registry entries for untouched critters', () => {
+    const scene = new THREE.Scene();
+    const mgr = new CritterManager(scene);
+    mgr.update(1 / 60, { x: 0, y: 0, z: 0 });
+    mgr.update(1 / 60, { x: 5000, y: 0, z: 5000 }); // stream everything out
+    const registry = (mgr as unknown as { registry: Map<number, unknown> }).registry;
+    expect(registry.size).toBe(0);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Flee -> calm -> wander
 // ---------------------------------------------------------------------------

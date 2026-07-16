@@ -227,7 +227,10 @@ export class CritterManager {
     this.scene.add(group);
 
     const rng = mulberry32((slot.id ^ 0x5eed5eed) >>> 0);
-    const persist = this.persistFor(slot.id);
+    // Read-only registry lookup — entries are created lazily (setTagged /
+    // setLinked / deactivate-with-progress) so long roams don't accumulate
+    // registry entries for critters the player never touched.
+    const persist = this.registry.get(slot.id);
     const state: CritterState = {
       id: slot.id,
       species: slot.species,
@@ -237,9 +240,9 @@ export class CritterManager {
       state: 'idle',
       stateTime: 0,
       targetYaw: rng() * Math.PI * 2,
-      tagged: persist.tagged,
-      linked: persist.linked,
-      trackProgress: persist.trackProgress,
+      tagged: persist?.tagged ?? false,
+      linked: persist?.linked ?? false,
+      trackProgress: persist?.trackProgress ?? 0,
       home: { ...slot.home },
       flightHeight: slot.flightHeight,
       stateDur: AI.idleMin + rng() * (AI.idleMax - AI.idleMin),
@@ -251,11 +254,16 @@ export class CritterManager {
   private deactivate(id: number): void {
     const entry = this.active.get(id);
     if (!entry) return;
-    // Persist the latest gameplay flags before the state is discarded.
-    const p = this.persistFor(id);
-    p.tagged = entry.state.tagged;
-    p.linked = entry.state.linked;
-    p.trackProgress = entry.state.trackProgress;
+    // Persist the latest gameplay flags before the state is discarded — but
+    // only allocate a registry entry when there is something non-default to
+    // remember (keeps the registry from growing unboundedly on long roams).
+    const s = entry.state;
+    if (s.tagged || s.linked || s.trackProgress > 0 || this.registry.has(id)) {
+      const p = this.persistFor(id);
+      p.tagged = s.tagged;
+      p.linked = s.linked;
+      p.trackProgress = s.trackProgress;
+    }
     this.scene.remove(entry.group);
     disposeGroup(entry.group);
     this.active.delete(id);
@@ -283,7 +291,19 @@ export class CritterManager {
   setLinked(id: number, value = true): void {
     this.persistFor(id).linked = value;
     const entry = this.active.get(id);
-    if (entry) entry.state.linked = value;
+    if (entry) {
+      entry.state.linked = value;
+      // Linking a mid-alert/mid-flee critter calms it on the spot (the payoff
+      // moment) — stepAI's alert/flee cases also re-check linked, but forcing
+      // the state here means even the same-frame view reads 'calm' and any
+      // sprint burst decelerates naturally from the next step.
+      if (value && (entry.state.state === 'alert' || entry.state.state === 'flee')) {
+        entry.state.state = 'calm';
+        entry.state.stateTime = 0;
+        entry.state.stateDur = AI.calmTime;
+        entry.state.farTime = 0;
+      }
+    }
   }
 
   /**
