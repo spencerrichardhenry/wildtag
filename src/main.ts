@@ -9,6 +9,7 @@ import { Input } from './player/input.ts';
 import { PlayerController } from './player/controller.ts';
 import { createInventory, addResource } from './craft/inventory.ts';
 import { ScreenManager, createCraftScreen } from './ui/screens.ts';
+import { runCritterPreview } from './critters/preview.ts';
 
 // ---------------------------------------------------------------------------
 // Boot scene: renderer, camera, environment (lighting/fog/sky/water) and the
@@ -28,191 +29,202 @@ renderer.shadowMap.enabled = false; // shadows off for perf
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 
-const scene = new THREE.Scene();
-
-const camera = new THREE.PerspectiveCamera(
-  CAMERA.fov,
-  window.innerWidth / window.innerHeight,
-  CAMERA.near,
-  CAMERA.far,
-);
-
-setupEnvironment(scene);
-
-const chunks = new ChunkManager(scene);
-const props = new PropManager(scene);
-const skyDome = scene.getObjectByName('skyDome');
-
-function resize(): void {
-  const width = window.innerWidth;
-  const height = window.innerHeight;
-  camera.aspect = width / height;
-  camera.updateProjectionMatrix();
-  renderer.setSize(width, height);
+// Dev hook: `?preview=critters` takes over the renderer with the critter
+// showcase (all 8 species on a turntable) and skips the normal player spawn.
+if (new URLSearchParams(window.location.search).get('preview') === 'critters') {
+  runCritterPreview(renderer);
+} else {
+  bootGame();
 }
 
-window.addEventListener('resize', resize);
+/** Normal gameplay boot: scene, camera, world streaming and the FP controller. */
+function bootGame(): void {
+  const scene = new THREE.Scene();
 
-// ---------------------------------------------------------------------------
-// Player: first-person input + movement + camera. Spawn in the central meadow
-// at ground height. No abilities are unlocked initially — walk / sprint / jump
-// / dash are available from spawn; glider / rocket / boots / grapple are not.
-// ---------------------------------------------------------------------------
-const ground: GroundQuery = { heightAt, normalAt: groundNormalAt };
-const spawn = { x: 0, y: heightAt(0, 0), z: 0 };
+  const camera = new THREE.PerspectiveCamera(
+    CAMERA.fov,
+    window.innerWidth / window.innerHeight,
+    CAMERA.near,
+    CAMERA.far,
+  );
 
-const input = new Input(canvas);
-const player = new PlayerController(camera, input, ground, spawn);
+  setupEnvironment(scene);
 
-// Inventory accumulating harvested resources + the crafting tree's currency
-// (RP), consumables (darts) and held deployable kits.
-const inventory = createInventory();
+  const chunks = new ChunkManager(scene);
+  const props = new PropManager(scene);
+  const skyDome = scene.getObjectByName('skyDome');
 
-// World clock (seconds of simulated time) driving resource-node respawns.
-let worldTime = 0;
-
-const hud = document.getElementById('hud');
-if (!hud) throw new Error('#hud not found');
-
-// ---------------------------------------------------------------------------
-// Screens (KeyC crafting, Esc to close): one overlay in #hud. While a screen
-// is open, pointer lock is released and the player controller is not
-// stepped (see `update()` below) — the sim otherwise keeps running (chunk
-// streaming, prop upkeep) so nothing pops in when the player closes the menu.
-// Input is passed so open/close drop latched jump/dash/rocket edges (state()
-// isn't read while paused, so they'd otherwise fire stale on close).
-// ---------------------------------------------------------------------------
-const screens = new ScreenManager(hud, input);
-screens.register(createCraftScreen(inventory, player.unlocks, screens));
-
-// Dev hook: `?screen=craft` forces the crafting screen open on boot — used
-// for the Task 7 verification screenshot; harmless to keep for future tasks.
-if (new URLSearchParams(window.location.search).get('screen') === 'craft') {
-  screens.open('craft');
-}
-
-// Reusable scratch for the camera look direction (harvest aim).
-const _look = new THREE.Vector3();
-function cameraLook(): { x: number; y: number; z: number } {
-  camera.getWorldDirection(_look);
-  return { x: _look.x, y: _look.y, z: _look.z };
-}
-
-// ---------------------------------------------------------------------------
-// Debug HUD: a tiny dev line (pos / stamina / grounded / biome), refreshed at
-// ~4 Hz. Replaced by the real HUD in Task 11.
-// ---------------------------------------------------------------------------
-const debugLine = document.createElement('div');
-debugLine.style.cssText =
-  'position:fixed;top:8px;left:8px;font:12px monospace;color:#cfe;text-shadow:0 1px 2px #000;white-space:pre;';
-hud.appendChild(debugLine);
-
-function capitalize(s: string): string {
-  return s.charAt(0).toUpperCase() + s.slice(1);
-}
-
-let hudTimer = 0;
-function updateHud(dt: number): void {
-  hudTimer += dt;
-  if (hudTimer < 0.25) return;
-  hudTimer = 0;
-  const p = player.pos;
-  const b = biomeAt(p.x, p.z);
-  const aimed = props.findHarvestable(camera.position, cameraLook(), worldTime);
-  const prompt = aimed ? `\nF — Harvest ${capitalize(aimed.kind)}` : '';
-  debugLine.textContent =
-    `pos ${p.x.toFixed(1)}, ${p.y.toFixed(1)}, ${p.z.toFixed(1)}  ` +
-    `stamina ${player.stamina.toFixed(0)}  ` +
-    `${player.grounded ? 'grounded' : 'air'}  ${player.mode}  biome ${b}  ` +
-    `[fib ${inventory.fiber} res ${inventory.resin} shd ${inventory.shard} spk ${inventory.spark} ` +
-    `rp ${inventory.rp} darts ${inventory.darts}]` +
-    prompt;
-}
-
-/** Advance simulation state by a fixed timestep. Systems hook in here. */
-function update(dt: number): void {
-  worldTime += dt;
-
-  // While a screen (crafting) is open: don't step movement/collision, and
-  // ignore gameplay action edges (interact) — only the screen-toggle edges
-  // below still fire so KeyC/Esc can close it. Chunk/prop streaming keeps
-  // running so nothing pops in when the menu closes.
-  const paused = screens.isOpen();
-
-  if (!paused) {
-    // Feed the controller trees/rocks near the player before it integrates.
-    const prev = player.pos;
-    player.obstacles = props.getObstacles(prev.x, prev.z);
-    player.update(dt);
+  function resize(): void {
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    camera.aspect = width / height;
+    camera.updateProjectionMatrix();
+    renderer.setSize(width, height);
   }
 
-  const p = player.pos;
-  chunks.update(p.x, p.z);
-  props.update(p.x, p.z, worldTime);
+  window.addEventListener('resize', resize);
 
-  for (const action of input.consumeActions()) {
-    if (action.type === 'toggleC') {
-      screens.toggle('craft');
-      continue;
-    }
-    if (action.type === 'escape') {
-      screens.handleEscape();
-      continue;
-    }
-    if (paused) continue; // gameplay actions (interact/hotbar/lmb/rmb) freeze while a screen is open
-    if (action.type === 'interact') {
-      const gained = props.harvestAt(camera.position, cameraLook(), worldTime);
-      if (gained) addResource(inventory, gained, 1);
-    }
+  // -------------------------------------------------------------------------
+  // Player: first-person input + movement + camera. Spawn in the central meadow
+  // at ground height. No abilities are unlocked initially — walk / sprint / jump
+  // / dash are available from spawn; glider / rocket / boots / grapple are not.
+  // -------------------------------------------------------------------------
+  const ground: GroundQuery = { heightAt, normalAt: groundNormalAt };
+  const spawn = { x: 0, y: heightAt(0, 0), z: 0 };
+
+  const input = new Input(canvas as HTMLCanvasElement);
+  const player = new PlayerController(camera, input, ground, spawn);
+
+  // Inventory accumulating harvested resources + the crafting tree's currency
+  // (RP), consumables (darts) and held deployable kits.
+  const inventory = createInventory();
+
+  // World clock (seconds of simulated time) driving resource-node respawns.
+  let worldTime = 0;
+
+  const hud = document.getElementById('hud');
+  if (!hud) throw new Error('#hud not found');
+
+  // -------------------------------------------------------------------------
+  // Screens (KeyC crafting, Esc to close): one overlay in #hud. While a screen
+  // is open, pointer lock is released and the player controller is not
+  // stepped (see `update()` below) — the sim otherwise keeps running (chunk
+  // streaming, prop upkeep) so nothing pops in when the player closes the menu.
+  // Input is passed so open/close drop latched jump/dash/rocket edges (state()
+  // isn't read while paused, so they'd otherwise fire stale on close).
+  // -------------------------------------------------------------------------
+  const screens = new ScreenManager(hud, input);
+  screens.register(createCraftScreen(inventory, player.unlocks, screens));
+
+  // Dev hook: `?screen=craft` forces the crafting screen open on boot — used
+  // for the Task 7 verification screenshot; harmless to keep for future tasks.
+  if (new URLSearchParams(window.location.search).get('screen') === 'craft') {
+    screens.open('craft');
   }
 
-  // Keep the sky dome centred on the camera so its gradient never parallaxes.
-  if (skyDome) skyDome.position.set(camera.position.x, 0, camera.position.z);
-  updateHud(dt);
-}
+  // Reusable scratch for the camera look direction (harvest aim).
+  const _look = new THREE.Vector3();
+  function cameraLook(): { x: number; y: number; z: number } {
+    camera.getWorldDirection(_look);
+    return { x: _look.x, y: _look.y, z: _look.z };
+  }
 
-/** Draw the current state. Called once per animation frame. */
-function render(): void {
-  renderer.render(scene, camera);
-}
+  // -------------------------------------------------------------------------
+  // Debug HUD: a tiny dev line (pos / stamina / grounded / biome), refreshed at
+  // ~4 Hz. Replaced by the real HUD in Task 11.
+  // -------------------------------------------------------------------------
+  const debugLine = document.createElement('div');
+  debugLine.style.cssText =
+    'position:fixed;top:8px;left:8px;font:12px monospace;color:#cfe;text-shadow:0 1px 2px #000;white-space:pre;';
+  hud.appendChild(debugLine);
 
-// Prime the chunk field + props at spawn before the first frame so nothing pops in.
-chunks.update(spawn.x, spawn.z);
-props.primeAround(spawn.x, spawn.z, worldTime);
+  function capitalize(s: string): string {
+    return s.charAt(0).toUpperCase() + s.slice(1);
+  }
 
-// ---------------------------------------------------------------------------
-// Debug handle for later tasks (Task 14 expands this into a full debug menu).
-// ---------------------------------------------------------------------------
-(window as unknown as { __game: unknown }).__game = {
-  player: {
-    pos: () => player.pos,
-    teleport: (x: number, y: number, z: number) => player.teleport(x, y, z),
-  },
-};
+  let hudTimer = 0;
+  function updateHud(dt: number): void {
+    hudTimer += dt;
+    if (hudTimer < 0.25) return;
+    hudTimer = 0;
+    const p = player.pos;
+    const b = biomeAt(p.x, p.z);
+    const aimed = props.findHarvestable(camera.position, cameraLook(), worldTime);
+    const prompt = aimed ? `\nF — Harvest ${capitalize(aimed.kind)}` : '';
+    debugLine.textContent =
+      `pos ${p.x.toFixed(1)}, ${p.y.toFixed(1)}, ${p.z.toFixed(1)}  ` +
+      `stamina ${player.stamina.toFixed(0)}  ` +
+      `${player.grounded ? 'grounded' : 'air'}  ${player.mode}  biome ${b}  ` +
+      `[fib ${inventory.fiber} res ${inventory.resin} shd ${inventory.shard} spk ${inventory.spark} ` +
+      `rp ${inventory.rp} darts ${inventory.darts}]` +
+      prompt;
+  }
 
-// ---------------------------------------------------------------------------
-// Fixed-timestep game loop: accumulator pattern, SIM_DT-sized update steps,
-// render every animation frame. Frame delta is clamped so tab-switches /
-// long stalls don't cause a spiral-of-death catch-up burst.
-// ---------------------------------------------------------------------------
+  /** Advance simulation state by a fixed timestep. Systems hook in here. */
+  function update(dt: number): void {
+    worldTime += dt;
 
-let accumulator = 0;
-let lastTime = performance.now();
+    // While a screen (crafting) is open: don't step movement/collision, and
+    // ignore gameplay action edges (interact) — only the screen-toggle edges
+    // below still fire so KeyC/Esc can close it. Chunk/prop streaming keeps
+    // running so nothing pops in when the menu closes.
+    const paused = screens.isOpen();
 
-function frame(now: number): void {
+    if (!paused) {
+      // Feed the controller trees/rocks near the player before it integrates.
+      const prev = player.pos;
+      player.obstacles = props.getObstacles(prev.x, prev.z);
+      player.update(dt);
+    }
+
+    const p = player.pos;
+    chunks.update(p.x, p.z);
+    props.update(p.x, p.z, worldTime);
+
+    for (const action of input.consumeActions()) {
+      if (action.type === 'toggleC') {
+        screens.toggle('craft');
+        continue;
+      }
+      if (action.type === 'escape') {
+        screens.handleEscape();
+        continue;
+      }
+      if (paused) continue; // gameplay actions (interact/hotbar/lmb/rmb) freeze while a screen is open
+      if (action.type === 'interact') {
+        const gained = props.harvestAt(camera.position, cameraLook(), worldTime);
+        if (gained) addResource(inventory, gained, 1);
+      }
+    }
+
+    // Keep the sky dome centred on the camera so its gradient never parallaxes.
+    if (skyDome) skyDome.position.set(camera.position.x, 0, camera.position.z);
+    updateHud(dt);
+  }
+
+  /** Draw the current state. Called once per animation frame. */
+  function render(): void {
+    renderer.render(scene, camera);
+  }
+
+  // Prime the chunk field + props at spawn before the first frame so nothing pops in.
+  chunks.update(spawn.x, spawn.z);
+  props.primeAround(spawn.x, spawn.z, worldTime);
+
+  // -------------------------------------------------------------------------
+  // Debug handle for later tasks (Task 14 expands this into a full debug menu).
+  // -------------------------------------------------------------------------
+  (window as unknown as { __game: unknown }).__game = {
+    player: {
+      pos: () => player.pos,
+      teleport: (x: number, y: number, z: number) => player.teleport(x, y, z),
+    },
+  };
+
+  // -------------------------------------------------------------------------
+  // Fixed-timestep game loop: accumulator pattern, SIM_DT-sized update steps,
+  // render every animation frame. Frame delta is clamped so tab-switches /
+  // long stalls don't cause a spiral-of-death catch-up burst.
+  // -------------------------------------------------------------------------
+
+  let accumulator = 0;
+  let lastTime = performance.now();
+
+  function frame(now: number): void {
+    requestAnimationFrame(frame);
+
+    const rawDt = (now - lastTime) / 1000;
+    lastTime = now;
+    const frameDt = Math.min(rawDt, MAX_FRAME_DT);
+
+    accumulator += frameDt;
+    while (accumulator >= SIM_DT) {
+      update(SIM_DT);
+      accumulator -= SIM_DT;
+    }
+
+    render();
+  }
+
   requestAnimationFrame(frame);
-
-  const rawDt = (now - lastTime) / 1000;
-  lastTime = now;
-  const frameDt = Math.min(rawDt, MAX_FRAME_DT);
-
-  accumulator += frameDt;
-  while (accumulator >= SIM_DT) {
-    update(SIM_DT);
-    accumulator -= SIM_DT;
-  }
-
-  render();
 }
-
-requestAnimationFrame(frame);
