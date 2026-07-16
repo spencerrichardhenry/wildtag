@@ -104,4 +104,12 @@ export interface CritterState {
   trackProgress: number;
   home: Vec3;
   flightHeight: number;
+  /**
+   * Randomized dwell (s) for the timed states (idle/wander/calm): stateTime
+   * counts up and the critter transitions once it reaches stateDur. Re-rolled
+   * (via ctx.rand) on each entry so a herd doesn't move in lockstep.
+   */
+  stateDur: number;
+  /** Seconds the player has stayed beyond awareness×calmDistFactor while fleeing. */
+  farTime: number;
 }

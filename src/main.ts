@@ -10,6 +10,7 @@ import { PlayerController } from './player/controller.ts';
 import { createInventory, addResource } from './craft/inventory.ts';
 import { ScreenManager, createCraftScreen } from './ui/screens.ts';
 import { runCritterPreview } from './critters/preview.ts';
+import { CritterManager } from './critters/manager.ts';
 
 // ---------------------------------------------------------------------------
 // Boot scene: renderer, camera, environment (lighting/fog/sky/water) and the
@@ -52,6 +53,7 @@ function bootGame(): void {
 
   const chunks = new ChunkManager(scene);
   const props = new PropManager(scene);
+  const critters = new CritterManager(scene);
   const skyDome = scene.getObjectByName('skyDome');
 
   function resize(): void {
@@ -131,12 +133,28 @@ function bootGame(): void {
     const b = biomeAt(p.x, p.z);
     const aimed = props.findHarvestable(camera.position, cameraLook(), worldTime);
     const prompt = aimed ? `\nF — Harvest ${capitalize(aimed.kind)}` : '';
+
+    // Nearest active critter (species/state) for the dev line.
+    let nearest: { species: string; state: string } | null = null;
+    let nearestD = Infinity;
+    for (const c of critters.list()) {
+      const d = Math.hypot(c.pos.x - p.x, c.pos.z - p.z);
+      if (d < nearestD) {
+        nearestD = d;
+        nearest = { species: c.species, state: c.state };
+      }
+    }
+    const critterLine = nearest
+      ? `\ncritters ${critters.count()}  nearest ${nearest.species} (${nearest.state}) ${nearestD.toFixed(0)}m`
+      : `\ncritters ${critters.count()}`;
+
     debugLine.textContent =
       `pos ${p.x.toFixed(1)}, ${p.y.toFixed(1)}, ${p.z.toFixed(1)}  ` +
       `stamina ${player.stamina.toFixed(0)}  ` +
       `${player.grounded ? 'grounded' : 'air'}  ${player.mode}  biome ${b}  ` +
       `[fib ${inventory.fiber} res ${inventory.resin} shd ${inventory.shard} spk ${inventory.spark} ` +
       `rp ${inventory.rp} darts ${inventory.darts}]` +
+      critterLine +
       prompt;
   }
 
@@ -160,6 +178,7 @@ function bootGame(): void {
     const p = player.pos;
     chunks.update(p.x, p.z);
     props.update(p.x, p.z, worldTime);
+    critters.update(dt, p);
 
     for (const action of input.consumeActions()) {
       if (action.type === 'toggleC') {
@@ -187,9 +206,11 @@ function bootGame(): void {
     renderer.render(scene, camera);
   }
 
-  // Prime the chunk field + props at spawn before the first frame so nothing pops in.
+  // Prime the chunk field + props + critters at spawn before the first frame so
+  // nothing pops in.
   chunks.update(spawn.x, spawn.z);
   props.primeAround(spawn.x, spawn.z, worldTime);
+  critters.update(SIM_DT, spawn);
 
   // -------------------------------------------------------------------------
   // Debug handle for later tasks (Task 14 expands this into a full debug menu).
@@ -198,7 +219,12 @@ function bootGame(): void {
     player: {
       pos: () => player.pos,
       teleport: (x: number, y: number, z: number) => player.teleport(x, y, z),
+      look: (yaw: number, pitch = 0) => {
+        input.yaw = yaw;
+        input.pitch = pitch;
+      },
     },
+    critters: () => critters.list(),
   };
 
   // -------------------------------------------------------------------------

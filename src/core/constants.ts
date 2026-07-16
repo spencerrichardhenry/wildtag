@@ -395,3 +395,74 @@ export const CRITTER_VARIATION = {
   hueJitter: 0.04,
   lightnessJitter: 0.08,
 } as const;
+
+/**
+ * Critter AI (critters/ai.ts) + world manager (critters/manager.ts) tuning.
+ * `stepAI` is a pure per-critter state machine (idle↔wander → alert → flee →
+ * calm → wander); the manager streams deterministic per-cell spawn tables in
+ * and out around the player. All timers in seconds, distances/speeds in m, m/s.
+ */
+export const AI = {
+  /** Idle (graze) dwell before wandering: uniform in [idleMin, idleMax] (s). */
+  idleMin: 2,
+  idleMax: 5,
+  /** Wander leg duration before settling back to idle (s). */
+  wanderMin: 3,
+  wanderMax: 6,
+  /** A wander target is picked within this radius of `home` (m). */
+  wanderRadius: 30,
+  /** Max yaw turn rate (rad/s) — critters swing toward their heading gradually. */
+  turnRate: 2.5,
+  /** Alert dwell: freeze facing the player this long before fleeing (s). */
+  alertTime: 0.8,
+  /** Player must stay beyond awareness × this factor to start calming. */
+  calmDistFactor: 1.6,
+  /** …for this long (s) before flee → calm. */
+  calmTriggerTime: 3,
+  /** Calm (recover) dwell before returning to wander (s). */
+  calmTime: 2,
+  /** Gentle drift speed while calming (× species walkSpeed). */
+  calmSpeedFactor: 0.35,
+
+  /** Sprint flee: straight dash bursts of `sprintBurst` s split by `sprintPause` s. */
+  sprintBurst: 1.2,
+  sprintPause: 0.4,
+  /** Zigzag flee: swerve angle (rad) flipped every `zigzagPeriod` s. */
+  zigzagAngle: (55 * Math.PI) / 180,
+  zigzagPeriod: 0.7,
+  /** Fly flee: cruise altitude band above terrain (m), picked per-individual. */
+  flyHeightMin: 10,
+  flyHeightMax: 16,
+  /** Vertical approach rate toward the target flight altitude (1/s lerp). */
+  flyClimbRate: 1.5,
+  /** Wide-arc yaw sweep rate while a flyer loops (rad/s). */
+  flyArcRate: 0.55,
+  /** Ledge flee: probe distance ahead (m) when sampling for higher ground. */
+  ledgeProbe: 3,
+  /** Swim flee: probe distance ahead (m) when steering toward water. */
+  swimProbe: 4,
+  /** Water surface Y for swimmers (matches ENV.waterY). */
+  waterSurfaceY: 0.05,
+
+  /**
+   * Max ground slope a walker will climb; steeper steps are rejected and it
+   * steers along the contour. Stored as the tangent of ~50°.
+   */
+  maxClimbTan: Math.tan((50 * Math.PI) / 180),
+  /** Candidate yaw offsets (rad) scanned when a step is blocked (water/cliff). */
+  avoidOffsets: [0.4, -0.4, 0.8, -0.8, 1.2, -1.2, 1.8, -1.8, 2.6, -2.6, Math.PI],
+
+  /** Spawn-table cell edge (m). Each cell rolls 0–maxSlotsPerCell spawn slots. */
+  cellSize: 128,
+  maxSlotsPerCell: 3,
+  /** Fraction of the cell a slot may jitter from centre (keeps it inside). */
+  slotJitter: 0.42,
+  /** Activate slots within this radius of the player (m). */
+  activeRadius: 400,
+  /** Deactivate beyond this radius (m) — hysteresis so streaming doesn't churn. */
+  deactivateRadius: 450,
+  /** Hard cap on concurrently-active critters (nearest kept). */
+  maxActive: 70,
+  /** Lumen stag only spawns in cells whose centre is beyond this from origin (m). */
+  lumenMinDist: 500,
+} as const;
