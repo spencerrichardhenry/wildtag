@@ -1,0 +1,22 @@
+{
+  "name": "wildtag",
+  "version": "0.1.0",
+  "description": "First-person web exploration game — tag critters, high-fidelity movement.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 5199",
+    "build": "tsc -b && vite build",
+    "test": "vitest run --passWithNoTests",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "three": "^0.185.1"
+  },
+  "devDependencies": {
+    "@types/three": "^0.185.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.1.4",
+    "vitest": "^4.1.10"
+  }
+}

@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Wildtag</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #0b0d10;
+        font-family:
+          'Courier New',
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Consolas,
+          monospace;
+      }
+
+      #game {
+        display: block;
+        position: fixed;
+        inset: 0;
+        width: 100vw;
+        height: 100vh;
+      }
+
+      #hud {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        color: #f2f2f2;
+        user-select: none;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="game"></canvas>
+    <div id="hud"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
