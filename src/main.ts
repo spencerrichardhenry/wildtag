@@ -160,17 +160,38 @@ function bootGame(): void {
   // loadout — `createInventory()` itself stays a pure zero constructor.
   // -------------------------------------------------------------------------
   const freshStart = new URLSearchParams(window.location.search).get('fresh') === '1';
-  const loaded: SaveV1 | null = freshStart ? null : loadSave();
-  Object.assign(inventory, applyStartingLoadout(inventory, loaded));
+  let loaded: SaveV1 | null = freshStart ? null : loadSave();
   let primePos: Vec3 = spawn;
   if (loaded) {
-    for (const u of loaded.unlocks) player.unlocks.add(u);
-    critters.importRegistry(loaded.critterPersist);
-    deserializeStructures(loaded.structures, ziplines, drones);
-    player.teleport(loaded.player.pos.x, loaded.player.pos.y, loaded.player.pos.z);
-    input.yaw = loaded.player.yaw;
-    hudUi.setHintFlags(loaded.hints);
-    primePos = { ...loaded.player.pos };
+    try {
+      Object.assign(inventory, applyStartingLoadout(inventory, loaded));
+      for (const u of loaded.unlocks) player.unlocks.add(u);
+      critters.importRegistry(loaded.critterPersist);
+      deserializeStructures(loaded.structures, ziplines, drones);
+      player.teleport(loaded.player.pos.x, loaded.player.pos.y, loaded.player.pos.z);
+      input.yaw = loaded.player.yaw;
+      hudUi.setHintFlags(loaded.hints);
+      primePos = { ...loaded.player.pos };
+    } catch (err) {
+      // Belt and braces: decodeSave shape-guards the save, but any remaining
+      // within-v1 drift must never break boot — unwind whatever half-applied
+      // and fall back to a fresh start.
+      console.warn('[wildtag] save apply failed — starting fresh', err);
+      loaded = null;
+      player.unlocks.clear();
+      critters.importRegistry({});
+      ziplines.deserialize([]);
+      drones.deserialize([]);
+      player.teleport(spawn.x, spawn.y, spawn.z);
+      input.yaw = 0;
+      hudUi.setHintFlags([]);
+      primePos = spawn;
+    }
+  }
+  if (!loaded) {
+    // Fresh start (no save / ?fresh=1 / corrupt-apply fallback above): zeroed
+    // inventory + the starting dart loadout.
+    Object.assign(inventory, applyStartingLoadout(createInventory(), null));
   }
 
   /** Build the current in-memory state as a plain-data SaveV1 snapshot. */

@@ -105,6 +105,41 @@ describe('encodeSave / decodeSave', () => {
     const state = { ...sampleSave(), unlocks: 'grapple' };
     expect(decodeSave(JSON.stringify(state))).toBeNull();
   });
+
+  it('drops a malformed zipline element while its valid sibling (and the rest of the save) survives', () => {
+    const state = sampleSave();
+    const good = { id: 'zip1', a: { x: 1, y: 5, z: 2 }, b: { x: 30, y: 5, z: 2 } };
+    const bad = [
+      {}, // empty object — the review case: would throw in buildMesh(z.a, z.b)
+      { id: 'zip2', a: { x: 0, y: 4 }, b: { x: 40, y: 4, z: 0 } }, // a.z missing
+      { id: 3, a: { x: 0, y: 4, z: 0 }, b: { x: 40, y: 4, z: 0 } }, // id not a string
+      { id: 'zip4', a: null, b: { x: 40, y: 4, z: 0 } }, // a not an object
+    ];
+    const raw = { ...state, structures: { ...state.structures, ziplines: [bad[0], good, ...bad.slice(1)] } };
+    const decoded = decodeSave(JSON.stringify(raw));
+    expect(decoded).not.toBeNull();
+    expect(decoded?.structures.ziplines).toEqual([good]);
+    // The rest of the save is untouched.
+    expect(decoded?.inventory).toEqual(state.inventory);
+    expect(decoded?.structures.drones).toEqual(state.structures.drones);
+    expect(decoded?.player).toEqual(state.player);
+  });
+
+  it('drops a malformed drone element while its valid sibling survives', () => {
+    const state = sampleSave();
+    const good = { id: 'drone1', x: -5, z: 22 };
+    const raw = {
+      ...state,
+      structures: {
+        ...state.structures,
+        drones: [{}, good, { id: 'drone2', x: 'ten', z: 0 }, { id: 'drone3', x: 1 }],
+      },
+    };
+    const decoded = decodeSave(JSON.stringify(raw));
+    expect(decoded).not.toBeNull();
+    expect(decoded?.structures.drones).toEqual([good]);
+    expect(decoded?.structures.ziplines).toEqual(state.structures.ziplines);
+  });
 });
 
 // ---------------------------------------------------------------------------

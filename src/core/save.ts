@@ -43,7 +43,25 @@ export function encodeSave(state: SaveV1): string {
 function isVec3(v: unknown): v is Vec3 {
   if (!v || typeof v !== 'object') return false;
   const o = v as Record<string, unknown>;
-  return typeof o.x === 'number' && typeof o.y === 'number' && typeof o.z === 'number';
+  return Number.isFinite(o.x) && Number.isFinite(o.y) && Number.isFinite(o.z);
+}
+
+/**
+ * Element-shape guards for the structures arrays. A malformed ELEMENT (e.g. a
+ * hand-edited `ziplines: [{}]`) is dropped while its valid siblings — and the
+ * rest of the save — survive; without this, a bad element would pass decode
+ * and then throw inside ZiplineSystem.buildMesh during boot.
+ */
+function isZiplineEntry(z: unknown): boolean {
+  if (!z || typeof z !== 'object') return false;
+  const e = z as Record<string, unknown>;
+  return typeof e.id === 'string' && isVec3(e.a) && isVec3(e.b);
+}
+
+function isDroneEntry(d: unknown): boolean {
+  if (!d || typeof d !== 'object') return false;
+  const e = d as Record<string, unknown>;
+  return typeof e.id === 'string' && Number.isFinite(e.x) && Number.isFinite(e.z);
 }
 
 /**
@@ -67,7 +85,16 @@ export function decodeSave(json: string): SaveV1 | null {
     const player = o.player as Record<string, unknown>;
     if (!isVec3(player.pos) || typeof player.yaw !== 'number') return null;
     if (!Array.isArray(o.hints) || !o.hints.every((h) => typeof h === 'string')) return null;
-    return o as unknown as SaveV1;
+    // Sanitize structure elements: drop malformed entries, keep valid siblings
+    // (and the rest of the save) so a partly-corrupt save never crashes boot.
+    const sanitized = {
+      ...o,
+      structures: {
+        ziplines: structures.ziplines.filter(isZiplineEntry),
+        drones: structures.drones.filter(isDroneEntry),
+      },
+    };
+    return sanitized as unknown as SaveV1;
   } catch {
     return null;
   }
