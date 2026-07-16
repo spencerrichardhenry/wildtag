@@ -226,6 +226,7 @@ function bootGame(): void {
       pos: p,
       yaw: input.yaw,
       stamina: player.stamina,
+      exhausted: player.exhausted,
       inventory,
       unlocks: player.unlocks,
       critters: critters.list(),

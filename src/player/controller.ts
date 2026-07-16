@@ -286,6 +286,10 @@ export class PlayerController {
   get stamina(): number {
     return this.state.stamina;
   }
+  /** True while the movement core's exhaustion latch is set (<1, clears ≥20). */
+  get exhausted(): boolean {
+    return this.state.exhausted;
+  }
   get grounded(): boolean {
     return this.state.grounded;
   }

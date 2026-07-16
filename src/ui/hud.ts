@@ -35,6 +35,8 @@ export interface HudFrame {
   /** Mouse-look yaw (radians) for the compass. */
   yaw: number;
   stamina: number;
+  /** Movement core's exhaustion latch (true below 1 stamina until ≥20). */
+  exhausted: boolean;
   inventory: Inventory;
   unlocks: ReadonlySet<string>;
   /** Live critters (for rings + compass pips). */
@@ -262,7 +264,7 @@ export class HUD {
     if (frame.screenOpen) return;
 
     this.paintCrosshair(frame);
-    this.paintStamina(frame.stamina);
+    this.paintStamina(frame.stamina, frame.exhausted);
     this.paintResources(frame.inventory);
     this.paintHotbar(frame);
     this.paintCompass(frame);
@@ -314,14 +316,10 @@ export class HUD {
   // -------------------------------------------------------------------------
   // Stamina — fill %, red flash when exhausted, auto-hide when full for >2s.
   // -------------------------------------------------------------------------
-  private paintStamina(stamina: number): void {
+  private paintStamina(stamina: number, exhausted: boolean): void {
     const pct = Math.max(0, Math.min(1, stamina / MOVE.staminaMax));
     this.staminaFill.style.width = `${(pct * 100).toFixed(1)}%`;
 
-    // TODO(post-merge): read PlayerController.exhausted directly once the
-    // controller exposes it (added on the parallel branch at merge) — this
-    // threshold proxy mirrors MOVE.exhaustExitAbove until then.
-    const exhausted = stamina < MOVE.exhaustExitAbove;
     if (exhausted !== this.lastExhausted) {
       this.stamina.classList.toggle('wt-exhausted', exhausted);
       this.lastExhausted = exhausted;
