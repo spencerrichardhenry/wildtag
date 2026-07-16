@@ -206,17 +206,21 @@ function bootGame(): void {
 
     // Advance darts in flight and tracking progress for tagged critters. On a
     // Link the tracker grants rewards; onLink plays the chime + toast here.
-    if (!paused) darts.update(dt);
-    updateTracking(dt, {
-      manager: critters,
-      inventory,
-      playerPos: p,
-      onLink: (view, sp) => {
-        chime();
-        toast(`Linked ${sp.name}!  +${sp.rewardSparks} spark  +${sp.rewardRP} RP`);
-        void view;
-      },
-    });
+    // Both freeze while a screen is open (parity: no linking over a menu, no
+    // unfair progress decay while the player is frozen).
+    if (!paused) {
+      darts.update(dt);
+      updateTracking(dt, {
+        manager: critters,
+        inventory,
+        playerPos: p,
+        onLink: (view, sp) => {
+          chime();
+          toast(`Linked ${sp.name}!  +${sp.rewardSparks} spark  +${sp.rewardRP} RP`);
+          void view;
+        },
+      });
+    }
 
     for (const action of input.consumeActions()) {
       if (action.type === 'toggleC') {

@@ -20,6 +20,8 @@ import { blip } from '../ui/audio.ts';
 /** Pure ballistic state of one dart in flight. */
 export interface DartState {
   pos: Vec3;
+  /** Position at the start of the last step — the hit test sweeps prev→pos. */
+  prev: Vec3;
   vel: Vec3;
   /** Seconds alive. */
   age: number;
@@ -33,6 +35,7 @@ export function spawnDart(origin: Vec3, dir: Vec3): DartState {
   const s = DART.speed / len;
   return {
     pos: { x: origin.x, y: origin.y, z: origin.z },
+    prev: { x: origin.x, y: origin.y, z: origin.z },
     vel: { x: dir.x * s, y: dir.y * s, z: dir.z * s },
     age: 0,
     dead: false,
@@ -55,13 +58,33 @@ export function stepDart(d: DartState, dt: number, g: GroundQuery): DartState {
   const age = d.age + dt;
   const groundY = g.heightAt(pos.x, pos.z);
   const dead = pos.y <= groundY || age >= DART.maxLife;
-  return { pos, vel: { x: d.vel.x, y: vy, z: d.vel.z }, age, dead };
+  return { pos, prev: { ...d.pos }, vel: { x: d.vel.x, y: vy, z: d.vel.z }, age, dead };
+}
+
+/** Squared distance from point `p` to the segment `a`→`b`. */
+function segPointDist2(a: Vec3, b: Vec3, p: Vec3): number {
+  const abx = b.x - a.x;
+  const aby = b.y - a.y;
+  const abz = b.z - a.z;
+  const apx = p.x - a.x;
+  const apy = p.y - a.y;
+  const apz = p.z - a.z;
+  const len2 = abx * abx + aby * aby + abz * abz;
+  let t = len2 > 0 ? (apx * abx + apy * aby + apz * abz) / len2 : 0;
+  if (t < 0) t = 0;
+  else if (t > 1) t = 1;
+  const dx = apx - abx * t;
+  const dy = apy - aby * t;
+  const dz = apz - abz * t;
+  return dx * dx + dy * dy + dz * dz;
 }
 
 /**
- * The id of the nearest critter whose sphere (radius = its species.size) the
- * dart currently overlaps, or null. `size` is passed per critter so callers
- * can supply the live view list directly.
+ * The id of the critter whose sphere (radius = its species.size) the dart
+ * passed through this step, or null. Swept test: the dart's last travel
+ * segment (`prev`→`pos`) is checked against each sphere, so a fast dart
+ * (~0.47 m per 60 Hz step) can't tunnel through a small critter between
+ * samples. Of the spheres swept, the one nearest the current position wins.
  */
 export function dartHitCritter(
   d: DartState,
@@ -70,11 +93,12 @@ export function dartHitCritter(
   let bestId: number | null = null;
   let bestD2 = Infinity;
   for (const c of critters) {
+    if (segPointDist2(d.prev, d.pos, c.pos) > c.size * c.size) continue;
     const dx = c.pos.x - d.pos.x;
     const dy = c.pos.y - d.pos.y;
     const dz = c.pos.z - d.pos.z;
     const d2 = dx * dx + dy * dy + dz * dz;
-    if (d2 <= c.size * c.size && d2 < bestD2) {
+    if (d2 < bestD2) {
       bestD2 = d2;
       bestId = c.id;
     }

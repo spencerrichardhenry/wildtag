@@ -485,3 +485,9 @@ export const DART = {
   /** Trail: number of recent positions kept for the fading streak. */
   trailLength: 10,
 } as const;
+
+/** Tag-tracking progress tuning (tracking/progress.ts). */
+export const TRACKING = {
+  /** Progress decay rate outside the ring, as a fraction of the accrual rate. */
+  trackDecayFactor: 0.5,
+} as const;

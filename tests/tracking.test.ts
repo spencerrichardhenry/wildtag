@@ -4,7 +4,7 @@ import { spawnDart, stepDart, dartHitCritter } from '../src/tracking/darts.ts';
 import type { DartState } from '../src/tracking/darts.ts';
 import { shouldLink } from '../src/tracking/tracker.ts';
 import { speciesById } from '../src/critters/species.ts';
-import { DART } from '../src/core/constants.ts';
+import { DART, TRACKING } from '../src/core/constants.ts';
 import type { GroundQuery, SpeciesDef, Vec3 } from '../src/core/types.ts';
 import type { CritterView } from '../src/critters/manager.ts';
 
@@ -36,9 +36,12 @@ describe('stepTracking', () => {
     expect(stepTracking(2, puffle.trackRadius, 0.5, puffle)).toBeCloseTo(2.5, 6);
   });
 
-  it('decays at half rate while outside the track radius', () => {
-    expect(stepTracking(4, 100, 1, puffle)).toBeCloseTo(3.5, 6);
-    expect(stepTracking(4, puffle.trackRadius + 0.01, 2, puffle)).toBeCloseTo(3, 6);
+  it('decays at TRACKING.trackDecayFactor of the accrual rate while outside', () => {
+    expect(stepTracking(4, 100, 1, puffle)).toBeCloseTo(4 - TRACKING.trackDecayFactor, 6);
+    expect(stepTracking(4, puffle.trackRadius + 0.01, 2, puffle)).toBeCloseTo(
+      4 - 2 * TRACKING.trackDecayFactor,
+      6,
+    );
   });
 
   it('clamps at the low end (never negative)', () => {
@@ -125,16 +128,25 @@ describe('stepDart', () => {
 // ---------------------------------------------------------------------------
 
 describe('dartHitCritter', () => {
-  const dart: DartState = { pos: { x: 0, y: 0, z: 0 }, vel: { x: 0, y: 0, z: 0 }, age: 0, dead: false };
+  function dartAt(pos: Vec3, prev: Vec3 = pos): DartState {
+    return {
+      pos: { ...pos },
+      prev: { ...prev },
+      vel: { x: 0, y: 0, z: 0 },
+      age: 0,
+      dead: false,
+    };
+  }
+  const stationary = dartAt({ x: 0, y: 0, z: 0 });
 
   it('hits a critter whose species-size sphere contains the dart', () => {
     const critters = [{ id: 7, pos: { x: 0.3, y: 0, z: 0 }, size: 0.5 }];
-    expect(dartHitCritter(dart, critters)).toBe(7);
+    expect(dartHitCritter(stationary, critters)).toBe(7);
   });
 
-  it('misses when the dart is outside every sphere', () => {
+  it('misses when the dart path is outside every sphere', () => {
     const critters = [{ id: 7, pos: { x: 2, y: 0, z: 0 }, size: 0.5 }];
-    expect(dartHitCritter(dart, critters)).toBeNull();
+    expect(dartHitCritter(stationary, critters)).toBeNull();
   });
 
   it('returns the nearest overlapping critter', () => {
@@ -142,7 +154,38 @@ describe('dartHitCritter', () => {
       { id: 1, pos: { x: 0.9, y: 0, z: 0 }, size: 1.0 },
       { id: 2, pos: { x: 0.2, y: 0, z: 0 }, size: 1.0 },
     ];
-    expect(dartHitCritter(dart, critters)).toBe(2);
+    expect(dartHitCritter(stationary, critters)).toBe(2);
+  });
+
+  it('sweeps the travel segment: a glancing pass point-sampling would miss still hits', () => {
+    // One 60 Hz step at DART.speed covers ~0.47 m. The dart crosses from
+    // x=-0.3 to x=+0.3 straight through a small critter at the origin whose
+    // 0.2 m sphere contains neither endpoint — only the swept segment hits.
+    const d = dartAt({ x: 0.3, y: 0, z: 0 }, { x: -0.3, y: 0, z: 0 });
+    const critters = [{ id: 9, pos: { x: 0, y: 0, z: 0 }, size: 0.2 }];
+    expect(dartHitCritter(d, critters)).toBe(9);
+    // Point-sample check (prev == pos at the endpoint) indeed misses.
+    expect(dartHitCritter(dartAt({ x: 0.3, y: 0, z: 0 }), critters)).toBeNull();
+  });
+
+  it('swept test still misses a sphere the segment passes wide of', () => {
+    const d = dartAt({ x: 0.3, y: 0, z: 0 }, { x: -0.3, y: 0, z: 0 });
+    const critters = [{ id: 9, pos: { x: 0, y: 0.5, z: 0 }, size: 0.2 }];
+    expect(dartHitCritter(d, critters)).toBeNull();
+  });
+
+  it('a full-speed stepDart flight cannot tunnel through a small critter', () => {
+    // Horizontal throw straight at a skitterling-sized (0.45 m) target 5 m
+    // out; step at 60 Hz and sweep each segment — the dart must register a hit.
+    let d = spawnDart({ x: 0, y: 10, z: 0 }, { x: 1, y: 0, z: 0 });
+    const critters = [{ id: 3, pos: { x: 5, y: 9.9, z: 0 }, size: 0.45 }];
+    let hit: number | null = null;
+    let guard = 0;
+    while (!d.dead && hit === null && guard++ < 1000) {
+      d = stepDart(d, 1 / 60, abyss);
+      hit = dartHitCritter(d, critters);
+    }
+    expect(hit).toBe(3);
   });
 });
 
