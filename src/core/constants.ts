@@ -629,6 +629,8 @@ export const DART = {
 export const TRACKING = {
   /** Progress decay rate outside the ring, as a fraction of the accrual rate. */
   trackDecayFactor: 0.5,
+  /** Golden Dart Tip reward (Haven V4): inside-ring fill-rate multiplier. */
+  goldenDartFill: 1.5,
 } as const;
 
 /**

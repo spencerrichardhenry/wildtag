@@ -38,6 +38,30 @@ export interface SaveV1 {
    * Haven V7 bumps it.
    */
   roster?: RosterEntry[];
+  /**
+   * Haven V4 (barter). All optional + shape-guarded (default []) so older saves
+   * load losslessly. `barter` is the per-NPC request rotation state (the live
+   * request is regenerated deterministically from seq + linkedSpecies on load);
+   * `pens` are the traded-away critters living at each NPC's pen; `rewards` is
+   * the ordered granted-reward id list ('plotDeed' may appear twice).
+   */
+  barter?: BarterPersistEntry[];
+  pens?: PenPersistEntry[];
+  rewards?: string[];
+}
+
+/** Persisted per-NPC barter rotation state (Haven V4). */
+export interface BarterPersistEntry {
+  npcId: string;
+  seq: number;
+  fulfilled: number;
+}
+
+/** A traded-away critter living at an NPC's pen (Haven V4). */
+export interface PenPersistEntry {
+  npcId: string;
+  speciesId: string;
+  nickname: string;
 }
 
 export const SAVE_KEY = 'wildtag-save-v1';
@@ -88,6 +112,24 @@ function isRosterEntry(r: unknown): boolean {
   if (st.kind === 'idle' || st.kind === 'mount') return true;
   if (st.kind === 'farm' && Number.isFinite(st.plotId)) return true;
   return false;
+}
+
+/** Element guard for a persisted barter rotation entry (Haven V4). */
+function isBarterEntry(b: unknown): boolean {
+  if (!b || typeof b !== 'object') return false;
+  const e = b as Record<string, unknown>;
+  return typeof e.npcId === 'string' && Number.isFinite(e.seq) && Number.isFinite(e.fulfilled);
+}
+
+/** Element guard for a persisted pen critter (Haven V4). */
+function isPenEntry(p: unknown): boolean {
+  if (!p || typeof p !== 'object') return false;
+  const e = p as Record<string, unknown>;
+  return (
+    typeof e.npcId === 'string' &&
+    typeof e.speciesId === 'string' &&
+    typeof e.nickname === 'string'
+  );
 }
 
 /**
@@ -153,9 +195,26 @@ export function decodeSave(json: string): SaveV1 | null {
       if (!Array.isArray(o.roster)) return null;
       roster = o.roster.filter(isRosterEntry) as RosterEntry[];
     }
+    // Barter/pens/rewards (Haven V4): all optional, default []. A present
+    // non-array rejects; malformed elements are dropped, valid siblings survive.
+    let barter: BarterPersistEntry[] = [];
+    if (o.barter !== undefined && o.barter !== null) {
+      if (!Array.isArray(o.barter)) return null;
+      barter = o.barter.filter(isBarterEntry) as BarterPersistEntry[];
+    }
+    let pens: PenPersistEntry[] = [];
+    if (o.pens !== undefined && o.pens !== null) {
+      if (!Array.isArray(o.pens)) return null;
+      pens = o.pens.filter(isPenEntry) as PenPersistEntry[];
+    }
+    let rewards: string[] = [];
+    if (o.rewards !== undefined && o.rewards !== null) {
+      if (!Array.isArray(o.rewards) || !o.rewards.every((r) => typeof r === 'string')) return null;
+      rewards = o.rewards as string[];
+    }
     // Sanitize structure elements: drop malformed entries, keep valid siblings
     // (and the rest of the save) so a partly-corrupt save never crashes boot.
-    const sanitized = {
+    const sanitized: Record<string, unknown> = {
       ...o,
       inventory,
       structures: {
@@ -164,6 +223,12 @@ export function decodeSave(json: string): SaveV1 | null {
       },
       roster,
     };
+    // Only surface the Haven V4 fields when the input actually carried them, so
+    // saves written before V4 decode to exactly their old shape (no phantom
+    // empty keys) — matching how those callers round-trip.
+    if (o.barter !== undefined && o.barter !== null) sanitized.barter = barter;
+    if (o.pens !== undefined && o.pens !== null) sanitized.pens = pens;
+    if (o.rewards !== undefined && o.rewards !== null) sanitized.rewards = rewards;
     return sanitized as unknown as SaveV1;
   } catch {
     return null;

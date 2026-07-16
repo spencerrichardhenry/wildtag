@@ -13,17 +13,20 @@ import type { SpeciesDef } from '../core/types.ts';
 
 /**
  * Advance tracking `progress` (s) by one step. `dist` is the current
- * player↔critter distance (m); inside `sp.trackRadius` progress rises by `dt`,
- * outside it falls by `dt × TRACKING.trackDecayFactor`. Result is clamped to
- * `[0, sp.trackTime]`.
+ * player↔critter distance (m); inside `sp.trackRadius` progress rises by
+ * `dt × fillRate`, outside it falls by `dt × TRACKING.trackDecayFactor`.
+ * Result is clamped to `[0, sp.trackTime]`. `fillRate` (default 1) carries the
+ * Golden Dart Tip reward's 1.5× bonus (Haven V4) — it scales accrual only, not
+ * decay, so the reward speeds Linking without also making progress stickier.
  */
 export function stepTracking(
   progress: number,
   dist: number,
   dt: number,
   sp: SpeciesDef,
+  fillRate = 1,
 ): number {
-  const delta = dist <= sp.trackRadius ? dt : -dt * TRACKING.trackDecayFactor;
+  const delta = dist <= sp.trackRadius ? dt * fillRate : -dt * TRACKING.trackDecayFactor;
   const next = progress + delta;
   if (next < 0) return 0;
   if (next > sp.trackTime) return sp.trackTime;

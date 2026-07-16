@@ -27,6 +27,12 @@ export interface TrackerDeps {
   manager: CritterManager;
   inventory: Inventory;
   playerPos: Vec3;
+  /**
+   * Inside-ring fill-rate multiplier (Haven V4 Golden Dart Tip). Defaults to 1;
+   * main.ts passes `trackingFillRate(getRewards())` so the reward's 1.5× bonus
+   * applies the instant it's owned.
+   */
+  fillRate?: number;
   /** Called once when a critter Links, after rewards are granted. */
   onLink?: (view: CritterView, sp: SpeciesDef) => void;
 }
@@ -38,13 +44,13 @@ function dist(a: Vec3, b: Vec3): number {
 
 /** Advance tracking for every tagged-not-linked critter by one `dt` step. */
 export function updateTracking(dt: number, deps: TrackerDeps): void {
-  const { manager, inventory, playerPos, onLink } = deps;
+  const { manager, inventory, playerPos, onLink, fillRate = 1 } = deps;
   for (const c of manager.list()) {
     if (!c.tagged || c.linked) continue;
     const sp = speciesById(c.species);
     if (!sp) continue;
 
-    const next = stepTracking(c.trackProgress, dist(playerPos, c.pos), dt, sp);
+    const next = stepTracking(c.trackProgress, dist(playerPos, c.pos), dt, sp, fillRate);
     manager.setTrackProgress(c.id, next);
 
     if (shouldLink({ ...c, trackProgress: next }, sp)) {
