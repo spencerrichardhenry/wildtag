@@ -23,7 +23,7 @@ export const RECIPES: Recipe[] = [
     rpRequired: 0,
     cost: { fiber: 3, resin: 1 },
     kind: 'consumable',
-    batch: 4,
+    batch: 10,
   },
   // --- Tier 1 (25 RP) --------------------------------------------------------
   {

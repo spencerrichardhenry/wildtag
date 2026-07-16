@@ -77,23 +77,23 @@ describe('canCraft — cost math', () => {
 });
 
 describe('craft — dart batching', () => {
-  it('spends the exact recipe cost and grants darts in a batch of 4', () => {
+  it('spends the exact recipe cost and grants darts in a batch of 10', () => {
     const inv = createInventory();
     grant(inv, { fiber: 3, resin: 1 });
     const result = craft(inv, 'dart', new Set());
     expect(result.inv.fiber).toBe(0);
     expect(result.inv.resin).toBe(0);
-    expect(result.inv.darts).toBe(4);
+    expect(result.inv.darts).toBe(10);
     expect(result.unlocked).toBeUndefined();
     expect(result.kits).toBeUndefined();
   });
 
-  it('crafting twice yields 8 darts total (each craft pays its own cost)', () => {
+  it('crafting twice yields 20 darts total (each craft pays its own cost)', () => {
     const inv = createInventory();
     grant(inv, { fiber: 6, resin: 2 });
     const first = craft(inv, 'dart', new Set());
     const second = craft(first.inv, 'dart', new Set());
-    expect(second.inv.darts).toBe(8);
+    expect(second.inv.darts).toBe(20);
     expect(second.inv.fiber).toBe(0);
   });
 
@@ -169,7 +169,7 @@ describe('full crafting tree — affordability walk', () => {
 
     expect(unlocks).toEqual(new Set(['grapple', 'boots', 'glider', 'rocket']));
     expect(working.kits).toEqual({ zipline: 1, beacon: 1, drone: 1 });
-    expect(working.darts).toBe(4);
+    expect(working.darts).toBe(10);
     expect(working.fiber).toBe(0);
     expect(working.resin).toBe(0);
     expect(working.shard).toBe(0);
