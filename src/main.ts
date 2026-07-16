@@ -29,7 +29,7 @@ import { raycastTerrain } from './player/grapple.ts';
 import { applyStartingLoadout, loadSave, writeSave, clearSave, type SaveV1 } from './core/save.ts';
 import { buildDebugHandle } from './debug.ts';
 import { buildVillage, villageObstacles } from './village/buildings.ts';
-import { NpcManager, NPCS } from './village/npcs.ts';
+import { NpcManager, NPCS, npcAnchors } from './village/npcs.ts';
 import { createDialogScreen, openDialog, setRequestRenderer } from './village/dialog.ts';
 import { villageCenter } from './village/layout.ts';
 import {
@@ -857,6 +857,29 @@ function bootGame(): void {
     save: doSave,
     resetSave,
   });
+
+  // Verification aid (Haven V4): expose deterministic village anchors + a couple
+  // of camera helpers so the headless screenshot harness can frame the dialog
+  // and pens without a real mouse (pointer lock is unavailable in headless).
+  // No gameplay effect beyond opening a screen / aiming the existing camera.
+  (window as unknown as { __village: unknown }).__village = {
+    center: villageCenter(),
+    anchors: npcAnchors(),
+    /** Open the barter dialog for `npcId` directly (bypasses F-proximity). */
+    talk(npcId: string): void {
+      const def = NPCS.find((n) => n.id === npcId);
+      if (def) openDialog(screens, def);
+    },
+    /** Aim the camera at a world point (sets input yaw/pitch). */
+    lookAt(x: number, y: number, z: number): void {
+      const e = camera.position;
+      const dx = x - e.x;
+      const dy = y - e.y;
+      const dz = z - e.z;
+      input.yaw = Math.atan2(-dx, -dz);
+      input.pitch = Math.atan2(dy, Math.hypot(dx, dz));
+    },
+  };
 
   // -------------------------------------------------------------------------
   // Fixed-timestep game loop: accumulator pattern, SIM_DT-sized update steps,
