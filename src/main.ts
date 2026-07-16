@@ -9,8 +9,13 @@ import { Input } from './player/input.ts';
 import { PlayerController } from './player/controller.ts';
 import { createInventory, addResource } from './craft/inventory.ts';
 import { ScreenManager, createCraftScreen } from './ui/screens.ts';
+import { createGuideScreen } from './ui/guide.ts';
 import { runCritterPreview } from './critters/preview.ts';
 import { CritterManager } from './critters/manager.ts';
+import { DartSystem } from './tracking/darts.ts';
+import { updateTracking, nearestTracked } from './tracking/tracker.ts';
+import { toast } from './ui/toasts.ts';
+import { chime } from './ui/audio.ts';
 
 // ---------------------------------------------------------------------------
 // Boot scene: renderer, camera, environment (lighting/fog/sky/water) and the
@@ -97,12 +102,22 @@ function bootGame(): void {
   // -------------------------------------------------------------------------
   const screens = new ScreenManager(hud, input);
   screens.register(createCraftScreen(inventory, player.unlocks, screens));
+  // Field Guide (Tab): the 8-species silhouette grid (Task 10).
+  screens.register(createGuideScreen(critters, screens));
 
-  // Dev hook: `?screen=craft` forces the crafting screen open on boot — used
-  // for the Task 7 verification screenshot; harmless to keep for future tasks.
-  if (new URLSearchParams(window.location.search).get('screen') === 'craft') {
-    screens.open('craft');
+  // Dev hook: `?screen=craft` / `?screen=guide` forces a screen open on boot —
+  // used for verification screenshots; harmless to keep for future tasks.
+  const screenParam = new URLSearchParams(window.location.search).get('screen');
+  if (screenParam === 'craft' || screenParam === 'guide') {
+    screens.open(screenParam);
   }
+
+  // -------------------------------------------------------------------------
+  // Tracker darts (Task 10): LMB throws a dart from the camera; a hit tags the
+  // critter, which the tracking loop below Links once the player has stayed in
+  // range long enough. Reward chime + toast fire from the tracker's onLink.
+  // -------------------------------------------------------------------------
+  const darts = new DartSystem(scene, camera, critters, inventory, ground);
 
   // Reusable scratch for the camera look direction (harvest aim).
   const _look = new THREE.Vector3();
@@ -148,6 +163,14 @@ function bootGame(): void {
       ? `\ncritters ${critters.count()}  nearest ${nearest.species} (${nearest.state}) ${nearestD.toFixed(0)}m`
       : `\ncritters ${critters.count()}`;
 
+    // Temporary tracking readout (Task 11 replaces with the real HUD): nearest
+    // tagged-not-linked critter's Link progress and current distance vs radius.
+    const tracked = nearestTracked(critters, p);
+    const trackLine = tracked
+      ? `\nTRACKING ${tracked.sp.name} ${((tracked.view.trackProgress / tracked.sp.trackTime) * 100).toFixed(0)}% ` +
+        `${tracked.dist.toFixed(1)}m/${tracked.sp.trackRadius}m`
+      : '';
+
     debugLine.textContent =
       `pos ${p.x.toFixed(1)}, ${p.y.toFixed(1)}, ${p.z.toFixed(1)}  ` +
       `stamina ${player.stamina.toFixed(0)}  ` +
@@ -155,6 +178,7 @@ function bootGame(): void {
       `[fib ${inventory.fiber} res ${inventory.resin} shd ${inventory.shard} spk ${inventory.spark} ` +
       `rp ${inventory.rp} darts ${inventory.darts}]` +
       critterLine +
+      trackLine +
       prompt;
   }
 
@@ -180,9 +204,27 @@ function bootGame(): void {
     props.update(p.x, p.z, worldTime);
     critters.update(dt, p);
 
+    // Advance darts in flight and tracking progress for tagged critters. On a
+    // Link the tracker grants rewards; onLink plays the chime + toast here.
+    if (!paused) darts.update(dt);
+    updateTracking(dt, {
+      manager: critters,
+      inventory,
+      playerPos: p,
+      onLink: (view, sp) => {
+        chime();
+        toast(`Linked ${sp.name}!  +${sp.rewardSparks} spark  +${sp.rewardRP} RP`);
+        void view;
+      },
+    });
+
     for (const action of input.consumeActions()) {
       if (action.type === 'toggleC') {
         screens.toggle('craft');
+        continue;
+      }
+      if (action.type === 'tab') {
+        screens.toggle('guide');
         continue;
       }
       if (action.type === 'escape') {
@@ -193,6 +235,9 @@ function bootGame(): void {
       if (action.type === 'interact') {
         const gained = props.harvestAt(camera.position, cameraLook(), worldTime);
         if (gained) addResource(inventory, gained, 1);
+      }
+      if (action.type === 'lmb') {
+        darts.tryThrow();
       }
     }
 

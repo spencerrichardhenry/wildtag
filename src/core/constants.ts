@@ -466,3 +466,22 @@ export const AI = {
   /** Lumen stag only spawns in cells whose centre is beyond this from origin (m). */
   lumenMinDist: 500,
 } as const;
+
+/**
+ * Tracker dart ballistics + tag/track loop (Task 10). A thrown dart launches
+ * at `speed` along the camera look direction, falls under `gravity`, and dies
+ * on ground contact or after `maxLife` seconds. A dart within a critter's
+ * (species.size) sphere tags it; the player then stays within the species'
+ * trackRadius for a cumulative trackTime to Link it (progress accrues at +dt
+ * inside the ring, decays at −dt/2 outside).
+ */
+export const DART = {
+  /** Muzzle speed along the look direction at throw (m/s). */
+  speed: 28,
+  /** Gravity on a dart in flight (m/s², negative = down). */
+  gravity: -24,
+  /** Max time a dart lives before it despawns (s). */
+  maxLife: 3,
+  /** Trail: number of recent positions kept for the fading streak. */
+  trailLength: 10,
+} as const;

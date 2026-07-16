@@ -120,6 +120,8 @@ interface PersistState {
   tagged: boolean;
   linked: boolean;
   trackProgress: number;
+  /** Species id, remembered so `linkedSpecies()` can resolve linked slots. */
+  species?: string;
 }
 
 interface ActiveCritter {
@@ -127,7 +129,12 @@ interface ActiveCritter {
   group: THREE.Group;
   parts: CritterParts;
   rng: () => number;
+  /** Blinking tracking beacon (child of `group`) while tagged-not-linked. */
+  beacon: THREE.Mesh | null;
 }
+
+/** Beacon: a small bright octahedron that hovers above a tagged critter. */
+const BEACON_COLOR = 0x66e0ff;
 
 const ground: GroundQuery = { heightAt, normalAt: groundNormalAt };
 const _biomeAt = (x: number, z: number): Biome => biomeAt(x, z);
@@ -191,7 +198,39 @@ export class CritterManager {
       entry.group.position.set(s.pos.x, s.pos.y, s.pos.z);
       entry.group.rotation.y = s.yaw;
       animateCritter(entry.parts, Math.hypot(s.vel.x, s.vel.z), this.worldTime);
+
+      // Tracking beacon: shown while tagged-not-linked, blinking; removed once
+      // the critter Links (or is somehow untagged).
+      if (s.tagged && !s.linked) {
+        this.ensureBeacon(entry, def);
+        if (entry.beacon) {
+          const mat = entry.beacon.material as THREE.MeshBasicMaterial;
+          mat.opacity = 0.35 + 0.65 * (0.5 + 0.5 * Math.sin(this.worldTime * 8));
+        }
+      } else {
+        this.removeBeacon(entry);
+      }
     }
+  }
+
+  private ensureBeacon(entry: ActiveCritter, def: { size: number }): void {
+    if (entry.beacon) return;
+    const beacon = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.18),
+      new THREE.MeshBasicMaterial({ color: BEACON_COLOR, transparent: true, opacity: 1 }),
+    );
+    // Local coords: hover above the critter's head (group is scaled per model).
+    beacon.position.set(0, def.size * 2 + 0.6, 0);
+    entry.group.add(beacon);
+    entry.beacon = beacon;
+  }
+
+  private removeBeacon(entry: ActiveCritter): void {
+    if (!entry.beacon) return;
+    entry.group.remove(entry.beacon);
+    entry.beacon.geometry.dispose();
+    (entry.beacon.material as THREE.Material).dispose();
+    entry.beacon = null;
   }
 
   /** Rebuild the candidate slot list when the player enters a new cell. */
@@ -248,7 +287,7 @@ export class CritterManager {
       stateDur: AI.idleMin + rng() * (AI.idleMax - AI.idleMin),
       farTime: 0,
     };
-    this.active.set(slot.id, { state, group, parts, rng });
+    this.active.set(slot.id, { state, group, parts, rng, beacon: null });
   }
 
   private deactivate(id: number): void {
@@ -263,7 +302,9 @@ export class CritterManager {
       p.tagged = s.tagged;
       p.linked = s.linked;
       p.trackProgress = s.trackProgress;
+      p.species = s.species;
     }
+    this.removeBeacon(entry);
     this.scene.remove(entry.group);
     disposeGroup(entry.group);
     this.active.delete(id);
@@ -283,15 +324,28 @@ export class CritterManager {
   }
 
   setTagged(id: number, value = true): void {
-    this.persistFor(id).tagged = value;
+    const p = this.persistFor(id);
+    p.tagged = value;
     const entry = this.active.get(id);
-    if (entry) entry.state.tagged = value;
+    if (entry) {
+      entry.state.tagged = value;
+      p.species = entry.state.species;
+    }
+  }
+
+  /** Persist and (if active) apply the tracking progress for a critter. */
+  setTrackProgress(id: number, value: number): void {
+    this.persistFor(id).trackProgress = value;
+    const entry = this.active.get(id);
+    if (entry) entry.state.trackProgress = value;
   }
 
   setLinked(id: number, value = true): void {
-    this.persistFor(id).linked = value;
+    const p = this.persistFor(id);
+    p.linked = value;
     const entry = this.active.get(id);
     if (entry) {
+      p.species = entry.state.species;
       entry.state.linked = value;
       // Linking a mid-alert/mid-flee critter calms it on the spot (the payoff
       // moment) — stepAI's alert/flee cases also re-check linked, but forcing
@@ -339,6 +393,19 @@ export class CritterManager {
   /** Active critter count (for the debug HUD). */
   count(): number {
     return this.active.size;
+  }
+
+  /**
+   * Species ids the player has Linked at least once (any linked slot),
+   * derived from the persistence registry so it survives streaming. Feeds the
+   * Field Guide's linked/unknown card split.
+   */
+  linkedSpecies(): Set<string> {
+    const out = new Set<string>();
+    for (const p of this.registry.values()) {
+      if (p.linked && p.species) out.add(p.species);
+    }
+    return out;
   }
 
   /** Dispose every active model (registry state is retained). */
