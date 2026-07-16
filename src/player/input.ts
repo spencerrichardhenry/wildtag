@@ -12,7 +12,9 @@ import type { MoveInput } from '../core/types.ts';
 // drained via `consumeActions()` — reserved for later screens/HUD tasks.
 //
 // Key map (final): W/A/S/D move, ShiftLeft sprint, Space jump (hold = glide),
-// KeyQ dash, KeyR rocket, KeyF interact, Digit1–4 hotbar, Tab/KeyC/Escape UI.
+// KeyQ dash, KeyR rocket, KeyF interact, Digit1–4 hotbar, Tab/KeyC/Escape UI,
+// LMB dart throw (Task 10), RMB grapple (Task 12; `rmbHeld` for the reel) —
+// mouse buttons register only while pointer-locked.
 // ---------------------------------------------------------------------------
 
 export type Action =
@@ -20,7 +22,9 @@ export type Action =
   | { type: 'hotbar'; slot: number }
   | { type: 'tab' }
   | { type: 'toggleC' }
-  | { type: 'escape' };
+  | { type: 'escape' }
+  | { type: 'lmb' }
+  | { type: 'rmb' };
 
 export class Input {
   private readonly canvas: HTMLCanvasElement;
@@ -37,10 +41,16 @@ export class Input {
 
   private readonly actions: Action[] = [];
 
+  /** True while the right mouse button is held (grapple reel, Task 12). */
+  private rmbDown = false;
+
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
     canvas.addEventListener('click', this.onClick);
+    canvas.addEventListener('contextmenu', this.onContextMenu);
     document.addEventListener('mousemove', this.onMouseMove);
+    document.addEventListener('mousedown', this.onMouseDown);
+    document.addEventListener('mouseup', this.onMouseUp);
     document.addEventListener('keydown', this.onKeyDown);
     document.addEventListener('keyup', this.onKeyUp);
   }
@@ -48,7 +58,10 @@ export class Input {
   /** Detach all listeners (teardown / tests). */
   dispose(): void {
     this.canvas.removeEventListener('click', this.onClick);
+    this.canvas.removeEventListener('contextmenu', this.onContextMenu);
     document.removeEventListener('mousemove', this.onMouseMove);
+    document.removeEventListener('mousedown', this.onMouseDown);
+    document.removeEventListener('mouseup', this.onMouseUp);
     document.removeEventListener('keydown', this.onKeyDown);
     document.removeEventListener('keyup', this.onKeyUp);
   }
@@ -60,6 +73,25 @@ export class Input {
 
   private readonly onClick = (): void => {
     if (!this.locked) void this.canvas.requestPointerLock();
+  };
+
+  private readonly onContextMenu = (e: Event): void => {
+    // RMB is a game control (grapple) — never open the context menu on canvas.
+    e.preventDefault();
+  };
+
+  private readonly onMouseDown = (e: MouseEvent): void => {
+    if (!this.locked) return; // clicks outside lock are UI / lock acquisition
+    if (e.button === 0) {
+      this.actions.push({ type: 'lmb' });
+    } else if (e.button === 2) {
+      this.rmbDown = true;
+      this.actions.push({ type: 'rmb' });
+    }
+  };
+
+  private readonly onMouseUp = (e: MouseEvent): void => {
+    if (e.button === 2) this.rmbDown = false;
   };
 
   private readonly onMouseMove = (e: MouseEvent): void => {
@@ -145,6 +177,11 @@ export class Input {
     this.dashEdge = false;
     this.rocketEdge = false;
     return out;
+  }
+
+  /** True while the right mouse button is held and the pointer is locked. */
+  get rmbHeld(): boolean {
+    return this.rmbDown && this.locked;
   }
 
   /** Return and clear the queued UI-level action edges. */

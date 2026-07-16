@@ -20,6 +20,26 @@ import type { Input } from './input.ts';
 // Walk / sprint / jump / dash are available from spawn — never gated.
 // ---------------------------------------------------------------------------
 
+/**
+ * Did the core's landing block run during this step? True for a plain landing
+ * (grounded flips on) and also for a *buffered-jump* landing, where the core
+ * touches down and immediately re-fires a jump, returning grounded=false for
+ * that same step. That path is identified by its unique signature: the landing
+ * block runs after gravity + integration, so the re-fired jump leaves vy at
+ * exactly MOVE.jumpVel with the buffer consumed; the air dash/rocket charge
+ * resets (also landing-block-only) are checked as additional signals. Pure —
+ * unit-tested in tests/controller.test.ts.
+ */
+export function landedDuringStep(prev: MoveState, next: MoveState): boolean {
+  if (prev.grounded) return false;
+  if (next.grounded) return true;
+  return (
+    (prev.airDashUsed && !next.airDashUsed) ||
+    (prev.airRocketUsed && !next.airRocketUsed) ||
+    (prev.jumpBuffer > 0 && next.jumpBuffer === 0 && next.vel.y === MOVE.jumpVel)
+  );
+}
+
 export class PlayerController {
   readonly unlocks = new Set<string>();
 
@@ -82,10 +102,14 @@ export class PlayerController {
     }
 
     // --- Step the pure core ------------------------------------------------
-    let next = stepMovement(this.state, masked, dt, this.ground);
+    const prev = this.state;
+    const next = stepMovement(prev, masked, dt, this.ground);
 
     if (airJumped) this.usedAirJump = true;
-    if (next.grounded) this.usedAirJump = false;
+    // Reset the boots charge on landing — including a buffered-jump landing,
+    // where the core re-fires a jump in its landing block and grounded stays
+    // false for the step.
+    if (landedDuringStep(prev, next)) this.usedAirJump = false;
 
     // --- Surface swimming holds the player at the water line ---------------
     if (next.mode === 'swim') {
