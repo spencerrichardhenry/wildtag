@@ -7,6 +7,7 @@ import { MOVE, SCATTER } from '../core/constants.ts';
 import { toast } from './toasts.ts';
 import {
   HUD as HUDT,
+  CARDINALS as CARDINAL_LABEL,
   compassTicks,
   facingBearingDeg,
   worldBearingDeg,
@@ -114,6 +115,12 @@ export class HUD {
     name: string;
   }[] = [];
   private readonly compassTrack: HTMLDivElement;
+  /** Persistent tick nodes keyed by bearing (deg) — repositioned, never rebuilt. */
+  private readonly tickEls = new Map<number, HTMLDivElement>();
+  /** Persistent spawn-point pip. */
+  private readonly spawnPip: HTMLDivElement;
+  /** Persistent critter pip nodes keyed by critter id (rings reuse pattern). */
+  private readonly critterPips = new Map<number, HTMLDivElement>();
   private readonly rings: HTMLDivElement;
   private readonly ringNodes = new Map<number, RingNode>();
 
@@ -177,6 +184,27 @@ export class HUD {
     const centreMark = el('div', 'wt-compass-centre');
     compass.append(this.compassTrack, centreMark);
     this.root.appendChild(compass);
+
+    // Persistent tick pool: one node per bearing, repositioned each frame and
+    // hidden when it scrolls out of the strip's span (no per-frame rebuilds).
+    for (let deg = 0; deg < 360; deg += HUDT.compassTickStepDeg) {
+      const major = deg % 45 === 0;
+      const mark = el('div', `wt-tick${major ? ' wt-tick-major' : ''}`);
+      mark.style.display = 'none';
+      if (major) {
+        const lbl = el('span', 'wt-tick-label');
+        lbl.textContent = CARDINAL_LABEL[deg] ?? '';
+        mark.appendChild(lbl);
+      }
+      this.compassTrack.appendChild(mark);
+      this.tickEls.set(deg, mark);
+    }
+
+    // Persistent spawn pip (white); critter pips are created per id on demand.
+    this.spawnPip = el('div', 'wt-pip');
+    this.spawnPip.style.background = SPAWN_COLOR;
+    this.spawnPip.style.display = 'none';
+    this.compassTrack.appendChild(this.spawnPip);
 
     // --- Stamina bar (bottom-centre) ---------------------------------------
     this.stamina = el('div', 'wt-stamina');
@@ -290,6 +318,9 @@ export class HUD {
     const pct = Math.max(0, Math.min(1, stamina / MOVE.staminaMax));
     this.staminaFill.style.width = `${(pct * 100).toFixed(1)}%`;
 
+    // TODO(post-merge): read PlayerController.exhausted directly once the
+    // controller exposes it (added on the parallel branch at merge) — this
+    // threshold proxy mirrors MOVE.exhaustExitAbove until then.
     const exhausted = stamina < MOVE.exhaustExitAbove;
     if (exhausted !== this.lastExhausted) {
       this.stamina.classList.toggle('wt-exhausted', exhausted);
@@ -337,19 +368,25 @@ export class HUD {
   // -------------------------------------------------------------------------
   private paintHotbar(frame: HudFrame): void {
     const inv = frame.inventory;
-    const available = [
-      inv.darts > 0, // 1 Darts
-      frame.unlocks.has('grapple'), // 2 Grapple
-      inv.kits.zipline > 0, // 3 Zipline
-      inv.kits.drone > 0, // 4 Drone
+    // Slot 1 (darts) is never *locked* — darts are craftable from spawn; with
+    // zero ammo it dims and shows a "0" badge instead of the padlock, which
+    // is reserved for genuinely locked slots (uncrafted unlock / no kits).
+    const locked = [
+      false, // 1 Darts — ammo state, not a lock
+      !frame.unlocks.has('grapple'), // 2 Grapple
+      inv.kits.zipline <= 0, // 3 Zipline
+      inv.kits.drone <= 0, // 4 Drone
     ];
+    const dimmed = [inv.darts <= 0, locked[1]!, locked[2]!, locked[3]!];
     for (let i = 0; i < this.slots.length; i++) {
       const slot = this.slots[i]!;
-      slot.root.classList.toggle('wt-slot-locked', !available[i]);
+      slot.root.classList.toggle('wt-slot-locked', locked[i]!);
+      slot.root.classList.toggle('wt-slot-dim', dimmed[i]!);
       slot.root.classList.toggle('wt-slot-active', this.selected === i + 1);
-      // Darts show a live count badge; deployables show their kit count.
+      // Darts always show their live count (including 0); deployables show
+      // their kit count once they have any.
       let badge = '';
-      if (i === 0 && inv.darts > 0) badge = String(inv.darts);
+      if (i === 0) badge = String(inv.darts);
       else if (i === 2 && inv.kits.zipline > 0) badge = String(inv.kits.zipline);
       else if (i === 3 && inv.kits.drone > 0) badge = String(inv.kits.drone);
       if (slot.badge.textContent !== badge) slot.badge.textContent = badge;
@@ -361,59 +398,88 @@ export class HUD {
   // -------------------------------------------------------------------------
   private paintCompass(frame: HudFrame): void {
     const w = this.compassTrack.clientWidth || 360;
-    this.compassTrack.replaceChildren();
 
+    // Reposition the persistent tick pool; hide ticks outside the span.
+    const visibleTicks = new Set<number>();
     for (const tick of compassTicks(frame.yaw, w)) {
-      const mark = el('div', `wt-tick${tick.major ? ' wt-tick-major' : ''}`);
+      visibleTicks.add(tick.deg);
+      const mark = this.tickEls.get(tick.deg);
+      if (!mark) continue;
       mark.style.left = `${tick.x}px`;
-      if (tick.label) {
-        const lbl = el('span', 'wt-tick-label');
-        lbl.textContent = tick.label;
-        mark.appendChild(lbl);
-      }
-      this.compassTrack.appendChild(mark);
+      if (mark.style.display) mark.style.display = '';
+    }
+    for (const [deg, mark] of this.tickEls) {
+      if (!visibleTicks.has(deg) && !mark.style.display) mark.style.display = 'none';
     }
 
     const facing = facingBearingDeg(frame.yaw);
     const now = performance.now();
 
-    // Spawn pip (white).
-    this.addPip(frame.spawn, frame.pos, facing, w, SPAWN_COLOR, 1);
+    // Spawn pip (white, persistent node).
+    this.positionPip(this.spawnPip, frame.spawn, frame.pos, facing, w);
 
-    // Critter pips.
+    // Critter pips: reuse one node per critter id (same pattern as rings).
+    const live = new Set<number>();
     for (const c of frame.critters) {
       if (!c.tagged) continue;
+      let color = RING_OUT;
+      let opacity = 1;
       if (c.linked) {
         let t = this.linkTimes.get(c.id);
         if (t === undefined) {
+          // Start a fade only on the link *transition*: the critter still has
+          // a tracking-ring node this frame (paintRings prunes it afterwards).
+          // Without this gate, a pruned linkTimes entry would restart the fade
+          // every LINKED_FADE_MS for as long as the critter stays active.
+          if (!this.ringNodes.has(c.id)) continue;
           t = now;
           this.linkTimes.set(c.id, t);
         }
         const age = now - t;
-        if (age > LINKED_FADE_MS) continue;
-        this.addPip(c.pos, frame.pos, facing, w, RING_IN, 1 - age / LINKED_FADE_MS);
-      } else {
-        this.addPip(c.pos, frame.pos, facing, w, RING_OUT, 1);
+        if (age > LINKED_FADE_MS) {
+          this.linkTimes.delete(c.id); // fade complete — entry pruned for good
+          continue;
+        }
+        color = RING_IN;
+        opacity = 1 - age / LINKED_FADE_MS;
+      }
+      live.add(c.id);
+      let pip = this.critterPips.get(c.id);
+      if (!pip) {
+        pip = el('div', 'wt-pip');
+        this.compassTrack.appendChild(pip);
+        this.critterPips.set(c.id, pip);
+      }
+      pip.style.background = color;
+      pip.style.opacity = opacity.toFixed(2);
+      this.positionPip(pip, c.pos, frame.pos, facing, w);
+    }
+
+    // Drop pip nodes for critters no longer shown (linked-faded / despawned).
+    for (const [id, pip] of this.critterPips) {
+      if (!live.has(id)) {
+        pip.remove();
+        this.critterPips.delete(id);
       }
     }
   }
 
-  private addPip(
+  /** Place a persistent pip on the strip, hiding it outside the span. */
+  private positionPip(
+    pip: HTMLDivElement,
     target: Vec3,
     from: Vec3,
     facing: number,
     width: number,
-    color: string,
-    opacity: number,
   ): void {
     const bearing = worldBearingDeg(target.x - from.x, target.z - from.z);
     const { x, visible } = bearingToStripX(bearing, facing, width, HUDT.compassSpanDeg);
-    if (!visible) return;
-    const pip = el('div', 'wt-pip');
+    if (!visible) {
+      if (!pip.style.display) pip.style.display = 'none';
+      return;
+    }
     pip.style.left = `${x}px`;
-    pip.style.background = color;
-    pip.style.opacity = opacity.toFixed(2);
-    this.compassTrack.appendChild(pip);
+    if (pip.style.display) pip.style.display = '';
   }
 
   // -------------------------------------------------------------------------
@@ -723,9 +789,10 @@ const STYLE = `
 }
 .wt-slot-name { font-size: 11px; color: #dbe6ea; }
 .wt-slot-lock { display: none; font-size: 14px; }
-.wt-slot-locked { opacity: 0.42; }
+/* dim = unusable right now (out of ammo OR locked); lock icon = locked only */
+.wt-slot-dim { opacity: 0.42; }
+.wt-slot-dim .wt-slot-name { color: #8a9aa2; }
 .wt-slot-locked .wt-slot-lock { display: block; }
-.wt-slot-locked .wt-slot-name { color: #8a9aa2; }
 .wt-slot-active {
   border-color: #a8e6bc;
   box-shadow: 0 0 0 1px #a8e6bc, 0 0 10px rgba(120, 220, 160, 0.4);

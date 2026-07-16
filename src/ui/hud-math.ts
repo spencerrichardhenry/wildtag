@@ -86,7 +86,8 @@ export interface CompassTick {
   major: boolean;
 }
 
-const CARDINALS: Record<number, string> = {
+/** Bearing (deg) → cardinal/intercardinal label for the 45° major ticks. */
+export const CARDINALS: Record<number, string> = {
   0: 'N',
   45: 'NE',
   90: 'E',
