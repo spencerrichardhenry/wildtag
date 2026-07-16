@@ -343,6 +343,130 @@ function renderRecipeCard(
   return card;
 }
 
+// ---------------------------------------------------------------------------
+// Pause / Help overlay (Esc). A keybind reference plus a (disabled) Reset Save
+// placeholder — Task 14 wires the reset — and a Resume button. Registered by
+// main.ts and opened when Esc is pressed with no other screen open; Esc while
+// any screen is open closes it (ScreenManager.handleEscape), so this only ever
+// opens from the un-paused state. Reuses the shared panel style + one small
+// injected block for the keybind grid.
+// ---------------------------------------------------------------------------
+
+const KEYBINDS: [string, string][] = [
+  ['W A S D', 'Move'],
+  ['Shift', 'Sprint'],
+  ['Space', 'Jump  (hold to Glide — when crafted)'],
+  ['Q', 'Dash'],
+  ['R', 'Rocket  (when crafted)'],
+  ['RMB', 'Grapple  (when crafted)'],
+  ['F', 'Harvest / Interact'],
+  ['LMB', 'Throw tracker dart'],
+  ['1 – 4', 'Hotbar'],
+  ['C', 'Crafting'],
+  ['Tab', 'Field Guide'],
+  ['Esc', 'Pause / Close'],
+];
+
+let helpStylesInjected = false;
+
+function injectHelpStyles(): void {
+  if (helpStylesInjected) return;
+  helpStylesInjected = true;
+  const style = document.createElement('style');
+  style.textContent = `
+    .wt-help-grid {
+      display: grid;
+      grid-template-columns: max-content 1fr;
+      gap: 8px 18px;
+      margin: 6px 0 20px;
+      font-size: 14px;
+    }
+    .wt-help-key {
+      font-weight: bold;
+      color: #a8e6bc;
+      white-space: nowrap;
+    }
+    .wt-help-desc { color: #cfe0d6; }
+    .wt-help-actions { display: flex; gap: 10px; }
+    .wt-help-btn {
+      font: inherit;
+      font-size: 14px;
+      padding: 8px 16px;
+      border-radius: 6px;
+      border: 1px solid rgba(200, 220, 230, 0.3);
+      background: rgba(120, 200, 150, 0.18);
+      color: #eef2f4;
+      cursor: pointer;
+    }
+    .wt-help-btn:hover:not(:disabled) { background: rgba(120, 200, 150, 0.3); }
+    .wt-help-btn:disabled { cursor: default; opacity: 0.4; background: rgba(255,255,255,0.05); }
+  `;
+  document.head.appendChild(style);
+}
+
+/** Build the ScreenDef for the pause / help overlay (Esc). */
+export function createHelpScreen(manager: ScreenManager): ScreenDef {
+  return {
+    id: 'help',
+    render(root: HTMLElement) {
+      injectHelpStyles();
+      const panel = document.createElement('div');
+      panel.className = 'wt-panel';
+      panel.addEventListener('click', (e) => e.stopPropagation());
+
+      const closeBtn = document.createElement('button');
+      closeBtn.className = 'wt-close';
+      closeBtn.type = 'button';
+      closeBtn.textContent = 'Resume (Esc)';
+      closeBtn.addEventListener('click', () => manager.close());
+      panel.appendChild(closeBtn);
+
+      const h1 = document.createElement('h1');
+      h1.textContent = 'Paused';
+      panel.appendChild(h1);
+
+      const subhead = document.createElement('p');
+      subhead.className = 'wt-subhead';
+      subhead.textContent = 'Controls';
+      panel.appendChild(subhead);
+
+      const grid = document.createElement('div');
+      grid.className = 'wt-help-grid';
+      for (const [key, desc] of KEYBINDS) {
+        const k = document.createElement('div');
+        k.className = 'wt-help-key';
+        k.textContent = key;
+        const d = document.createElement('div');
+        d.className = 'wt-help-desc';
+        d.textContent = desc;
+        grid.append(k, d);
+      }
+      panel.appendChild(grid);
+
+      const actions = document.createElement('div');
+      actions.className = 'wt-help-actions';
+
+      const resume = document.createElement('button');
+      resume.className = 'wt-help-btn';
+      resume.type = 'button';
+      resume.textContent = 'Resume';
+      resume.addEventListener('click', () => manager.close());
+
+      const reset = document.createElement('button');
+      reset.className = 'wt-help-btn';
+      reset.type = 'button';
+      reset.textContent = 'Reset Save';
+      reset.disabled = true; // Task 14 wires save/reset.
+      reset.title = 'Coming soon';
+
+      actions.append(resume, reset);
+      panel.appendChild(actions);
+
+      root.appendChild(panel);
+    },
+  };
+}
+
 /** Build the ScreenDef for the crafting pane (KeyC). */
 export function createCraftScreen(
   inventory: Inventory,

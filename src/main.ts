@@ -3,17 +3,18 @@ import { CAMERA, MAX_FRAME_DT, SIM_DT } from './core/constants.ts';
 import { setupEnvironment } from './world/environment.ts';
 import { ChunkManager } from './world/chunks.ts';
 import { PropManager } from './world/props.ts';
-import { biomeAt, groundNormalAt, heightAt } from './world/terrain.ts';
+import { groundNormalAt, heightAt } from './world/terrain.ts';
 import type { GroundQuery } from './core/types.ts';
 import { Input } from './player/input.ts';
 import { PlayerController } from './player/controller.ts';
 import { createInventory, addResource } from './craft/inventory.ts';
-import { ScreenManager, createCraftScreen } from './ui/screens.ts';
+import { ScreenManager, createCraftScreen, createHelpScreen } from './ui/screens.ts';
 import { createGuideScreen } from './ui/guide.ts';
+import { HUD } from './ui/hud.ts';
 import { runCritterPreview } from './critters/preview.ts';
 import { CritterManager } from './critters/manager.ts';
 import { DartSystem } from './tracking/darts.ts';
-import { updateTracking, nearestTracked } from './tracking/tracker.ts';
+import { updateTracking } from './tracking/tracker.ts';
 import { toast } from './ui/toasts.ts';
 import { chime } from './ui/audio.ts';
 
@@ -104,11 +105,18 @@ function bootGame(): void {
   screens.register(createCraftScreen(inventory, player.unlocks, screens));
   // Field Guide (Tab): the 8-species silhouette grid (Task 10).
   screens.register(createGuideScreen(critters, screens));
+  // Pause / Help overlay (Esc): keybind reference + Resume (Task 11).
+  screens.register(createHelpScreen(screens));
 
-  // Dev hook: `?screen=craft` / `?screen=guide` forces a screen open on boot —
-  // used for verification screenshots; harmless to keep for future tasks.
+  // The heads-up display (Task 11): crosshair, stamina, resources, hotbar,
+  // compass and tracking rings. All DOM lives in #hud, layered below screens
+  // and toasts. Fed a per-frame snapshot in `render()` below.
+  const hudUi = new HUD(hud, camera);
+
+  // Dev hook: `?screen=craft` / `?screen=guide` / `?screen=help` forces a
+  // screen open on boot — used for verification screenshots.
   const screenParam = new URLSearchParams(window.location.search).get('screen');
-  if (screenParam === 'craft' || screenParam === 'guide') {
+  if (screenParam === 'craft' || screenParam === 'guide' || screenParam === 'help') {
     screens.open(screenParam);
   }
 
@@ -124,62 +132,6 @@ function bootGame(): void {
   function cameraLook(): { x: number; y: number; z: number } {
     camera.getWorldDirection(_look);
     return { x: _look.x, y: _look.y, z: _look.z };
-  }
-
-  // -------------------------------------------------------------------------
-  // Debug HUD: a tiny dev line (pos / stamina / grounded / biome), refreshed at
-  // ~4 Hz. Replaced by the real HUD in Task 11.
-  // -------------------------------------------------------------------------
-  const debugLine = document.createElement('div');
-  debugLine.style.cssText =
-    'position:fixed;top:8px;left:8px;font:12px monospace;color:#cfe;text-shadow:0 1px 2px #000;white-space:pre;';
-  hud.appendChild(debugLine);
-
-  function capitalize(s: string): string {
-    return s.charAt(0).toUpperCase() + s.slice(1);
-  }
-
-  let hudTimer = 0;
-  function updateHud(dt: number): void {
-    hudTimer += dt;
-    if (hudTimer < 0.25) return;
-    hudTimer = 0;
-    const p = player.pos;
-    const b = biomeAt(p.x, p.z);
-    const aimed = props.findHarvestable(camera.position, cameraLook(), worldTime);
-    const prompt = aimed ? `\nF — Harvest ${capitalize(aimed.kind)}` : '';
-
-    // Nearest active critter (species/state) for the dev line.
-    let nearest: { species: string; state: string } | null = null;
-    let nearestD = Infinity;
-    for (const c of critters.list()) {
-      const d = Math.hypot(c.pos.x - p.x, c.pos.z - p.z);
-      if (d < nearestD) {
-        nearestD = d;
-        nearest = { species: c.species, state: c.state };
-      }
-    }
-    const critterLine = nearest
-      ? `\ncritters ${critters.count()}  nearest ${nearest.species} (${nearest.state}) ${nearestD.toFixed(0)}m`
-      : `\ncritters ${critters.count()}`;
-
-    // Temporary tracking readout (Task 11 replaces with the real HUD): nearest
-    // tagged-not-linked critter's Link progress and current distance vs radius.
-    const tracked = nearestTracked(critters, p);
-    const trackLine = tracked
-      ? `\nTRACKING ${tracked.sp.name} ${((tracked.view.trackProgress / tracked.sp.trackTime) * 100).toFixed(0)}% ` +
-        `${tracked.dist.toFixed(1)}m/${tracked.sp.trackRadius}m`
-      : '';
-
-    debugLine.textContent =
-      `pos ${p.x.toFixed(1)}, ${p.y.toFixed(1)}, ${p.z.toFixed(1)}  ` +
-      `stamina ${player.stamina.toFixed(0)}  ` +
-      `${player.grounded ? 'grounded' : 'air'}  ${player.mode}  biome ${b}  ` +
-      `[fib ${inventory.fiber} res ${inventory.resin} shd ${inventory.shard} spk ${inventory.spark} ` +
-      `rp ${inventory.rp} darts ${inventory.darts}]` +
-      critterLine +
-      trackLine +
-      prompt;
   }
 
   /** Advance simulation state by a fixed timestep. Systems hook in here. */
@@ -232,10 +184,16 @@ function bootGame(): void {
         continue;
       }
       if (action.type === 'escape') {
-        screens.handleEscape();
+        // Esc opens the pause/help overlay when nothing is open; while a
+        // screen is open it closes that screen (existing handleEscape).
+        if (screens.isOpen()) screens.handleEscape();
+        else screens.open('help');
         continue;
       }
       if (paused) continue; // gameplay actions (interact/hotbar/lmb/rmb) freeze while a screen is open
+      if (action.type === 'hotbar') {
+        hudUi.selectHotbar(action.slot);
+      }
       if (action.type === 'interact') {
         const gained = props.harvestAt(camera.position, cameraLook(), worldTime);
         if (gained) addResource(inventory, gained, 1);
@@ -247,12 +205,25 @@ function bootGame(): void {
 
     // Keep the sky dome centred on the camera so its gradient never parallaxes.
     if (skyDome) skyDome.position.set(camera.position.x, 0, camera.position.z);
-    updateHud(dt);
   }
 
-  /** Draw the current state. Called once per animation frame. */
+  /** Draw the current state + repaint the HUD. Called once per frame. */
   function render(): void {
     renderer.render(scene, camera);
+    const p = player.pos;
+    const aimed = props.findHarvestable(camera.position, cameraLook(), worldTime);
+    hudUi.update({
+      pos: p,
+      yaw: input.yaw,
+      stamina: player.stamina,
+      inventory,
+      unlocks: player.unlocks,
+      critters: critters.list(),
+      harvestPrompt: aimed ? aimed.kind : null,
+      spawn,
+      locked: input.locked,
+      screenOpen: screens.isOpen(),
+    });
   }
 
   // Prime the chunk field + props + critters at spawn before the first frame so
