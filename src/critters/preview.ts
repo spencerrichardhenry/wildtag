@@ -60,19 +60,21 @@ export function runCritterPreview(renderer: THREE.WebGLRenderer): void {
   document.body.appendChild(overlay);
 
   const rng = mulberry32(20240808);
-  // 2 rows × 6 columns for the 12-species roster. Back row sits farther from
-  // camera; labels are lifted so the back row's don't collide with the front.
+  // 2 rows × 6 columns for the 12-species roster. The back row is staggered
+  // half a column into the front row's gaps and pushed well back so tall
+  // front-row critters never occlude it; the camera looks down from a height.
   const cols = 6;
   const colSpacing = 3.6;
-  const rowZ = [2.4, -3.4]; // [front, back]
-  const startX = -((cols - 1) * colSpacing) / 2;
+  const rowZ = [3.5, -5.5]; // [front, back]
+  const rowXOffset = [0, colSpacing / 2]; // stagger the back row into the gaps
+  const startX = -((cols - 1) * colSpacing) / 2 - colSpacing / 4;
   const stands: Stand[] = [];
 
   SPECIES.forEach((sp, i) => {
     const { group, parts } = buildCritterModel(sp.id, rng);
     const rowi = Math.floor(i / cols);
     const coli = i % cols;
-    const worldX = startX + coli * colSpacing;
+    const worldX = startX + coli * colSpacing + (rowXOffset[rowi] ?? 0);
     const worldZ = rowZ[rowi] ?? 0;
     group.position.set(worldX, 0, worldZ);
     scene.add(group);
@@ -88,9 +90,10 @@ export function runCritterPreview(renderer: THREE.WebGLRenderer): void {
     stands.push({ group, parts, walkSpeed: sp.walkSpeed, speciesId: sp.id, label, worldX, worldZ });
   });
 
-  // Frame the whole 2×6 grid from a raised vantage so both rows read.
-  camera.position.set(0, 6.5, 20);
-  camera.lookAt(0, 1.0, -0.5);
+  // Frame the whole 2×6 grid from a raised vantage so both rows read without
+  // the back row hiding behind the tall front-row critters.
+  camera.position.set(0, 9, 18);
+  camera.lookAt(0, 0.6, -1.5);
 
   function resize(): void {
     camera.aspect = window.innerWidth / window.innerHeight;

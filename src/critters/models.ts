@@ -503,31 +503,37 @@ function buildLumenstag(rng: () => number): { group: THREE.Group; parts: Critter
  */
 function buildPrismhorse(rng: () => number): { group: THREE.Group; parts: CritterParts } {
   const g = new THREE.Group();
-  const tint = jitterColor(0xbfe4ff, rng, 0.05, 0.04); // pale iridescent
-  const deep = jitterColor(0x8fb8ff, rng, 0.05, 0.04);
+  const tint = jitterColor(0xcdeaff, rng, 0.05, 0.04); // pale iridescent
+  const deep = jitterColor(0x9fc8ff, rng, 0.05, 0.04);
+  const ice = jitterColor(0xdff2ff, rng, 0.04, 0.03); // bright icy legs
   const glow = 0xaad4ff;
-  const crys: MatOpts = { opacity: 0.85, emissive: glow, emissiveIntensity: 0.35 };
+  const crys: MatOpts = { opacity: 0.82, emissive: glow, emissiveIntensity: 0.4 };
+  const legCrys: MatOpts = { opacity: 0.8, emissive: glow, emissiveIntensity: 0.7 };
 
-  // Body: a cluster of crystal prisms around a core, floating at horse height.
+  // Body: a long horse-slim core of translucent crystal at horse height, with a
+  // jagged dorsal ridge of upward-jutting prisms for the "clustered crystal" read.
   const bodyY = 1.35;
   const body = new THREE.Group();
   body.position.y = bodyY;
-  const core = box(0.62, 0.6, 1.5, tint, crys);
+  const core = box(0.52, 0.5, 1.7, tint, crys);
   body.add(core);
-  // Jutting shards along the back and flanks for a "clustered crystal" read.
-  const shards: ReadonlyArray<readonly [number, number, number, number, number]> = [
-    [0, 0.42, 0.35, 0.5, 0.0],
-    [0, 0.5, -0.15, 0.62, 0.15],
-    [-0.28, 0.34, -0.5, 0.42, -0.4],
-    [0.3, 0.36, -0.35, 0.46, 0.4],
-    [-0.32, 0.2, 0.4, 0.36, -0.5],
-    [0.32, 0.22, 0.55, 0.34, 0.5],
+  const chest = crystal(0.5, deep, crys); // faceted shoulders
+  chest.scale.set(0.7, 0.8, 0.7);
+  chest.position.set(0, 0.05, 0.55);
+  body.add(chest);
+  const rump = crystal(0.5, deep, crys);
+  rump.scale.set(0.7, 0.8, 0.7);
+  rump.position.set(0, 0.05, -0.6);
+  body.add(rump);
+  // Dorsal spike ridge (a row of crystal prisms of varying height along the spine).
+  const ridge: ReadonlyArray<readonly [number, number]> = [
+    [0.6, 0.34], [0.35, 0.5], [0.1, 0.62], [-0.15, 0.56], [-0.4, 0.42], [-0.62, 0.28],
   ];
-  for (const [sx, sy, sz, len, tilt] of shards) {
-    const sh = crystal(len, sx === 0 ? tint : deep, crys);
-    sh.scale.set(0.5, 1, 0.5);
-    sh.position.set(sx, sy, sz);
-    sh.rotation.z = tilt;
+  for (const [sz, len] of ridge) {
+    const sh = crystal(len, tint, crys);
+    sh.scale.set(0.32, 1, 0.32);
+    sh.position.set((rng() - 0.5) * 0.12, 0.32 + len * 0.4, sz);
+    sh.rotation.z = (rng() - 0.5) * 0.3;
     body.add(sh);
   }
   g.add(body);
@@ -562,16 +568,17 @@ function buildPrismhorse(rng: () => number): { group: THREE.Group; parts: Critte
   }
   g.add(head);
 
-  // Sixteen thin crystalline stilt legs: two rows (left/right) of eight along Z.
+  // Sixteen thin crystalline stilt legs: two rows (left/right) of eight along Z,
+  // splayed outward so they fan into a distinct row of glassy stilts.
   const legs: THREE.Object3D[] = [];
-  const legLen = bodyY - 0.1;
-  const zs = [0.62, 0.44, 0.26, 0.08, -0.1, -0.28, -0.46, -0.64];
+  const legLen = bodyY - 0.05;
+  const zs = [0.66, 0.47, 0.28, 0.09, -0.1, -0.29, -0.48, -0.67];
   for (const sx of [-1, 1]) {
     for (const z of zs) {
-      const l = legGroup(sx * 0.32, legLen, z, 0.05, legLen, deep, sx * 0.14);
-      // Recolour the leg mesh crystalline + translucent.
+      const l = legGroup(sx * 0.36, legLen, z, 0.045, legLen, ice, sx * 0.22);
+      // Recolour the leg mesh crystalline + translucent, brighter than the body.
       const m = l.children[0] as THREE.Mesh;
-      m.material = mat(deep, crys);
+      m.material = mat(ice, legCrys);
       legs.push(l);
       g.add(l);
     }
