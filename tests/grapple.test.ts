@@ -1,19 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import { GRAPPLE, MOVE } from '../src/core/constants.ts';
-import type { MoveState, Vec3 } from '../src/core/types.ts';
-import { initialMoveState } from '../src/player/movement.ts';
+import type { GroundQuery, MoveInput, MoveState, Vec3 } from '../src/core/types.ts';
+import { initialMoveState, stepMovement } from '../src/player/movement.ts';
 import {
   applyRopeConstraint,
   fireHook,
   hangPin,
   latchedHook,
   raycastTerrain,
-  shouldSettleGrapple,
   stepAttached,
   stepHook,
+  stepSettle,
   type GrappleCollider,
   type HookQueries,
   type HookState,
+  type SettleState,
 } from '../src/player/grapple.ts';
 import { AnchorRegistry } from '../src/structures/anchors.ts';
 
@@ -483,28 +484,91 @@ describe('AnchorRegistry', () => {
 });
 
 // ---------------------------------------------------------------------------
-// shouldSettleGrapple — grounded auto-release near a level anchor
+// stepSettle — grounded-zip stall detector (auto-release when the pull makes
+// no progress toward the anchor; a converging zip is never eaten).
 // ---------------------------------------------------------------------------
 
-describe('shouldSettleGrapple', () => {
-  const pos: Vec3 = { x: 0, y: 0, z: 0 };
+describe('stepSettle', () => {
+  const origin: Vec3 = { x: 0, y: 0, z: 0 };
 
-  it('never settles while airborne', () => {
-    expect(shouldSettleGrapple(false, pos, { x: 0.5, y: 0.5, z: 0 })).toBe(false);
+  it('resets (and never releases) while airborne', () => {
+    const s: SettleState = { bestDist: 2, stalled: 0.4 };
+    const r = stepSettle(s, false, origin, { x: 2, y: 0, z: 0 }, DT);
+    expect(r.release).toBe(false);
+    expect(r.next).toBeNull();
   });
 
-  it('settles when grounded near a roughly level anchor', () => {
-    // dist ~1 (< settleDist 3), rise 0.5 (< settleRise 1.5).
-    expect(shouldSettleGrapple(true, pos, { x: 1, y: 0.5, z: 0 })).toBe(true);
+  it('releases within ~0.6s of zero progress toward a level anchor', () => {
+    // The real jitter case: anchor roughly level with the player, pull can't
+    // lift, position never improves. Constant dist → stall window elapses.
+    const anchor: Vec3 = { x: 2, y: GRAPPLE.anchorLift, z: 0 };
+    let s: SettleState | null = null;
+    let released = false;
+    let t = 0;
+    for (let i = 0; i < 120 && !released; i++) {
+      const r = stepSettle(s, true, origin, anchor, DT);
+      s = r.next;
+      released = r.release;
+      t += DT;
+    }
+    expect(released).toBe(true);
+    expect(t).toBeLessThanOrEqual(0.6);
+    expect(t).toBeGreaterThanOrEqual(GRAPPLE.settleStallWindow - 1e-9);
   });
 
-  it('does not settle when the anchor is far enough to pull toward', () => {
-    // dist ~5 > settleDist, so the zip has somewhere to go.
-    expect(shouldSettleGrapple(true, pos, { x: 5, y: 0.5, z: 0 })).toBe(false);
+  it('progress ≥ settleMinProgress resets the stall window', () => {
+    const anchor: Vec3 = { x: 10, y: 0, z: 0 };
+    let s: SettleState | null = null;
+    // Alternate: hold still for just under the window, then close by 0.06m.
+    let x = 0;
+    for (let cycle = 0; cycle < 4; cycle++) {
+      for (let i = 0; i < 25; i++) {
+        // 25 steps ≈ 0.42s < settleStallWindow
+        const r = stepSettle(s, true, { x, y: 0, z: 0 }, anchor, DT);
+        expect(r.release).toBe(false);
+        s = r.next;
+      }
+      x += GRAPPLE.settleMinProgress + 0.01; // real progress → window resets
+      const r = stepSettle(s, true, { x, y: 0, z: 0 }, anchor, DT);
+      expect(r.release).toBe(false);
+      s = r.next;
+      expect(s!.stalled).toBe(0);
+    }
   });
 
-  it('does not settle when the anchor is high enough overhead to lift', () => {
-    // rise 2 > settleRise, so the pull genuinely lifts.
-    expect(shouldSettleGrapple(true, pos, { x: 0.5, y: 2, z: 0 })).toBe(false);
+  it('integration: a grounded zip at a low anchor converges to a hang, never settling', () => {
+    // Controller-order pure pieces on flat ground: stepMovement → stepSettle →
+    // stepAttached, firing at an anchor 1 m above the ground from 10 m out.
+    // The old distance-gate guard wrongly released this ~1.8 m short of the
+    // hang; the stall detector must let it hang.
+    const flat: GroundQuery = { heightAt: () => 0, normalAt: () => ({ x: 0, y: 1, z: 0 }) };
+    const zero: MoveInput = {
+      forward: 0, strafe: 0, yaw: 0, sprint: false,
+      jump: false, jumpHeld: false, dash: false, rocket: false,
+    };
+    const anchor: Vec3 = { x: 10, y: 1, z: 0 };
+    let s: MoveState = { ...initialMoveState({ x: 0, y: 0, z: 0 }), grounded: true };
+    let h = latchedHook(anchor, s.pos);
+    let settle: SettleState | null = null;
+    let released = false;
+
+    for (let i = 0; i < 300 && !h.hang && !released; i++) {
+      s = stepMovement(s, zero, DT, flat);
+      if (!h.hang) {
+        const r = stepSettle(settle, s.grounded, s.pos, anchor, DT);
+        settle = r.next;
+        if (r.release) released = true;
+      }
+      const res = stepAttached(h, s, DT, flat.heightAt);
+      h = res.h;
+      if (res.pin) {
+        s = { ...s, pos: res.pin, vel: { x: 0, y: 0, z: 0 }, grounded: false };
+      } else {
+        s = { ...s, vel: res.vel };
+      }
+    }
+
+    expect(released).toBe(false); // the converging zip is never eaten
+    expect(h.hang).toBe(true); // …and the hang IS reached
   });
 });

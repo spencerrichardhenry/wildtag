@@ -8,12 +8,13 @@ import type { Input } from './input.ts';
 import {
   fireHook,
   latchedHook,
-  shouldSettleGrapple,
   stepAttached,
   stepHook,
+  stepSettle,
   type GrappleCollider,
   type HookQueries,
   type HookState,
+  type SettleState,
 } from './grapple.ts';
 import { GrappleVisuals } from './grapple-visuals.ts';
 import type { AnchorRegistry } from '../structures/anchors.ts';
@@ -89,6 +90,8 @@ export class PlayerController {
   grappleColliders: (x: number, z: number) => GrappleCollider[] = () => [];
   /** Seconds the latched rope has stayed occluded (auto-releases at grace). */
   private hookOccludedFor = 0;
+  /** Grounded-zip stall tracker (auto-releases a pull that makes no progress). */
+  private settle: SettleState | null = null;
   /**
    * Sim steps the current hook has spent LATCHED (in the constraint/hang block).
    * Gates the jump-release boost: a hook fired and jump-released before it has
@@ -141,6 +144,7 @@ export class PlayerController {
     this.hook = fireHook(this.handPos(f), f);
     this.grappleSteps = 0;
     this.hookOccludedFor = 0;
+    this.settle = null;
   }
 
   /** Injected world queries for the flying-hook sweep (terrain/props/drones). */
@@ -182,6 +186,7 @@ export class PlayerController {
     this.hook = latchedHook(anchor, this.state.pos);
     this.grappleSteps = 1;
     this.hookOccludedFor = 0;
+    this.settle = null;
     this.updateGrappleVisuals();
   }
 
@@ -427,16 +432,24 @@ export class PlayerController {
           this.syncCamera();
           return;
         }
-        // Grounded settle: a hook latched to a near-level anchor can't lift a
-        // grounded player, so the constant pull only jitters them against the
-        // ground — auto-release instead (leaves `next` as the plain grounded
-        // integration).
-        if (shouldSettleGrapple(next.grounded, next.pos, this.hook.anchor!)) {
-          this.hook = null;
-          this.state = next;
-          this.updateGrappleVisuals();
-          this.syncCamera();
-          return;
+        // Grounded settle (stall detector): while grounded and zipping (not
+        // hanging), the pull must keep closing on the anchor — a pull that
+        // makes no progress can't lift the player and only jitters them
+        // against the terrain, so it auto-releases after one stalled window.
+        // A converging zip resets the window each step and is never eaten.
+        if (!this.hook.hang) {
+          const settled = stepSettle(this.settle, next.grounded, next.pos, this.hook.anchor!, dt);
+          this.settle = settled.next;
+          if (settled.release) {
+            this.hook = null;
+            this.state = next;
+            this.updateGrappleVisuals();
+            this.syncCamera();
+            return;
+          }
+        } else {
+          // A hang holds a constant hangLength radius by design — no stall.
+          this.settle = null;
         }
         const occluded = this.segmentOccluded(next.pos, this.hook.anchor!);
         this.hookOccludedFor = occluded ? this.hookOccludedFor + dt : 0;

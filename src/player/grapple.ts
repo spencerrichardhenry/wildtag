@@ -249,16 +249,39 @@ export function stepHook(h: HookState, playerPos: Vec3, q: HookQueries, dt: numb
 }
 
 /**
- * Grounded auto-settle test (pure): true when a latched hook should release
- * itself because the player is grounded and the anchor is too close and too
- * level to ever lift them — the constant zip pull would otherwise jitter the
- * player against the terrain. Released when `grounded` and the anchor is within
- * `settleDist` m and rises no more than `settleRise` m above the player.
+ * Grounded auto-settle stall tracker (pure). While the player is grounded and
+ * latched (zipping, not hanging), the zip must keep CLOSING on the anchor: the
+ * player→anchor distance has to improve by ≥ `settleMinProgress` m within every
+ * `settleStallWindow` s. A pull that can't lift a grounded player (anchor
+ * roughly level, path blocked) makes no progress and just jitters them against
+ * the terrain — the tracker fires `release` after one stalled window. A
+ * converging zip always resets the window, so a legitimate approach to a low
+ * anchor is never eaten, at any distance. Airborne steps reset the tracker
+ * (gravity/lift changes the geometry — no stall while flying).
  */
-export function shouldSettleGrapple(grounded: boolean, pos: Vec3, anchor: Vec3): boolean {
-  if (!grounded) return false;
+export interface SettleState {
+  /** Baseline distance the next ≥ settleMinProgress improvement is measured from. */
+  bestDist: number;
+  /** Seconds since the distance last improved by ≥ settleMinProgress. */
+  stalled: number;
+}
+
+export function stepSettle(
+  s: SettleState | null,
+  grounded: boolean,
+  pos: Vec3,
+  anchor: Vec3,
+  dt: number,
+): { next: SettleState | null; release: boolean } {
+  if (!grounded) return { next: null, release: false };
   const dist = Math.hypot(anchor.x - pos.x, anchor.y - pos.y, anchor.z - pos.z);
-  return dist < GRAPPLE.settleDist && anchor.y - pos.y < GRAPPLE.settleRise;
+  if (!s || dist <= s.bestDist - GRAPPLE.settleMinProgress) {
+    // Fresh window: first grounded sample, or real progress since the baseline.
+    return { next: { bestDist: dist, stalled: 0 }, release: false };
+  }
+  const stalled = s.stalled + dt;
+  if (stalled >= GRAPPLE.settleStallWindow) return { next: null, release: true };
+  return { next: { bestDist: s.bestDist, stalled }, release: false };
 }
 
 /** The pinned position for a hang: `hangLength` down the current radial. */

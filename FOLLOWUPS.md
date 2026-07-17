@@ -24,8 +24,10 @@ a trail of what was resolved.
   would drag) distinct from `'los'` + placement toast copy. (`structures/ziplines.ts`)
 - Field Guide live refresh — a Link now calls `screens.refresh()` so an open
   guide rebuilds from `linkedSpecies()` immediately. (`main.ts`)
-- Grounded-grapple jitter — `shouldSettleGrapple` auto-releases a hook latched to
-  a near-level anchor that can't lift a grounded player. (`player/grapple.ts` / `player/controller.ts`)
+- Grounded-grapple jitter — `stepSettle` stall detector: while grounded and
+  zipping, the pull must close on the anchor by ≥ `settleMinProgress` (0.05 m)
+  per `settleStallWindow` (0.5 s) or the hook auto-releases; a converging zip is
+  never eaten, at any distance. (`player/grapple.ts` / `player/controller.ts`)
 - Tracking-ring anchor height — optional per-species `ringHeight` (defaults to
   `size * ringHeadFactor`); stag/bellowbuck/prismhorse anchor taller. (`core/types.ts` / `critters/species.ts` / `ui/hud-math.ts`)
 - Shared per-step critter snapshot — `CritterManager.list()` caches its array per
