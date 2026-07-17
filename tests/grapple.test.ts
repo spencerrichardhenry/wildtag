@@ -54,9 +54,10 @@ describe('fireHook', () => {
 });
 
 describe('stepHook — flight ballistics', () => {
-  it('integrates gravity: a level fire arcs downward and lands ~40-50m out', () => {
+  it('integrates gravity: a level fire arcs downward and lands ~60-75m out', () => {
     // Muzzle at y=7 (a plausible hand height on a rise); level fire, flat ground
-    // at y=0 — the arc reaches the ground inside hookMaxFlight ~45m out.
+    // at y=0. Range scales with hookSpeed (playtest-doubled): drop time from 7m
+    // is √(2·7/10) ≈ 1.18s → ≈ 57 · 1.18 ≈ 67m before the terrain latch.
     let h = fireHook({ x: 0, y: 7, z: 0 }, { x: 1, y: 0, z: 0 });
     const q = emptyQueries({ heightAt: () => 0 });
     let apex = h.pos.y;
@@ -70,8 +71,8 @@ describe('stepHook — flight ballistics', () => {
     expect(apex).toBeCloseTo(7, 5);
     // Landed on terrain (a latch), within a sane level-fire range.
     expect(h.phase).toBe('latched');
-    expect(h.pos.x).toBeGreaterThan(38);
-    expect(h.pos.x).toBeLessThan(52);
+    expect(h.pos.x).toBeGreaterThan(60);
+    expect(h.pos.x).toBeLessThan(75);
   });
 
   it('times out to phase done after hookMaxFlight with no contact', () => {

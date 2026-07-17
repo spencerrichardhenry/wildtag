@@ -318,10 +318,12 @@ export class PlayerController {
       else this.hook = null; // plain release while zipping (keep momentum)
     }
 
-    // Glide conflicts with the rope (wing wins → release).
-    if (this.hook && masked.jumpHeld && this.unlocks.has('glider') && !this.state.grounded) {
-      this.hook = null;
-    }
+    // Rope vs wing: the ROPE wins. Firing mid-glide is a core movement chain
+    // (glide out → grapple a spire → zip), so while a hook exists the glide
+    // input is simply masked; release with Space still held resumes the glide
+    // on the next step. (Previously the glide force-released the hook, which
+    // made mid-glide grappling impossible — user-requested inversion.)
+    if (this.hook) masked.jumpHeld = false;
     // Jump releases the hook; only a LATCHED hook that has done work on a prior
     // step earns the upward boost (a hang counts as steps). A flying hook or a
     // same-step fire+jump grants nothing — the no-free-flight invariant.

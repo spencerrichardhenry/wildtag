@@ -171,25 +171,25 @@ export const MOVE = {
  * Distances in m, speeds m/s, times s.
  */
 export const GRAPPLE = {
-  /** Projectile muzzle speed (m/s) along the look direction at fire. */
-  hookSpeed: 40,
+  /** Projectile muzzle speed (m/s). 40→57 doubled the ballistic range with a
+   *  geometrically similar arc (range ∝ v²/g; ×√2 speed = ×2 distance). */
+  hookSpeed: 57,
   /** Gravity on the hook in flight (m/s², negative = down) — a gentle arc. */
   hookGravity: -10,
-  /** Max flight time (s) before an un-latched hook fizzles (≈45m level fire). */
-  hookMaxFlight: 1.4,
-  /** Auto-zip rate (m/s) the rope shortens by once latched (replaces reel). */
+  /** Max flight time (s) before an un-latched hook fizzles (≈90m level fire). */
+  hookMaxFlight: 2.0,
   /** Constant acceleration toward the anchor while attached (m/s²) —
-   *  comfortably beats gravity (24) so upward zips build speed. */
-  zipAccel: 45,
+   *  crisp Terraria yank (playtest: doubled from 45). */
+  zipAccel: 90,
   /** Speed cap while attached (m/s); released momentum is uncapped. */
-  zipMaxSpeed: 32,
+  zipMaxSpeed: 38,
   /** Perpendicular-velocity damping rate (per second) while attached, so the
    *  flight curves onto the anchor instead of orbiting it. */
   zipPerpDamp: 1.6,
   /** Rope length (m) at which the zip ends and the player pins into a hang. */
   hangLength: 1.2,
   /** Max distance (m) for the debug/occlusion terrain ray-march. */
-  maxRange: 45,
+  maxRange: 90,
   /** Terrain anchors are lifted this far (m) above the surface hit so the
    *  hook mesh and rope end stay visible instead of half-burying (terrain
    *  latches only; prop/drone latches sit on real geometry and need no lift). */
@@ -209,7 +209,7 @@ export const GRAPPLE = {
   /** Bisection refinement passes after a terrain-march bracket is found. */
   marchRefine: 4,
   /** Segment samples between player and anchor for the occlusion test. */
-  occlusionSamples: 8,
+  occlusionSamples: 14,
 } as const;
 
 /**
@@ -239,7 +239,7 @@ export const STRUCTURES = {
   /** Drone station-keeping altitude above the ground beneath it (m). */
   droneHover: 25,
   /** Radius (m) of the grapple anchor sphere a hovering drone registers. */
-  droneAnchorRadius: 1.2,
+  droneAnchorRadius: 4.8,
   /** Max terrain-aim distance (m) for placing a structure. */
   placeRange: 30,
   /** Hold-F duration (s) at a post to recall a zipline (refund the kit). */
