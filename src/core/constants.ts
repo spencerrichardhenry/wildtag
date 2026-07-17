@@ -321,7 +321,7 @@ export const SCATTER = {
   depletedScale: 0.2,
 
   /** Keep-resident radius (chunks) for prop meshes — smaller than terrain. */
-  radius: 5,
+  radius: 4,
   /** Max prop chunks built per update() call (steady state builds none). */
   buildsPerUpdate: 6,
   /** Obstacles are supplied to the player only within this many chunks. */
@@ -337,32 +337,117 @@ export const SCATTER = {
   /**
    * Per-biome scatter table: ordered cumulative roll thresholds. A sub-cell's
    * roll r in [0,1) picks the first entry with r < p; if it exceeds every
-   * threshold the sub-cell stays empty. Tuned so a solid forest chunk yields
-   * ~14 trees (0.22 × 64), meadow ~14 flowers + ~10 fiber, etc.
+   * threshold the sub-cell stays empty. F2 scenery pass: trees carry a per-
+   * biome geometry `variant` (see treeVariants); crags/highlands gain mesa slab
+   * formations, boulder stacks and scree patches; wetland gains reeds + willow
+   * + lake lily pads; forest gains glow mushrooms; meadow gains rare lone trees
+   * + erratic boulders. Densities favour variety over raw count (replace, not
+   * add) so a spawn-area sample stays within ~1.5× the pre-F2 instance total.
    */
   biomeScatter: {
     meadow: [
-      { kind: 'flower', p: 0.22 },
-      { kind: 'fiber', p: 0.38 },
-    ],
-    forest: [
-      { kind: 'tree', p: 0.22 },
-      { kind: 'flower', p: 0.27 },
-    ],
-    wetland: [
-      { kind: 'flower', p: 0.2 },
+      { kind: 'tree', p: 0.03 }, // rare lone oak / flowering shrub
+      { kind: 'boulder', p: 0.045 }, // rare glacial erratic
+      { kind: 'flower', p: 0.25 },
       { kind: 'fiber', p: 0.4 },
     ],
+    forest: [
+      { kind: 'tree', p: 0.22 }, // pine / broadleaf dome / dead snag
+      { kind: 'mushroom', p: 0.25 }, // glow-mushroom clusters
+      { kind: 'flower', p: 0.3 },
+    ],
+    wetland: [
+      { kind: 'reed', p: 0.14 },
+      { kind: 'tree', p: 0.17 }, // drooping willow
+      { kind: 'flower', p: 0.32 },
+      { kind: 'fiber', p: 0.46 },
+    ],
     crags: [
-      { kind: 'rock', p: 0.18 },
-      { kind: 'crystal', p: 0.28 },
-      { kind: 'shard', p: 0.34 },
+      { kind: 'tree', p: 0.03 }, // rare gnarled juniper snag
+      { kind: 'boulder', p: 0.07 },
+      { kind: 'mesa', p: 0.09 }, // stacked slab formation
+      { kind: 'rock', p: 0.21 },
+      { kind: 'crystal', p: 0.31 },
+      { kind: 'shard', p: 0.37 },
+      { kind: 'scree', p: 0.47 },
     ],
     highlands: [
-      { kind: 'rock', p: 0.16 },
-      { kind: 'crystal', p: 0.26 },
-      { kind: 'shard', p: 0.32 },
+      { kind: 'tree', p: 0.05 }, // wind-bent pine / boulder-pine cluster
+      { kind: 'boulder', p: 0.09 },
+      { kind: 'mesa', p: 0.12 }, // elongated rock ribs
+      { kind: 'rock', p: 0.22 },
+      { kind: 'crystal', p: 0.3 },
+      { kind: 'shard', p: 0.36 },
+      { kind: 'scree', p: 0.44 },
     ],
+  },
+
+  /**
+   * Per-biome tree geometry variants (cumulative roll on the S_VARIANT channel).
+   * `v` is the mesh bucket key (props.ts builder), independent of the `tree`
+   * gameplay kind (obstacle/grapple/resin all still key off kind === 'tree').
+   */
+  treeVariants: {
+    forest: [
+      { v: 'pine', p: 0.45 },
+      { v: 'broadleaf', p: 0.8 },
+      { v: 'snag', p: 1 },
+    ],
+    meadow: [
+      { v: 'shrub', p: 0.7 },
+      { v: 'oak', p: 1 },
+    ],
+    highlands: [
+      { v: 'windpine', p: 0.6 },
+      { v: 'boulderpine', p: 1 },
+    ],
+    wetland: [{ v: 'willow', p: 1 }],
+    crags: [{ v: 'juniper', p: 1 }],
+  },
+
+  /** Crystal size/colour variants (crags/highlands crystal + shard fields). */
+  crystalVariants: [
+    { v: 'crystalA', p: 0.4 },
+    { v: 'crystalB', p: 0.75 },
+    { v: 'crystalC', p: 1 },
+  ],
+
+  /** Mesa formation flavour per biome: crag slab mesa vs highlands rock rib. */
+  mesaVariants: { crags: 'mesa', highlands: 'rib' },
+
+  /** Chance a wetland-lake water sub-cell floats a lily pad. */
+  lilypadChance: 0.5,
+  /** Max shallow-water depth (m below sea) that still reads as a lily-pad lake. */
+  lilypadMaxDepth: 3,
+
+  /** Hard per-chunk instance cap per kind — variety over density. */
+  caps: {
+    tree: 24,
+    rock: 30,
+    crystal: 20,
+    flower: 28,
+    fiber: 28,
+    mesa: 4,
+    boulder: 8,
+    scree: 18,
+    reed: 14,
+    lilypad: 18,
+    mushroom: 4,
+    shard: 18,
+  },
+
+  /**
+   * Near-player grass ground-cover ring (meadow/forest only). Rebuilt only when
+   * the player crosses a `cell`-metre grid cell; a `spacing`-metre candidate
+   * lattice inside `radius` is hash-rolled at `density`, capped at `cap` live
+   * crossed-quad tufts. Deterministic from world position, so it doesn't shimmer.
+   */
+  grass: {
+    radius: 22,
+    cell: 8,
+    spacing: 1.7,
+    density: 0.5,
+    cap: 450,
   },
 
   /** Per-kind instance scale range [min, max] (uniform hash pick). */
@@ -375,10 +460,17 @@ export const SCATTER = {
     resin: [0.7, 1.1],
     shard: [0.7, 1.35],
     spark: [0.85, 1.2],
+    mesa: [0.8, 1.5],
+    boulder: [0.7, 1.4],
+    scree: [0.7, 1.3],
+    reed: [0.8, 1.3],
+    lilypad: [0.7, 1.4],
+    mushroom: [0.7, 1.2],
+    grass: [0.8, 1.4],
   },
 
   /** Collision-cylinder radius factor (× scale) for blocking props. */
-  obstacleRadius: { tree: 0.5, rock: 0.9 },
+  obstacleRadius: { tree: 0.5, rock: 0.9, mesa: 1.6, boulder: 1.1 },
 
   /** Per-kind base colours (hex) for flat-shaded instanced meshes. */
   colors: {
@@ -392,6 +484,29 @@ export const SCATTER = {
     resin: 0xe0932a,
     shard: 0xb07fe0,
     spark: 0xffe06a,
+    // --- F2 scenery-variety palette ---
+    pineFoliage: 0x2b6238,
+    broadleaf: 0x4f8f3d,
+    oakLeaf: 0x5c8a34,
+    snag: 0x7a6a58,
+    shrub: 0x6f9d4a,
+    shrubBloom: 0xe89bc0,
+    windPine: 0x35704a,
+    willowLeaf: 0x7fa25a,
+    juniper: 0x40634a,
+    mesa: 0x9a8a72,
+    rib: 0x8f8778,
+    boulder: 0x847c70,
+    scree: 0x9c9284,
+    lily: 0x3f8f57,
+    lilyBloom: 0xf0e7f5,
+    mushroomStem: 0xd8cdb4,
+    mushroomCap: 0x9c5bd0,
+    grassTop: 0x82b25a,
+    grassBase: 0x4f7d3c,
+    crystalA: 0x7fb0d8,
+    crystalB: 0x9d86e0,
+    crystalC: 0x6fd8c0,
   },
 } as const;
 

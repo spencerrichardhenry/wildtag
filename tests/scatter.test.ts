@@ -54,10 +54,11 @@ describe('placement constraints', () => {
     expect(scatterForChunk(WATER.cx, WATER.cz)).toHaveLength(0);
   });
 
-  it('never places on water biome or below minPlacementY across many chunks', () => {
+  it('never places non-lilypad props on water or below minPlacementY', () => {
     for (let cx = -4; cx <= 4; cx++) {
       for (let cz = -16; cz <= 4; cz++) {
         for (const p of scatterForChunk(cx, cz)) {
+          if (p.kind === 'lilypad') continue; // lily pads intentionally float on lakes
           expect(p.y).toBeGreaterThanOrEqual(SCATTER.minPlacementY);
           expect(biomeAt(p.x, p.z)).not.toBe('water');
         }
@@ -93,6 +94,102 @@ describe('obstacle emission', () => {
   it('does not emit obstacles for flowers or harvestable nodes', () => {
     for (const kind of ['flower', 'fiber', 'crystal', 'shard', 'resin', 'spark'] as const) {
       expect(placementObstacle({ kind, x: 0, z: 0, y: 5, scale: 1, rot: 0 })).toBeNull();
+    }
+  });
+
+  it('emits obstacles for mesas and boulders (grappleable set dressing)', () => {
+    for (const kind of ['mesa', 'boulder'] as const) {
+      const ob = placementObstacle({ kind, x: 2, z: 3, y: 5, scale: 1, rot: 0 });
+      expect(ob).not.toBeNull();
+      expect(ob!.r).toBe(SCATTER.obstacleRadius[kind]);
+    }
+  });
+
+  it('does NOT emit obstacles for scree, reeds, grass, lily pads or mushrooms', () => {
+    for (const kind of ['scree', 'reed', 'grass', 'lilypad', 'mushroom'] as const) {
+      expect(placementObstacle({ kind, x: 0, z: 0, y: 5, scale: 1, rot: 0 })).toBeNull();
+    }
+  });
+});
+
+// --- F2 scenery-variety extensions ---------------------------------------
+
+describe('tree/crystal variant determinism', () => {
+  it('assigns identical variants when a chunk is scattered twice', () => {
+    for (const c of [FOREST, MEADOW, CRAGS]) {
+      const a = scatterForChunk(c.cx, c.cz).map((p) => p.variant ?? '');
+      const b = scatterForChunk(c.cx, c.cz).map((p) => p.variant ?? '');
+      expect(a).toEqual(b);
+    }
+  });
+
+  it('gives every scattered tree a geometry variant', () => {
+    for (const c of [FOREST, MEADOW]) {
+      for (const p of scatterForChunk(c.cx, c.cz)) {
+        if (p.kind === 'tree') expect(typeof p.variant).toBe('string');
+      }
+    }
+  });
+});
+
+describe('per-biome variant sets', () => {
+  it('a 4-chunk forest sample contains at least 2 distinct tree variants', () => {
+    const variants = new Set<string>();
+    for (let dx = 0; dx < 2; dx++) {
+      for (let dz = 0; dz < 2; dz++) {
+        for (const p of scatterForChunk(FOREST.cx + dx, FOREST.cz + dz)) {
+          if (p.kind === 'tree' && p.variant) variants.add(p.variant);
+        }
+      }
+    }
+    expect(variants.size).toBeGreaterThanOrEqual(2);
+    // At least two of the forest tree variants are represented (border cells may
+    // also bleed in a neighbouring biome's variant, which is fine).
+    const forestKinds = ['pine', 'broadleaf', 'snag'].filter((v) => variants.has(v));
+    expect(forestKinds.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('crags crystals use the size/colour variant range', () => {
+    const variants = new Set<string>();
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dz = -1; dz <= 1; dz++) {
+        for (const p of scatterForChunk(CRAGS.cx + dx, CRAGS.cz + dz)) {
+          if (p.kind === 'crystal' && p.variant) variants.add(p.variant);
+        }
+      }
+    }
+    expect(variants.size).toBeGreaterThan(0);
+    for (const v of variants) expect(['crystalA', 'crystalB', 'crystalC']).toContain(v);
+  });
+});
+
+describe('lily pads', () => {
+  it('appear on wetland lakes and only ever sit on water', () => {
+    let found = 0;
+    for (let cx = -3; cx <= 3; cx++) {
+      for (let cz = 4; cz <= 12; cz++) {
+        for (const p of scatterForChunk(cx, cz)) {
+          if (p.kind !== 'lilypad') continue;
+          found++;
+          expect(biomeAt(p.x, p.z)).toBe('water');
+        }
+      }
+    }
+    expect(found).toBeGreaterThan(0);
+  });
+});
+
+describe('per-chunk instance caps', () => {
+  it('never exceeds SCATTER.caps[kind] for any biome sample chunk', () => {
+    const caps = SCATTER.caps as Record<string, number>;
+    for (const c of [FOREST, MEADOW, CRAGS, { cx: 0, cz: 6 }, { cx: -5, cz: -5 }]) {
+      const counts: Record<string, number> = {};
+      for (const p of scatterForChunk(c.cx, c.cz)) {
+        counts[p.kind] = (counts[p.kind] ?? 0) + 1;
+      }
+      for (const [kind, n] of Object.entries(counts)) {
+        if (caps[kind] !== undefined) expect(n).toBeLessThanOrEqual(caps[kind]);
+      }
     }
   });
 });
