@@ -425,6 +425,24 @@ export class CritterManager {
   }
 
   /**
+   * Haven V2 (release): re-open a previously-consumed wild slot so a released
+   * roster critter returns to the world at its ORIGINAL home instead of an
+   * ephemeral debug slot. The registry entry is un-consumed (kept linked, so it
+   * streams back as an already-Linked critter) and persists via the registry
+   * export — surviving save/reload. The normal streaming loop reactivates it
+   * the next time the player is within range of its home (it then walks off).
+   * No-op for an id with no registry entry (never bonded) or a negative ad-hoc
+   * debug slot, whose home isn't a real spawn slot (caller keeps the old path).
+   */
+  releaseSlot(id: number): boolean {
+    const p = this.registry.get(id);
+    if (!p || !p.consumed) return false;
+    p.consumed = false;
+    this.invalidateList();
+    return true;
+  }
+
+  /**
    * Debug convenience (Haven V2): force a critter Linked, then return its view.
    * Lets a verification script bond a spawned critter without the tracking loop.
    * Returns undefined if the critter is not currently active.

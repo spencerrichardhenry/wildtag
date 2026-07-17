@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { CAMERA, ENV, MAX_FRAME_DT, MOUNT, SIM_DT, STRUCTURES, WORLD_SEED } from './core/constants.ts';
+import { CAMERA, ENV, MAX_FRAME_DT, MOUNT, SIM_DT, STRUCTURES } from './core/constants.ts';
 import { setupEnvironment } from './world/environment.ts';
 import { ChunkManager } from './world/chunks.ts';
 import { PropManager } from './world/props.ts';
@@ -15,7 +15,6 @@ import { HUD } from './ui/hud.ts';
 import { runCritterPreview } from './critters/preview.ts';
 import { CritterManager, type CritterView } from './critters/manager.ts';
 import { speciesById } from './critters/species.ts';
-import { mulberry32 } from './core/rng.ts';
 import { bond, release, byId, type RosterEntry } from './critters/roster.ts';
 import { MountSystem } from './player/mount-system.ts';
 import { canAssignToFarm, canMount, canSummon, setActiveMount } from './player/mount.ts';
@@ -40,6 +39,7 @@ import {
   fulfill,
   nextReward,
   requestText,
+  reroll,
   trackingFillRate,
   type NpcRequestState,
 } from './village/barter.ts';
@@ -223,10 +223,11 @@ function bootGame(): void {
 
   // Bonded roster (Haven V2): critters captured out of the wild with a Bond
   // Charm. Reassigned (not mutated) on each bond so the roster screen's
-  // getter always reads the live array. `rosterRng` names bonded critters
-  // deterministically from a fixed seed derived from WORLD_SEED.
+  // getter always reads the live array. `nameCursor` is a monotonic index into
+  // the shuffled name pool (persisted in the save as `nameCursor`) so bonded
+  // nicknames never collide within a session or across reloads.
   let roster: RosterEntry[] = [];
-  const rosterRng = mulberry32((WORLD_SEED ^ 0x0b0d) >>> 0);
+  let nameCursor = 0;
 
   // Barter (Haven V4): each NPC holds one live request from a seeded rotation;
   // the global reward track (owned-rewards store) is shared across all NPCs.
@@ -312,8 +313,11 @@ function bootGame(): void {
       [-9002, 'prismhorse'],
       [-9003, 'snickerdoodle'],
     ] as const) {
-      const r = bond(roster, { id, speciesId, linked: true }, rosterRng);
-      if (r) roster = r.roster;
+      const r = bond(roster, { id, speciesId, linked: true }, nameCursor);
+      if (r) {
+        roster = r.roster;
+        nameCursor++;
+      }
     }
   }
   if (
@@ -367,6 +371,9 @@ function bootGame(): void {
       for (const u of loaded.unlocks) player.unlocks.add(u);
       critters.importRegistry(loaded.critterPersist);
       roster = (loaded.roster ?? []).map((e) => ({ ...e, status: { ...e.status } }));
+      // Restore the nickname cursor (absent on pre-V7 saves → 0) so names keep
+      // marching through the shuffled pool rather than repeating from the top.
+      nameCursor = loaded.nameCursor ?? 0;
       // Barter/pens/rewards (Haven V4): restore the granted-reward list (WITHOUT
       // re-applying bundle resources — inventory is saved separately), the
       // per-NPC rotation state (live request regenerated from seq + linked
@@ -405,6 +412,7 @@ function bootGame(): void {
       loaded = null;
       player.unlocks.clear();
       roster = [];
+      nameCursor = 0;
       barterStates.clear();
       resetRewards();
       pens.load([]); // clear any pen critters half-applied before the throw
@@ -450,6 +458,7 @@ function bootGame(): void {
       player: { pos: player.pos, yaw: input.yaw },
       hints: hudUi.getHintFlags(),
       roster: roster.map((e) => ({ ...e, status: { ...e.status } })),
+      nameCursor,
       barter: [...barterStates.values()].map((s) => ({
         npcId: s.npcId,
         seq: s.seq,
@@ -514,10 +523,11 @@ function bootGame(): void {
     const result = bond(
       roster,
       { id: target.id, speciesId: target.species, linked: target.linked },
-      rosterRng,
+      nameCursor,
     );
     if (!result) return false;
     roster = result.roster;
+    nameCursor++;
     inventory.charms -= 1;
     critters.consumeSlot(target.id);
     toast(`${result.entry.nickname} the ${sp.name} joins you!`);
@@ -552,16 +562,17 @@ function bootGame(): void {
 
   /**
    * Release a bonded critter back to the wild: drop it from the roster and
-   * re-activate it as a fresh wild slot near the player (reusing the debug-spawn
-   * ad-hoc slot path — kept simple, per the Haven V2 brief).
+   * return it to the world. A real wild slot (positive id) is re-opened at its
+   * ORIGINAL home — `critters.releaseSlot` un-consumes the registry entry (kept
+   * Linked), so it persists across save/reload and streams back in when the
+   * player is near, then walks off. An ad-hoc debug-bonded critter (negative id
+   * — its home isn't a real spawn slot) keeps the old ephemeral debug-spawn near
+   * the player.
    */
   function releaseFromRoster(id: number): void {
     const entry = byId(roster, id);
     if (!entry) return;
     roster = release(roster, id);
-    const p = player.pos;
-    const rx = p.x + 3;
-    const rz = p.z;
     farm = unassignEntry(farm, id); // free any plot it worked
     if (mounts.activeEntryId() === id) {
       // Releasing the active mount: hop off first, then tear down the actor
@@ -569,7 +580,14 @@ function bootGame(): void {
       if (player.mounted) mounts.dismount(player);
       mounts.clearActive();
     }
-    critters.debugSpawn(entry.speciesId, { x: rx, y: heightAt(rx, rz), z: rz });
+    // Re-open the original wild slot (persists, returns at home); fall back to
+    // the ephemeral debug spawn only for ad-hoc negative-id (debug-bonded) ones.
+    if (id < 0 || !critters.releaseSlot(id)) {
+      const p = player.pos;
+      const rx = p.x + 3;
+      const rz = p.z;
+      critters.debugSpawn(entry.speciesId, { x: rx, y: heightAt(rx, rz), z: rz });
+    }
     toast(`${entry.nickname} released to the wild`);
   }
 
@@ -616,6 +634,17 @@ function bootGame(): void {
     return true;
   }
 
+  /**
+   * Reroll an NPC's request (dialog "Ask for something else"): advance the seq
+   * and mint a fresh request WITHOUT any reward or consumption — the escape
+   * hatch for a request the player can no longer fulfil.
+   */
+  function rerollRequestFor(npcId: string): void {
+    const st = barterStateFor(npcId);
+    barterStates.set(npcId, reroll(st, critters.linkedSpecies()));
+    screens.refresh(); // live-update the open dialog
+  }
+
   /** Debug: grant a specific reward id (records it in the owned-rewards store). */
   function grantRewardById(id: string): void {
     recordReward(id);
@@ -645,6 +674,17 @@ function bootGame(): void {
 
     const actions = document.createElement('div');
     actions.className = 'wt-dialog-actions';
+    // "Ask for something else": reroll this NPC's request with no reward/cost —
+    // an escape hatch when the current ask is unmeetable. Styled as a quiet link.
+    const rerollBtn = document.createElement('button');
+    rerollBtn.type = 'button';
+    rerollBtn.textContent = 'Ask for something else';
+    rerollBtn.style.cssText =
+      'margin-right:auto;background:none;border:none;color:#9fb0b8;font:inherit;' +
+      'font-size:12px;text-decoration:underline;cursor:pointer;padding:6px 2px;';
+    rerollBtn.addEventListener('click', () => {
+      rerollRequestFor(npc.id);
+    });
     const btn = document.createElement('button');
     btn.className = 'wt-craft-btn';
     btn.type = 'button';
@@ -653,7 +693,7 @@ function bootGame(): void {
     btn.addEventListener('click', () => {
       fulfillRequestFor(npc.id, false);
     });
-    actions.appendChild(btn);
+    actions.append(rerollBtn, btn);
     container.appendChild(actions);
   });
 

@@ -49,6 +49,13 @@ export interface SaveV2 {
    */
   roster?: RosterEntry[];
   /**
+   * Haven V7: the bonded-nickname cursor — the next index into the shuffled
+   * name pool. Optional + shape-guarded (absent → 0 on load) so a pre-V7 save
+   * migrates losslessly; persisting it stops a fresh boot from re-minting a
+   * nickname already in use.
+   */
+  nameCursor?: number;
+  /**
    * Haven V4 (barter). All optional + shape-guarded (default []) so older saves
    * migrate losslessly. `barter` is the per-NPC request rotation state; each
    * entry ALSO persists the CONCRETE live `request` (Haven V7) so a reload never
@@ -323,6 +330,14 @@ export function decodeSave(json: string): SaveV2 | null {
     }
     // Farm (Haven V5): optional, shape-guarded, dropped if malformed.
     const farm = parseFarm(o.farm);
+    // Nickname cursor (Haven V7): optional. A present-but-non-finite value
+    // rejects the whole save (consistent with the other field-level guards);
+    // absent → left off entirely so pre-V7 saves round-trip to their old shape.
+    let nameCursor: number | undefined;
+    if (o.nameCursor !== undefined && o.nameCursor !== null) {
+      if (!Number.isFinite(o.nameCursor)) return null;
+      nameCursor = o.nameCursor as number;
+    }
     // Mount (Haven V6): optional. A present-but-malformed value rejects the
     // whole save (fresh start) — consistent with the other field-level guards.
     let mount: MountPersist | undefined;
@@ -354,6 +369,10 @@ export function decodeSave(json: string): SaveV2 | null {
     // never surface a null (the spread above would otherwise carry it through).
     delete sanitized.mount;
     if (mount !== undefined) sanitized.mount = mount;
+    // Same "only surface when present" treatment for the nickname cursor, so a
+    // pre-V7 save decodes to exactly its old shape (no phantom key).
+    delete sanitized.nameCursor;
+    if (nameCursor !== undefined) sanitized.nameCursor = nameCursor;
     return sanitized as unknown as SaveV2;
   } catch {
     return null;

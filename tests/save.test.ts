@@ -60,6 +60,25 @@ describe('encodeSave / decodeSave', () => {
     expect(decoded?.hints).toEqual([]);
   });
 
+  it('round-trips the nickname cursor when present', () => {
+    const state = sampleSave({ nameCursor: 7 });
+    const decoded = decodeSave(encodeSave(state));
+    expect(decoded?.nameCursor).toBe(7);
+  });
+
+  it('migrates an absent nickname cursor to undefined (defaults to 0 at the call site)', () => {
+    const state = sampleSave();
+    expect(state.nameCursor).toBeUndefined();
+    const decoded = decodeSave(encodeSave(state));
+    expect(decoded?.nameCursor).toBeUndefined();
+    expect(decoded?.nameCursor ?? 0).toBe(0);
+  });
+
+  it('rejects a non-finite nickname cursor', () => {
+    const raw = { ...sampleSave(), nameCursor: 'nope' };
+    expect(decodeSave(JSON.stringify(raw))).toBeNull();
+  });
+
   it('passes structures (ziplines/drones) through unchanged', () => {
     const state = sampleSave();
     const decoded = decodeSave(encodeSave(state));

@@ -5,9 +5,15 @@
 // task — 'farm'/'mount' are wired by later Haven tasks (V5/V6).
 //
 // `bond` REQUIRES a Linked view (Link first = research, then capture — the
-// two-step Spencer chose) and generates a nickname deterministically from a
-// fixed 24-name pool via the caller's rng, so the same seed → the same name.
+// two-step Spencer chose) and names the critter from a monotonic `nameIndex`
+// cursor into a fixed, seeded SHUFFLE of the 24-name pool: sequential bonds hand
+// out distinct, varied names, and only repeat after the pool is exhausted. The
+// caller persists the cursor (save `nameCursor`) so names never collide across
+// reloads — a raw per-boot PRNG (the old approach) could re-mint a live name.
 // ---------------------------------------------------------------------------
+
+import { mulberry32 } from '../core/rng.ts';
+import { WORLD_SEED } from '../core/constants.ts';
 
 export type RosterStatus =
   | { kind: 'idle' }
@@ -65,19 +71,46 @@ export const NAME_POOL: readonly string[] = [
   'Quill',
 ];
 
+/** Fisher-Yates shuffle of a copy of `pool` via the injected rng (pure). */
+function shuffle(pool: readonly string[], rng: () => number): string[] {
+  const out = [...pool];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [out[i], out[j]] = [out[j]!, out[i]!];
+  }
+  return out;
+}
+
+/**
+ * NAME_POOL in a fixed, seeded shuffle so a monotonic `nameIndex` cursor hands
+ * out varied (non-pool-order) names deterministically across runs.
+ */
+const SHUFFLED_NAMES: readonly string[] = shuffle(NAME_POOL, mulberry32((WORLD_SEED ^ 0x0b0d) >>> 0));
+
+/**
+ * The nickname for bond number `index` (0-based cursor): cycles the shuffled
+ * pool, so duplicates only appear once all NAME_POOL names have been used.
+ */
+export function nickForIndex(index: number): string {
+  const n = SHUFFLED_NAMES.length;
+  const i = ((Math.floor(index) % n) + n) % n;
+  return SHUFFLED_NAMES[i]!;
+}
+
 /**
  * Bond `view` into `roster`. Returns a NEW roster (never mutates the input)
  * plus the created entry, or `null` when `view` is not Linked (you must Link a
- * critter before you can bond it). The nickname is a deterministic pick from
- * NAME_POOL via `rng`.
+ * critter before you can bond it). The nickname is `nickForIndex(nameIndex)` —
+ * the caller advances (and persists) the `nameIndex` cursor so names stay unique
+ * across the session and across reloads.
  */
 export function bond(
   roster: Roster,
   view: BondableView,
-  rng: () => number,
+  nameIndex: number,
 ): { roster: Roster; entry: RosterEntry } | null {
   if (!view.linked) return null;
-  const nickname = NAME_POOL[Math.floor(rng() * NAME_POOL.length)] ?? NAME_POOL[0]!;
+  const nickname = nickForIndex(nameIndex);
   const entry: RosterEntry = {
     id: view.id,
     speciesId: view.speciesId,

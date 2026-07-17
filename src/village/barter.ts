@@ -86,6 +86,18 @@ export function generateRequest(
   return { kind: 'resources', resource, n: 20 + Math.floor(rng() * 41) };
 }
 
+/**
+ * Reroll an NPC's live request WITHOUT granting a reward or consuming anything
+ * — the escape hatch for a request the player can no longer meet (e.g. every
+ * matching critter is bonded/traded away). Pure: returns a NEW state advanced by
+ * one `seq` with a freshly-generated request; `fulfilled` is untouched (a reroll
+ * is not a fulfilment). Deterministic — same (state, linked) → same next request.
+ */
+export function reroll(state: NpcRequestState, linkedSpecies: Set<string>): NpcRequestState {
+  const seq = state.seq + 1;
+  return { ...state, seq, request: generateRequest(state.npcId, seq, linkedSpecies) };
+}
+
 /** Human-readable request line for the dialog ("Bring me 3 Puffles"). */
 export function requestText(req: Request): string {
   if (req.kind === 'critters') {

@@ -4,8 +4,10 @@ import {
   fulfill,
   generateRequest,
   nextReward,
+  reroll,
   trackingFillRate,
   UNIQUE_REWARD_COUNT,
+  type NpcRequestState,
   type Request,
 } from '../src/village/barter.ts';
 import { stepTracking } from '../src/tracking/progress.ts';
@@ -38,6 +40,33 @@ describe('generateRequest — determinism', () => {
     const bramReqs = Array.from({ length: 8 }, (_, s) => JSON.stringify(generateRequest('bram', s, linked)));
     // Not a hard guarantee per-index, but the two full sequences must not be identical.
     expect(junoReqs.join('|')).not.toBe(bramReqs.join('|'));
+  });
+});
+
+describe('reroll', () => {
+  const linked = new Set(['puffle', 'craghorn']);
+  const state: NpcRequestState = {
+    npcId: 'juno',
+    seq: 2,
+    request: generateRequest('juno', 2, linked),
+    fulfilled: 1,
+  };
+
+  it('advances seq by one and regenerates the request', () => {
+    const next = reroll(state, linked);
+    expect(next.seq).toBe(3);
+    expect(next.request).toEqual(generateRequest('juno', 3, linked));
+  });
+
+  it('grants no reward and consumes nothing (fulfilled unchanged, pure)', () => {
+    const next = reroll(state, linked);
+    expect(next.fulfilled).toBe(state.fulfilled); // not a fulfilment
+    expect(next.npcId).toBe('juno');
+    expect(state.seq).toBe(2); // input untouched
+  });
+
+  it('is deterministic — same (state, linked) → same next request', () => {
+    expect(reroll(state, linked)).toEqual(reroll(state, linked));
   });
 });
 

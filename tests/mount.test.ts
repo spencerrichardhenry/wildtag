@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { mulberry32 } from '../src/core/rng.ts';
 import { bond, type Roster } from '../src/critters/roster.ts';
 import { MOUNT } from '../src/core/constants.ts';
 import {
@@ -73,8 +72,9 @@ function planarSpeed(s: MoveState): number {
 /** A single bonded roster entry with the given id/species/status. */
 function rosterWith(...specs: Array<{ id: number; speciesId: string }>): Roster {
   let r: Roster = [];
+  let i = 0;
   for (const s of specs) {
-    r = bond(r, { id: s.id, speciesId: s.speciesId, linked: true }, mulberry32(s.id))!.roster;
+    r = bond(r, { id: s.id, speciesId: s.speciesId, linked: true }, i++)!.roster;
   }
   return r;
 }

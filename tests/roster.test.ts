@@ -1,10 +1,10 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
-import { mulberry32 } from '../src/core/rng.ts';
 import {
   bond,
   byId,
   count,
+  nickForIndex,
   release,
   NAME_POOL,
   type Roster,
@@ -17,13 +17,13 @@ import { CritterManager, spawnSlotsForCell, type SpawnSlot } from '../src/critte
 
 describe('bond', () => {
   it('requires a Linked view — an unlinked critter returns null', () => {
-    const result = bond([], { id: 1, speciesId: 'puffle', linked: false }, mulberry32(1));
+    const result = bond([], { id: 1, speciesId: 'puffle', linked: false }, 0);
     expect(result).toBeNull();
   });
 
   it('appends a new idle entry for a Linked critter without mutating the input roster', () => {
     const roster: Roster = [];
-    const result = bond(roster, { id: 42, speciesId: 'puffle', linked: true }, mulberry32(1));
+    const result = bond(roster, { id: 42, speciesId: 'puffle', linked: true }, 0);
     expect(result).not.toBeNull();
     expect(result!.roster).toHaveLength(1);
     expect(result!.entry.id).toBe(42);
@@ -33,27 +33,26 @@ describe('bond', () => {
     expect(roster).toHaveLength(0); // pure — input untouched
   });
 
-  it('picks nicknames deterministically from a seeded rng', () => {
-    const a = bond([], { id: 1, speciesId: 'puffle', linked: true }, mulberry32(12345));
-    const b = bond([], { id: 2, speciesId: 'puffle', linked: true }, mulberry32(12345));
-    expect(a!.entry.nickname).toBe(b!.entry.nickname);
+  it('names deterministically from the shuffled pool via nameIndex', () => {
+    // Same index → same name across calls (deterministic shuffle).
+    expect(nickForIndex(3)).toBe(nickForIndex(3));
+    const a = bond([], { id: 1, speciesId: 'puffle', linked: true }, 5)!;
+    expect(a.entry.nickname).toBe(nickForIndex(5));
+  });
 
-    // A single rng advanced across bonds reproduces a fixed name sequence.
-    const rng = mulberry32(999);
-    const first = bond([], { id: 1, speciesId: 'puffle', linked: true }, rng)!;
-    const second = bond(first.roster, { id: 2, speciesId: 'puffle', linked: true }, rng)!;
-    const rng2 = mulberry32(999);
-    const first2 = bond([], { id: 1, speciesId: 'puffle', linked: true }, rng2)!;
-    const second2 = bond(first2.roster, { id: 2, speciesId: 'puffle', linked: true }, rng2)!;
-    expect(first.entry.nickname).toBe(first2.entry.nickname);
-    expect(second.entry.nickname).toBe(second2.entry.nickname);
+  it('hands out distinct names for a sequential cursor until the pool is exhausted', () => {
+    const names = new Set<string>();
+    for (let i = 0; i < NAME_POOL.length; i++) names.add(nickForIndex(i));
+    expect(names.size).toBe(NAME_POOL.length); // no dupe within one pass
+    // Only after exhausting the pool does a name repeat.
+    expect(nickForIndex(NAME_POOL.length)).toBe(nickForIndex(0));
   });
 });
 
 describe('release', () => {
   it('removes the entry by id, leaving the rest, without mutating the input', () => {
-    const r0 = bond([], { id: 1, speciesId: 'puffle', linked: true }, mulberry32(1))!.roster;
-    const r1 = bond(r0, { id: 2, speciesId: 'craghorn', linked: true }, mulberry32(2))!.roster;
+    const r0 = bond([], { id: 1, speciesId: 'puffle', linked: true }, 0)!.roster;
+    const r1 = bond(r0, { id: 2, speciesId: 'craghorn', linked: true }, 1)!.roster;
     const after = release(r1, 1);
     expect(after).toHaveLength(1);
     expect(after[0]!.id).toBe(2);
@@ -61,23 +60,23 @@ describe('release', () => {
   });
 
   it('is a no-op copy when the id is absent', () => {
-    const r0 = bond([], { id: 1, speciesId: 'puffle', linked: true }, mulberry32(1))!.roster;
+    const r0 = bond([], { id: 1, speciesId: 'puffle', linked: true }, 0)!.roster;
     expect(release(r0, 999)).toHaveLength(1);
   });
 });
 
 describe('byId + count', () => {
   it('byId finds an entry or returns undefined', () => {
-    const r = bond([], { id: 7, speciesId: 'puffle', linked: true }, mulberry32(1))!.roster;
+    const r = bond([], { id: 7, speciesId: 'puffle', linked: true }, 0)!.roster;
     expect(byId(r, 7)?.id).toBe(7);
     expect(byId(r, 8)).toBeUndefined();
   });
 
   it('count tallies bonded critters per species', () => {
     let r: Roster = [];
-    r = bond(r, { id: 1, speciesId: 'puffle', linked: true }, mulberry32(1))!.roster;
-    r = bond(r, { id: 2, speciesId: 'puffle', linked: true }, mulberry32(2))!.roster;
-    r = bond(r, { id: 3, speciesId: 'craghorn', linked: true }, mulberry32(3))!.roster;
+    r = bond(r, { id: 1, speciesId: 'puffle', linked: true }, 0)!.roster;
+    r = bond(r, { id: 2, speciesId: 'puffle', linked: true }, 1)!.roster;
+    r = bond(r, { id: 3, speciesId: 'craghorn', linked: true }, 2)!.roster;
     expect(count(r, 'puffle')).toBe(2);
     expect(count(r, 'craghorn')).toBe(1);
     expect(count(r, 'lumenstag')).toBe(0);
@@ -131,6 +130,51 @@ describe('CritterManager.consumeSlot', () => {
     mgr2.importRegistry(exported);
     mgr2.update(0.016, slot.home);
     expect(mgr2.byId(slot.id)).toBeUndefined(); // still consumed → never streams in
+  });
+});
+
+describe('CritterManager.releaseSlot', () => {
+  it('un-consumes a bonded slot so it persists and streams back at its home', () => {
+    const scene = new THREE.Scene();
+    const mgr = new CritterManager(scene);
+    const slot = findSlot();
+
+    mgr.update(0.016, slot.home);
+    mgr.setLinked(slot.id, true); // bonding requires a Linked critter
+    mgr.consumeSlot(slot.id);
+    expect(mgr.exportRegistry()[slot.id]?.consumed).toBe(true);
+
+    // Release: the slot is re-opened (kept Linked) and no longer consumed.
+    expect(mgr.releaseSlot(slot.id)).toBe(true);
+    const entry = mgr.exportRegistry()[slot.id];
+    expect(entry?.consumed).toBe(false);
+    expect(entry?.linked).toBe(true);
+
+    // It streams back in at its home on the next in-range update.
+    mgr.update(0.016, slot.home);
+    expect(mgr.byId(slot.id)?.linked).toBe(true);
+  });
+
+  it('survives a save/reload round-trip as a live (un-consumed) critter', () => {
+    const scene = new THREE.Scene();
+    const mgr = new CritterManager(scene);
+    const slot = findSlot();
+    mgr.update(0.016, slot.home);
+    mgr.setLinked(slot.id, true);
+    mgr.consumeSlot(slot.id);
+    mgr.releaseSlot(slot.id);
+
+    const mgr2 = new CritterManager(new THREE.Scene());
+    mgr2.importRegistry(mgr.exportRegistry());
+    mgr2.update(0.016, slot.home);
+    // Not consumed → the released critter exists again after reload.
+    expect(mgr2.byId(slot.id)).toBeDefined();
+  });
+
+  it('returns false for an unknown or not-consumed slot', () => {
+    const mgr = new CritterManager(new THREE.Scene());
+    expect(mgr.releaseSlot(-42)).toBe(false);
+    expect(mgr.releaseSlot(123456)).toBe(false);
   });
 });
 
