@@ -151,7 +151,9 @@ export function ringScreenState(
 ): RingState {
   const head: Vec3 = {
     x: view.pos.x,
-    y: view.pos.y + sp.size * HUD.ringHeadFactor,
+    // Anchor at the per-species model-height estimate when supplied, else the
+    // size-based default — so tall species (stag/buck/prismhorse) ring high.
+    y: view.pos.y + (sp.ringHeight ?? sp.size * HUD.ringHeadFactor),
     z: view.pos.z,
   };
   const p = projectFn(head);

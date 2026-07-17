@@ -44,6 +44,9 @@ const AI = {
   faceDist: 6,
 };
 
+/** Beyond this camera distance (m) a name label is culled (declutters the map). */
+const LABEL_MAX_DIST = 40;
+
 type MatOpts = { emissive?: number; emissiveIntensity?: number };
 function mat(color: number, opts: MatOpts = {}): THREE.MeshLambertMaterial {
   const m = new THREE.MeshLambertMaterial({ color, flatShading: true });
@@ -146,6 +149,10 @@ export function npcAnchors(): Record<string, Point2> {
   return npcHomes();
 }
 
+/** Metres Farmer Odd's anchor sits to the side of the plot grid centre, so his
+ *  talk-F prompt (within 3 m) stops competing with the plot collect-F prompt. */
+const FARMER_PLOT_CLEARANCE = 6;
+
 /** Anchor each NPC to a sensible spot near their building. */
 function npcHomes(): Record<string, Point2> {
   const L = villageLayout();
@@ -153,9 +160,19 @@ function npcHomes(): Record<string, Point2> {
     const b = L.buildings.find((x) => x.id === id)!;
     return { x: b.door.x, z: b.door.z };
   };
+  // Farmer Odd stands just to the SIDE of the plot grid (perpendicular to the
+  // farmhouse→plots axis) rather than dead-centre on it, so standing at a plot
+  // to collect (F) doesn't also land inside his 3 m talk radius.
+  const fh = L.buildings.find((b) => b.kind === 'farmhouse')!;
+  const plotAxis = Math.atan2(L.farm.origin.z - fh.z, L.farm.origin.x - fh.x);
+  const side = plotAxis + Math.PI / 2;
+  const oddAnchor: Point2 = {
+    x: L.farm.origin.x + Math.cos(side) * FARMER_PLOT_CLEARANCE,
+    z: L.farm.origin.z + Math.sin(side) * FARMER_PLOT_CLEARANCE,
+  };
   return {
     fenn: { x: L.plaza.x + 2, z: L.plaza.z + 1 }, // mayor works the plaza
-    odd: { ...L.farm.origin }, // farmer at the plots
+    odd: oddAnchor, // farmer beside his plots (clear of the collect-F prompt)
     juno: at('barter'), // trader at the stand
     bram: at('home1'), // old bram by his door
     kit: { x: L.plaza.x - 2, z: L.plaza.z - 2 }, // kid darts around the plaza
@@ -289,19 +306,48 @@ export class NpcManager {
     }
   }
 
-  /** Project + place the floating name labels (hidden when behind the camera). */
+  /**
+   * Project + place the floating name labels. Hidden when behind the camera or
+   * beyond `LABEL_MAX_DIST` (so labels don't render clear across the map). A
+   * single de-collision pass nudges any label whose screen rect overlaps an
+   * already-placed one upward by its own height (cosmetic — labels use
+   * transform translate(-50%,-100%), so the rect is [x±w/2] × [top−h, top]).
+   */
   updateLabels(camera: THREE.PerspectiveCamera): void {
     const w = window.innerWidth;
     const h = window.innerHeight;
+    const placed: { l: number; r: number; t: number; b: number }[] = [];
     for (const n of this.npcs) {
+      // Distance cull: skip labels for NPCs too far from the camera.
+      const dx = n.pos.x - camera.position.x;
+      const dy = n.pos.y - camera.position.y;
+      const dz = n.pos.z - camera.position.z;
+      if (Math.hypot(dx, dy, dz) > LABEL_MAX_DIST) {
+        n.label.style.display = 'none';
+        continue;
+      }
       this._project.set(n.pos.x, n.pos.y + n.headY + 0.5, n.pos.z).project(camera);
       if (this._project.z > 1 || this._project.z < -1) {
         n.label.style.display = 'none';
         continue;
       }
       const x = (this._project.x * 0.5 + 0.5) * w;
-      const y = (-this._project.y * 0.5 + 0.5) * h;
+      let y = (-this._project.y * 0.5 + 0.5) * h;
       n.label.style.display = 'block';
+
+      // De-collision: offset upward by one label height if this rect overlaps
+      // any already-placed label (single pass — good enough for a small plaza).
+      const lw = n.label.offsetWidth;
+      const lh = n.label.offsetHeight;
+      const rect = () => ({ l: x - lw / 2, r: x + lw / 2, t: y - lh, b: y });
+      for (const p of placed) {
+        const q = rect();
+        if (q.l < p.r && q.r > p.l && q.t < p.b && q.b > p.t) {
+          y -= lh;
+          break;
+        }
+      }
+      placed.push(rect());
       n.label.style.left = `${x}px`;
       n.label.style.top = `${y}px`;
     }

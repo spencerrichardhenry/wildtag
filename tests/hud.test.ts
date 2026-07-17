@@ -217,6 +217,31 @@ describe('ringScreenState', () => {
     expect(r.y).toBeCloseTo(0.5 / 3, 6);
   });
 
+  it('anchors the ring at the size-based default height when no ringHeight is set', () => {
+    // Capture the world point handed to the projector.
+    let head: Vec3 | null = null;
+    const proj: ProjectFn = (w) => {
+      head = w;
+      return centreProject;
+    };
+    const puffle = sp('puffle'); // size 0.5, no ringHeight
+    ringScreenState(critter({ pos: { x: 0, y: 0, z: 0 } }), puffle, { x: 0, y: 0, z: 0 }, proj);
+    expect(head!.y).toBeCloseTo(puffle.size * HUD.ringHeadFactor, 6);
+  });
+
+  it('anchors the ring at the per-species ringHeight when supplied (tall species)', () => {
+    let head: Vec3 | null = null;
+    const proj: ProjectFn = (w) => {
+      head = w;
+      return centreProject;
+    };
+    const stag = sp('lumenstag'); // has an explicit taller ringHeight
+    expect(stag.ringHeight).toBeDefined();
+    expect(stag.ringHeight!).toBeGreaterThan(stag.size * HUD.ringHeadFactor);
+    ringScreenState(critter({ species: 'lumenstag', pos: { x: 0, y: 0, z: 0 } }), stag, { x: 0, y: 0, z: 0 }, proj);
+    expect(head!.y).toBeCloseTo(stag.ringHeight!, 6);
+  });
+
   it('flips a behind-camera point to the opposite edge', () => {
     // Behind the camera the raw NDC points right; flipped it should hit the
     // left edge (and always be treated as offscreen).

@@ -75,6 +75,8 @@ export const SPECIES: SpeciesDef[] = [
     rewardSparks: 2,
     rewardRP: 14,
     rideable: false,
+    // Tall, proud strider — anchor the ring above the antlered head, not the back.
+    ringHeight: 3.4,
     farmRole: { kind: 'produce', resource: 'fiber', amount: 4 },
   },
   {
@@ -165,6 +167,8 @@ export const SPECIES: SpeciesDef[] = [
     rewardSparks: 6,
     rewardRP: 40,
     rideable: false,
+    // The living lantern stands tall on long legs with a crown of antlers.
+    ringHeight: 3.8,
     farmRole: { kind: 'produce', resource: 'spark', amount: 2 },
   },
 
@@ -187,6 +191,8 @@ export const SPECIES: SpeciesDef[] = [
     rewardSparks: 5,
     rewardRP: 34,
     rideable: true,
+    // Horse-sized crystal beast with a raised dorsal ridge + antennae.
+    ringHeight: 3.6,
     farmRole: { kind: 'none' },
   },
   {

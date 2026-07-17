@@ -407,6 +407,7 @@ function bootGame(): void {
       roster = [];
       barterStates.clear();
       resetRewards();
+      pens.load([]); // clear any pen critters half-applied before the throw
       farm = createFarm(getDeedCount());
       critters.importRegistry({});
       ziplines.deserialize([]);
@@ -745,7 +746,9 @@ function bootGame(): void {
     const nick = mounts.nickname() ?? 'Your mount';
     const ap = mounts.actorPos()!;
     const p = player.pos;
-    const dist = Math.hypot(ap.x - p.x, ap.z - p.z);
+    // Full 3D distance (include the vertical delta) so a mount on a ledge
+    // above/below doesn't read as in-range from a planar-only measure.
+    const dist = Math.hypot(ap.x - p.x, ap.y - p.y, ap.z - p.z);
     if (dist <= MOUNT.mountRange) {
       if (placement.active) placement.cancel(); // no placement ghost mid-ride
       mounts.startRide(player);
@@ -857,6 +860,9 @@ function bootGame(): void {
         onLink: (view, sp) => {
           chime();
           toast(`Linked ${sp.name}!  +${sp.rewardSparks} spark  +${sp.rewardRP} RP`);
+          // Live-refresh an open screen so the Field Guide reflects a fresh Link
+          // immediately (it rebuilds from manager.linkedSpecies() on render).
+          screens.refresh();
           void view;
         },
       });
@@ -1159,25 +1165,30 @@ function bootGame(): void {
   // Verification aid (Haven V4): expose deterministic village anchors + a couple
   // of camera helpers so the headless screenshot harness can frame the dialog
   // and pens without a real mouse (pointer lock is unavailable in headless).
-  // No gameplay effect beyond opening a screen / aiming the existing camera.
-  (window as unknown as { __village: unknown }).__village = {
-    center: villageCenter(),
-    anchors: npcAnchors(),
-    /** Open the barter dialog for `npcId` directly (bypasses F-proximity). */
-    talk(npcId: string): void {
-      const def = NPCS.find((n) => n.id === npcId);
-      if (def) openDialog(screens, def);
-    },
-    /** Aim the camera at a world point (sets input yaw/pitch). */
-    lookAt(x: number, y: number, z: number): void {
-      const e = camera.position;
-      const dx = x - e.x;
-      const dy = y - e.y;
-      const dz = z - e.z;
-      input.yaw = Math.atan2(-dx, -dz);
-      input.pitch = Math.atan2(dy, Math.hypot(dx, dz));
-    },
-  };
+  // No gameplay effect beyond opening a screen / aiming the existing camera —
+  // but gated behind a dev session (?fresh/?dev/?debug/?screen=roster) so a
+  // shipped build doesn't surface it. `__game` stays exposed always (its own
+  // gating lives on the individual dev-only hooks).
+  if (devSession) {
+    (window as unknown as { __village: unknown }).__village = {
+      center: villageCenter(),
+      anchors: npcAnchors(),
+      /** Open the barter dialog for `npcId` directly (bypasses F-proximity). */
+      talk(npcId: string): void {
+        const def = NPCS.find((n) => n.id === npcId);
+        if (def) openDialog(screens, def);
+      },
+      /** Aim the camera at a world point (sets input yaw/pitch). */
+      lookAt(x: number, y: number, z: number): void {
+        const e = camera.position;
+        const dx = x - e.x;
+        const dy = y - e.y;
+        const dz = z - e.z;
+        input.yaw = Math.atan2(-dx, -dz);
+        input.pitch = Math.atan2(dy, Math.hypot(dx, dz));
+      },
+    };
+  }
 
   // -------------------------------------------------------------------------
   // Fixed-timestep game loop: accumulator pattern, SIM_DT-sized update steps,

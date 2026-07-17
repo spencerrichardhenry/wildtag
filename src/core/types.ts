@@ -121,6 +121,13 @@ export interface SpeciesDef {
   rewardRP: number;
   /** Can this species be ridden with a Saddle? True only for the prismhorse. */
   rideable: boolean;
+  /**
+   * Optional model-height estimate (m) used to anchor the HUD tracking ring
+   * above the critter's head. Defaults to `size * HUD.ringHeadFactor` when
+   * absent; tall species (antlered stag, striding buck, horse-sized mount)
+   * override it so their ring doesn't float low over the model's midriff.
+   */
+  ringHeight?: number;
   /** This species' farm-plot job (spec §4/§5). Every species has one. */
   farmRole: FarmRole;
 }
