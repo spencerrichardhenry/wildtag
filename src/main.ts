@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { CAMERA, MAX_FRAME_DT, MOUNT, SIM_DT, STRUCTURES, WORLD_SEED } from './core/constants.ts';
+import { CAMERA, ENV, MAX_FRAME_DT, MOUNT, SIM_DT, STRUCTURES, WORLD_SEED } from './core/constants.ts';
 import { setupEnvironment } from './world/environment.ts';
 import { ChunkManager } from './world/chunks.ts';
 import { PropManager } from './world/props.ts';
@@ -77,7 +77,17 @@ if (!(canvas instanceof HTMLCanvasElement)) {
 }
 
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-renderer.shadowMap.enabled = false; // shadows off for perf
+// ACES filmic tone mapping + sRGB output: the whole scene is authored/lit in
+// linear space and mapped through the film curve on output, so highlights roll
+// off and the golden-hour warmth reads richly instead of clipping.
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = ENV.exposure;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+// Shadows start ENABLED; a perf gate (first ENV.shadowGateFrames frames) turns
+// them off for the session if measured fps is below ENV.shadowFpsGate. On
+// SwiftShader/e2e that gate trips immediately → shadows auto-off.
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFShadowMap;
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 
@@ -87,6 +97,24 @@ if (new URLSearchParams(window.location.search).get('preview') === 'critters') {
   runCritterPreview(renderer);
 } else {
   bootGame();
+}
+
+/**
+ * Detect a software WebGL backend (SwiftShader/llvmpipe/Microsoft Basic Render)
+ * via the unmasked renderer string. Such backends can't afford a shadow map, so
+ * shadows are skipped outright on them (this is what keeps the headless e2e off
+ * the perf-gate path). Any failure to read the string is treated as "not
+ * software" so real GPUs are never wrongly downgraded.
+ */
+function isSoftwareRenderer(r: THREE.WebGLRenderer): boolean {
+  try {
+    const gl = r.getContext();
+    const ext = gl.getExtension('WEBGL_debug_renderer_info');
+    const name = ext ? String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)) : '';
+    return /swiftshader|llvmpipe|software|basic render/i.test(name);
+  } catch {
+    return false;
+  }
 }
 
 /** Normal gameplay boot: scene, camera, world streaming and the FP controller. */
@@ -110,6 +138,47 @@ function bootGame(): void {
   const props = new PropManager(scene);
   const critters = new CritterManager(scene);
   const skyDome = scene.getObjectByName('skyDome');
+
+  // Perf-gated directional shadow (F1). The sun light (configured for shadows in
+  // environment.ts) follows the player along the sun direction with a tight
+  // ortho frustum. `shadowsEnabled` starts true and is cleared by the fps gate
+  // in the frame loop; the choice is mirrored onto the debug state (window.__f1).
+  const sunLight = scene.getObjectByName('sunLight') as THREE.DirectionalLight | null;
+  const sunDir = new THREE.Vector3(ENV.sunPos.x, ENV.sunPos.y, ENV.sunPos.z).normalize();
+  // Software renderers (SwiftShader/llvmpipe — headless e2e) never afford a
+  // shadow map: detect them up front and skip shadows immediately so the fps
+  // gate below only governs real GPUs (and e2e is never dragged by the gate
+  // window). Real hardware keeps shadows unless the measured fps gate trips.
+  let shadowsEnabled = !isSoftwareRenderer(renderer);
+  if (!shadowsEnabled) renderer.shadowMap.enabled = false;
+  let shadowFlagFrame = 0;
+
+  /** Flag props/critters/village/terrain meshes as shadow casters/receivers. */
+  function flagShadowCasters(): void {
+    scene.traverse((obj) => {
+      const mesh = obj as THREE.Mesh;
+      if (!(mesh as unknown as { isMesh?: boolean }).isMesh) return;
+      if (mesh.name === 'skyDome' || mesh.name === 'water') return;
+      mesh.castShadow = true;
+      // Terrain chunks already receive in chunks.ts; broad ground props too.
+      if (mesh.name.startsWith('chunk ')) mesh.receiveShadow = true;
+    });
+  }
+
+  /** Move the shadow light + target to bracket the player (tight frustum). */
+  function updateShadowFollow(): void {
+    if (!sunLight || !shadowsEnabled) return;
+    const p = player.pos;
+    sunLight.target.position.set(p.x, p.y, p.z);
+    sunLight.position.set(
+      p.x + sunDir.x * ENV.shadowLightDist,
+      p.y + sunDir.y * ENV.shadowLightDist,
+      p.z + sunDir.z * ENV.shadowLightDist,
+    );
+    sunLight.target.updateMatrixWorld();
+    // Re-flag casters periodically (props/critters stream in over time).
+    if (shadowFlagFrame++ % 15 === 0) flagShadowCasters();
+  }
 
   // Haven Village (Task V3): static seeded settlement in the NE spawn meadow —
   // built once (always resident near spawn), its NPCs streamed by NpcManager.
@@ -894,6 +963,7 @@ function bootGame(): void {
       lantern.visible = false;
     }
     farmVisuals.update(farm, roster, worldTime, SIM_DT);
+    updateShadowFollow();
     renderer.render(scene, camera);
     npcs.updateLabels(camera);
     const p = player.pos;
@@ -1119,12 +1189,47 @@ function bootGame(): void {
   let accumulator = 0;
   let lastTime = performance.now();
 
+  // Perf gate for the shadow map: accumulate wall-clock over the first
+  // ENV.shadowGateFrames frames, then keep shadows only if the average fps
+  // clears ENV.shadowFpsGate. The decision is mirrored onto window.__f1 for the
+  // debug/e2e state. Flag the initial casters once so frame 1 already shadows.
+  flagShadowCasters();
+  let gateWarmup = 0;
+  let gateFrames = 0;
+  let gateElapsed = 0;
+  // Software renderers already decided (shadows skipped up front); real GPUs run
+  // the fps gate after a warm-up that skips the initial chunk-build hitches.
+  let gateDecided = !shadowsEnabled;
+  const f1State = { shadows: shadowsEnabled, fps: 0 };
+  (window as unknown as { __f1: typeof f1State }).__f1 = f1State;
+
   function frame(now: number): void {
     requestAnimationFrame(frame);
 
     const rawDt = (now - lastTime) / 1000;
     lastTime = now;
     const frameDt = Math.min(rawDt, MAX_FRAME_DT);
+
+    // Shadow perf gate (real GPUs only — software already decided): skip the
+    // opening chunk-build hitches, then average a clean window and decide once.
+    if (!gateDecided) {
+      if (gateWarmup < 30) {
+        gateWarmup++;
+      } else {
+        gateElapsed += Math.min(rawDt, MAX_FRAME_DT);
+        gateFrames++;
+        if (gateFrames >= ENV.shadowGateFrames) {
+          const avgFps = gateFrames / Math.max(gateElapsed, 1e-6);
+          f1State.fps = avgFps;
+          if (avgFps < ENV.shadowFpsGate) {
+            shadowsEnabled = false;
+            renderer.shadowMap.enabled = false;
+          }
+          f1State.shadows = shadowsEnabled;
+          gateDecided = true;
+        }
+      }
+    }
 
     // `timeScale` (debug setTimeScale, clamped 0.1..16) multiplies the sim
     // dt fed into the accumulator — Task 15's Playwright verification fast-

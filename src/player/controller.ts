@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { GRAPPLE, INPUT, MOUNT, MOVE, TERRAIN } from '../core/constants.ts';
 import type { GroundQuery, MoveInput, MoveState, Vec3 } from '../core/types.ts';
 import { initialMoveState, stepMovement } from './movement.ts';
-import { mountStep } from './mount.ts';
+import { dismountEyeOffset, mountStep } from './mount.ts';
 import { resolveCollision, type Obstacle } from './collision.ts';
 import type { Input } from './input.ts';
 import {
@@ -65,6 +65,14 @@ export class PlayerController {
 
   /** Spent once a mid-air (boots) jump is used; reset on landing. */
   private usedAirJump = false;
+
+  /**
+   * Post-dismount camera-height decay: seconds since the last dismount, or
+   * `Infinity` when inactive. While active (< MOUNT.dismountEyeLerp) the camera
+   * carries a decaying slice of MOUNT.eyeHeightBonus so the eye eases down from
+   * the saddle to the standing height instead of popping.
+   */
+  private dismountEyeElapsed = Infinity;
 
   // --- Grapple (Task 12) ---------------------------------------------------
   /** Optional anchor registry (drones, Task 13) raycast alongside the terrain. */
@@ -232,16 +240,22 @@ export class PlayerController {
     };
     this.syncCamera();
   }
-  /** Dismount: return to normal mode standing beside the mount at `pos`. */
-  mountEnd(pos: Vec3): void {
+  /**
+   * Dismount: return to normal mode standing beside the mount at `pos`, keeping
+   * the exit velocity `vel` (planar ride momentum + a hop) so hopping off flows
+   * into a leap instead of a dead stop, and kicking off the eye-height decay so
+   * the camera eases down from the saddle rather than popping.
+   */
+  mountEnd(pos: Vec3, vel: Vec3): void {
     this.state = {
       ...this.state,
       pos: { ...pos },
-      vel: { x: 0, y: 0, z: 0 },
+      vel: { ...vel },
       grounded: false,
       mode: 'normal',
     };
     this.usedAirJump = false;
+    this.dismountEyeElapsed = 0;
     this.syncCamera();
   }
   /** True while the player is riding a mount. */
@@ -279,6 +293,12 @@ export class PlayerController {
       this.updateGrappleVisuals(); // hides any stale rope
       this.syncCamera();
       return;
+    }
+
+    // Advance the post-dismount eye-height decay (normal/swim path only).
+    if (this.dismountEyeElapsed !== Infinity) {
+      this.dismountEyeElapsed += dt;
+      if (this.dismountEyeElapsed >= MOUNT.dismountEyeLerp) this.dismountEyeElapsed = Infinity;
     }
 
     const raw = this.input.state();
@@ -437,8 +457,13 @@ export class PlayerController {
   /** Place the camera at eye height with the input-owned yaw/pitch. */
   private syncCamera(): void {
     const p = this.state.pos;
-    // Riding raises the eye by MOUNT.eyeHeightBonus (you sit atop the mount).
-    const eye = INPUT.eyeHeight + (this.state.mode === 'mount' ? MOUNT.eyeHeightBonus : 0);
+    // Riding raises the eye by MOUNT.eyeHeightBonus (you sit atop the mount);
+    // just after dismount the bonus decays to 0 so the eye eases down smoothly.
+    const eyeBonus =
+      this.state.mode === 'mount'
+        ? MOUNT.eyeHeightBonus
+        : dismountEyeOffset(this.dismountEyeElapsed, MOUNT.dismountEyeLerp, MOUNT.eyeHeightBonus);
+    const eye = INPUT.eyeHeight + eyeBonus;
     this.camera.position.set(p.x, p.y + eye, p.z);
     // YXZ euler: rotation.y = yaw matches the core facing (-sin yaw, 0, -cos yaw);
     // positive pitch looks up. Roll is always zero.

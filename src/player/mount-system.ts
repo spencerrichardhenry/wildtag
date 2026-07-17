@@ -4,6 +4,7 @@ import type { GroundQuery, Vec3 } from '../core/types.ts';
 import { mulberry32 } from '../core/rng.ts';
 import { buildCritterModel, type CritterParts } from '../critters/models.ts';
 import { animateCritter } from '../critters/animation.ts';
+import { dismountVelocity } from './mount.ts';
 import type { PlayerController } from './controller.ts';
 import type { Input } from './input.ts';
 import type { MountPersist } from '../core/save.ts';
@@ -171,18 +172,51 @@ export class MountSystem {
     }
   }
 
-  /** Dismount: park the actor where you rode and step the player beside it. */
+  /**
+   * Dismount: park the actor where you rode and step the player beside it.
+   * The ride's planar momentum carries over (plus a small upward hop) so
+   * hopping off flows into a leap instead of dead-stopping, and the placement
+   * picks a lateral spot that clears the mount's collider and never sits over
+   * deep water / below the surface.
+   */
   dismount(controller: PlayerController): void {
     if (!this.riding || !this.actor) return;
     this.riding = false;
     this.spaceHeldFor = 0;
     this.restoreFade();
     const p = controller.pos;
-    const y = this.ground.heightAt(p.x, p.z);
-    this.actor.group.position.set(p.x, y, p.z);
-    // Step off to the side (offset in world +x, clamped onto the ground there).
-    const ox = p.x + 1.6;
-    controller.mountEnd({ x: ox, y: this.ground.heightAt(ox, p.z), z: p.z });
+    // Park the actor at the ride position.
+    this.actor.group.position.set(p.x, this.ground.heightAt(p.x, p.z), p.z);
+    // Pick a side spot beside the mount (clears its collider, above the surface).
+    const spot = this.dismountSpot(p);
+    // Preserve planar ride velocity + a hop so the dismount feels continuous.
+    controller.mountEnd(spot, dismountVelocity(controller.vel, MOUNT.dismountHop));
+  }
+
+  /**
+   * A dismount landing spot beside the mount: try camera-right, then -right,
+   * then behind, at MOUNT.dismountOffset (> the actor's collider radius). Take
+   * the first whose ground sits above deep water; fall back to camera-right.
+   * Y is snapped to the terrain so the player never lands below the surface.
+   */
+  private dismountSpot(p: Vec3): Vec3 {
+    const yaw = this.camera.rotation.y;
+    const d = MOUNT.dismountOffset;
+    // right = (cos yaw, -sin yaw); facing = (-sin yaw, -cos yaw) → back negates it.
+    const dirs = [
+      { x: Math.cos(yaw), z: -Math.sin(yaw) }, // camera-right
+      { x: -Math.cos(yaw), z: Math.sin(yaw) }, // camera-left
+      { x: Math.sin(yaw), z: Math.cos(yaw) }, // behind
+    ];
+    for (const dir of dirs) {
+      const x = p.x + dir.x * d;
+      const z = p.z + dir.z * d;
+      const y = this.ground.heightAt(x, z);
+      if (y > MOUNT.waterBlockDepth) return { x, y, z };
+    }
+    const x = p.x + dirs[0]!.x * d;
+    const z = p.z + dirs[0]!.z * d;
+    return { x, y: this.ground.heightAt(x, z), z };
   }
 
   /** Summon the idle actor to the player's side (Whistle). No-op while riding. */

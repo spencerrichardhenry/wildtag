@@ -401,31 +401,49 @@ export const SCATTER = {
  * the chunk mesh builder.
  */
 export const ENV = {
-  /** Hemisphere light: sky-facing and ground-facing tints. */
-  hemiSky: 0xbfd9ff,
-  hemiGround: 0x6b5b47,
-  hemiIntensity: 1.0,
+  /**
+   * ACES filmic tone-mapping exposure (main.ts). ACES compresses highlights and
+   * gently desaturates midtones, so the raw light intensities below are pushed
+   * BRIGHTER than a pre-tone-map pipeline would want — the golden-hour warmth
+   * has to survive the curve. Tuned by eye against the biome screenshots.
+   */
+  exposure: 1.12,
 
-  /** Warm low-angle "golden hour" directional sun. */
-  sunColor: 0xffe8b0,
-  sunIntensity: 1.4,
+  /** Hemisphere light: sky-facing and ground-facing tints (warm bounce). */
+  hemiSky: 0xcfe2ff,
+  hemiGround: 0x7a6446,
+  hemiIntensity: 0.95,
+
+  /** Warm low-angle "golden hour" directional sun (brightened for ACES). */
+  sunColor: 0xffdca0,
+  sunIntensity: 2.9,
   /** Sun position (world) — low angle for long, warm light. */
   sunPos: { x: 260, y: 180, z: 120 },
+  /** Soft sun disc + additive glow sprite along the sun direction. */
+  sunDiscColor: 0xfff4d8,
+  sunGlowColor: 0xffcf8a,
+  /** Sun sprite sizes (world units at the dome radius): tight disc, broad glow. */
+  sunDiscSize: 62,
+  sunGlowSize: 260,
 
-  /** Linear fog: color, near and far distances (m). */
-  fogColor: 0xcfd8e8,
-  fogNear: 150,
-  fogFar: 1000,
+  /** Linear fog: color, near and far distances (m). Warm golden-hour haze. */
+  fogColor: 0xe0d6c2,
+  fogNear: 190,
+  fogFar: 1080,
 
   /**
-   * Sky dome: big backface sphere with a vertical gradient. Radius sits just
-   * inside CAMERA.far (1200) so the dome renders instead of being far-plane
-   * clipped; its material ignores fog so it stays a clean gradient while
-   * distant terrain fades into the matching horizon colour.
+   * Sky dome: big backface sphere with a THREE-stop vertical gradient
+   * (horizon → mid → zenith). Radius sits just inside CAMERA.far (1200) so the
+   * dome renders instead of being far-plane clipped; its material ignores fog
+   * so it stays a clean gradient while distant terrain fades into the matching
+   * horizon colour.
    */
   skyRadius: 1150,
-  skyTop: 0x4a78c0,
-  skyHorizon: 0xcfd8e8,
+  skyTop: 0x3f6fbe,
+  skyMid: 0x93b6e0,
+  skyHorizon: 0xf0dcc0,
+  /** Height fraction [0,1] of the mid gradient stop over the dome. */
+  skyMidStop: 0.3,
 
   /** Per-biome ground vertex colors + shore sand. */
   biomeColors: {
@@ -435,16 +453,47 @@ export const ENV = {
     crags: 0x8d8577,
     highlands: 0xa8b6a0,
     water: 0x4a6b7a,
-    sand: 0xd9c9a3,
+    sand: 0xdccba0,
   },
   /** Height (m) below which land is tinted with shore sand. */
   sandHeight: 1.2,
+  /** Terrain colour blend: sample offset (m) for the 4-tap biome border blend. */
+  blendOffset: 6,
+  /** Per-vertex micro lightness jitter (± fraction) from a position hash. */
+  vertexJitter: 0.04,
+  /** Ground-normal Y below which the surface tints toward crag rock (steep). */
+  slopeRockThreshold: 0.75,
+  /** Max blend fraction toward rock on the steepest slopes. */
+  slopeRockMax: 0.6,
 
-  /** Translucent water plane. */
+  /** Translucent water plane (two-tone: shallow near, deep far). */
   waterY: 0.05,
   waterSize: 2200,
   waterColor: 0x3a6b82,
-  waterOpacity: 0.72,
+  waterColorDeep: 0x244c63,
+  waterOpacity: 0.8,
+  /** Radial distance (m) over which the water fades shallow→deep tone. */
+  waterToneRadius: 900,
+
+  /**
+   * Optional directional shadow map (perf-gated in main.ts). A single tight
+   * ortho frustum follows the player. Enabled at boot; if the measured average
+   * fps over the first `shadowGateFrames` frames is below `shadowFpsGate`, it is
+   * disabled for the session (SwiftShader/e2e falls under the gate → auto-off).
+   */
+  shadowMapSize: 1024,
+  /** Ortho half-extent (m) → ~2× this metres of shadow coverage around the player. */
+  shadowFrustum: 32,
+  /** Distance (m) the shadow light sits from the player along the sun direction. */
+  shadowLightDist: 110,
+  /** Shadow camera near/far planes (m). */
+  shadowNear: 1,
+  shadowFar: 240,
+  /** Small depth bias to curb shadow acne on the low-poly terrain. */
+  shadowBias: -0.0006,
+  /** Perf gate: measure this many frames after boot, disable shadows below the fps floor. */
+  shadowGateFrames: 120,
+  shadowFpsGate: 40,
 } as const;
 
 /**
@@ -789,6 +838,12 @@ export const MOUNT = {
   waterBlockDepth: -0.5,
   /** Hold Space this long (s) while riding to dismount (KeyV also dismounts). */
   dismountHold: 0.5,
+  /** Upward hop (m/s) added on dismount so hopping off flows, never dead-stops. */
+  dismountHop: 2,
+  /** Seconds the camera lerps from the mounted eye height down to the normal eye. */
+  dismountEyeLerp: 0.25,
+  /** Side offset (m) the dismount places the player beside the mount (clears the collider). */
+  dismountOffset: 1.9,
   /** Walk within this distance (m) of your idle mount to mount up with KeyV. */
   mountRange: 4,
   /** The idle actor loosely follows the player and never lags beyond this (m). */
