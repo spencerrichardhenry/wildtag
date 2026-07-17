@@ -321,7 +321,7 @@ export const SCATTER = {
   depletedScale: 0.2,
 
   /** Keep-resident radius (chunks) for prop meshes — smaller than terrain. */
-  radius: 4,
+  radius: 5,
   /** Max prop chunks built per update() call (steady state builds none). */
   buildsPerUpdate: 6,
   /** Obstacles are supplied to the player only within this many chunks. */
@@ -443,11 +443,11 @@ export const SCATTER = {
    * crossed-quad tufts. Deterministic from world position, so it doesn't shimmer.
    */
   grass: {
-    radius: 22,
+    radius: 24,
     cell: 8,
-    spacing: 1.7,
-    density: 0.5,
-    cap: 450,
+    spacing: 1.5,
+    density: 0.55,
+    cap: 600,
   },
 
   /** Per-kind instance scale range [min, max] (uniform hash pick). */
