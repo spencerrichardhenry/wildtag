@@ -130,6 +130,12 @@ const results = [];
 function assert(cond, msg) {
   if (!cond) throw new Error(msg);
 }
+// VERIFY_STRICT=1: treat ANY retry as a failure (surfaces transient flakiness
+// that a single silent retry would otherwise mask). Retries are still ALLOWED
+// by default; they're just counted and reported.
+const STRICT = process.env.VERIFY_STRICT === '1';
+const retryWord = (n) => (n === 1 ? 'retry' : 'retries');
+
 async function check(name, fn) {
   const t0 = Date.now();
   process.stdout.write(`\n▶ ${name}\n`);
@@ -139,8 +145,16 @@ async function check(name, fn) {
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
       await fn();
-      results.push({ name, ok: true, ms: Date.now() - t0 });
-      console.log(`  ✔ PASS (${Date.now() - t0}ms)`);
+      const retries = attempt - 1;
+      const ms = Date.now() - t0;
+      if (retries > 0 && STRICT) {
+        // Strict: an attempt that only passed on retry is reported as a failure.
+        results.push({ name, ok: false, retries, err: `passed only on retry (VERIFY_STRICT=1)`, ms });
+        console.log(`  x FAIL (strict): passed on ${retries} ${retryWord(retries)}`);
+        return;
+      }
+      results.push({ name, ok: true, retries, ms });
+      console.log(`  ✔ PASS (${ms}ms)${retries ? ` (${retries} ${retryWord(retries)})` : ''}`);
       return;
     } catch (e) {
       if (attempt === 1) {
@@ -148,7 +162,7 @@ async function check(name, fn) {
         await sleep(1000);
         continue;
       }
-      results.push({ name, ok: false, err: e.message, ms: Date.now() - t0 });
+      results.push({ name, ok: false, retries: 1, err: e.message, ms: Date.now() - t0 });
       console.log(`  x FAIL: ${e.message}`);
     }
   }
@@ -878,10 +892,21 @@ try {
 // --- summary ---------------------------------------------------------------
 const passed = results.filter((r) => r.ok).length;
 const total = results.length;
+const totalRetries = results.reduce((s, r) => s + (r.retries || 0), 0);
 console.log('\n' + '─'.repeat(64));
-console.log(`RESULT: ${passed}/${total} checks passed`);
-for (const r of results) console.log(`  ${r.ok ? '✔' : '✘'} ${r.name}${r.ok ? '' : ' — ' + r.err}`);
+console.log(
+  `RESULT: ${passed}/${total} checks passed` +
+    (totalRetries ? ` — ${totalRetries} ${retryWord(totalRetries)} across the run` : '') +
+    (STRICT ? ' [VERIFY_STRICT]' : ''),
+);
+for (const r of results) {
+  const tag = r.retries ? ` (${r.retries} ${retryWord(r.retries)})` : '';
+  console.log(`  ${r.ok ? '✔' : '✘'} ${r.name}${tag}${r.ok ? '' : ' — ' + r.err}`);
+}
 if (global.__perfFps) console.log(`  perf: ${global.__perfFps.toFixed(1)} fps (SwiftShader)`);
+if (totalRetries && !STRICT) {
+  console.log(`  NOTE: ${totalRetries} ${retryWord(totalRetries)} used — re-run with VERIFY_STRICT=1 to fail on any retry.`);
+}
 console.log('─'.repeat(64));
 console.log(`Screenshots: ${SHOT_DIR}`);
 
