@@ -286,6 +286,15 @@ interface LoadedChunk {
 export class ChunkManager {
   private readonly scene: THREE.Scene;
   private readonly loaded = new Map<string, LoadedChunk>();
+  /** Last player chunk coords the scan ran against (NaN until the first call). */
+  private lastCx = NaN;
+  private lastCz = NaN;
+  /**
+   * True once every in-radius chunk around `lastCx/lastCz` is resident (a build
+   * pass finished with budget to spare). While it holds AND the player is still
+   * in the same chunk, `update()` early-returns — skipping the whole ring scan.
+   */
+  private complete = false;
 
   constructor(scene: THREE.Scene) {
     this.scene = scene;
@@ -295,11 +304,16 @@ export class ChunkManager {
    * Keep chunks within CHUNKS.radius of (playerX, playerZ) resident; dispose
    * the rest. Builds at most CHUNKS.buildsPerUpdate meshes per call so a large
    * jump can't hitch a single frame (remaining chunks fill in over subsequent
-   * calls).
+   * calls). When the player hasn't crossed a chunk boundary and the field is
+   * already fully built, the scan is skipped entirely (steady-state fast path).
    */
   update(playerX: number, playerZ: number): void {
     const pcx = Math.floor(playerX / CHUNKS.size);
     const pcz = Math.floor(playerZ / CHUNKS.size);
+    // Steady state: same chunk, nothing left to build — nothing to scan.
+    if (pcx === this.lastCx && pcz === this.lastCz && this.complete) return;
+    this.lastCx = pcx;
+    this.lastCz = pcz;
     const r = CHUNKS.radius;
 
     // Dispose chunks that have fallen outside the keep radius.
@@ -328,6 +342,9 @@ export class ChunkManager {
         }
       }
     }
+    // Field is complete iff this pass built every missing chunk without hitting
+    // the per-call cap (leftover budget → nothing more to build this position).
+    this.complete = budget > 0;
   }
 
   /** Dispose every resident chunk (teardown / scene reset). */
@@ -336,6 +353,9 @@ export class ChunkManager {
       this.disposeChunk(chunk);
     }
     this.loaded.clear();
+    this.complete = false;
+    this.lastCx = NaN;
+    this.lastCz = NaN;
   }
 
   private disposeChunk(chunk: LoadedChunk): void {

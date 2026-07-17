@@ -167,14 +167,30 @@ export class CritterManager {
   private cacheCellZ = NaN;
   /** Counts down from -1 so debug-spawned ids never collide with a real slot id. */
   private debugIdCounter = -1;
+  /**
+   * Per-step snapshot of `list()`. Built lazily on the first `list()` call after
+   * any change and reused by every subsequent caller in the same sim step
+   * (tracker + HUD + darts all read it), cutting the per-frame view allocation.
+   * Invalidated by `update()` and by every mutation of the active population or
+   * gameplay flags below.
+   */
+  private listCache: CritterView[] | null = null;
 
   constructor(scene: THREE.Scene) {
     this.scene = scene;
   }
 
+  /** Drop the cached `list()` snapshot (population or a flag changed). */
+  private invalidateList(): void {
+    this.listCache = null;
+  }
+
   /** Advance the population: stream slots, step AI, animate. */
   update(dt: number, playerPos: Vec3): void {
     this.worldTime += dt;
+    // A fresh step: the AI advance below mutates every critter, so the previous
+    // step's snapshot is stale.
+    this.invalidateList();
     this.refreshSlots(playerPos);
 
     // Distances (recomputed every frame; slot table only on cell change).
@@ -307,11 +323,13 @@ export class CritterManager {
       farTime: 0,
     };
     this.active.set(slot.id, { state, group, parts, rng, beacon: null });
+    this.invalidateList();
   }
 
   private deactivate(id: number): void {
     const entry = this.active.get(id);
     if (!entry) return;
+    this.invalidateList();
     // Persist the latest gameplay flags before the state is discarded — but
     // only allocate a registry entry when there is something non-default to
     // remember (keeps the registry from growing unboundedly on long roams).
@@ -329,10 +347,18 @@ export class CritterManager {
     this.active.delete(id);
   }
 
-  /** Screenless data snapshot of every live critter. */
+  /**
+   * Screenless data snapshot of every live critter. Cached per sim step: within
+   * one step every caller gets the SAME array reference (see `listCache`); the
+   * cache is rebuilt after `update()` or any population/flag change. Callers
+   * must treat the result as read-only (the shared snapshot is not defensively
+   * frozen for perf, but no caller mutates it).
+   */
   list(): CritterView[] {
+    if (this.listCache) return this.listCache;
     const out: CritterView[] = [];
     for (const entry of this.active.values()) out.push(view(entry.state));
+    this.listCache = out;
     return out;
   }
 
@@ -349,6 +375,7 @@ export class CritterManager {
     if (entry) {
       entry.state.tagged = value;
       p.species = entry.state.species;
+      this.invalidateList();
     }
   }
 
@@ -356,7 +383,10 @@ export class CritterManager {
   setTrackProgress(id: number, value: number): void {
     this.persistFor(id).trackProgress = value;
     const entry = this.active.get(id);
-    if (entry) entry.state.trackProgress = value;
+    if (entry) {
+      entry.state.trackProgress = value;
+      this.invalidateList();
+    }
   }
 
   setLinked(id: number, value = true): void {
@@ -364,6 +394,7 @@ export class CritterManager {
     p.linked = value;
     const entry = this.active.get(id);
     if (entry) {
+      this.invalidateList();
       p.species = entry.state.species;
       entry.state.linked = value;
       // Linking a mid-alert/mid-flee critter calms it on the spot (the payoff
@@ -489,6 +520,7 @@ export class CritterManager {
       entry.state.linked = p.linked;
       entry.state.trackProgress = p.trackProgress;
     }
+    this.invalidateList();
   }
 
   /**
