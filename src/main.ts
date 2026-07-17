@@ -99,6 +99,24 @@ if (new URLSearchParams(window.location.search).get('preview') === 'critters') {
   bootGame();
 }
 
+/**
+ * Detect a software WebGL backend (SwiftShader/llvmpipe/Microsoft Basic Render)
+ * via the unmasked renderer string. Such backends can't afford a shadow map, so
+ * shadows are skipped outright on them (this is what keeps the headless e2e off
+ * the perf-gate path). Any failure to read the string is treated as "not
+ * software" so real GPUs are never wrongly downgraded.
+ */
+function isSoftwareRenderer(r: THREE.WebGLRenderer): boolean {
+  try {
+    const gl = r.getContext();
+    const ext = gl.getExtension('WEBGL_debug_renderer_info');
+    const name = ext ? String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)) : '';
+    return /swiftshader|llvmpipe|software|basic render/i.test(name);
+  } catch {
+    return false;
+  }
+}
+
 /** Normal gameplay boot: scene, camera, world streaming and the FP controller. */
 function bootGame(): void {
   const debugParam = new URLSearchParams(window.location.search).get('debug');
@@ -127,7 +145,12 @@ function bootGame(): void {
   // in the frame loop; the choice is mirrored onto the debug state (window.__f1).
   const sunLight = scene.getObjectByName('sunLight') as THREE.DirectionalLight | null;
   const sunDir = new THREE.Vector3(ENV.sunPos.x, ENV.sunPos.y, ENV.sunPos.z).normalize();
-  let shadowsEnabled = true;
+  // Software renderers (SwiftShader/llvmpipe — headless e2e) never afford a
+  // shadow map: detect them up front and skip shadows immediately so the fps
+  // gate below only governs real GPUs (and e2e is never dragged by the gate
+  // window). Real hardware keeps shadows unless the measured fps gate trips.
+  let shadowsEnabled = !isSoftwareRenderer(renderer);
+  if (!shadowsEnabled) renderer.shadowMap.enabled = false;
   let shadowFlagFrame = 0;
 
   /** Flag props/critters/village/terrain meshes as shadow casters/receivers. */
@@ -1171,9 +1194,12 @@ function bootGame(): void {
   // clears ENV.shadowFpsGate. The decision is mirrored onto window.__f1 for the
   // debug/e2e state. Flag the initial casters once so frame 1 already shadows.
   flagShadowCasters();
+  let gateWarmup = 0;
   let gateFrames = 0;
   let gateElapsed = 0;
-  let gateDecided = false;
+  // Software renderers already decided (shadows skipped up front); real GPUs run
+  // the fps gate after a warm-up that skips the initial chunk-build hitches.
+  let gateDecided = !shadowsEnabled;
   const f1State = { shadows: shadowsEnabled, fps: 0 };
   (window as unknown as { __f1: typeof f1State }).__f1 = f1State;
 
@@ -1184,19 +1210,24 @@ function bootGame(): void {
     lastTime = now;
     const frameDt = Math.min(rawDt, MAX_FRAME_DT);
 
-    // Shadow perf gate: measure the opening window, then decide once.
+    // Shadow perf gate (real GPUs only — software already decided): skip the
+    // opening chunk-build hitches, then average a clean window and decide once.
     if (!gateDecided) {
-      gateElapsed += Math.min(rawDt, MAX_FRAME_DT);
-      gateFrames++;
-      if (gateFrames >= ENV.shadowGateFrames) {
-        const avgFps = gateFrames / Math.max(gateElapsed, 1e-6);
-        f1State.fps = avgFps;
-        if (avgFps < ENV.shadowFpsGate) {
-          shadowsEnabled = false;
-          renderer.shadowMap.enabled = false;
+      if (gateWarmup < 30) {
+        gateWarmup++;
+      } else {
+        gateElapsed += Math.min(rawDt, MAX_FRAME_DT);
+        gateFrames++;
+        if (gateFrames >= ENV.shadowGateFrames) {
+          const avgFps = gateFrames / Math.max(gateElapsed, 1e-6);
+          f1State.fps = avgFps;
+          if (avgFps < ENV.shadowFpsGate) {
+            shadowsEnabled = false;
+            renderer.shadowMap.enabled = false;
+          }
+          f1State.shadows = shadowsEnabled;
+          gateDecided = true;
         }
-        f1State.shadows = shadowsEnabled;
-        gateDecided = true;
       }
     }
 
