@@ -192,6 +192,18 @@ function horiz(a, b) {
   return Math.hypot(a.x - b.x, a.z - b.z);
 }
 
+/** Poll an arbitrary async getter until `pred` holds (or timeout); returns last value. */
+async function pollUntil(getter, pred, { timeout = 6000, interval = 150 } = {}) {
+  const deadline = Date.now() + timeout;
+  let last;
+  while (Date.now() < deadline) {
+    last = await getter();
+    if (pred(last)) return last;
+    await sleep(interval);
+  }
+  return last;
+}
+
 // --- PNG luminance-variance (canvas non-blank) -----------------------------
 function decodePNG(buf) {
   if (buf.readUInt32BE(0) !== 0x89504e47) return null;
@@ -292,11 +304,11 @@ async function checkBoot() {
       assert(st.linkedSpeciesCount === 0, `linkedSpeciesCount ${st.linkedSpeciesCount} != 0`);
       console.log(`    state: stamina=${st.stamina} darts=${st.inventory.darts} rp=${st.inventory.rp} active=${st.activeCritters}`);
 
-      // 8 species — assert via the Field Guide denominator
+      // 12 species (Haven added 4) — assert via the Field Guide denominator
       await page.keyboard.press('Tab');
       await sleep(400);
       const guideH1 = await page.evaluate(() => document.querySelector('.wt-panel h1')?.textContent ?? '');
-      assert(/\/8\b/.test(guideH1), `Field Guide does not show /8 species ("${guideH1}")`);
+      assert(/\/12\b/.test(guideH1), `Field Guide does not show /12 species ("${guideH1}")`);
       console.log(`    guide: "${guideH1.trim()}"`);
       await page.keyboard.press('Tab');
       await sleep(200);
@@ -367,7 +379,7 @@ async function checkMovement() {
 }
 
 async function checkTracking() {
-  await check('c. Tracking loop: spawn → track → ring → complete → link → guide 1/8', async () => {
+  await check('c. Tracking loop: spawn → track → ring → complete → link → guide 1/12', async () => {
     const page = await openPage('?fresh=1');
     try {
       await page.evaluate(() => window.__game.setTimeScale(1));
@@ -405,13 +417,13 @@ async function checkTracking() {
       assert(toast, 'no "Linked" toast appeared');
       await shot(page, '04-linked-toast.png');
 
-      // Field Guide shows 1/8
+      // Field Guide shows 1/12 (Haven raised the roster to 12 species)
       await page.keyboard.press('Tab');
       const guide18 = await page.waitForFunction(
-        () => /\b1\/8\b/.test(document.querySelector('.wt-panel h1')?.textContent || ''),
+        () => /\b1\/12\b/.test(document.querySelector('.wt-panel h1')?.textContent || ''),
         { timeout: 3000 },
       ).then(() => true).catch(() => false);
-      assert(guide18, 'Field Guide did not show 1/8');
+      assert(guide18, 'Field Guide did not show 1/12');
       const guideH1 = await page.evaluate(() => document.querySelector('.wt-panel h1')?.textContent ?? '');
       console.log(`    guide: "${guideH1.trim()}"`);
       await page.keyboard.press('Tab');
@@ -612,6 +624,187 @@ async function checkPerf() {
   });
 }
 
+// ---------------------------------------------------------------------------
+// HAVEN VILLAGE CHECKS (Phase 2 / Task V7)
+// ---------------------------------------------------------------------------
+
+async function checkVillage() {
+  await check('i. Village: teleport to centre, ≥5 NPC labels in DOM, screenshot', async () => {
+    const page = await openPage('?fresh=1');
+    try {
+      const center = await page.evaluate(() => window.__village.center);
+      // Drop in above the plaza and settle onto the ground.
+      await page.evaluate(([x, z]) => window.__game.player.teleport(x, 250, z), [center.x, center.z]);
+      await page.evaluate(() => window.__game.setTimeScale(8));
+      await sleep(1800);
+      await page.evaluate(() => window.__game.setTimeScale(1));
+      await sleep(300);
+      const landed = await pos(page);
+      // Pop to a vantage above the plaza and look down at the hamlet.
+      await page.evaluate(([x, y, z]) => window.__game.player.teleport(x, y, z), [center.x, landed.y + 22, center.z]);
+      await page.evaluate(([x, y, z]) => window.__village.lookAt(x, y, z), [center.x, landed.y, center.z]);
+      await sleep(600);
+
+      const labels = await page.$$eval('.wt-npc-label', (els) => els.map((e) => e.textContent));
+      assert(labels.length >= 5, `only ${labels.length} NPC labels in DOM (<5): [${labels.join(', ')}]`);
+      console.log(`    ${labels.length} NPC labels: [${labels.join(', ')}]`);
+      await shot(page, '16-village.png');
+
+      assert(page.__errors.length === 0, `console/page errors: ${page.__errors.join(' | ')}`);
+    } finally {
+      await page.close();
+    }
+  });
+}
+
+async function checkBondFlow() {
+  await check('j. Bond flow: grant charm → spawn/track/complete → bond → rosterCount 1', async () => {
+    const page = await openPage('?fresh=1');
+    try {
+      await page.evaluate(() => window.__game.grant('charms', 3));
+      const id = await page.evaluate(() => window.__game.spawn('puffle', 6));
+      assert(id !== null && id !== undefined, 'spawn("puffle") returned null');
+      await page.evaluate((cid) => window.__game.track(cid), id);
+      const ok = await page.evaluate((cid) => window.__game.completeTracking(cid), id);
+      assert(ok === true, 'completeTracking returned false');
+      // Let the tracking loop Link it, then bond.
+      await pollState(page, (s) => s.linkedSpeciesCount === 1, { timeout: 6000 });
+      const bonded = await page.evaluate((cid) => window.__game.bond(cid), id);
+      assert(bonded === true, '__game.bond returned false');
+      const st = await pollState(page, (s) => s.rosterCount === 1, { timeout: 4000 });
+      assert(st.rosterCount === 1, `rosterCount ${st.rosterCount} != 1 after bond`);
+      console.log(`    bonded puffle → rosterCount=${st.rosterCount}`);
+      await shot(page, '17-bond-roster.png');
+
+      assert(page.__errors.length === 0, `console/page errors: ${page.__errors.join(' | ')}`);
+    } finally {
+      await page.close();
+    }
+  });
+}
+
+async function checkBarter() {
+  await check('k. Barter: fulfillRequest ×2 → rewards saddle+plotDeed, farm 4 unlocked plots', async () => {
+    const page = await openPage('?fresh=1');
+    try {
+      // Force-fulfil Trader Juno twice: reward track hands out Saddle then Plot Deed.
+      const r1 = await page.evaluate(() => window.__game.fulfillRequest('juno'));
+      const r2 = await page.evaluate(() => window.__game.fulfillRequest('juno'));
+      assert(r1 === true && r2 === true, `fulfillRequest failed (${r1}, ${r2})`);
+      const st = await pollState(page, (s) => s.rewards.includes('saddle') && s.rewards.includes('plotDeed'), { timeout: 4000 });
+      assert(st.rewards.includes('saddle'), `rewards missing saddle: [${st.rewards.join(',')}]`);
+      assert(st.rewards.includes('plotDeed'), `rewards missing plotDeed: [${st.rewards.join(',')}]`);
+      console.log(`    rewards after 2 fulfilments: [${st.rewards.join(', ')}]`);
+
+      // One Plot Deed => 2 base + 2 = 4 unlocked plots. The farm reconciles the
+      // live deed count in the sim loop, so poll a couple of frames for it.
+      const farm = await pollUntil(
+        () => page.evaluate(() => window.__game.farmState()),
+        (f) => f.plots.filter((p) => p.unlocked).length === 4,
+        { timeout: 4000 });
+      const unlocked = farm.plots.filter((p) => p.unlocked).length;
+      assert(unlocked === 4, `expected 4 unlocked plots after 1 deed, got ${unlocked}`);
+      console.log(`    farm unlocked plots = ${unlocked}`);
+
+      assert(page.__errors.length === 0, `console/page errors: ${page.__errors.join(' | ')}`);
+    } finally {
+      await page.close();
+    }
+  });
+}
+
+async function checkFarm() {
+  await check('l. Farm: bond → assignFarm → time-scale → hopper accrues', async () => {
+    const page = await openPage('?fresh=1');
+    try {
+      // Grant a deed so a plot is unlocked, bond a puffle, assign it.
+      await page.evaluate(() => {
+        window.__game.grant('charms', 2);
+        window.__game.grantReward('plotDeed');
+      });
+      const id = await page.evaluate(() => window.__game.spawn('puffle', 6));
+      const bonded = await page.evaluate((cid) => window.__game.bond(cid), id);
+      assert(bonded === true, 'bond failed');
+      const rosterId = await page.evaluate(() => window.__game.state().rosterCount);
+      assert(rosterId === 1, `rosterCount ${rosterId} != 1`);
+      // The bonded critter reuses the wild critter id; assign it by that id.
+      const assigned = await page.evaluate((cid) => window.__game.assignFarm(cid), id);
+      assert(assigned === true, '__game.assignFarm returned false');
+
+      // Fast-forward well past one produce period (90s) at 16×.
+      await page.evaluate(() => window.__game.setTimeScale(16));
+      const farm = await pollUntil(
+        () => page.evaluate(() => window.__game.farmState()),
+        (f) => f.plots.some((p) => Object.values(p.hopper).some((n) => n > 0)),
+        { timeout: 15000 });
+      await page.evaluate(() => window.__game.setTimeScale(1));
+      const total = farm.plots.reduce((s, p) => s + Object.values(p.hopper).reduce((a, b) => a + b, 0), 0);
+      assert(total > 0, `farm hopper never accrued (total=${total})`);
+      console.log(`    farm produced ${total} item(s) into the hopper`);
+      await shot(page, '18-farm.png');
+
+      assert(page.__errors.length === 0, `console/page errors: ${page.__errors.join(' | ')}`);
+    } finally {
+      await page.close();
+    }
+  });
+}
+
+async function checkMount() {
+  await check('m. Mount: __game.ride() true, pos moves >5m with W while mounted', async () => {
+    const page = await openPage('?fresh=1');
+    try {
+      // Grant a saddle + bond a Prismhorse, then instantly ride.
+      await page.evaluate(() => {
+        window.__game.grant('charms', 2);
+        window.__game.grantReward('saddle');
+      });
+      const id = await page.evaluate(() => window.__game.spawn('prismhorse', 6));
+      const bonded = await page.evaluate((cid) => window.__game.bond(cid), id);
+      assert(bonded === true, 'bond of prismhorse failed');
+      const rode = await page.evaluate(() => window.__game.ride());
+      assert(rode === true, '__game.ride() returned false');
+      await sleep(300);
+      const p0 = await pos(page);
+      await page.keyboard.down('w');
+      await sleep(1400);
+      await page.keyboard.up('w');
+      const p1 = await pos(page);
+      const moved = horiz(p0, p1);
+      assert(moved > 5, `mounted ride moved only ${moved.toFixed(2)}m (<=5)`);
+      console.log(`    mounted ride moved ${moved.toFixed(2)}m`);
+      await shot(page, '19-mount.png');
+
+      assert(page.__errors.length === 0, `console/page errors: ${page.__errors.join(' | ')}`);
+    } finally {
+      await page.close();
+    }
+  });
+}
+
+async function checkSpeciesPreview() {
+  await check('n. Species preview: ?preview=critters shows all 12, screenshot', async () => {
+    const page = await context.newPage();
+    const errors = [];
+    page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
+    page.on('console', (m) => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
+    try {
+      await page.goto(BASE + '?preview=critters', { waitUntil: 'load' });
+      await sleep(1500); // let the preview grid render
+      const buf = await page.screenshot();
+      await shot(page, '20-species-preview.png');
+      const png = decodePNG(buf);
+      assert(png, 'could not decode preview screenshot PNG');
+      const sd = luminanceStdDev(png);
+      assert(sd > 8, `preview canvas appears blank (luminance stddev ${sd.toFixed(2)} <= 8)`);
+      console.log(`    preview canvas luminance stddev = ${sd.toFixed(1)}`);
+      assert(errors.length === 0, `console/page errors: ${errors.join(' | ')}`);
+    } finally {
+      await page.close();
+    }
+  });
+}
+
 async function checkBiomeTour() {
   await check('tuning. Biome flythrough screenshots (meadow/forest/wetland/crags/highlands)', async () => {
     const page = await openPage('?fresh=1');
@@ -660,6 +853,12 @@ async function main() {
   await checkStructures();
   await checkGrapple();
   await checkSaveRoundtrip();
+  await checkVillage();
+  await checkBondFlow();
+  await checkBarter();
+  await checkFarm();
+  await checkMount();
+  await checkSpeciesPreview();
   await checkPerf();
   await checkBiomeTour();
 

@@ -197,6 +197,7 @@ export class NpcManager {
 
   constructor(scene: THREE.Scene) {
     const overlay = document.createElement('div');
+    overlay.className = 'wt-npc-labels';
     overlay.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:9;';
     document.body.appendChild(overlay);
 
@@ -209,6 +210,7 @@ export class NpcManager {
       scene.add(group);
 
       const label = document.createElement('div');
+      label.className = 'wt-npc-label';
       label.textContent = def.name;
       label.style.cssText =
         'position:absolute;transform:translate(-50%,-100%);font:600 13px system-ui,sans-serif;' +
