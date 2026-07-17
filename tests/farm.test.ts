@@ -14,7 +14,7 @@ import {
 import { speciesById } from '../src/critters/species.ts';
 import type { RosterEntry } from '../src/critters/roster.ts';
 import { FARM } from '../src/core/constants.ts';
-import { decodeSave, encodeSave, type SaveV1 } from '../src/core/save.ts';
+import { decodeSave, encodeSave, type SaveV2 } from '../src/core/save.ts';
 import { createInventory } from '../src/craft/inventory.ts';
 
 // ---------------------------------------------------------------------------
@@ -285,9 +285,9 @@ describe('tick — purity / determinism', () => {
 });
 
 describe('save round-trip', () => {
-  function baseSave(farm: FarmState | undefined): SaveV1 {
+  function baseSave(farm: FarmState | undefined): SaveV2 {
     return {
-      v: 1,
+      v: 2,
       inventory: createInventory(),
       unlocks: [],
       critterPersist: {},
@@ -306,7 +306,7 @@ describe('save round-trip', () => {
     expect(decoded!.farm).toEqual(f);
   });
 
-  it('a v1 save without a farm field decodes with farm undefined (lossless)', () => {
+  it('a save without a farm field decodes with farm undefined (lossless)', () => {
     const decoded = decodeSave(encodeSave(baseSave(undefined)));
     expect(decoded).not.toBeNull();
     expect(decoded!.farm).toBeUndefined();

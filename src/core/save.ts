@@ -4,15 +4,25 @@ import type { Inventory } from '../craft/inventory.ts';
 import type { StructuresSave } from '../structures/placement.ts';
 import type { RosterEntry } from '../critters/roster.ts';
 import type { FarmState } from '../farm/farm.ts';
+import type { Request } from '../village/barter.ts';
 
 // ---------------------------------------------------------------------------
-// Save v1 (Task 14). Plain JSON, version-guarded. `encodeSave`/`decodeSave`
-// are pure (no localStorage, no window) so they're trivially unit-testable;
-// `loadSave`/`writeSave`/`clearSave` are the thin browser glue on top,
-// reading/writing `localStorage['wildtag-save-v1']`. A missing or malformed
-// save (wrong/absent `v`, JSON.parse throwing, wrong shape) always resolves
-// to `null` — the caller's contract is "null → fresh start", never a thrown
-// exception.
+// Save v2 (Task 14 → Haven V7). Plain JSON, version-guarded. `encodeSave`/
+// `decodeSave` are pure (no localStorage, no window) so they're trivially
+// unit-testable; `loadSave`/`writeSave`/`clearSave` are the thin browser glue on
+// top, reading/writing `localStorage[SAVE_KEY]`. A missing or malformed save
+// (wrong/absent `v`, JSON.parse throwing, wrong shape) always resolves to `null`
+// — the caller's contract is "null → fresh start", never a thrown exception.
+//
+// VERSION HISTORY / MIGRATION (v1 → v2):
+//   v1 (Task 14) was the pre-Haven shape. The Haven fields (roster, barter,
+//   pens, rewards, farm, mount, inventory.charms) were shipped INCREMENTALLY as
+//   optional add-ons ON TOP of v1 across V2–V6 — a v1 save simply lacked them.
+//   V7 bumps the on-disk version to 2 to mark "Haven-complete". `decodeSave`
+//   MIGRATES v1 → v2: it accepts either version, defaults every absent Haven
+//   field to its empty value, and always returns a v2-shaped object. So a
+//   pure-v1 save (no Haven keys) loads losslessly into the v2 shape; a v2 save
+//   round-trips; anything else (`v` absent/other, garbage, unsound) → null.
 // ---------------------------------------------------------------------------
 
 /** Per-slot persisted critter gameplay flags (mirrors CritterManager's registry). */
@@ -23,8 +33,8 @@ export interface CritterPersistEntry {
   species?: string;
 }
 
-export interface SaveV1 {
-  v: 1;
+export interface SaveV2 {
+  v: 2;
   inventory: Inventory;
   unlocks: string[];
   /** Keyed by critter slot id (as a string key in the JSON object). */
@@ -34,17 +44,18 @@ export interface SaveV1 {
   /** Ids of first-run HUD hints already shown (see ui/hud.ts get/setHintFlags). */
   hints: string[];
   /**
-   * Haven V2: bonded critters. Optional + shape-guarded (defaults []) so v1
-   * saves written before Haven load losslessly. The save version stays 1 until
-   * Haven V7 bumps it.
+   * Haven V2: bonded critters. Optional + shape-guarded (defaults []) so a
+   * pure-v1 save (no Haven keys) migrates losslessly.
    */
   roster?: RosterEntry[];
   /**
    * Haven V4 (barter). All optional + shape-guarded (default []) so older saves
-   * load losslessly. `barter` is the per-NPC request rotation state (the live
-   * request is regenerated deterministically from seq + linkedSpecies on load);
-   * `pens` are the traded-away critters living at each NPC's pen; `rewards` is
-   * the ordered granted-reward id list ('plotDeed' may appear twice).
+   * migrate losslessly. `barter` is the per-NPC request rotation state; each
+   * entry ALSO persists the CONCRETE live `request` (Haven V7) so a reload never
+   * swaps an outstanding request — regeneration from seq + linkedSpecies stays
+   * the fallback for old saves that lack it. `pens` are the traded-away critters
+   * living at each NPC's pen; `rewards` is the ordered granted-reward id list
+   * ('plotDeed' may appear twice).
    */
   barter?: BarterPersistEntry[];
   pens?: PenPersistEntry[];
@@ -52,7 +63,7 @@ export interface SaveV1 {
   /**
    * Haven V5: farm plots (unlock flags / assignments / hoppers / progress).
    * Optional + shape-guarded (a malformed or absent farm is simply dropped, so
-   * pre-Haven-V5 saves load losslessly). The save version stays 1 until V7.
+   * pre-Haven-V5 saves migrate losslessly).
    */
   farm?: FarmState;
   /**
@@ -71,11 +82,18 @@ export interface MountPersist {
   z: number;
 }
 
-/** Persisted per-NPC barter rotation state (Haven V4). */
+/** Persisted per-NPC barter rotation state (Haven V4; `request` added V7). */
 export interface BarterPersistEntry {
   npcId: string;
   seq: number;
   fulfilled: number;
+  /**
+   * Haven V7: the CONCRETE outstanding request, persisted so a reload never
+   * swaps it for a differently-regenerated one (which could happen when the
+   * player Linked new species since the request was minted). Optional — old
+   * saves lack it and fall back to deterministic regeneration from seq.
+   */
+  request?: Request;
 }
 
 /** A traded-away critter living at an NPC's pen (Haven V4). */
@@ -85,10 +103,16 @@ export interface PenPersistEntry {
   nickname: string;
 }
 
+/**
+ * The localStorage key. Deliberately KEPT as 'wildtag-save-v1' across the v1→v2
+ * bump: the version lives INSIDE the payload (`v`), and `decodeSave` migrates v1
+ * blobs in place. Renaming the key would orphan Spencer's real (v1) save under
+ * the old key — a fresh boot would find nothing and silently wipe his progress.
+ */
 export const SAVE_KEY = 'wildtag-save-v1';
 
 /** Serialize a save state to a JSON string. Pure. */
-export function encodeSave(state: SaveV1): string {
+export function encodeSave(state: SaveV2): string {
   return JSON.stringify(state);
 }
 
@@ -135,11 +159,34 @@ function isRosterEntry(r: unknown): boolean {
   return false;
 }
 
-/** Element guard for a persisted barter rotation entry (Haven V4). */
-function isBarterEntry(b: unknown): boolean {
-  if (!b || typeof b !== 'object') return false;
+/** Shape guard for a persisted concrete barter request (Haven V7). */
+function isRequest(r: unknown): r is Request {
+  if (!r || typeof r !== 'object') return false;
+  const e = r as Record<string, unknown>;
+  if (e.kind === 'critters') return typeof e.speciesId === 'string' && Number.isFinite(e.n);
+  if (e.kind === 'resources') return typeof e.resource === 'string' && Number.isFinite(e.n);
+  return false;
+}
+
+/**
+ * Element guard/normalizer for a persisted barter rotation entry (Haven V4;
+ * `request` added V7). Returns a clean entry, or null to drop a malformed one
+ * (mirrors the structures element guards). A present-but-malformed `request` is
+ * dropped (the entry survives; the live request regenerates from seq).
+ */
+function parseBarterEntry(b: unknown): BarterPersistEntry | null {
+  if (!b || typeof b !== 'object') return null;
   const e = b as Record<string, unknown>;
-  return typeof e.npcId === 'string' && Number.isFinite(e.seq) && Number.isFinite(e.fulfilled);
+  if (typeof e.npcId !== 'string' || !Number.isFinite(e.seq) || !Number.isFinite(e.fulfilled)) {
+    return null;
+  }
+  const out: BarterPersistEntry = {
+    npcId: e.npcId,
+    seq: e.seq as number,
+    fulfilled: e.fulfilled as number,
+  };
+  if (isRequest(e.request)) out.request = e.request;
+  return out;
 }
 
 /** Element guard for a persisted pen critter (Haven V4). */
@@ -196,12 +243,15 @@ function parseFarm(v: unknown): FarmState | undefined {
  * garbage input, a missing/wrong `v` (version guard), or any structurally
  * unsound shape — the caller always falls back to a fresh start.
  */
-export function decodeSave(json: string): SaveV1 | null {
+export function decodeSave(json: string): SaveV2 | null {
   try {
     const data: unknown = JSON.parse(json);
     if (!data || typeof data !== 'object') return null;
     const o = data as Record<string, unknown>;
-    if (o.v !== 1) return null;
+    // Version guard + migration: accept v1 (pre-Haven / incremental Haven) and
+    // v2 (Haven-complete); anything else is a fresh start. The output is always
+    // normalized to v2 (see the `v: 2` in `sanitized` below).
+    if (o.v !== 1 && o.v !== 2) return null;
     if (!o.inventory || typeof o.inventory !== 'object') return null;
     // Field-level inventory guard: every resource/rp/darts count must be a
     // finite number ≥ 0 (a tampered/garbage value rejects the whole save →
@@ -259,7 +309,7 @@ export function decodeSave(json: string): SaveV1 | null {
     let barter: BarterPersistEntry[] = [];
     if (o.barter !== undefined && o.barter !== null) {
       if (!Array.isArray(o.barter)) return null;
-      barter = o.barter.filter(isBarterEntry) as BarterPersistEntry[];
+      barter = o.barter.map(parseBarterEntry).filter((e): e is BarterPersistEntry => e !== null);
     }
     let pens: PenPersistEntry[] = [];
     if (o.pens !== undefined && o.pens !== null) {
@@ -285,6 +335,7 @@ export function decodeSave(json: string): SaveV1 | null {
     // (and the rest of the save) so a partly-corrupt save never crashes boot.
     const sanitized: Record<string, unknown> = {
       ...o,
+      v: 2, // migrate/normalize: a decoded save is always the current v2 shape
       inventory,
       structures: {
         ziplines: structures.ziplines.filter(isZiplineEntry),
@@ -303,14 +354,14 @@ export function decodeSave(json: string): SaveV1 | null {
     // never surface a null (the spread above would otherwise carry it through).
     delete sanitized.mount;
     if (mount !== undefined) sanitized.mount = mount;
-    return sanitized as unknown as SaveV1;
+    return sanitized as unknown as SaveV2;
   } catch {
     return null;
   }
 }
 
 /** Read + decode the save from `storage` (defaults to `window.localStorage`). */
-export function loadSave(storage: Storage = window.localStorage): SaveV1 | null {
+export function loadSave(storage: Storage = window.localStorage): SaveV2 | null {
   const raw = storage.getItem(SAVE_KEY);
   if (raw === null) return null;
   return decodeSave(raw);
@@ -329,7 +380,7 @@ export function loadSave(storage: Storage = window.localStorage): SaveV1 | null 
 let saveSuppressed = false;
 
 /** Encode + write a save to `storage` (defaults to `window.localStorage`). */
-export function writeSave(state: SaveV1, storage: Storage = window.localStorage): void {
+export function writeSave(state: SaveV2, storage: Storage = window.localStorage): void {
   if (saveSuppressed) return;
   storage.setItem(SAVE_KEY, encodeSave(state));
 }
@@ -351,7 +402,7 @@ export function clearSave(storage: Storage = window.localStorage): void {
  * loadout. Pure — `createInventory()` itself stays a zero-value constructor;
  * this is the one place `PLAYER_START.startingDarts` is ever applied.
  */
-export function applyStartingLoadout(base: Inventory, loaded: SaveV1 | null): Inventory {
+export function applyStartingLoadout(base: Inventory, loaded: SaveV2 | null): Inventory {
   if (loaded) return { ...loaded.inventory, kits: { ...loaded.inventory.kits } };
   return { ...base, kits: { ...base.kits }, darts: base.darts + PLAYER_START.startingDarts };
 }

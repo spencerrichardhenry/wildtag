@@ -3,12 +3,12 @@ import {
   applyStartingLoadout,
   decodeSave,
   encodeSave,
-  type SaveV1,
+  type SaveV2,
 } from '../src/core/save.ts';
 import { createInventory } from '../src/craft/inventory.ts';
 import { PLAYER_START } from '../src/core/constants.ts';
 
-function sampleSave(over: Partial<SaveV1> = {}): SaveV1 {
+function sampleSave(over: Partial<SaveV2> = {}): SaveV2 {
   const inventory = createInventory();
   inventory.fiber = 12;
   inventory.resin = 3;
@@ -19,7 +19,7 @@ function sampleSave(over: Partial<SaveV1> = {}): SaveV1 {
   inventory.kits = { zipline: 2, beacon: 0, drone: 1 };
 
   return {
-    v: 1,
+    v: 2,
     inventory,
     unlocks: ['grapple', 'boots'],
     critterPersist: {
@@ -91,9 +91,52 @@ describe('encodeSave / decodeSave', () => {
     expect(decodeSave(JSON.stringify(rest))).toBeNull();
   });
 
-  it('rejects a wrong version number', () => {
-    const state = { ...sampleSave(), v: 2 };
-    expect(decodeSave(JSON.stringify(state))).toBeNull();
+  it('rejects a wrong version number (neither 1 nor 2)', () => {
+    expect(decodeSave(JSON.stringify({ ...sampleSave(), v: 3 }))).toBeNull();
+    expect(decodeSave(JSON.stringify({ ...sampleSave(), v: 0 }))).toBeNull();
+    expect(decodeSave(JSON.stringify({ ...sampleSave(), v: '2' }))).toBeNull();
+  });
+
+  // --- Haven V7: v1 → v2 migration matrix ------------------------------------
+
+  it('migrates a pure-v1 save (no Haven fields) losslessly into the v2 shape', () => {
+    // A genuine pre-Haven v1 blob: v:1, NONE of the Haven keys present.
+    const v1blob = {
+      v: 1,
+      inventory: { fiber: 5, resin: 2, shard: 1, spark: 0, rp: 20, darts: 3 },
+      unlocks: ['grapple'],
+      critterPersist: { 4: { tagged: true, linked: true, trackProgress: 8, species: 'puffle' } },
+      structures: { ziplines: [], drones: [] },
+      player: { pos: { x: 1, y: 2, z: 3 }, yaw: 0.5 },
+      hints: ['boot'],
+    };
+    const decoded = decodeSave(JSON.stringify(v1blob));
+    expect(decoded).not.toBeNull();
+    // Normalized to the current version.
+    expect(decoded!.v).toBe(2);
+    // Every v1 field survives untouched.
+    expect(decoded!.unlocks).toEqual(['grapple']);
+    expect(decoded!.player).toEqual(v1blob.player);
+    expect(decoded!.critterPersist).toEqual(v1blob.critterPersist);
+    // Haven defaults: charms 0, kits zeroed, roster [], no phantom V4 keys.
+    expect(decoded!.inventory.charms).toBe(0);
+    expect(decoded!.inventory.kits).toEqual({ zipline: 0, beacon: 0, drone: 0 });
+    expect(decoded!.roster).toEqual([]);
+    expect('barter' in decoded!).toBe(false);
+    expect('rewards' in decoded!).toBe(false);
+    expect(decoded!.farm).toBeUndefined();
+    expect('mount' in decoded!).toBe(false);
+  });
+
+  it('accepts a v2 save natively and round-trips it', () => {
+    const state = sampleSave({
+      roster: [{ id: 1, speciesId: 'puffle', nickname: 'Beans', status: { kind: 'idle' } }],
+      rewards: ['saddle'],
+      barter: [{ npcId: 'juno', seq: 1, fulfilled: 1 }],
+    });
+    const decoded = decodeSave(encodeSave(state));
+    expect(decoded).toEqual(state);
+    expect(decoded!.v).toBe(2);
   });
 
   it('rejects a structurally unsound shape (missing player.pos)', () => {
@@ -266,6 +309,35 @@ describe('encodeSave / decodeSave', () => {
     const decoded = decodeSave(JSON.stringify(raw));
     expect(decoded).not.toBeNull();
     expect(decoded?.mount).toBeUndefined();
+  });
+
+  // --- Haven V7: concrete barter request persistence -------------------------
+
+  it('round-trips a concrete persisted barter request', () => {
+    const state = sampleSave({
+      barter: [
+        { npcId: 'juno', seq: 3, fulfilled: 3, request: { kind: 'critters', speciesId: 'puffle', n: 2 } },
+        { npcId: 'bram', seq: 1, fulfilled: 1, request: { kind: 'resources', resource: 'fiber', n: 30 } },
+      ],
+    });
+    const decoded = decodeSave(encodeSave(state));
+    expect(decoded?.barter).toEqual(state.barter);
+  });
+
+  it('drops a malformed request but keeps the barter entry (regen fallback)', () => {
+    const raw = {
+      ...sampleSave(),
+      barter: [
+        { npcId: 'juno', seq: 2, fulfilled: 2, request: { kind: 'nonsense' } },
+        { npcId: 'odd', seq: 0, fulfilled: 0, request: { kind: 'critters', n: 2 } }, // missing speciesId
+      ],
+    };
+    const decoded = decodeSave(JSON.stringify(raw));
+    expect(decoded).not.toBeNull();
+    expect(decoded?.barter).toEqual([
+      { npcId: 'juno', seq: 2, fulfilled: 2 },
+      { npcId: 'odd', seq: 0, fulfilled: 0 },
+    ]);
   });
 
   it('drops a malformed drone element while its valid sibling survives', () => {

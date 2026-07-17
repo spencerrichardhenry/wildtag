@@ -28,7 +28,7 @@ import { ZiplineSystem } from './structures/ziplines.ts';
 import { DroneSystem } from './structures/drones.ts';
 import { PlacementSystem, serializeStructures, deserializeStructures } from './structures/placement.ts';
 import { raycastTerrain } from './player/grapple.ts';
-import { applyStartingLoadout, loadSave, writeSave, clearSave, type SaveV1 } from './core/save.ts';
+import { applyStartingLoadout, loadSave, writeSave, clearSave, type SaveV2 } from './core/save.ts';
 import { buildDebugHandle } from './debug.ts';
 import { buildVillage, villageObstacles } from './village/buildings.ts';
 import { NpcManager, NPCS, npcAnchors } from './village/npcs.ts';
@@ -290,7 +290,7 @@ function bootGame(): void {
   // `?dev=1`: playtest mode — everything unlocked, effectively-infinite darts
   // and materials. Implies a fresh throwaway session (never touches the save).
   const devMode = new URLSearchParams(window.location.search).get('dev') === '1';
-  let loaded: SaveV1 | null = freshStart || devMode ? null : loadSave();
+  let loaded: SaveV2 | null = freshStart || devMode ? null : loadSave();
   let primePos: Vec3 = spawn;
   if (loaded) {
     try {
@@ -307,7 +307,10 @@ function bootGame(): void {
         barterStates.set(b.npcId, {
           npcId: b.npcId,
           seq: b.seq,
-          request: generateRequest(b.npcId, b.seq, critters.linkedSpecies()),
+          // Prefer the CONCRETE persisted request (Haven V7) so a reload never
+          // swaps an outstanding request; regeneration is the fallback for old
+          // saves that predate request persistence.
+          request: b.request ?? generateRequest(b.npcId, b.seq, critters.linkedSpecies()),
           fulfilled: b.fulfilled,
         });
       }
@@ -366,10 +369,10 @@ function bootGame(): void {
     toast('DEV MODE — all unlocks, 999 darts, deep material stacks (no saving)');
   }
 
-  /** Build the current in-memory state as a plain-data SaveV1 snapshot. */
-  function buildSaveState(): SaveV1 {
+  /** Build the current in-memory state as a plain-data SaveV2 snapshot. */
+  function buildSaveState(): SaveV2 {
     return {
-      v: 1,
+      v: 2,
       inventory: { ...inventory, kits: { ...inventory.kits } },
       unlocks: [...player.unlocks],
       critterPersist: critters.exportRegistry(),
@@ -381,6 +384,9 @@ function bootGame(): void {
         npcId: s.npcId,
         seq: s.seq,
         fulfilled: s.fulfilled,
+        // Persist the concrete outstanding request (Haven V7): a reload restores
+        // the exact request rather than regenerating a possibly-different one.
+        request: s.request,
       })),
       pens: pens.serialize(),
       rewards: [...grantedRewards()],
