@@ -40,6 +40,17 @@ export function canSummon(rewards: Set<string>): boolean {
 }
 
 /**
+ * Can `entry` be sent to a farm plot? Refuses an entry currently on mount duty
+ * (unset it as a mount first — farm and mount statuses are exclusive). This is
+ * the symmetric guard to `canMount`'s farm-status check. `undefined` (nothing
+ * selected) is never assignable. Pure.
+ */
+export function canAssignToFarm(entry: RosterEntry | undefined): boolean {
+  if (!entry) return false;
+  return entry.status.kind !== 'mount';
+}
+
+/**
  * Set the roster entry `id` as the single active mount: it becomes
  * status 'mount' and any OTHER entry currently on mount duty reverts to idle
  * (only one mount at a time). Pure — returns a NEW roster; if `id` isn't on the

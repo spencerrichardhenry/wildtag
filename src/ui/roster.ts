@@ -209,7 +209,12 @@ export function createRosterScreen(deps: {
       }
     } else {
       assign.textContent = 'Assign';
-      if (actions.assign) {
+      // A mount-status critter can't go to the farm (statuses are exclusive —
+      // mirrors how a farm-status critter can't be mounted): unset it first.
+      if (entry.status.kind === 'mount') {
+        assign.disabled = true;
+        assign.title = '(unset as mount first)';
+      } else if (actions.assign) {
         assign.addEventListener('click', () => actions.assign!(entry.id));
       } else {
         assign.disabled = true;

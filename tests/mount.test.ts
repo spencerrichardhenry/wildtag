@@ -2,7 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { mulberry32 } from '../src/core/rng.ts';
 import { bond, type Roster } from '../src/critters/roster.ts';
 import { MOUNT } from '../src/core/constants.ts';
-import { canMount, canSummon, mountStep, setActiveMount } from '../src/player/mount.ts';
+import {
+  canAssignToFarm,
+  canMount,
+  canSummon,
+  mountStep,
+  setActiveMount,
+} from '../src/player/mount.ts';
 import type { GroundQuery, MoveInput, MoveState } from '../src/core/types.ts';
 
 // ---------------------------------------------------------------------------
@@ -95,6 +101,23 @@ describe('canMount', () => {
   it('is false for an entry on farm duty even with a saddle (statuses exclusive)', () => {
     const farmed = { ...rideable, status: { kind: 'farm', plotId: 1 } as const };
     expect(canMount(new Set(['saddle']), farmed)).toBe(false);
+  });
+});
+
+describe('canAssignToFarm', () => {
+  const idle = rosterWith({ id: 1, speciesId: 'puffle' })[0]!;
+
+  it('is false with no entry selected', () => {
+    expect(canAssignToFarm(undefined)).toBe(false);
+  });
+
+  it('is true for an idle entry', () => {
+    expect(canAssignToFarm(idle)).toBe(true);
+  });
+
+  it('is false for an entry on mount duty (statuses exclusive — symmetric to canMount)', () => {
+    const mounted = { ...idle, status: { kind: 'mount' } as const };
+    expect(canAssignToFarm(mounted)).toBe(false);
   });
 });
 

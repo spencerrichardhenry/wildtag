@@ -18,7 +18,7 @@ import { speciesById } from './critters/species.ts';
 import { mulberry32 } from './core/rng.ts';
 import { bond, release, byId, type RosterEntry } from './critters/roster.ts';
 import { MountSystem } from './player/mount-system.ts';
-import { canMount, canSummon, setActiveMount } from './player/mount.ts';
+import { canAssignToFarm, canMount, canSummon, setActiveMount } from './player/mount.ts';
 import { DartSystem } from './tracking/darts.ts';
 import { updateTracking } from './tracking/tracker.ts';
 import { toast } from './ui/toasts.ts';
@@ -82,7 +82,7 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 
 // Dev hook: `?preview=critters` takes over the renderer with the critter
-// showcase (all 8 species on a turntable) and skips the normal player spawn.
+// showcase (all 12 species on a turntable) and skips the normal player spawn.
 if (new URLSearchParams(window.location.search).get('preview') === 'critters') {
   runCritterPreview(renderer);
 } else {
@@ -493,6 +493,12 @@ function bootGame(): void {
     const rx = p.x + 3;
     const rz = p.z;
     farm = unassignEntry(farm, id); // free any plot it worked
+    if (mounts.activeEntryId() === id) {
+      // Releasing the active mount: hop off first, then tear down the actor
+      // (clearActive disposes the actor meshes per the disposeGroup pattern).
+      if (player.mounted) mounts.dismount(player);
+      mounts.clearActive();
+    }
     critters.debugSpawn(entry.speciesId, { x: rx, y: heightAt(rx, rz), z: rz });
     toast(`${entry.nickname} released to the wild`);
   }
@@ -600,6 +606,10 @@ function bootGame(): void {
     const free = firstFreePlot(farm);
     const entry = byId(roster, id);
     if (!entry) return false;
+    if (!canAssignToFarm(entry)) {
+      toast('Unset as mount first (Roster → Mount)');
+      return false;
+    }
     if (free === null) {
       toast('No free farm plots — earn Plot Deeds to expand the farm');
       return false;
@@ -657,8 +667,10 @@ function bootGame(): void {
       toast('No active mount — set a rideable critter as your mount in the Roster (B).');
       return;
     }
-    if (player.mode === 'swim') {
-      toast("Can't mount while swimming.");
+    if (player.mode !== 'normal' || player.isGrappling()) {
+      // Mount-up only from a settled, on-foot state — riding out of a zipline
+      // ride snaps the player back, and riding off a grapple hook teleports.
+      toast("Can't mount up right now — get to solid ground first.");
       return;
     }
     const nick = mounts.nickname() ?? 'Your mount';
@@ -690,6 +702,7 @@ function bootGame(): void {
   /** Debug (V6 e2e): instantly ride — activating a rideable mount if needed. */
   function debugRide(): boolean {
     if (player.mounted) return true;
+    if (player.mode !== 'normal' || player.isGrappling()) return false;
     if (!mounts.active()) {
       const entry = roster.find((e) => canMount(getRewards(), e));
       if (!entry) return false;

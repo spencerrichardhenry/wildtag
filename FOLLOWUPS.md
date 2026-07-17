@@ -24,3 +24,6 @@ Still open (deferred, non-blocking):
 - `window.__village` aid is ungated (`main.ts`): the screenshot helper (`talk`/`lookAt`) is always exposed, not just under a `?debug`/`?dev` flag. Harmless (no gameplay mutation) but should be gated for a release build.
 - NPC name-label overlaps (`village/npcs.ts`): labels can overlap when NPCs cluster on the plaza; no de-collision. Cosmetic.
 - Banked-production collect semantics (`farm/farm.ts`): a full hopper banks exactly one finished cycle that ships on the first tick after a collect — documented and intended, but worth revisiting if it reads as a "free" batch.
+- Farmer Odd anchor shadows farm-collect F (`village/npcs.ts:158`): the Farmer Odd NPC anchor sits within 3 m of the farm-collect F prompt, so the talk and collect interactions compete for the same key — separate the anchors or disambiguate the prompt.
+- Save-apply catch fallback doesn't clear pens (`main.ts:336-348`): the save-apply error path rebuilds core state but leaves stale pen contents in place — clear pens in the catch fallback too.
+- Mount range check is planar-only (`main.ts:667`): `handleMountKey` measures mount distance with `Math.hypot(dx, dz)` (ignoring y), so a mount directly above/below on a ledge reads as in-range — include the vertical delta or a height gate.

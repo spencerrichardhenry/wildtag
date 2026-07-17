@@ -723,7 +723,9 @@ export const VILLAGE = {
  * produce-role critter accrues `producePeriod` seconds of progress (scaled by
  * adjacent speed auras) then drops `amount` of its resource into the plot hopper
  * (total capped at `hopperCap`, +`bumblewhaleHopperBonus` when an adjacent plot
- * hosts a bumblewhale). Adjacency is plot index ±1 among unlocked plots.
+ * hosts a bumblewhale). Adjacency is true 2D grid adjacency among unlocked plots
+ * (row-major over the VILLAGE.farm cols×rows grid: same row ±1 column or same
+ * column ±1 row — no diagonals, no row-wrap pairs), computed in farm.ts.
  */
 export const FARM = {
   /** Plots unlocked with zero deeds (spec §4: "2 plots at start"). */
