@@ -29,7 +29,22 @@ const PEN = {
   pauseMax: 5,
   postHeight: 0.7,
   penColor: 0x6b5236,
+  /**
+   * Max critter models rendered per pen (Haven V7 polish 2b). Trades beyond this
+   * still count and persist — they're just represented by a floating "+N" marker
+   * instead of an ever-growing mob of models (a perf + readability guard).
+   */
+  maxVisible: 8,
+  /** Height (m) above the pen centre the "+N" overflow marker floats. */
+  markerFloat: 2.2,
 } as const;
+
+interface PenMarker {
+  sprite: THREE.Sprite;
+  canvas: HTMLCanvasElement;
+  texture: THREE.CanvasTexture;
+  count: number;
+}
 
 interface PenBounds {
   x: number;
@@ -81,16 +96,30 @@ function post(x: number, z: number): THREE.Mesh {
 
 export class PenSystem {
   private readonly occupants: PenOccupant[] = [];
+  /** Data-only trades beyond `PEN.maxVisible` per pen (persisted, not rendered). */
+  private readonly overflow: PenPersistEntry[] = [];
+  private readonly markers = new Map<string, PenMarker>();
   private readonly fenced = new Set<string>();
   private readonly modelRng = mulberry32(0x9e3f ^ 0x515);
 
   constructor(private readonly scene: THREE.Scene) {}
 
-  /** Add a delivered critter to `npcId`'s pen (renders + starts wandering). */
+  /**
+   * Add a delivered critter to `npcId`'s pen. The first `PEN.maxVisible` per pen
+   * render as wandering models; beyond that the trade is kept as data only and
+   * surfaced via a floating "+N" marker (Haven V7 polish 2b).
+   */
   add(npcId: string, speciesId: string, nickname: string): void {
     const bounds = penBounds(npcId);
     if (!bounds) return;
     this.ensureFence(npcId, bounds);
+
+    // Cap rendered occupants per pen; overflow trades still count + persist.
+    if (this.renderedFor(npcId) >= PEN.maxVisible) {
+      this.overflow.push({ npcId, speciesId, nickname });
+      this.updateMarker(npcId, bounds);
+      return;
+    }
 
     let group: THREE.Group;
     let parts: CritterParts;
@@ -122,9 +151,44 @@ export class PenSystem {
     this.occupants.push(occ);
   }
 
-  /** How many critters live in `npcId`'s pen. */
+  /** How many critters (rendered + overflow) live in `npcId`'s pen. */
   countFor(npcId: string): number {
+    return this.renderedFor(npcId) + this.overflow.reduce((n, o) => (o.npcId === npcId ? n + 1 : n), 0);
+  }
+
+  /** How many critter MODELS are currently rendered for `npcId`'s pen. */
+  private renderedFor(npcId: string): number {
     return this.occupants.reduce((n, o) => (o.npcId === npcId ? n + 1 : n), 0);
+  }
+
+  /** Create/redraw the floating "+N" overflow marker over `npcId`'s pen. */
+  private updateMarker(npcId: string, b: PenBounds): void {
+    const n = this.overflow.reduce((c, o) => (o.npcId === npcId ? c + 1 : c), 0);
+    let m = this.markers.get(npcId);
+    if (!m) {
+      const canvas = document.createElement('canvas');
+      canvas.width = 128;
+      canvas.height = 64;
+      const texture = new THREE.CanvasTexture(canvas);
+      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true }));
+      sprite.scale.set(1.4, 0.7, 1);
+      sprite.position.set(b.x, heightAt(b.x, b.z) + PEN.markerFloat, b.z);
+      this.scene.add(sprite);
+      m = { sprite, canvas, texture, count: 0 };
+      this.markers.set(npcId, m);
+    }
+    if (m.count === n) return;
+    m.count = n;
+    const ctx = m.canvas.getContext('2d')!;
+    ctx.clearRect(0, 0, m.canvas.width, m.canvas.height);
+    ctx.fillStyle = 'rgba(20,16,10,0.72)';
+    ctx.fillRect(0, 0, m.canvas.width, m.canvas.height);
+    ctx.font = 'bold 40px sans-serif';
+    ctx.fillStyle = '#f3e3b0';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(`+${n}`, m.canvas.width / 2, m.canvas.height / 2);
+    m.texture.needsUpdate = true;
   }
 
   private ensureFence(npcId: string, b: PenBounds): void {
@@ -180,12 +244,15 @@ export class PenSystem {
     for (const e of entries) this.add(e.npcId, e.speciesId, e.nickname);
   }
 
-  /** Plain-data snapshot for the save `pens` field. */
+  /** Plain-data snapshot for the save `pens` field (rendered + overflow trades). */
   serialize(): PenPersistEntry[] {
-    return this.occupants.map((o) => ({
-      npcId: o.npcId,
-      speciesId: o.speciesId,
-      nickname: o.nickname,
-    }));
+    return [
+      ...this.occupants.map((o) => ({
+        npcId: o.npcId,
+        speciesId: o.speciesId,
+        nickname: o.nickname,
+      })),
+      ...this.overflow.map((o) => ({ ...o })),
+    ];
   }
 }

@@ -591,18 +591,29 @@ function bootGame(): void {
   // free unlocked plot; Unassign pulls a farmed critter back to idle.
   // (setRosterActions MERGES handlers, so the mount task's registration below
   // coexists with this one.)
+  /**
+   * Assign a bonded roster entry to the first free unlocked plot. Shared by the
+   * roster screen's Assign button and the __game.assignFarm(entryId) e2e hook.
+   * Returns true iff a free plot took the critter.
+   */
+  function assignEntryToFarm(id: number): boolean {
+    const free = firstFreePlot(farm);
+    const entry = byId(roster, id);
+    if (!entry) return false;
+    if (free === null) {
+      toast('No free farm plots — earn Plot Deeds to expand the farm');
+      return false;
+    }
+    farm = assignPlot(farm, free, id);
+    setEntryStatus(id, { kind: 'farm', plotId: free });
+    toast(`${entry.nickname} → farm plot ${free + 1}`);
+    screens.refresh();
+    return true;
+  }
+
   setRosterActions({
     assign: (id: number) => {
-      const free = firstFreePlot(farm);
-      const entry = byId(roster, id);
-      if (free === null) {
-        toast('No free farm plots — earn Plot Deeds to expand the farm');
-        return;
-      }
-      farm = assignPlot(farm, free, id);
-      setEntryStatus(id, { kind: 'farm', plotId: free });
-      toast(`${entry?.nickname ?? 'Critter'} → farm plot ${free + 1}`);
-      screens.refresh();
+      assignEntryToFarm(id);
     },
     unassign: (id: number) => {
       farm = unassignEntry(farm, id);
@@ -1054,6 +1065,9 @@ function bootGame(): void {
     grantReward: (id: string) => grantRewardById(id),
     summonMount: debugSummonMount,
     ride: debugRide,
+    assignFarm: (entryId: number) => assignEntryToFarm(entryId),
+    rosterCount: () => roster.length,
+    rewards: () => [...grantedRewards()],
     save: doSave,
     resetSave,
     farmState: () => farm,

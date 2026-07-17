@@ -41,6 +41,12 @@ export interface DebugDeps {
   summonMount(): void;
   /** Instantly ride the active mount (Haven V6 e2e). Returns success. */
   ride(): boolean;
+  /** Assign a bonded roster entry to the first free farm plot (Haven V7 e2e). */
+  assignFarm(entryId: number): boolean;
+  /** How many bonded critters are in the roster (state() rosterCount). */
+  rosterCount(): number;
+  /** Owned barter reward ids (state() rewards). */
+  rewards(): string[];
   save(): void;
   resetSave(): void;
   /** Live farm state snapshot (spec §6 __game.farmState()). */
@@ -63,6 +69,7 @@ export interface GameDebugHandle {
   fulfillRequest(npcId: string): boolean;
   grantReward(id: string): void;
   farmState(): unknown;
+  assignFarm(entryId: number): boolean;
   summonMount(): void;
   ride(): boolean;
   setTimeScale(f: number): void;
@@ -83,6 +90,9 @@ export function buildDebugHandle(deps: DebugDeps): GameDebugHandle {
         inventory: { ...inv, kits: { ...inv.kits } },
         unlocks: [...deps.player.unlocks],
         linkedSpeciesCount: deps.critters.linkedSpecies().size,
+        linked: [...deps.critters.linkedSpecies()],
+        rosterCount: deps.rosterCount(),
+        rewards: deps.rewards(),
         activeCritters: deps.critters.count(),
         structures: {
           ziplines: deps.ziplines.count,
@@ -188,6 +198,11 @@ export function buildDebugHandle(deps: DebugDeps): GameDebugHandle {
     /** Live farm state (plots / assignments / hoppers / progress). */
     farmState(): unknown {
       return deps.farmState();
+    },
+
+    /** Assign a bonded roster entry to the first free farm plot (Haven V7 e2e). */
+    assignFarm(entryId: number): boolean {
+      return deps.assignFarm(entryId);
     },
 
     /** Summon the active mount to the player's side (spec §6). */

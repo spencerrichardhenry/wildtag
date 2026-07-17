@@ -28,6 +28,9 @@ interface PlotVis {
   x: number;
   y: number;
   z: number;
+  /** Live-tinted ground tile overlay (unlocked ⇄ locked colour, see update). */
+  tile: THREE.Mesh;
+  tileUnlocked: boolean | null;
   puppet: THREE.Group | null;
   puppetParts: CritterParts | null;
   puppetSpecies: string | null;
@@ -113,11 +116,24 @@ export class FarmVisuals {
       const y = heightAt(p.x, p.z);
       group.position.set(p.x, y, p.z);
       this.root.add(group);
+      // Live-tinted tile overlay: buildings.ts bakes a static plot patch from the
+      // layout's snapshot unlock flags, so plots unlocked LATER (Plot Deeds) would
+      // keep the locked colour forever. This thin overlay sits just above that
+      // baked patch and is recoloured from the live FarmState each frame it
+      // changes — the cheap, self-contained fix (Haven V7 polish 2a).
+      const tile = new THREE.Mesh(
+        new THREE.BoxGeometry(VILLAGE.farm.tile, 0.06, VILLAGE.farm.tile),
+        mat(VILLAGE.colors.plotLocked),
+      );
+      tile.position.y = 0.11; // above the baked +0.07 patch (no z-fight)
+      group.add(tile);
       this.plots.push({
         group,
         x: p.x,
         y,
         z: p.z,
+        tile,
+        tileUnlocked: null,
         puppet: null,
         puppetParts: null,
         puppetSpecies: null,
@@ -138,6 +154,14 @@ export class FarmVisuals {
     for (const plot of farm.plots) {
       const vis = this.plots[plot.id];
       if (!vis) continue;
+
+      // Live tile tint: recolour only when the unlock flag actually flips.
+      if (vis.tileUnlocked !== plot.unlocked) {
+        vis.tileUnlocked = plot.unlocked;
+        (vis.tile.material as THREE.MeshLambertMaterial).color.setHex(
+          plot.unlocked ? VILLAGE.colors.plot : VILLAGE.colors.plotLocked,
+        );
+      }
 
       // Locked-plot deed sign.
       if (!plot.unlocked) {
