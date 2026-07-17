@@ -426,10 +426,10 @@ export const ENV = {
   sunDiscSize: 62,
   sunGlowSize: 260,
 
-  /** Linear fog: color, near and far distances (m). Warm hazy horizon. */
-  fogColor: 0xd6dcdf,
-  fogNear: 170,
-  fogFar: 1050,
+  /** Linear fog: color, near and far distances (m). Warm golden-hour haze. */
+  fogColor: 0xe0d6c2,
+  fogNear: 190,
+  fogFar: 1080,
 
   /**
    * Sky dome: big backface sphere with a THREE-stop vertical gradient
@@ -440,10 +440,10 @@ export const ENV = {
    */
   skyRadius: 1150,
   skyTop: 0x3f6fbe,
-  skyMid: 0x8fb4e6,
-  skyHorizon: 0xdfe6ec,
+  skyMid: 0x93b6e0,
+  skyHorizon: 0xf0dcc0,
   /** Height fraction [0,1] of the mid gradient stop over the dome. */
-  skyMidStop: 0.28,
+  skyMidStop: 0.3,
 
   /** Per-biome ground vertex colors + shore sand. */
   biomeColors: {

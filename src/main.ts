@@ -87,7 +87,7 @@ renderer.outputColorSpace = THREE.SRGBColorSpace;
 // them off for the session if measured fps is below ENV.shadowFpsGate. On
 // SwiftShader/e2e that gate trips immediately → shadows auto-off.
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.type = THREE.PCFShadowMap;
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 
