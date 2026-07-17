@@ -1,7 +1,7 @@
 import { MOUNT, MOVE } from '../core/constants.ts';
 import { speciesById } from '../critters/species.ts';
 import type { RosterEntry, Roster } from '../critters/roster.ts';
-import type { GroundQuery, MoveInput, MoveState } from '../core/types.ts';
+import type { GroundQuery, MoveInput, MoveState, Vec3 } from '../core/types.ts';
 
 
 // ---------------------------------------------------------------------------
@@ -68,6 +68,29 @@ export function setActiveMount(roster: Roster, id: number): Roster {
     if (e.status.kind === 'mount') return { ...e, status: { kind: 'idle' } };
     return e;
   });
+}
+
+/**
+ * Dismount launch velocity (pure): keep the ride's PLANAR momentum and add an
+ * upward hop so hopping off flows into a leap instead of a dead stop. `rideVel`
+ * is the mount's velocity at the instant of dismount; `hop` is the vertical
+ * kick (m/s). The vertical component of the ride velocity is dropped (a mount
+ * is grounded/near-grounded) — only the hop drives Y.
+ */
+export function dismountVelocity(rideVel: Vec3, hop: number): Vec3 {
+  return { x: rideVel.x, y: hop, z: rideVel.z };
+}
+
+/**
+ * Remaining mounted-eye-height bonus (m) `elapsed` seconds after a dismount,
+ * lerping linearly from `bonus` down to 0 over `duration`. Clamped: `elapsed`
+ * ≤ 0 → full bonus, ≥ duration → 0. Pure — drives the controller's post-
+ * dismount camera-height decay so the eye eases down instead of popping.
+ */
+export function dismountEyeOffset(elapsed: number, duration: number, bonus: number): number {
+  if (duration <= 0 || elapsed >= duration) return 0;
+  if (elapsed <= 0) return bonus;
+  return bonus * (1 - elapsed / duration);
 }
 
 /** Move the planar (x, z) velocity toward a target by at most `maxDelta`. */

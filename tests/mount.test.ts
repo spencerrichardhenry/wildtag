@@ -6,6 +6,8 @@ import {
   canAssignToFarm,
   canMount,
   canSummon,
+  dismountEyeOffset,
+  dismountVelocity,
   mountStep,
   setActiveMount,
 } from '../src/player/mount.ts';
@@ -239,5 +241,47 @@ describe('mountStep', () => {
     const before = JSON.stringify(s);
     mountStep(s, moveInput({ forward: 1 }), 1 / 60, flat);
     expect(JSON.stringify(s)).toBe(before);
+  });
+});
+
+describe('dismountVelocity', () => {
+  it('keeps the planar ride momentum and replaces Y with the hop', () => {
+    const v = dismountVelocity({ x: 4, y: -9, z: -3 }, MOUNT.dismountHop);
+    expect(v.x).toBe(4);
+    expect(v.z).toBe(-3);
+    expect(v.y).toBe(MOUNT.dismountHop); // upward hop, never a dead stop
+  });
+
+  it('never dead-stops a moving dismount (planar speed preserved)', () => {
+    const ride = { x: 10, y: 0, z: 5 };
+    const v = dismountVelocity(ride, MOUNT.dismountHop);
+    expect(Math.hypot(v.x, v.z)).toBeCloseTo(Math.hypot(ride.x, ride.z), 9);
+    expect(v.y).toBeGreaterThan(0);
+  });
+});
+
+describe('dismountEyeOffset', () => {
+  const D = MOUNT.dismountEyeLerp;
+  const B = MOUNT.eyeHeightBonus;
+
+  it('starts at the full mounted bonus and decays to zero over the window', () => {
+    expect(dismountEyeOffset(0, D, B)).toBe(B);
+    expect(dismountEyeOffset(D, D, B)).toBe(0);
+    expect(dismountEyeOffset(D / 2, D, B)).toBeCloseTo(B / 2, 9);
+  });
+
+  it('clamps outside the window (never negative, never above the bonus)', () => {
+    expect(dismountEyeOffset(-1, D, B)).toBe(B);
+    expect(dismountEyeOffset(D * 3, D, B)).toBe(0);
+    expect(dismountEyeOffset(0.1, 0, B)).toBe(0); // zero-duration → immediate
+  });
+
+  it('is monotonically non-increasing across the decay', () => {
+    let prev = Infinity;
+    for (let t = 0; t <= D; t += D / 10) {
+      const v = dismountEyeOffset(t, D, B);
+      expect(v).toBeLessThanOrEqual(prev + 1e-9);
+      prev = v;
+    }
   });
 });
