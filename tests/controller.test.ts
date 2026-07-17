@@ -73,6 +73,14 @@ describe('landedDuringStep', () => {
     expect(landedDuringStep(grounded, next)).toBe(false);
   });
 
+  it('detects a buffered-jump landing under float drift (epsilon compare)', () => {
+    // A vy that differs from jumpVel by sub-epsilon float noise still counts as
+    // the buffered-jump landing signature (guards against exact-equality drift).
+    const prev = { ...fallingState(), jumpBuffer: MOVE.jumpBufferTime };
+    const next: MoveState = { ...prev, grounded: false, jumpBuffer: 0, vel: { x: 0, y: MOVE.jumpVel + 1e-9, z: 0 } };
+    expect(landedDuringStep(prev, next)).toBe(true);
+  });
+
   it('detects landing via the air-dash reset signal', () => {
     // Synthetic pair mirroring the core's landing block: an air-dash charge
     // returning while both states read airborne.

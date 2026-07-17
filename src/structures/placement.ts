@@ -203,9 +203,10 @@ export class PlacementSystem {
     return validateZipline(this.stagedA, this.postTop(this.aim), this.ground.heightAt).ok;
   }
 
-  private zipReason(reason?: 'max' | 'nokit' | 'length' | 'los'): string {
+  private zipReason(reason?: 'max' | 'nokit' | 'length' | 'los' | 'low'): string {
     if (reason === 'length') return 'Too far apart';
     if (reason === 'los') return 'Blocked by terrain';
+    if (reason === 'low') return 'Too low — a rider would drag';
     if (this.ziplines.count >= STRUCTURES.maxZiplines) return 'Zipline limit reached';
     if (this.inventory.kits.zipline <= 0) return 'No zipline kit';
     if (this.stagedA && !validateZipline(this.stagedA, this.postTop(this.aim!), this.ground.heightAt).ok) {

@@ -20,7 +20,14 @@ import type { PlayerController } from '../player/controller.ts';
 
 export interface ZipValidation {
   ok: boolean;
-  reason?: 'length' | 'los';
+  /**
+   * 'length' — span exceeds `ziplineMaxLen`.
+   * 'los'    — cable dips within `losClearance` of the terrain (blocked).
+   * 'low'    — cable clears `losClearance` but sits below
+   *            `losClearance + ziplineHang`, so a hanging rider would drag along
+   *            the ground.
+   */
+  reason?: 'length' | 'los' | 'low';
 }
 
 /**
@@ -39,10 +46,13 @@ export function zipPoint(t: number, a: Vec3, b: Vec3): Vec3 {
 
 /**
  * Validate a candidate zipline A→B against the terrain. Pure — `heightAtFn` is
- * injected. Rejects a span longer than `ziplineMaxLen` ('length') or one whose
- * sagging cable dips within `losClearance` of the ground at any interior sample
- * ('los'). The two endpoints are allowed to sit on the terrain (only interior
- * samples are checked), so a post planted on a hillside is fine.
+ * injected. Rejects a span longer than `ziplineMaxLen` ('length'); a sagging
+ * cable that dips within `losClearance` of the ground at any interior sample
+ * ('los'); or one that clears `losClearance` but stays below
+ * `losClearance + ziplineHang` ('low') — since the rider hangs `ziplineHang`
+ * below the cable, such a line drags the rider along the terrain. The two
+ * endpoints are allowed to sit on the terrain (only interior samples are
+ * checked), so a post planted on a hillside is fine.
  */
 export function validateZipline(
   a: Vec3,
@@ -52,12 +62,15 @@ export function validateZipline(
   const len = Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z);
   if (len > STRUCTURES.ziplineMaxLen) return { ok: false, reason: 'length' };
   const n = STRUCTURES.losSamples;
+  const riderClear = STRUCTURES.losClearance + STRUCTURES.ziplineHang;
+  let low = false;
   for (let i = 1; i < n; i++) {
     const p = zipPoint(i / n, a, b);
-    if (p.y - heightAtFn(p.x, p.z) < STRUCTURES.losClearance) {
-      return { ok: false, reason: 'los' };
-    }
+    const clearance = p.y - heightAtFn(p.x, p.z);
+    if (clearance < STRUCTURES.losClearance) return { ok: false, reason: 'los' };
+    if (clearance < riderClear) low = true;
   }
+  if (low) return { ok: false, reason: 'low' };
   return { ok: true };
 }
 
@@ -198,7 +211,7 @@ export class ZiplineSystem {
    * Place a cable from A to B. Consumes a zipline kit on success. Rejected when
    * the cap is hit ('max'), no kit is held ('nokit'), or validation fails.
    */
-  place(a: Vec3, b: Vec3): { ok: boolean; reason?: 'max' | 'nokit' | 'length' | 'los'; id?: string } {
+  place(a: Vec3, b: Vec3): { ok: boolean; reason?: 'max' | 'nokit' | 'length' | 'los' | 'low'; id?: string } {
     if (this.lines.size >= STRUCTURES.maxZiplines) return { ok: false, reason: 'max' };
     const v = validateZipline(a, b, this.ground.heightAt);
     if (!v.ok) return { ok: false, reason: v.reason };

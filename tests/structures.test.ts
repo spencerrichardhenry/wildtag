@@ -62,6 +62,26 @@ describe('validateZipline', () => {
     expect(res.reason).toBe('los');
   });
 
+  it("rejects a span that clears the ground but hangs a rider too low ('low')", () => {
+    // Cable clears losClearance everywhere but the sagging midpoint sits within
+    // losClearance + ziplineHang of the ground, so a hanging rider would drag.
+    const a: Vec3 = { x: 0, y: 2.5, z: 0 };
+    const b: Vec3 = { x: 50, y: 2.5, z: 0 };
+    const res = validateZipline(a, b, () => 0);
+    // Midpoint cable y = 2.5 − sag(1.5) = 1.0; clearance 1.0 ≥ losClearance (0.5)
+    // but < losClearance + ziplineHang (1.7).
+    expect(STRUCTURES.losClearance + STRUCTURES.ziplineHang).toBeGreaterThan(1.0);
+    expect(res.ok).toBe(false);
+    expect(res.reason).toBe('low');
+  });
+
+  it('accepts a span that clears the full rider hang', () => {
+    // Endpoints high enough that even the sag midpoint keeps a rider clear.
+    const a: Vec3 = { x: 0, y: 4, z: 0 };
+    const b: Vec3 = { x: 50, y: 4, z: 0 };
+    expect(validateZipline(a, b, () => 0).ok).toBe(true);
+  });
+
   it('allows the endpoints to sit right on the terrain', () => {
     // Ground rises to endpoint height only at the two ends; interior is clear.
     const bumpedEnds = (x: number): number => (x < 2 || x > 48 ? 4 : 0);

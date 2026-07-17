@@ -248,6 +248,19 @@ export function stepHook(h: HookState, playerPos: Vec3, q: HookQueries, dt: numb
   return { ...h, pos: nextPos, vel: { x: h.vel.x, y: vy, z: h.vel.z }, flightTime };
 }
 
+/**
+ * Grounded auto-settle test (pure): true when a latched hook should release
+ * itself because the player is grounded and the anchor is too close and too
+ * level to ever lift them — the constant zip pull would otherwise jitter the
+ * player against the terrain. Released when `grounded` and the anchor is within
+ * `settleDist` m and rises no more than `settleRise` m above the player.
+ */
+export function shouldSettleGrapple(grounded: boolean, pos: Vec3, anchor: Vec3): boolean {
+  if (!grounded) return false;
+  const dist = Math.hypot(anchor.x - pos.x, anchor.y - pos.y, anchor.z - pos.z);
+  return dist < GRAPPLE.settleDist && anchor.y - pos.y < GRAPPLE.settleRise;
+}
+
 /** The pinned position for a hang: `hangLength` down the current radial. */
 export function hangPin(anchor: Vec3, pos: Vec3): Vec3 {
   const dx = pos.x - anchor.x;

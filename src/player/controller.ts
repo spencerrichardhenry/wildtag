@@ -8,6 +8,7 @@ import type { Input } from './input.ts';
 import {
   fireHook,
   latchedHook,
+  shouldSettleGrapple,
   stepAttached,
   stepHook,
   type GrappleCollider,
@@ -48,7 +49,7 @@ export function landedDuringStep(prev: MoveState, next: MoveState): boolean {
   return (
     (prev.airDashUsed && !next.airDashUsed) ||
     (prev.airRocketUsed && !next.airRocketUsed) ||
-    (prev.jumpBuffer > 0 && next.jumpBuffer === 0 && next.vel.y === MOVE.jumpVel)
+    (prev.jumpBuffer > 0 && next.jumpBuffer === 0 && Math.abs(next.vel.y - MOVE.jumpVel) < 1e-6)
   );
 }
 
@@ -421,6 +422,17 @@ export class PlayerController {
         if (this.hook === null) {
           // Released this step (anchor vanished) — fall through to the common
           // tail below; `next` already carries the free-fall integration.
+          this.state = next;
+          this.updateGrappleVisuals();
+          this.syncCamera();
+          return;
+        }
+        // Grounded settle: a hook latched to a near-level anchor can't lift a
+        // grounded player, so the constant pull only jitters them against the
+        // ground — auto-release instead (leaves `next` as the plain grounded
+        // integration).
+        if (shouldSettleGrapple(next.grounded, next.pos, this.hook.anchor!)) {
+          this.hook = null;
           this.state = next;
           this.updateGrappleVisuals();
           this.syncCamera();

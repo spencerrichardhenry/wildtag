@@ -204,6 +204,14 @@ export const GRAPPLE = {
   occlusionGrace: 0.5,
   /** Upward velocity bonus (m/s) when the grapple is released via a jump. */
   jumpReleaseBoost: 2,
+  /**
+   * Grounded auto-settle: a hook latched to a near-level anchor can't lift a
+   * grounded player — the constant pull just jitters them against the terrain.
+   * Auto-release when standing (grounded) within `settleDist` m of the anchor
+   * and it sits no more than `settleRise` m overhead.
+   */
+  settleDist: 3,
+  settleRise: 1.5,
   /** Terrain ray-march: distance (m) stepped per sample against heightAt. */
   marchStep: 0.75,
   /** Bisection refinement passes after a terrain-march bracket is found. */

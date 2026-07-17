@@ -8,6 +8,7 @@ import {
   hangPin,
   latchedHook,
   raycastTerrain,
+  shouldSettleGrapple,
   stepAttached,
   stepHook,
   type GrappleCollider,
@@ -478,5 +479,32 @@ describe('AnchorRegistry', () => {
     x = 30;
     expect(reg.getAnchorPos('drone')!.x).toBe(30);
     expect(reg.getAnchorPos('missing')).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// shouldSettleGrapple — grounded auto-release near a level anchor
+// ---------------------------------------------------------------------------
+
+describe('shouldSettleGrapple', () => {
+  const pos: Vec3 = { x: 0, y: 0, z: 0 };
+
+  it('never settles while airborne', () => {
+    expect(shouldSettleGrapple(false, pos, { x: 0.5, y: 0.5, z: 0 })).toBe(false);
+  });
+
+  it('settles when grounded near a roughly level anchor', () => {
+    // dist ~1 (< settleDist 3), rise 0.5 (< settleRise 1.5).
+    expect(shouldSettleGrapple(true, pos, { x: 1, y: 0.5, z: 0 })).toBe(true);
+  });
+
+  it('does not settle when the anchor is far enough to pull toward', () => {
+    // dist ~5 > settleDist, so the zip has somewhere to go.
+    expect(shouldSettleGrapple(true, pos, { x: 5, y: 0.5, z: 0 })).toBe(false);
+  });
+
+  it('does not settle when the anchor is high enough overhead to lift', () => {
+    // rise 2 > settleRise, so the pull genuinely lifts.
+    expect(shouldSettleGrapple(true, pos, { x: 0.5, y: 2, z: 0 })).toBe(false);
   });
 });
