@@ -231,6 +231,43 @@ describe('encodeSave / decodeSave', () => {
     expect(decoded?.roster).toEqual([good]);
   });
 
+  // --- Haven V6: active-mount persistence ------------------------------------
+
+  it('round-trips a present mount field exactly', () => {
+    const state = sampleSave({ mount: { entryId: -4, x: 12.5, z: -33.25 } });
+    const decoded = decodeSave(encodeSave(state));
+    expect(decoded?.mount).toEqual({ entryId: -4, x: 12.5, z: -33.25 });
+  });
+
+  it('decodes a pre-V6 save without a mount key to exactly its old shape', () => {
+    const state = sampleSave(); // no mount field
+    const decoded = decodeSave(encodeSave(state));
+    expect(decoded).not.toBeNull();
+    expect(decoded).toEqual(state);
+    expect(decoded && 'mount' in decoded).toBe(false); // no phantom key
+  });
+
+  it('rejects a present-but-malformed mount field (fresh start)', () => {
+    // Non-finite coordinates / entryId, or a non-object value, all reject.
+    for (const mount of [
+      { entryId: 'four', x: 0, z: 0 },
+      { entryId: 1, x: 'east', z: 0 },
+      { entryId: 1, x: 0 }, // missing z
+      {},
+      'saddle up',
+    ]) {
+      const raw = { ...sampleSave(), mount };
+      expect(decodeSave(JSON.stringify(raw))).toBeNull();
+    }
+  });
+
+  it('treats mount: null as absent rather than rejecting', () => {
+    const raw = { ...sampleSave(), mount: null };
+    const decoded = decodeSave(JSON.stringify(raw));
+    expect(decoded).not.toBeNull();
+    expect(decoded?.mount).toBeUndefined();
+  });
+
   it('drops a malformed drone element while its valid sibling survives', () => {
     const state = sampleSave();
     const good = { id: 'drone1', x: -5, z: 22 };

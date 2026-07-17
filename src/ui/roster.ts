@@ -22,6 +22,13 @@ export interface RosterActions {
   unassign?: (id: number) => void;
   /** Set a rideable bonded critter as the active mount (V6). Undefined ⇒ disabled. */
   mount?: (id: number) => void;
+  /**
+   * Whether entry `id` can currently be set as the active mount (V6): the
+   * Saddle reward is owned AND the species is rideable. When omitted the Mount
+   * button falls back to the species' `rideable` flag alone. Undefined result
+   * ⇒ button disabled with a "saddle required" hint.
+   */
+  mountEnabled?: (id: number) => boolean;
 }
 
 let actions: RosterActions = {};
@@ -29,11 +36,13 @@ let actions: RosterActions = {};
 /**
  * Plug in the later-task action handlers (Haven V5 farm / V6 mount). Following
  * dialog's setRequestRenderer pattern: the screen ships now with the buttons
- * disabled; a later task calls this to make them live. Until then the buttons
- * stay disabled with their "coming soon" tooltips.
+ * disabled; a later task calls this to make them live. MERGES into the existing
+ * handlers (never replaces) so the farm (V5 `assign`) and mount (V6 `mount`)
+ * tasks can each register their own handler from separate call sites and both
+ * stay live — the two feature branches union cleanly.
  */
 export function setRosterActions(next: RosterActions): void {
-  actions = next;
+  actions = { ...actions, ...next };
 }
 
 function statusText(entry: RosterEntry): string {
@@ -213,8 +222,12 @@ export function createRosterScreen(deps: {
     const mount = document.createElement('button');
     mount.className = 'wt-roster-btn';
     mount.type = 'button';
-    mount.textContent = 'Mount';
-    if (actions.mount && sp?.rideable) {
+    mount.textContent = entry.status.kind === 'mount' ? 'Mounted' : 'Mount';
+    const rideEnabled =
+      !!actions.mount &&
+      !!sp?.rideable &&
+      (actions.mountEnabled ? actions.mountEnabled(entry.id) : true);
+    if (rideEnabled) {
       mount.addEventListener('click', () => actions.mount!(entry.id));
     } else {
       mount.disabled = true;

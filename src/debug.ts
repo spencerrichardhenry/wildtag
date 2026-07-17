@@ -37,6 +37,10 @@ export interface DebugDeps {
   fulfillRequest(npcId: string): boolean;
   /** Grant a reward by id, applying its effect (spec §6 __game.grantReward). */
   grantReward(id: string): void;
+  /** Summon the active mount to the player's side (spec §6 __game.summonMount). */
+  summonMount(): void;
+  /** Instantly ride the active mount (Haven V6 e2e). Returns success. */
+  ride(): boolean;
   save(): void;
   resetSave(): void;
   /** Live farm state snapshot (spec §6 __game.farmState()). */
@@ -59,6 +63,8 @@ export interface GameDebugHandle {
   fulfillRequest(npcId: string): boolean;
   grantReward(id: string): void;
   farmState(): unknown;
+  summonMount(): void;
+  ride(): boolean;
   setTimeScale(f: number): void;
   listCritters(): CritterView[];
   save(): void;
@@ -182,6 +188,16 @@ export function buildDebugHandle(deps: DebugDeps): GameDebugHandle {
     /** Live farm state (plots / assignments / hoppers / progress). */
     farmState(): unknown {
       return deps.farmState();
+    },
+
+    /** Summon the active mount to the player's side (spec §6). */
+    summonMount(): void {
+      deps.summonMount();
+    },
+
+    /** Instantly ride the active mount (Haven V6 e2e). Returns success. */
+    ride(): boolean {
+      return deps.ride();
     },
 
     /** Multiply the fixed-step accumulator's dt feed (clamped 0.1..16). */
