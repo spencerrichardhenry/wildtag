@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { CHUNKS, ENV, WORLD_SEED } from '../core/constants.ts';
 import type { Biome } from '../core/types.ts';
 import { hash2 } from '../core/rng.ts';
-import { heightAt, biomeAt, groundNormalAt } from './terrain.ts';
+import { heightAt, biomeAt } from './terrain.ts';
 
 // ---------------------------------------------------------------------------
 // Streaming terrain mesh. The world is tiled into CHUNKS.size-metre squares;
@@ -14,6 +14,11 @@ import { heightAt, biomeAt, groundNormalAt } from './terrain.ts';
 // ---------------------------------------------------------------------------
 
 const STEP = CHUNKS.size / (CHUNKS.verts - 1); // metres between grid samples
+// Biome-blend offset expressed in grid steps (ENV.blendOffset = 6 m, STEP = 2 m
+// → 3 steps). Sampling grid neighbours this many steps out lands on exactly the
+// same ±blendOffset world coords the old per-vertex path tapped, so the border
+// blend is byte-identical while costing zero extra biomeAt calls.
+const BLEND_STEPS = Math.round(ENV.blendOffset / STEP);
 
 // Pre-resolved biome → THREE.Color lookup (built once).
 const BIOME_COLOR: Record<Biome, THREE.Color> = {
@@ -74,30 +79,39 @@ export function vertexLightnessJitter(x: number, z: number): number {
 }
 
 /**
- * Full terrain colour at world (x, z) with ground height `y`, written into
- * `out`. Shore sand below the waterline; otherwise a 4-tap (±ENV.blendOffset)
- * biome border blend tinted toward rock on steep slopes; a micro lightness
- * jitter finishes both. Pure & position-only (seam-safe). `groundNormalAt` and
- * `biomeAt` are the same fields the mesh/collision/AI share, so nothing drifts.
+ * Normalised ground-normal Y from four height samples taken one grid step
+ * (±STEP) either side of a vertex — central differences on the height grid.
+ * `y1 < 1` on tilted ground, `= 1` when flat. The chunk builder feeds this from
+ * cached grid neighbours (no extra heightAt); `terrainVertexColor` samples them
+ * directly. Both paths use the SAME ±STEP span, so they agree exactly.
  */
-export function terrainVertexColor(x: number, z: number, y: number, out: THREE.Color): THREE.Color {
+function slopeNormalY(hL: number, hR: number, hD: number, hU: number): number {
+  const nx = -(hR - hL) / (2 * STEP);
+  const nz = -(hU - hD) / (2 * STEP);
+  return 1 / Math.hypot(nx, 1, nz);
+}
+
+/**
+ * Full terrain colour from already-sampled inputs, written into `out`. Shore
+ * sand below the waterline; otherwise the weighted `biomes` blend tinted toward
+ * rock as `ny` (ground normal Y) tilts off vertical; a micro lightness jitter
+ * finishes both. Pure & position-only → seam-safe. This is the single colour
+ * pipeline shared by the chunk-grid builder and the direct reference below.
+ */
+function colorFromSamples(
+  x: number,
+  z: number,
+  y: number,
+  biomes: Biome[],
+  ny: number,
+  out: THREE.Color,
+): THREE.Color {
   if (y < ENV.sandHeight) {
     out.copy(SAND_COLOR);
   } else {
-    const o = ENV.blendOffset;
-    blendBiomeColors(
-      [
-        biomeAt(x, z),
-        biomeAt(x + o, z),
-        biomeAt(x - o, z),
-        biomeAt(x, z + o),
-        biomeAt(x, z - o),
-      ],
-      out,
-    );
+    blendBiomeColors(biomes, out);
     // Steep faces read as exposed rock: blend toward crag grey as the ground
     // normal tilts away from vertical (ny 1 → threshold gives 0 tint).
-    const ny = groundNormalAt(x, z).y;
     if (ny < ENV.slopeRockThreshold) {
       const t =
         Math.min(1, (ENV.slopeRockThreshold - ny) / ENV.slopeRockThreshold) * ENV.slopeRockMax;
@@ -108,34 +122,123 @@ export function terrainVertexColor(x: number, z: number, y: number, out: THREE.C
   return out;
 }
 
-/** Build a chunk's mesh. Positions are in world space; mesh sits at origin. */
-function buildChunkMesh(cx: number, cz: number): THREE.Mesh {
+/**
+ * Direct (per-vertex) terrain colour at world (x, z) with ground height `y`.
+ * Samples the 5-tap biome blend (centre ±ENV.blendOffset) and the slope normal
+ * (central differences ±STEP) itself, then defers to `colorFromSamples`. Pure &
+ * seam-safe. The chunk builder does NOT call this per vertex — it caches the
+ * same samples on a grid (see `sampleChunk`) — but this remains the reference
+ * the grid path is regression-tested against (identical taps → identical
+ * colour).
+ */
+export function terrainVertexColor(x: number, z: number, y: number, out: THREE.Color): THREE.Color {
+  const o = ENV.blendOffset;
+  const biomes: Biome[] = [
+    biomeAt(x, z),
+    biomeAt(x + o, z),
+    biomeAt(x - o, z),
+    biomeAt(x, z + o),
+    biomeAt(x, z - o),
+  ];
+  const ny = slopeNormalY(
+    heightAt(x - STEP, z),
+    heightAt(x + STEP, z),
+    heightAt(x, z - STEP),
+    heightAt(x, z + STEP),
+  );
+  return colorFromSamples(x, z, y, biomes, ny, out);
+}
+
+/**
+ * Fill `positions` and `colors` (both length verts²·3) for chunk (cx, cz).
+ *
+ * Sampling is done ONCE per grid point into height + biome arrays carrying a
+ * BLEND_STEPS-wide apron ring (so edge vertices still have the neighbours the
+ * biome blend and slope normal need), then every vertex colour is assembled
+ * from array lookups — no per-vertex `biomeAt`/`groundNormalAt` re-taps. Every
+ * grid coord is world-position-pure (`originX + (gi - P)·STEP` etc.), so a
+ * vertex shared with an adjacent chunk samples the identical world coords and
+ * resolves to the identical height/colour → no seams, fully deterministic.
+ */
+// Apron geometry, fixed by the constants: P rings on each side (≥ 1 so the
+// ±1-step slope normal always has neighbours), G = grid dim including apron.
+const APRON = Math.max(1, BLEND_STEPS);
+const GRID_DIM = CHUNKS.verts + 2 * APRON;
+// Reusable sampling scratch — chunks are built one at a time (never reentrant),
+// so a single shared height/biome grid avoids a per-chunk allocation + GC.
+const SCRATCH_H = new Float32Array(GRID_DIM * GRID_DIM);
+const SCRATCH_B: Biome[] = new Array(GRID_DIM * GRID_DIM);
+
+export function sampleChunk(
+  cx: number,
+  cz: number,
+  positions: Float32Array,
+  colors: Float32Array,
+): void {
   const n = CHUNKS.verts;
   const originX = cx * CHUNKS.size;
   const originZ = cz * CHUNKS.size;
+  const P = APRON; // apron rings (also ≥ 1, covering the ±1-step normal)
+  const G = GRID_DIM; // grid dimension including the apron on both sides
+
+  // One heightAt + one biomeAt per grid point (apron included), cached.
+  const hGrid = SCRATCH_H;
+  const bGrid = SCRATCH_B;
+  for (let gj = 0; gj < G; gj++) {
+    const z = originZ + (gj - P) * STEP;
+    for (let gi = 0; gi < G; gi++) {
+      const x = originX + (gi - P) * STEP;
+      const g = gj * G + gi;
+      hGrid[g] = heightAt(x, z);
+      bGrid[g] = biomeAt(x, z);
+    }
+  }
+
+  const c = new THREE.Color();
+  const biomes: Biome[] = ['meadow', 'meadow', 'meadow', 'meadow', 'meadow']; // scratch, reused
+  for (let j = 0; j < n; j++) {
+    const gj = j + P;
+    const z = originZ + j * STEP;
+    for (let i = 0; i < n; i++) {
+      const gi = i + P;
+      const x = originX + i * STEP;
+      const g = gj * G + gi;
+      // All grid indices below are in-bounds by construction (interior vertex +
+      // ≤ APRON rings), so the non-null assertions on these reads are safe.
+      const y = hGrid[g]!;
+      const vidx = (j * n + i) * 3;
+
+      positions[vidx] = x;
+      positions[vidx + 1] = y;
+      positions[vidx + 2] = z;
+
+      // 5-tap biome blend: centre + neighbours ±BLEND_STEPS (== ±blendOffset m).
+      biomes[0] = bGrid[g]!;
+      biomes[1] = bGrid[g + BLEND_STEPS]!; // +x
+      biomes[2] = bGrid[g - BLEND_STEPS]!; // -x
+      biomes[3] = bGrid[g + BLEND_STEPS * G]!; // +z
+      biomes[4] = bGrid[g - BLEND_STEPS * G]!; // -z
+      // Slope normal Y from ±1-step (±STEP) grid neighbours — no extra heightAt.
+      const ny = slopeNormalY(hGrid[g - 1]!, hGrid[g + 1]!, hGrid[g - G]!, hGrid[g + G]!);
+
+      colorFromSamples(x, z, y, biomes, ny, c);
+      colors[vidx] = c.r;
+      colors[vidx + 1] = c.g;
+      colors[vidx + 2] = c.b;
+    }
+  }
+}
+
+/** Build a chunk's mesh. Positions are in world space; mesh sits at origin. */
+function buildChunkMesh(cx: number, cz: number): THREE.Mesh {
+  const n = CHUNKS.verts;
 
   const positions = new Float32Array(n * n * 3);
   const colors = new Float32Array(n * n * 3);
-  const c = new THREE.Color(); // scratch, reused per vertex (no per-vertex alloc)
 
-  for (let j = 0; j < n; j++) {
-    const z = originZ + j * STEP;
-    for (let i = 0; i < n; i++) {
-      const x = originX + i * STEP;
-      const y = heightAt(x, z);
-      const idx = (j * n + i) * 3;
-
-      positions[idx] = x;
-      positions[idx + 1] = y;
-      positions[idx + 2] = z;
-
-      // Blended biome colour + slope rock tint + micro jitter (seam-safe).
-      terrainVertexColor(x, z, y, c);
-      colors[idx] = c.r;
-      colors[idx + 1] = c.g;
-      colors[idx + 2] = c.b;
-    }
-  }
+  // Positions + blended/tinted/jittered vertex colours, sampled once per grid
+  // point with an apron (seam-safe; see sampleChunk).
+  sampleChunk(cx, cz, positions, colors);
 
   // Two triangles per quad; (n-1)² quads.
   const quads = (n - 1) * (n - 1);
