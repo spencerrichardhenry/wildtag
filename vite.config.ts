@@ -1,7 +1,11 @@
 /// <reference types="vitest/config" />
 import { defineConfig } from 'vite';
 
-export default defineConfig({
+// GitHub Pages serves the site at https://<user>.github.io/wildtag/, so
+// production builds need the repo-name base path for asset URLs. Dev and
+// tests stay at '/'.
+export default defineConfig(({ command }) => ({
+  base: command === 'build' ? '/wildtag/' : '/',
   server: {
     port: 5199,
   },
@@ -13,4 +17,4 @@ export default defineConfig({
     // the suite — exclude them so `npm test` runs each test exactly once.
     exclude: ['**/node_modules/**', '.claude/**'],
   },
-});
+}));
