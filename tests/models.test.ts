@@ -41,6 +41,54 @@ describe('critter model tri budgets (round 2)', () => {
   }
 });
 
+describe('critter draw-call baking', () => {
+  function meshCount(group: THREE.Object3D): number {
+    let n = 0;
+    group.traverse((o) => {
+      if ((o as THREE.Mesh).isMesh) n++;
+    });
+    return n;
+  }
+
+  it('merges each critter into a handful of meshes (draw-call budget)', () => {
+    for (const sp of SPECIES) {
+      const cap = sp.id === 'prismhorse' ? 24 : 10; // 16 identity legs float prismhorse
+      let worst = 0;
+      for (const seed of [1, 2, 3, 5, 8]) {
+        const { group } = buildCritterModel(sp.id, mulberry32(seed));
+        worst = Math.max(worst, meshCount(group));
+      }
+      // eslint-disable-next-line no-console
+      console.log(`meshes ${sp.id}: worst-case ${worst} (cap ${cap})`);
+      expect(worst, sp.id).toBeLessThanOrEqual(cap);
+      expect(worst, sp.id).toBeGreaterThan(0);
+    }
+  });
+
+  it('bakes the eyes into the head mesh (single non-emissive head draw)', () => {
+    const { parts } = buildCritterModel('puffle', mulberry32(9));
+    expect(meshCount(parts.head)).toBe(1);
+    const mesh = parts.head.children.find((c) => (c as THREE.Mesh).isMesh) as THREE.Mesh;
+    // Vertex colours carry the per-part tints on a shared white-base material.
+    expect((mesh.geometry as THREE.BufferGeometry).getAttribute('color')).toBeTruthy();
+    const m = mesh.material as THREE.MeshStandardMaterial;
+    expect(m.vertexColors).toBe(true);
+    expect(isSharedCritterMaterial(m)).toBe(true);
+  });
+
+  it('keeps emissive glows in their own merged mesh (emissives separate)', () => {
+    const { parts } = buildCritterModel('emberpup', mulberry32(11));
+    const mats: THREE.MeshStandardMaterial[] = [];
+    parts.head.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (mesh.isMesh) mats.push(mesh.material as THREE.MeshStandardMaterial);
+    });
+    expect(mats).toHaveLength(2); // base + ember-tip glow
+    const emissiveCount = mats.filter((m) => m.emissive.getHex() !== 0).length;
+    expect(emissiveCount).toBe(1);
+  });
+});
+
 describe('critter material cache', () => {
   it('every mesh material is shared (cache-owned) and deduped across parts', () => {
     const materials = new Set<THREE.Material>();

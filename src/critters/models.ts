@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { CRITTER_VARIATION } from '../core/constants.ts';
 import { makeSurfaceMaterial, ROUGHNESS } from '../core/materials.ts';
 
@@ -154,9 +155,9 @@ function crystal(r: number, color: number, opts: MatOpts = {}): THREE.Mesh {
  * Profile runs y 0→`h`, bulging below the midline (`bulge` 0..~0.45 pushes the
  * fattest ring downward). Smooth-shaded; base rests near y=0.
  */
-function egg(r: number, h: number, color: number, opts: MatOpts = {}, bulge = 0.3, seg = 13): THREE.Mesh {
+function egg(r: number, h: number, color: number, opts: MatOpts = {}, bulge = 0.3, seg = 15): THREE.Mesh {
   const pts: THREE.Vector2[] = [];
-  const N = 8;
+  const N = 10;
   for (let i = 0; i <= N; i++) {
     const t = i / N;
     const x = Math.sin(Math.PI * Math.pow(t, 1 - bulge)) * r;
@@ -209,12 +210,12 @@ function eye(r: number, o: EyeOpts = {}): THREE.Group {
       : {};
   // Sclera: a slightly flattened dome so the eye reads as set INTO the face,
   // not a protruding ping-pong ball.
-  const sc = new THREE.Mesh(new THREE.SphereGeometry(r, 9, 6), mat(o.sclera ?? 0xf4efe2, scleraOpts));
+  const sc = new THREE.Mesh(new THREE.SphereGeometry(r, 8, 6), mat(o.sclera ?? 0xf4efe2, scleraOpts));
   sc.scale.set(1, 1.05, 0.72);
   g.add(sc);
   // Big glossy iris (Neopets read) sitting on the front of the dome.
   const ir = new THREE.Mesh(
-    new THREE.SphereGeometry(r * (o.irisR ?? 0.7), 7, 4),
+    new THREE.SphereGeometry(r * (o.irisR ?? 0.7), 6, 4),
     mat(o.iris ?? 0x241b14),
   );
   ir.position.z = r * 0.5;
@@ -359,10 +360,10 @@ function buildPuffle(rng: () => number): { group: THREE.Group; parts: CritterPar
   const body = new THREE.Group();
   const shell = egg(0.44, 0.92, fur, {}, 0.32);
   body.add(shell);
-  // Soft jowl cheeks low on the sides of the face.
+  // Soft jowl cheeks low on the sides of the face, tucked into the egg.
   for (const sx of [-1, 1]) {
-    const cheek = sphere(0.13, fur, {}, 7, 5);
-    cheek.position.set(sx * 0.28, 0.34, 0.22);
+    const cheek = sphere(0.115, fur, {}, 7, 5);
+    cheek.position.set(sx * 0.26, 0.35, 0.21);
     body.add(cheek);
   }
   g.add(body);
@@ -432,9 +433,9 @@ function buildSkitterling(rng: () => number): { group: THREE.Group; parts: Critt
   carapace.scale.set(1.08, 0.78, 1.5);
   body.add(carapace);
   // Darker smooth dome ridge on top.
-  const dome = sphere(0.22, shellDark, {}, 9, 7);
-  dome.scale.set(0.95, 0.72, 1.15);
-  dome.position.set(0, 0.08, -0.04);
+  const dome = sphere(0.22, shellDark, {}, 11, 8);
+  dome.scale.set(0.92, 0.7, 1.1);
+  dome.position.set(0, 0.09, -0.04);
   body.add(dome);
   g.add(body);
 
@@ -501,7 +502,7 @@ function buildBellowbuck(rng: () => number): { group: THREE.Group; parts: Critte
   belly.position.y = -0.17;
   body.add(belly);
   // Soft shoulder hump for a moose-y silhouette.
-  const hump = sphere(0.3, hide, {}, 7, 5);
+  const hump = sphere(0.3, hide, {}, 6, 4);
   hump.scale.set(0.95, 0.88, 0.85);
   hump.position.set(0, 0.24, 0.34);
   body.add(hump);
@@ -512,7 +513,7 @@ function buildBellowbuck(rng: () => number): { group: THREE.Group; parts: Critte
   const neck = capsule(0.18, 0.4, hide, {}, 2, 6);
   neck.rotation.x = -0.6;
   head.add(neck);
-  const skull = sphere(0.23, hideLight, {}, 8, 6);
+  const skull = sphere(0.23, hideLight, {}, 10, 7);
   skull.scale.set(1, 0.95, 1.15);
   skull.position.set(0, 0.34, 0.28);
   head.add(skull);
@@ -804,10 +805,10 @@ function buildEmberpup(rng: () => number): { group: THREE.Group; parts: CritterP
 
   const body = new THREE.Group();
   body.position.y = 0.42;
-  const torso = capsule(0.23, 0.3, coat, {}, 2, 8);
+  const torso = capsule(0.23, 0.3, coat, {}, 2, 7);
   torso.rotation.x = Math.PI / 2;
   body.add(torso);
-  const bel = capsule(0.17, 0.24, cream, {}, 2, 5);
+  const bel = capsule(0.17, 0.24, cream, {}, 2, 4);
   bel.rotation.x = Math.PI / 2;
   bel.position.y = -0.1;
   body.add(bel);
@@ -816,7 +817,7 @@ function buildEmberpup(rng: () => number): { group: THREE.Group; parts: CritterP
   // Oversized head — the charm centre, nearly half the visual mass.
   const head = new THREE.Group();
   head.position.set(0, 0.58, 0.32);
-  const skull = sphere(0.27, coat, {}, 9, 6);
+  const skull = sphere(0.27, coat, {}, 12, 9);
   skull.scale.set(1.02, 0.95, 0.9);
   head.add(skull);
   // Cream cheeks + warm blush pads.
@@ -849,11 +850,12 @@ function buildEmberpup(rng: () => number): { group: THREE.Group; parts: CritterP
     // draw unconditional either way.
     const short = notchRoll < 0.3 && sx === -1;
     const ear = plumpEar(0.1, coat);
-    ear.position.set(sx * 0.14, short ? 0.22 : 0.26, -0.01);
-    ear.rotation.z = sx * -0.14;
-    if (short) ear.scale.y *= 0.75;
+    // Stubbier, rounder pup ears (plush read; the squash keeps them un-spiky).
+    ear.scale.set(0.8, short ? 0.9 : 1.15, 0.52);
+    ear.position.set(sx * 0.15, short ? 0.22 : 0.25, -0.01);
+    ear.rotation.z = sx * -0.2;
     head.add(ear);
-    const inner = sphere(0.05, cream, {}, 5, 4);
+    const inner = sphere(0.05, cream, {}, 4, 3);
     inner.scale.set(0.6, 1.1, 0.4);
     inner.position.set(sx * 0.14, short ? 0.22 : 0.25, 0.035);
     head.add(inner);
@@ -873,7 +875,7 @@ function buildEmberpup(rng: () => number): { group: THREE.Group; parts: CritterP
   // Fat plume tail with a glowing ember tip.
   const tail = new THREE.Group();
   tail.position.set(0, 0.48, -0.26);
-  const plume = capsule(0.11, 0.2, coat, {}, 2, 6);
+  const plume = capsule(0.11, 0.2, coat, {}, 2, 5);
   plume.rotation.x = -0.5;
   plume.position.set(0, 0.06, -0.15);
   tail.add(plume);
@@ -911,7 +913,7 @@ function buildLumenstag(rng: () => number): { group: THREE.Group; parts: Critter
   const neck = capsule(0.13, 0.5, coat, {}, 2, 6);
   neck.rotation.x = -0.5;
   head.add(neck);
-  const skull = sphere(0.18, shade, {}, 9, 6);
+  const skull = sphere(0.18, shade, {}, 11, 8);
   skull.scale.set(1, 0.95, 1.2);
   skull.position.set(0, 0.36, 0.26);
   head.add(skull);
@@ -1091,10 +1093,11 @@ function buildBumblewhale(rng: () => number): { group: THREE.Group; parts: Critt
   const hull = sphere(1.0, top, {}, 14, 10);
   hull.scale.set(1.35, 0.92, 1.0); // fat blimp
   body.add(hull);
-  // Soft lighter belly underside.
-  const under = sphere(0.96, belly, {}, 12, 8);
-  under.scale.set(1.3, 0.58, 0.96);
-  under.position.y = -0.3;
+  // Soft lighter belly underside, sunk low so the two-tone boundary reads as a
+  // clean waterline (not a jagged intersection).
+  const under = sphere(0.96, belly, {}, 14, 9);
+  under.scale.set(1.24, 0.5, 0.9);
+  under.position.y = -0.42;
   body.add(under);
   // Blunt rounded tail flukes.
   for (const sx of [-1, 1]) {
@@ -1161,10 +1164,10 @@ function buildSnickerdoodle(rng: () => number): { group: THREE.Group; parts: Cri
     sp.position.set(sx, 0.15, sz);
     body.add(sp);
   }
-  // Plump rounded ears at the front, plume tail at the back.
+  // Plump rounded ears poking up from the front edge, plume tail at the back.
   for (const sx of [-1, 1]) {
     const ear = plumpEar(0.085, dough);
-    ear.position.set(sx * 0.3, 0.16, 0.3);
+    ear.position.set(sx * 0.3, 0.19, 0.3);
     ear.rotation.x = -0.35;
     body.add(ear);
   }
@@ -1172,18 +1175,20 @@ function buildSnickerdoodle(rng: () => number): { group: THREE.Group; parts: Cri
   tail.rotation.x = Math.PI / 2 - 0.4;
   tail.position.set(0, 0.06, -0.5);
   body.add(tail);
-  // A real little face on the front edge: big eyes + nose + smile + blush.
-  for (const e of eyePair(0.15, 0.06, 0.5, 0.085, { irisR: 0.66 }, 0.12)) body.add(e);
+  // A real little face PROUD of the front edge (the disc is 0.575 deep — the
+  // features must poke past it or they vanish inside): eyes + nose + smile +
+  // blush pads.
+  for (const e of eyePair(0.15, 0.07, 0.55, 0.085, { irisR: 0.66 }, 0.12)) body.add(e);
   const nose = blob(0.032, speck);
-  nose.position.set(0, -0.01, 0.57);
+  nose.position.set(0, 0.01, 0.59);
   body.add(nose);
   const mouth = smile(0.035, 0.009);
-  mouth.position.set(0, -0.05, 0.56);
+  mouth.position.set(0, -0.045, 0.575);
   body.add(mouth);
   for (const sx of [-1, 1]) {
     const b = blush(0.055, blushC);
-    b.position.set(sx * 0.3, 0.0, 0.46);
-    b.rotation.y = sx * 0.5;
+    b.position.set(sx * 0.33, 0.03, 0.52);
+    b.rotation.y = sx * 0.55;
     body.add(b);
   }
   g.add(body);
@@ -1271,6 +1276,138 @@ function buildGloomgobbler(rng: () => number): { group: THREE.Group; parts: Crit
   return { group: g, parts: { legs, head, body } };
 }
 
+// --- draw-call baking ---------------------------------------------------------
+// Builders author critters as dozens of tiny primitive meshes (clear authoring,
+// per-part cached materials). Rendering them that way costs a draw call per
+// primitive (~20-30 per critter), which blew the e2e draw-call ceiling. So
+// after building, `bakeCritterGroup` MERGES the static geometry inside every
+// animatable part (each leg/wing/antenna group, head, body, tail, plus any
+// loose root accents) into ONE mesh per material class, baking each source
+// mesh's material colour into a vertex-colour attribute. Material classes are
+// keyed by (shading-mode, emissive, intensity, opacity) — so the eyes merge
+// into the head mesh (sclera/iris/highlight colours ride the vertex colours),
+// while emissive glows (ember tips, lantern eyes, crystal) and translucency
+// keep their own merged mesh per class ("emissives separate"). The merged
+// meshes use a handful of cached vertexColors materials (one per class,
+// game-wide) so the shared-material contract and disposal guards hold
+// unchanged. Animation is untouched: it rotates the part GROUPS, and each
+// group now contains 1-2 merged meshes instead of many primitives.
+
+/** Cached vertexColors material for a bake class (colour rides the geometry). */
+function bakedMat(flat: boolean, emissive: number, emissiveIntensity: number, opacity: number): THREE.Material {
+  const key = `vc:${flat ? 'f' : 's'}:${emissive}:${emissiveIntensity}:${opacity}`;
+  const hit = materialCache.get(key);
+  if (hit) return hit;
+  const m = makeSurfaceMaterial({
+    vertexColors: true,
+    flatShading: flat,
+    roughness: ROUGHNESS.critter,
+    ...(emissive >= 0 ? { emissive, emissiveIntensity } : {}),
+    ...(opacity >= 0 ? { opacity } : {}),
+  });
+  materialCache.set(key, m);
+  sharedMaterials.add(m);
+  return m;
+}
+
+/** The bake class of a source material: [key, flat, emissive, intensity, opacity]. */
+function bakeClass(m: THREE.Material): { flat: boolean; emissive: number; emissiveIntensity: number; opacity: number } {
+  const std = m as THREE.MeshStandardMaterial; // Lambert exposes the same fields we read
+  const flat = std.flatShading === true;
+  const emissiveHex = std.emissive ? std.emissive.getHex() : 0;
+  const emissive = emissiveHex !== 0 ? emissiveHex : -1;
+  const emissiveIntensity = emissive >= 0 ? std.emissiveIntensity : 1;
+  const opacity = m.transparent ? m.opacity : -1;
+  return { flat, emissive, emissiveIntensity, opacity };
+}
+
+/**
+ * Merge every static mesh inside `root` (skipping subtrees rooted in `skip` —
+ * other animatable parts) into one mesh per bake class, colours baked as
+ * vertex colours. Source geometries are disposed; empty groups pruned.
+ */
+function bakeSubtree(root: THREE.Object3D, skip: ReadonlySet<THREE.Object3D>): void {
+  const meshes: THREE.Mesh[] = [];
+  (function walk(o: THREE.Object3D): void {
+    for (const c of o.children) {
+      if (skip.has(c)) continue;
+      if ((c as THREE.Mesh).isMesh) meshes.push(c as THREE.Mesh);
+      walk(c);
+    }
+  })(root);
+  if (meshes.length === 0) return;
+
+  const rootInv = new THREE.Matrix4().copy(root.matrixWorld).invert();
+  const buckets = new Map<string, { geos: THREE.BufferGeometry[]; cls: ReturnType<typeof bakeClass> }>();
+  const color = new THREE.Color();
+  for (const mesh of meshes) {
+    const material = mesh.material as THREE.MeshStandardMaterial;
+    const cls = bakeClass(material);
+    const key = `${cls.flat}:${cls.emissive}:${cls.emissiveIntensity}:${cls.opacity}`;
+    // Non-indexed so mixed primitives (indexed spheres, non-indexed octahedra)
+    // merge cleanly; drop uvs (untextured) so attribute sets always match.
+    const src = mesh.geometry as THREE.BufferGeometry;
+    const geo = src.index ? src.toNonIndexed() : src.clone();
+    geo.deleteAttribute('uv');
+    const rel = new THREE.Matrix4().copy(rootInv).multiply(mesh.matrixWorld);
+    geo.applyMatrix4(rel);
+    // Bake the material colour into vertex colours (material goes white base).
+    color.copy(material.color);
+    const n = geo.getAttribute('position').count;
+    const colors = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) {
+      colors[i * 3] = color.r;
+      colors[i * 3 + 1] = color.g;
+      colors[i * 3 + 2] = color.b;
+    }
+    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    let bucket = buckets.get(key);
+    if (!bucket) buckets.set(key, (bucket = { geos: [], cls }));
+    bucket.geos.push(geo);
+  }
+
+  // Tear out the source meshes (their geometries are per-build: dispose).
+  for (const mesh of meshes) {
+    (mesh.geometry as THREE.BufferGeometry).dispose();
+    mesh.removeFromParent();
+  }
+  // Prune now-empty container groups (eye groups, tuft groups, ...).
+  (function prune(o: THREE.Object3D): void {
+    for (const c of [...o.children]) {
+      if (skip.has(c)) continue;
+      prune(c);
+      if (c.children.length === 0 && !(c as THREE.Mesh).isMesh) c.removeFromParent();
+    }
+  })(root);
+
+  for (const { geos, cls } of buckets.values()) {
+    const merged = mergeGeometries(geos, false);
+    for (const geoSrc of geos) geoSrc.dispose();
+    if (!merged) continue;
+    const mesh = new THREE.Mesh(merged, bakedMat(cls.flat, cls.emissive, cls.emissiveIntensity, cls.opacity));
+    root.add(mesh);
+  }
+}
+
+/** Bake a built critter: one merge per animatable part + one for root accents. */
+function bakeCritterGroup(group: THREE.Group, parts: CritterParts): void {
+  group.updateMatrixWorld(true);
+  const roots = new Set<THREE.Object3D>();
+  roots.add(parts.body);
+  roots.add(parts.head);
+  if (parts.tail) roots.add(parts.tail);
+  for (const l of parts.legs) roots.add(l);
+  for (const w of parts.wings ?? []) roots.add(w);
+  for (const a of parts.antennae ?? []) roots.add(a);
+  for (const r of roots) {
+    const skip = new Set(roots);
+    skip.delete(r);
+    bakeSubtree(r, skip);
+  }
+  // Loose root-level accents (tuft, cowlick, wisp, mote, ...) merge together.
+  bakeSubtree(group, roots);
+}
+
 const BUILDERS: Record<string, (rng: () => number) => { group: THREE.Group; parts: CritterParts }> = {
   puffle: buildPuffle,
   skitterling: buildSkitterling,
@@ -1299,6 +1436,9 @@ export function buildCritterModel(
   const build = BUILDERS[speciesId];
   if (!build) throw new Error(`buildCritterModel: unknown species '${speciesId}'`);
   const out = build(rng);
+  // Consolidate the authored primitives into 1-2 merged meshes per animatable
+  // part (vertex-coloured; see the draw-call baking block above).
+  bakeCritterGroup(out.group, out.parts);
   // Per-individual uniform scale (±10% by default; see CRITTER_VARIATION).
   const s = CRITTER_VARIATION.scaleMin + rng() * CRITTER_VARIATION.scaleRange;
   out.group.scale.setScalar(s);
