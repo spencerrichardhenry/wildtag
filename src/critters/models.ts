@@ -41,8 +41,35 @@ type MatOpts = {
 // Quality-gated (P3): MeshStandardMaterial (roughness 0.8) on medium+, the
 // identical-look flat-shaded MeshLambertMaterial on low. Emissive glow +
 // translucency (prismhorse crystal) pass through both paths unchanged.
+// ---------------------------------------------------------------------------
+// Shared material cache. Every distinct (color, emissive, intensity, opacity)
+// combination maps to ONE material instance shared across all critters — the
+// always-white eye highlight is a single material game-wide, L/R eye pairs
+// share, and un-jittered part colors share across every individual of a
+// species. Per-individual hue-jittered parts get their own entries (expected;
+// the jitter palette is finite per species so the cache stays bounded).
+// Quality (Lambert vs Standard) is fixed per boot, so the cache never mixes.
+//
+// CONTRACT for consumers: cached materials are SHARED —
+//   1. never mutate one per-instance (clone first; see mount-system's ride
+//      fade, which clones the actor's materials before fading), and
+//   2. never dispose one when tearing down a single critter (check
+//      isSharedCritterMaterial in disposeGroup-style helpers; geometries are
+//      per-build and must still be disposed).
+// ---------------------------------------------------------------------------
+const materialCache = new Map<string, THREE.Material>();
+const sharedMaterials = new WeakSet<THREE.Material>();
+
+/** True when `m` came from the shared critter-material cache (skip disposal). */
+export function isSharedCritterMaterial(m: THREE.Material): boolean {
+  return sharedMaterials.has(m);
+}
+
 function mat(color: number, opts: MatOpts = {}): THREE.Material {
-  return makeSurfaceMaterial({
+  const key = `${color}:${opts.emissive ?? -1}:${opts.emissiveIntensity ?? 1}:${opts.opacity ?? -1}`;
+  const hit = materialCache.get(key);
+  if (hit) return hit;
+  const m = makeSurfaceMaterial({
     color,
     flatShading: true,
     roughness: ROUGHNESS.critter,
@@ -51,6 +78,9 @@ function mat(color: number, opts: MatOpts = {}): THREE.Material {
       : {}),
     ...(opts.opacity !== undefined ? { opacity: opts.opacity } : {}),
   });
+  materialCache.set(key, m);
+  sharedMaterials.add(m);
+  return m;
 }
 
 // --- primitive helpers (all flat-shaded, low-segment = faceted Valheim look) --

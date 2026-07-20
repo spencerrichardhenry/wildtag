@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { FARM, VILLAGE } from '../core/constants.ts';
 import type { ResourceKind } from '../core/types.ts';
 import { mulberry32 } from '../core/rng.ts';
-import { buildCritterModel, type CritterParts } from '../critters/models.ts';
+import { buildCritterModel, isSharedCritterMaterial, type CritterParts } from '../critters/models.ts';
 import { animateCritter } from '../critters/animation.ts';
 import { heightAt } from '../world/terrain.ts';
 import { villageLayout } from '../village/layout.ts';
@@ -62,14 +62,16 @@ function dominantResource(hopper: Partial<Record<ResourceKind, number>>): {
   return { resource, total };
 }
 
-/** Dispose every geometry/material under `group` (manager.ts disposeGroup pattern). */
+/** Dispose every geometry/material under `group` (manager.ts disposeGroup
+ *  pattern). Puppets are built from critter models whose materials are shared
+ *  via models.ts's cache — those are skipped; farm-owned materials dispose. */
 function disposeGroup(group: THREE.Object3D): void {
   group.traverse((obj) => {
     const mesh = obj as THREE.Mesh;
     if (mesh.geometry) mesh.geometry.dispose();
     const m = mesh.material;
-    if (Array.isArray(m)) m.forEach((x) => x.dispose());
-    else if (m) m.dispose();
+    if (Array.isArray(m)) m.forEach((x) => !isSharedCritterMaterial(x) && x.dispose());
+    else if (m && !isSharedCritterMaterial(m)) m.dispose();
   });
 }
 
