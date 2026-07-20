@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { CRITTER_VARIATION } from '../core/constants.ts';
+import { makeSurfaceMaterial, ROUGHNESS } from '../core/materials.ts';
 
 // Procedural blocky critter models. Each species is assembled from a handful of
 // Box/Cone/Sphere/Cylinder primitives with flat-shaded MeshLambertMaterial, in
@@ -29,17 +30,19 @@ type MatOpts = {
   opacity?: number;
 };
 
-function mat(color: number, opts: MatOpts = {}): THREE.MeshLambertMaterial {
-  const m = new THREE.MeshLambertMaterial({ color, flatShading: true });
-  if (opts.emissive !== undefined) {
-    m.emissive = new THREE.Color(opts.emissive);
-    m.emissiveIntensity = opts.emissiveIntensity ?? 1;
-  }
-  if (opts.opacity !== undefined) {
-    m.transparent = true;
-    m.opacity = opts.opacity;
-  }
-  return m;
+// Quality-gated (P3): MeshStandardMaterial (roughness 0.8) on medium+, the
+// identical-look flat-shaded MeshLambertMaterial on low. Emissive glow +
+// translucency (prismhorse crystal) pass through both paths unchanged.
+function mat(color: number, opts: MatOpts = {}): THREE.Material {
+  return makeSurfaceMaterial({
+    color,
+    flatShading: true,
+    roughness: ROUGHNESS.critter,
+    ...(opts.emissive !== undefined
+      ? { emissive: opts.emissive, emissiveIntensity: opts.emissiveIntensity ?? 1 }
+      : {}),
+    ...(opts.opacity !== undefined ? { opacity: opts.opacity } : {}),
+  });
 }
 
 /** An octahedron primitive (crystal prism look), flat-shaded. */

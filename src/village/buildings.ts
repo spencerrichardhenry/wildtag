@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { VILLAGE } from '../core/constants.ts';
+import { makeSurfaceMaterial, ROUGHNESS } from '../core/materials.ts';
 import type { Obstacle } from '../player/collision.ts';
 import { heightAt } from '../world/terrain.ts';
 import {
@@ -350,11 +351,17 @@ function mergeVillage(built: THREE.Group): THREE.Group {
     for (const g of bucket.geos) g.dispose(); // baked copies, consumed by merge
     if (!merged) continue; // defensive: mergeGeometries returns null on mismatch
     merged.computeBoundingSphere();
-    const mat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
-    if (bucket.emissive) {
-      mat.emissive = bucket.emissive;
-      mat.emissiveIntensity = bucket.emissiveIntensity;
-    }
+    // Quality-gated (P3): the merged village surface is MeshStandardMaterial
+    // (roughness 0.9) on medium+, MeshLambertMaterial on low. Baked vertex
+    // colours + emissive glow (lamp heads / windows / signs) carry across both.
+    const mat = makeSurfaceMaterial({
+      vertexColors: true,
+      flatShading: true,
+      roughness: ROUGHNESS.village,
+      ...(bucket.emissive
+        ? { emissive: bucket.emissive.getHex(), emissiveIntensity: bucket.emissiveIntensity }
+        : {}),
+    });
     const mesh = new THREE.Mesh(merged, mat);
     mesh.name = `village-merged ${key}`;
     root.add(mesh);

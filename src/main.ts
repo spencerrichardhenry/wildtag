@@ -40,6 +40,8 @@ import {
   tierBelow,
   type QualityId,
 } from './core/quality.ts';
+import { ShadowRig, planShadows } from './world/lighting.ts';
+import { buildPostPipeline, type PostPipeline } from './world/post.ts';
 import { buildVillage, villageObstacles } from './village/buildings.ts';
 import { NpcManager, NPCS, npcAnchors } from './village/npcs.ts';
 import { createDialogScreen, openDialog, setRequestRenderer } from './village/dialog.ts';
@@ -116,6 +118,11 @@ function bootGame(): void {
   const debugGrapple = debugParam === 'grapple';
   const debugStructures = debugParam === 'structures';
   const debugVillage = debugParam === 'village';
+  // Dev override (`?forcefx=1`): run cascade shadows + the post composer even on
+  // a software backend (SwiftShader). The software gate normally skips both so
+  // the headless suite stays on the low/direct path; this forces the real code
+  // paths on for verification screenshots (slow, but proves they compile/render).
+  const forceFx = new URLSearchParams(window.location.search).get('forcefx') === '1';
 
   // Quality preset (Fidelity-2 P1): resolve `?quality=` override > stored
   // Esc-menu choice > auto-detect (software backend → low). The chosen preset
@@ -175,44 +182,48 @@ function bootGame(): void {
   }
   const skyDome = scene.getObjectByName('skyDome');
 
-  // Perf-gated directional shadow (F1). The sun light (configured for shadows in
-  // environment.ts) follows the player along the sun direction with a tight
-  // ortho frustum. `shadowsEnabled` starts true and is cleared by the fps gate
-  // in the frame loop; the choice is mirrored onto the debug state (window.__f1).
-  const sunLight = scene.getObjectByName('sunLight') as THREE.DirectionalLight | null;
+  // Cascade shadows (F2 P3). The always-present sun (environment.ts) is wrapped
+  // as the base cascade by a hand-rolled ShadowRig; on high a second near-cascade
+  // light is added (see lighting.ts). Cascades follow the player each frame with
+  // tight ortho frusta. `shadowRig.enabled` is the live gate, mirrored onto the
+  // debug state (window.__f1) and cleared by the fps gate in the frame loop.
+  const sunLight = scene.getObjectByName('sunLight') as THREE.DirectionalLight;
   const sunDir = new THREE.Vector3(ENV.sunPos.x, ENV.sunPos.y, ENV.sunPos.z).normalize();
-  // Shadows now follow the quality preset (P1): `shadowCascades > 0` turns the
-  // map on, `shadowRes` sizes it. The auto-detected `low` preset (software
-  // backends → headless e2e) has 0 cascades, so shadows are skipped up front
-  // exactly as before; real hardware keeps them unless the fps gate drops the
-  // tier below. `syncShadowQuality()` re-derives both from the live preset.
-  let shadowsEnabled = false;
+  const shadowRig = new ShadowRig(scene, sunLight);
   let shadowFlagFrame = 0;
-  // A software backend (SwiftShader/llvmpipe — headless e2e) can't afford a
-  // shadow map even under an explicit ?quality=high: the preset FLAGS still
-  // report the requested cascades (so the e2e feature-diff check is honest), but
-  // the actual shadow map is never turned on. Real GPUs follow the preset.
+  // A software backend (SwiftShader/llvmpipe — headless e2e) can't afford shadows
+  // or the post composer even under ?quality=high: the preset FLAGS still report
+  // the requested cascades/ssao/bloom (so the e2e feature-diff stays honest), but
+  // the actual GPU passes are skipped. `?forcefx=1` overrides this for verification.
   const softwareRenderer = isSoftwareRenderer(renderer);
+  const fxAllowed = !softwareRenderer || forceFx;
+
+  // Post pipeline (F2 P3, high only + fxAllowed). Null on medium/low/software →
+  // the direct render path. Rebuilt only by a fresh boot (reload-required flags).
+  let post: PostPipeline | null = null;
+
+  /** Re-derive the cascade rig from the live preset (boot + fps-gate tier drop). */
   function syncShadowQuality(): void {
     const q = qualityFlags();
-    shadowsEnabled = q.shadowCascades > 0 && !softwareRenderer;
-    renderer.shadowMap.enabled = shadowsEnabled;
-    if (shadowsEnabled && sunLight && q.shadowRes > 0) {
-      sunLight.shadow.mapSize.set(q.shadowRes, q.shadowRes);
-      const map = sunLight.shadow.map;
-      if (map) {
-        // Force the shadow map to be reallocated at the new resolution.
-        map.dispose();
-        sunLight.shadow.map = null;
-      }
-    } else if (!shadowsEnabled && sunLight?.shadow.map) {
-      // Cascades dropped to 0 live (fps-gate tier drop / Esc-menu low): free the
-      // now-unused GPU shadow render target instead of holding it for the session.
-      sunLight.shadow.map.dispose();
-      sunLight.shadow.map = null;
+    const renderShadows = q.shadowCascades > 0 && fxAllowed;
+    shadowRig.apply(planShadows(q.shadowCascades, q.shadowRes), renderShadows);
+    renderer.shadowMap.enabled = shadowRig.enabled;
+    if (shadowRig.enabled) flagShadowCasters();
+  }
+
+  /** Build/tear-down the post composer to match the live preset. */
+  function syncPost(): void {
+    const flags = qualityFlags();
+    const want = (flags.ssao || flags.bloom) && fxAllowed;
+    if (want && !post) {
+      post = buildPostPipeline(renderer, scene, camera, flags);
+    } else if (!want && post) {
+      post.dispose();
+      post = null;
     }
   }
   syncShadowQuality();
+  syncPost();
 
   /** Flag props/critters/village/terrain meshes as shadow casters/receivers. */
   function flagShadowCasters(): void {
@@ -226,17 +237,10 @@ function bootGame(): void {
     });
   }
 
-  /** Move the shadow light + target to bracket the player (tight frustum). */
+  /** Bracket the cascade lights around the player each frame. */
   function updateShadowFollow(): void {
-    if (!sunLight || !shadowsEnabled) return;
-    const p = player.pos;
-    sunLight.target.position.set(p.x, p.y, p.z);
-    sunLight.position.set(
-      p.x + sunDir.x * ENV.shadowLightDist,
-      p.y + sunDir.y * ENV.shadowLightDist,
-      p.z + sunDir.z * ENV.shadowLightDist,
-    );
-    sunLight.target.updateMatrixWorld();
+    if (!shadowRig.enabled) return;
+    shadowRig.follow(player.pos, sunDir);
     // Re-flag casters periodically (props/critters stream in over time).
     if (shadowFlagFrame++ % 15 === 0) flagShadowCasters();
   }
@@ -256,6 +260,7 @@ function bootGame(): void {
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
     renderer.setSize(width, height);
+    post?.setSize(width, height);
   }
 
   window.addEventListener('resize', resize);
@@ -1074,7 +1079,10 @@ function bootGame(): void {
     updateShadowFollow();
     // Water 1.5: advance the shader ripple/shimmer clock (one uniform write).
     updateWater(scene, worldTime);
-    renderer.render(scene, camera);
+    // High + fxAllowed → the post composer (SSAO + bloom + tone-map output);
+    // otherwise the unchanged direct render path (medium/low/software).
+    if (post) post.render();
+    else renderer.render(scene, camera);
     npcs.updateLabels(camera);
     const p = player.pos;
     const aimed = props.findHarvestable(camera.position, cameraLook(), worldTime);
@@ -1325,7 +1333,7 @@ function bootGame(): void {
   // Skip the measurement window when there's nothing to protect (already on the
   // low preset → no shadows) or the preset is explicit (not auto).
   let gateDecided = !qualityAuto || currentQuality() === 'low';
-  const f1State = { shadows: shadowsEnabled, fps: 0 };
+  const f1State = { shadows: shadowRig.enabled, fps: 0 };
   (window as unknown as { __f1: typeof f1State }).__f1 = f1State;
 
   function frame(now: number): void {
@@ -1351,9 +1359,10 @@ function bootGame(): void {
             // re-derive shadows from the new preset.
             setQuality(tierBelow(currentQuality()), false);
             syncShadowQuality();
+            syncPost();
             applyGrassQuality();
           }
-          f1State.shadows = shadowsEnabled;
+          f1State.shadows = shadowRig.enabled;
           gateDecided = true;
         }
       }

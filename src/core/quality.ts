@@ -37,6 +37,18 @@ export interface QualityFlags {
   waterReflections: boolean;
   /** Triplanar procedural terrain detail shader (P3/medium+). */
   terrainDetailShader: boolean;
+  /**
+   * Prop/critter/village surfaces built from MeshStandardMaterial (roughness
+   * tuned per kind) instead of MeshLambertMaterial (P3/medium+). Chosen at mesh
+   * CONSTRUCTION time, so it's a reload-required flag (the Esc-menu selector
+   * toasts a reload prompt when it changes).
+   */
+  standardMaterials: boolean;
+  /**
+   * Terrain detail's finer second octave + cheap normal perturbation (P3/high
+   * only) — the coarse octave rides on `terrainDetailShader` (medium+).
+   */
+  terrainDetailHigh: boolean;
   /** Near-LOD 1m terrain grid within range (P2/medium+). */
   nearLod: boolean;
   /**
@@ -62,6 +74,8 @@ export const QUALITY: Record<QualityId, QualityFlags> = {
     bloom: false,
     waterReflections: false,
     terrainDetailShader: false,
+    standardMaterials: false,
+    terrainDetailHigh: false,
     nearLod: false,
     grassMultiplier: 1,
     grassRadius: SCATTER.grass.radius,
@@ -73,6 +87,8 @@ export const QUALITY: Record<QualityId, QualityFlags> = {
     bloom: false,
     waterReflections: false,
     terrainDetailShader: true,
+    standardMaterials: true,
+    terrainDetailHigh: false,
     nearLod: true,
     grassMultiplier: 2,
     grassRadius: 48,
@@ -84,6 +100,8 @@ export const QUALITY: Record<QualityId, QualityFlags> = {
     bloom: true,
     waterReflections: true,
     terrainDetailShader: true,
+    standardMaterials: true,
+    terrainDetailHigh: true,
     nearLod: true,
     grassMultiplier: 3,
     grassRadius: 64,

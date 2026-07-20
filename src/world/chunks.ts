@@ -4,6 +4,7 @@ import type { Biome } from '../core/types.ts';
 import { hash2 } from '../core/rng.ts';
 import { heightAt, biomeAt } from './terrain.ts';
 import { qualityFlags } from '../core/quality.ts';
+import { applyTerrainDetail } from './terrainDetail.ts';
 
 // ---------------------------------------------------------------------------
 // Streaming terrain mesh. The world is tiled into CHUNKS.size-metre squares;
@@ -402,18 +403,19 @@ export function buildChunkGeometry(
   return geo;
 }
 
-/** Build a chunk's mesh at the given LOD. Positions are in world space. */
-function buildChunkMesh(cx: number, cz: number, verts: number): THREE.Mesh {
-  const geo = buildChunkGeometry(cx, cz, verts);
-  // Smooth shading now (per-vertex normals off the height grid); the faceted
-  // look is retained only for props/critters (deliberate stylistic contrast).
+/**
+ * Build the ONE shared terrain material for a manager. Smooth-shaded Lambert
+ * with vertex colours (the faceted look is retained only for props/critters).
+ * On medium+ (`terrainDetailShader`) the procedural detail layer is injected via
+ * onBeforeCompile (fine octave + normal perturb added on high) — see
+ * terrainDetail.ts. Shared across every chunk mesh (one program, not one per
+ * chunk); the manager owns + disposes it so nothing dangles on teardown.
+ */
+function buildTerrainMaterial(): THREE.MeshLambertMaterial {
   const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
-  const mesh = new THREE.Mesh(geo, mat);
-  mesh.name = `chunk ${chunkKey(cx, cz)}`;
-  // Terrain receives (and softly casts) the perf-gated directional shadow.
-  mesh.receiveShadow = true;
-  mesh.castShadow = true;
-  return mesh;
+  const flags = qualityFlags();
+  if (flags.terrainDetailShader) applyTerrainDetail(mat, flags.terrainDetailHigh);
+  return mat;
 }
 
 interface LoadedChunk {
@@ -440,9 +442,22 @@ export class ChunkManager {
    * only actual rebuilds cost).
    */
   private complete = false;
+  /** The one shared terrain material (built lazily on first chunk). */
+  private mat: THREE.MeshLambertMaterial | null = null;
 
   constructor(scene: THREE.Scene) {
     this.scene = scene;
+  }
+
+  /** Build a chunk mesh at the given LOD, sharing this manager's terrain material. */
+  private buildMesh(cx: number, cz: number, verts: number): THREE.Mesh {
+    if (!this.mat) this.mat = buildTerrainMaterial();
+    const mesh = new THREE.Mesh(buildChunkGeometry(cx, cz, verts), this.mat);
+    mesh.name = `chunk ${chunkKey(cx, cz)}`;
+    // Terrain receives (and softly casts) the cascade shadows.
+    mesh.receiveShadow = true;
+    mesh.castShadow = true;
+    return mesh;
   }
 
   /**
@@ -489,14 +504,14 @@ export class ChunkManager {
           const curLod = existing ? existing.lod : LOD_FAR;
           const lod = selectChunkLod(dist, curLod, nearLod);
           if (!existing) {
-            const mesh = buildChunkMesh(cx, cz, vertsForLod(lod));
+            const mesh = this.buildMesh(cx, cz, vertsForLod(lod));
             this.scene.add(mesh);
             this.loaded.set(key, { mesh, cx, cz, lod });
             budget--;
           } else if (existing.lod !== lod) {
             // LOD changed — rebuild this chunk at the new resolution in place.
             this.disposeChunk(existing);
-            const mesh = buildChunkMesh(cx, cz, vertsForLod(lod));
+            const mesh = this.buildMesh(cx, cz, vertsForLod(lod));
             this.scene.add(mesh);
             existing.mesh = mesh;
             existing.lod = lod;
@@ -519,11 +534,14 @@ export class ChunkManager {
     this.complete = false;
     this.lastCx = NaN;
     this.lastCz = NaN;
+    // The shared terrain material outlives individual chunks; free it on teardown.
+    this.mat?.dispose();
+    this.mat = null;
   }
 
+  /** Dispose a chunk's geometry (the terrain material is shared — freed in dispose()). */
   private disposeChunk(chunk: LoadedChunk): void {
     this.scene.remove(chunk.mesh);
     chunk.mesh.geometry.dispose();
-    (chunk.mesh.material as THREE.Material).dispose();
   }
 }

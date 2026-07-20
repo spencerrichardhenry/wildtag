@@ -20,6 +20,7 @@ import {
   type NodeState,
 } from './resources.ts';
 import { qualityFlags } from '../core/quality.ts';
+import { makeSurfaceMaterial, ROUGHNESS } from '../core/materials.ts';
 
 // ---------------------------------------------------------------------------
 // Prop mesh layer + streaming PropManager. Low-poly, flat-shaded primitives
@@ -486,20 +487,36 @@ const EMISSIVE: Record<string, { hex: number; i: number }> = {
 // Buckets whose quads need to be visible from both sides.
 const DOUBLE_SIDED = new Set<string>(['grass', 'lilypad']);
 
+// Per-bucket roughness for the Standard-material path (medium+). Rocks/mesas are
+// matte, trees a touch smoother, crystals slick; everything else is foliage.
+const ROCK_BUCKETS = new Set<string>(['rock', 'mesa', 'rib', 'boulder', 'scree']);
+const TREE_BUCKETS = new Set<string>([
+  'pine', 'broadleaf', 'snag', 'oak', 'shrub', 'windpine', 'boulderpine', 'willow', 'juniper', 'tree',
+]);
+const CRYSTAL_BUCKETS = new Set<string>(['crystal', 'crystalA', 'crystalB', 'crystalC', 'shard']);
+
+function roughnessFor(bucket: string): number {
+  if (ROCK_BUCKETS.has(bucket)) return ROUGHNESS.rock;
+  if (TREE_BUCKETS.has(bucket)) return ROUGHNESS.tree;
+  if (CRYSTAL_BUCKETS.has(bucket)) return ROUGHNESS.crystal;
+  return ROUGHNESS.foliage;
+}
+
 function materialFor(bucket: string): THREE.Material {
   if (bucket === 'spark') {
     return new THREE.MeshBasicMaterial({ vertexColors: true });
   }
-  const mat = new THREE.MeshLambertMaterial({
+  const e = EMISSIVE[bucket];
+  // Quality-gated: MeshStandardMaterial (per-kind roughness) on medium+, the
+  // identical-look MeshLambertMaterial on low. flatShading + vertex colours +
+  // emissive glow carry across both paths.
+  const mat = makeSurfaceMaterial({
     vertexColors: true,
     flatShading: true,
     side: DOUBLE_SIDED.has(bucket) ? THREE.DoubleSide : THREE.FrontSide,
-  });
-  const e = EMISSIVE[bucket];
-  if (e) {
-    mat.emissive = new THREE.Color(e.hex);
-    mat.emissiveIntensity = e.i;
-  }
+    roughness: roughnessFor(bucket),
+    ...(e ? { emissive: e.hex, emissiveIntensity: e.i } : {}),
+  }) as THREE.MeshStandardMaterial;
   // Grass 2.0 wind (F2 P2): a vertex-shader sway on the grass-ring material via
   // onBeforeCompile. One `uTime` uniform is advanced per frame (props.update →
   // updateGrassWind) — NO per-instance matrix writes. Amplitude scales with the
