@@ -39,9 +39,13 @@ export interface QualityFlags {
   terrainDetailShader: boolean;
   /** Near-LOD 1m terrain grid within range (P2/medium+). */
   nearLod: boolean;
-  /** Grass-ring density multiplier (1 / 4 / 8). */
-  grassMultiplier: 1 | 4 | 8;
-  /** Grass-ring radius (m); high widens the meadow ring. */
+  /**
+   * Grass-ring lattice density multiplier (1 / 2 / 3 — playtest-tuned down
+   * from the spec's 1/4/8: the ring is now wide + sparse with a radial
+   * falloff instead of a dense near puck).
+   */
+  grassMultiplier: 1 | 2 | 3;
+  /** Grass-ring radius (m); wider per tier (30 / 48 / 64). */
   grassRadius: number;
 }
 
@@ -70,8 +74,8 @@ export const QUALITY: Record<QualityId, QualityFlags> = {
     waterReflections: false,
     terrainDetailShader: true,
     nearLod: true,
-    grassMultiplier: 4,
-    grassRadius: SCATTER.grass.radius,
+    grassMultiplier: 2,
+    grassRadius: 48,
   },
   high: {
     shadowCascades: 2,
@@ -81,13 +85,10 @@ export const QUALITY: Record<QualityId, QualityFlags> = {
     waterReflections: true,
     terrainDetailShader: true,
     nearLod: true,
-    grassMultiplier: 8,
-    grassRadius: 32,
+    grassMultiplier: 3,
+    grassRadius: 64,
   },
 };
-
-/** Highest grass multiplier across presets — grass buffers size for this once. */
-export const MAX_GRASS_MULTIPLIER = 8;
 
 function isQualityId(v: string | null | undefined): v is QualityId {
   return v === 'low' || v === 'medium' || v === 'high';

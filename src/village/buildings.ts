@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { VILLAGE } from '../core/constants.ts';
 import type { Obstacle } from '../player/collision.ts';
 import { heightAt } from '../world/terrain.ts';
@@ -18,6 +19,14 @@ import {
 // head + a point light so the hamlet glows. Dirt paths + a plaza disc + a
 // fenced farm grid + home pens complete the scene. `villageObstacles()` exposes
 // 2–3 collision circles per building (+ lamp posts) for the player controller.
+//
+// Fidelity-2 P1: the whole static village (once ~189 individual meshes / draw
+// calls, all in the spawn view) is MERGED after building into a handful of
+// vertex-coloured meshes — each part's material colour is baked into vertex
+// colours so one Lambert per emissive signature suffices (static geometry +
+// one small merged mesh per distinct emissive tint: lamp heads, windows,
+// signs). Lamp point lights survive the merge at their world positions. NPCs,
+// pens and farm puppets are separate dynamic systems and stay unmerged.
 // ---------------------------------------------------------------------------
 
 const C = VILLAGE.colors;
@@ -268,6 +277,96 @@ export function villageObstacles(): Obstacle[] {
   return out;
 }
 
+// --- static-geometry merge (Fidelity-2 P1) ----------------------------------
+
+/**
+ * World-baked, vertex-coloured copy of a mesh's geometry: the material colour
+ * is written into a `color` attribute (so a shared vertexColors material can
+ * replace the per-part one) and the mesh's world transform is applied so the
+ * merged geometry needs no per-part matrix.
+ */
+function bakeMeshGeometry(mesh: THREE.Mesh): THREE.BufferGeometry {
+  const src = mesh.geometry;
+  const g = src.index ? src.toNonIndexed() : src.clone();
+  const count = g.getAttribute('position').count;
+  const col = new Float32Array(count * 3);
+  const c = (mesh.material as THREE.MeshLambertMaterial).color;
+  for (let i = 0; i < count; i++) {
+    col[i * 3] = c.r;
+    col[i * 3 + 1] = c.g;
+    col[i * 3 + 2] = c.b;
+  }
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  g.applyMatrix4(mesh.matrixWorld);
+  return g;
+}
+
+/**
+ * Collapse a fully-built village group into a handful of merged meshes: one
+ * vertex-coloured static mesh, plus one small merged mesh per distinct emissive
+ * signature (lamp heads / windows / signs keep their glow). Point lights are
+ * re-parented at their world positions. The originals are disposed. Cuts the
+ * village from ~189 draw calls to ~4.
+ */
+function mergeVillage(built: THREE.Group): THREE.Group {
+  built.updateMatrixWorld(true);
+
+  interface Bucket {
+    geos: THREE.BufferGeometry[];
+    emissive: THREE.Color | null;
+    emissiveIntensity: number;
+  }
+  const buckets = new Map<string, Bucket>();
+  const lights: { light: THREE.PointLight; pos: THREE.Vector3 }[] = [];
+
+  built.traverse((o) => {
+    if (o instanceof THREE.PointLight) {
+      lights.push({ light: o, pos: o.getWorldPosition(new THREE.Vector3()) });
+      return;
+    }
+    if (!(o instanceof THREE.Mesh)) return;
+    const m = o.material as THREE.MeshLambertMaterial;
+    const glowing = m.emissive && m.emissiveIntensity > 0 && m.emissive.getHex() !== 0;
+    const key = glowing ? `e:${m.emissive.getHex()}:${m.emissiveIntensity}` : 'static';
+    let bucket = buckets.get(key);
+    if (!bucket) {
+      bucket = {
+        geos: [],
+        emissive: glowing ? m.emissive.clone() : null,
+        emissiveIntensity: glowing ? m.emissiveIntensity : 0,
+      };
+      buckets.set(key, bucket);
+    }
+    bucket.geos.push(bakeMeshGeometry(o));
+    // Original per-part geometry/material are no longer referenced anywhere.
+    o.geometry.dispose();
+    m.dispose();
+  });
+
+  const root = new THREE.Group();
+  root.name = 'village';
+  for (const [key, bucket] of buckets) {
+    const merged = mergeGeometries(bucket.geos);
+    for (const g of bucket.geos) g.dispose(); // baked copies, consumed by merge
+    if (!merged) continue; // defensive: mergeGeometries returns null on mismatch
+    merged.computeBoundingSphere();
+    const mat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
+    if (bucket.emissive) {
+      mat.emissive = bucket.emissive;
+      mat.emissiveIntensity = bucket.emissiveIntensity;
+    }
+    const mesh = new THREE.Mesh(merged, mat);
+    mesh.name = `village-merged ${key}`;
+    root.add(mesh);
+  }
+  for (const { light, pos } of lights) {
+    light.removeFromParent();
+    light.position.copy(pos);
+    root.add(light);
+  }
+  return root;
+}
+
 /**
  * Build the entire village as one group and add it to `scene`. Returns the
  * group (kept resident — the village is static and always near spawn).
@@ -318,6 +417,9 @@ export function buildVillage(scene: THREE.Scene): THREE.Group {
     for (const seg of corners) root.add(buildFence(seg));
   }
 
-  scene.add(root);
-  return root;
+  // Collapse the ~189 static part-meshes into a handful of merged vertex-
+  // coloured meshes (draw-call consolidation — see header note).
+  const merged = mergeVillage(root);
+  scene.add(merged);
+  return merged;
 }

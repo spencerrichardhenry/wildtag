@@ -205,6 +205,11 @@ function bootGame(): void {
         map.dispose();
         sunLight.shadow.map = null;
       }
+    } else if (!shadowsEnabled && sunLight?.shadow.map) {
+      // Cascades dropped to 0 live (fps-gate tier drop / Esc-menu low): free the
+      // now-unused GPU shadow render target instead of holding it for the session.
+      sunLight.shadow.map.dispose();
+      sunLight.shadow.map = null;
     }
   }
   syncShadowQuality();
@@ -1265,7 +1270,7 @@ function bootGame(): void {
       geometries: renderer.info.memory.geometries,
       textures: renderer.info.memory.textures,
     }),
-    quality: () => ({ id: currentQuality(), flags: qualityFlags() }),
+    quality: () => ({ id: currentQuality(), flags: qualityFlags(), grass: props.grassStats() }),
   });
 
   // Verification aid (Haven V4): expose deterministic village anchors + a couple

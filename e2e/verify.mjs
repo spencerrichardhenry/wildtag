@@ -667,18 +667,18 @@ async function measureFps(page, ms = 3000) {
   }), ms);
 }
 
-// Draw-call budget at spawn. The Fidelity-2 spec's aspirational target is ≤250,
-// but that figure is dominated by out-of-P1-scope geometry that is unchanged
-// here: the ~48 primed wild critters (dynamic, animated — ~170 draw calls in
-// view) plus the streamed terrain field (~74) already floor the scene near ~250
-// before ANY props, and the static Haven village (explicitly out of scope) sits
-// fully in the spawn view (~190). What P1 owns — the props — was consolidated
-// from per-(chunk,kind) InstancedMeshes into global per-kind pools, cutting the
-// prop contribution at spawn from ~110 draw calls to ~23 and the total from
-// ~566 to ~475. This check guards that consolidation against regression (a
-// revert to per-chunk prop meshes pushes the total back toward ~566) and records
-// the live number; see the P1 report for the full budget breakdown.
-const DRAW_CALL_CEILING = 520;
+// Draw-call budget at spawn. Two P1 consolidations: props went from one
+// InstancedMesh per (chunk,kind) to one BatchedMesh per material group
+// (~110 → ~9 draw calls, with per-instance frustum culling), and the static
+// Haven village was merged into a handful of vertex-coloured meshes
+// (~189 → ~4). Total spawn scene: ~566 before → ~276 after. The remaining
+// floor is out-of-P1-scope dynamic geometry: ~48 primed wild critters
+// (animated multi-mesh groups, ~170 draw calls in view) + the streamed
+// per-chunk terrain field (~74, consolidation is P2 near-LOD work) — which is
+// why the ceiling is 300 rather than the spec's aspirational 250. This check
+// guards both consolidations against regression and records the live number;
+// see the P1 report for the per-category budget breakdown.
+const DRAW_CALL_CEILING = 300;
 
 async function checkDrawCalls() {
   await check('o. Draw calls: renderStats at spawn under the consolidated ceiling', async () => {
@@ -691,7 +691,7 @@ async function checkDrawCalls() {
       assert(typeof stats.geometries === 'number', 'renderStats().geometries not a number');
       assert('textures' in stats, 'renderStats() missing textures');
       const dc = await medianDrawCalls(page);
-      console.log(`    drawCalls (median) = ${dc}  [P1 ceiling ${DRAW_CALL_CEILING}; aspirational spec target 250 — see report: critters+terrain+village floor it]`);
+      console.log(`    drawCalls (median) = ${dc}  [P1 ceiling ${DRAW_CALL_CEILING}; aspirational spec target 250 — see report: critters+terrain floor it]`);
       console.log(`    renderStats: calls=${stats.drawCalls} tris=${stats.triangles} geo=${stats.geometries} tex=${stats.textures}`);
       assert(dc <= DRAW_CALL_CEILING, `draw calls ${dc} exceed the consolidated ceiling ${DRAW_CALL_CEILING} (prop pooling regressed?)`);
       await shot(page, '21-drawcalls.png');

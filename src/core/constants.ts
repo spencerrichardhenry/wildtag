@@ -447,17 +447,34 @@ export const SCATTER = {
   },
 
   /**
-   * Near-player grass ground-cover ring (meadow/forest only). Rebuilt only when
-   * the player crosses a `cell`-metre grid cell; a `spacing`-metre candidate
-   * lattice inside `radius` is hash-rolled at `density`, capped at `cap` live
-   * crossed-quad tufts. Deterministic from world position, so it doesn't shimmer.
+   * Near-player grass ground-cover ring (meadow/forest only). Rebuilt when the
+   * player crosses a `cell`-metre grid cell; a `spacing`-metre candidate
+   * lattice inside the quality preset's ring radius is hash-rolled at
+   * `density`. Deterministic from world position, so it doesn't shimmer.
+   *
+   * F2 P1.1 (playtest feedback — the old ring read as a dense puck): the ring
+   * is now WIDE and SPARSE with a radial density falloff — full density inside
+   * `falloffInner` × radius, lerping down to `falloffEdge` × density at the
+   * rim (and tufts shrink toward `edgeScaleMin` there) so there's no hard
+   * circular boundary. Radius/multiplier per preset live in the QUALITY table.
+   * Rebuilds are incremental: each update() slice spends at most
+   * `rebuildBudgetMs` so a wide-ring rebuild never hitches a frame.
    */
   grass: {
-    radius: 22,
+    radius: 30, // low-preset ring radius (m); medium/high override via QUALITY
     cell: 8,
     spacing: 1.7,
-    density: 0.5,
-    cap: 450,
+    density: 0.45,
+    /** Hard instance-buffer bound across all presets (high ≈ 3.6k after falloff). */
+    cap: 7000,
+    /** Fraction of the radius kept at full density before the falloff starts. */
+    falloffInner: 0.35,
+    /** Density multiplier remaining at the very rim of the ring. */
+    falloffEdge: 0.2,
+    /** Tuft scale multiplier at the rim (1 at/inside falloffInner). */
+    edgeScaleMin: 0.75,
+    /** Per-update time budget (ms) for incremental ring rebuild slices. */
+    rebuildBudgetMs: 1.5,
   },
 
   /** Per-kind instance scale range [min, max] (uniform hash pick). */

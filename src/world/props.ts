@@ -19,15 +19,15 @@ import {
   withinHarvestCone,
   type NodeState,
 } from './resources.ts';
-import { MAX_GRASS_MULTIPLIER, qualityFlags } from '../core/quality.ts';
+import { qualityFlags } from '../core/quality.ts';
 
 // ---------------------------------------------------------------------------
 // Prop mesh layer + streaming PropManager. Low-poly, flat-shaded primitives
-// (≤120 tris each) are built once per kind and shared, then drawn via a single
-// global InstancedMesh POOL per geometry bucket (Fidelity-2 P1): chunks allocate
-// index ranges into the shared pools on stream-in and free them on stream-out,
-// so total draw calls stay ~one per bucket in view instead of one per
-// (chunk, kind). The manager streams prop chunks in a smaller
+// (≤120 tris each) are built once per kind and shared, then drawn via one
+// THREE.BatchedMesh per MATERIAL GROUP (Fidelity-2 P1): chunks add/delete
+// instance ids into the batches on stream in/out, so the whole prop field
+// renders in ~9 multi-draw calls with per-instance frustum culling, instead of
+// one draw call per (chunk, kind). The manager streams prop chunks in a smaller
 // radius than terrain, emits collision cylinders for trees/rocks, and owns the
 // harvestable-resource node registry: harvesting dims/shrinks the depleted
 // instance until it respawns (SCATTER.respawnS). Pure placement/state logic
@@ -529,7 +529,7 @@ const RESOURCE_KINDS = new Set<PropKind>(['fiber', 'resin', 'shard', 'spark']);
 
 interface NodeEntry {
   node: NodeState;
-  pool: InstancePool;
+  batch: PropBatch;
   index: number;
   x: number;
   y: number;
@@ -539,9 +539,10 @@ interface NodeEntry {
   lastAvailable: boolean;
 }
 
-/** One bucket's instance-index allocation within a resident chunk. */
+/** One bucket's instance-id allocation within a resident chunk. */
 interface ChunkAlloc {
-  pool: InstancePool;
+  bucket: string;
+  batch: PropBatch;
   indices: number[];
 }
 
@@ -573,100 +574,104 @@ function compose(x: number, y: number, z: number, rot: number, scale: number): T
   return _m.compose(_p, _q, _s);
 }
 
-// Zero-scale matrix used to hide a freed instance slot (renders nothing).
-const HIDDEN = new THREE.Matrix4().makeScale(0, 0, 0);
-
 // ---------------------------------------------------------------------------
-// Global per-kind instance pool (Fidelity-2 P1). Replaces the old one-
-// InstancedMesh-per-(chunk,bucket) scheme: a single InstancedMesh per geometry
-// bucket spans EVERY resident chunk, cutting scene draw calls from several
-// hundred to ~one per bucket in view. Chunks allocate/free index ranges as they
-// stream in/out; freed slots are hidden (zero scale) and recycled via a free
-// stack, so the high-water instanceCount is stable under streaming churn. The
-// backing buffer grows (doubles) only if a rare spike would overflow it.
+// Batched prop pools (Fidelity-2 P1, revised P1.1). Replaces the old one-
+// InstancedMesh-per-(chunk,bucket) scheme with ONE THREE.BatchedMesh per
+// MATERIAL GROUP (standard / double-sided / each emissive tint / unlit spark):
+// every geometry bucket registers its shared geometry once, and every placement
+// is an addInstance() into its group's batch. This gets BOTH wins at once —
+// the whole prop field renders in ~9 draw calls (WEBGL_multi_draw) AND each
+// instance is individually frustum-culled (perObjectFrustumCulled), so off-
+// screen props never reach the vertex stage (a global unculled InstancedMesh
+// pool per kind had floored software rasterizers on vertex throughput; a
+// per-sector pool split kept culling but multiplied draw calls past budget).
+// Chunks add/delete instance ids on stream in/out; BatchedMesh recycles freed
+// ids internally, so capacity plateaus under streaming churn and grows
+// (doubling via setInstanceCount) only if a denser region overflows it.
 // ---------------------------------------------------------------------------
-const POOL_INITIAL_CAPACITY = 256;
+const BATCH_INITIAL_INSTANCES = 512;
+/** Vertex storage per group: geometries are stored once (instances share them). */
+const BATCH_VERTS_STANDARD = 32768;
+const BATCH_VERTS_SMALL = 4096;
 
-class InstancePool {
-  mesh: THREE.InstancedMesh;
-  private capacity: number;
-  /** High-water mark: slots [0, next) have been handed out at least once. */
-  private next = 0;
-  /** Recycled indices available for re-allocation. */
-  private readonly freeSlots: number[] = [];
+/** Material-group key for a bucket (one BatchedMesh + material per key). */
+function materialGroup(bucket: string): string {
+  if (bucket === 'spark') return 'basic';
+  if (DOUBLE_SIDED.has(bucket)) return 'double';
+  const e = EMISSIVE[bucket];
+  if (e) return `emissive-${bucket}`;
+  return 'standard';
+}
+
+class PropBatch {
+  readonly mesh: THREE.BatchedMesh;
+  private readonly geoIds = new Map<string, number>();
+  /** Currently-allocated instance count (visibility gate + stats). */
+  live = 0;
 
   constructor(
     private readonly scene: THREE.Scene,
-    private readonly bucket: string,
-    capacity = POOL_INITIAL_CAPACITY,
+    group: string,
+    firstBucket: string,
   ) {
-    this.capacity = capacity;
-    this.mesh = this.makeMesh(capacity);
+    const verts = group === 'standard' ? BATCH_VERTS_STANDARD : BATCH_VERTS_SMALL;
+    // All bucket geometries are non-indexed (see merge()), so no index storage.
+    this.mesh = new THREE.BatchedMesh(BATCH_INITIAL_INSTANCES, verts, 0, sharedMat(firstBucket));
+    this.mesh.name = `props batch ${group}`;
+    // Whole-mesh culling off (the field straddles the camera); per-instance
+    // culling on — each instance is tested against the frustum individually.
+    this.mesh.frustumCulled = false;
+    this.mesh.perObjectFrustumCulled = true;
+    this.mesh.visible = false; // until the first live instance lands
     this.scene.add(this.mesh);
   }
 
-  private makeMesh(capacity: number): THREE.InstancedMesh {
-    const m = new THREE.InstancedMesh(sharedGeo(this.bucket), sharedMat(this.bucket), capacity);
-    m.name = `props pool ${this.bucket}`;
-    // One mesh spans all chunks around the player, so its bounds straddle the
-    // camera — frustum-culling it as a unit would be wrong; leave it unculled
-    // (matches the grass ring). It is a single draw call regardless.
-    m.frustumCulled = false;
-    m.count = 0;
-    return m;
+  /** The batch-local geometry id for `bucket`, registering it on first use. */
+  private geometryIdFor(bucket: string): number {
+    let id = this.geoIds.get(bucket);
+    if (id === undefined) {
+      id = this.mesh.addGeometry(sharedGeo(bucket));
+      this.geoIds.set(bucket, id);
+    }
+    return id;
   }
 
-  /** Grow the backing buffer to at least `min`, preserving live instances. */
-  private grow(min: number): void {
-    let cap = this.capacity;
-    while (cap < min) cap *= 2;
-    const next = this.makeMesh(cap);
-    // Copy existing matrices (the whole live range) into the larger buffer.
-    next.instanceMatrix.array.set(
-      this.mesh.instanceMatrix.array.subarray(0, this.next * 16),
-    );
-    next.count = this.next;
-    next.instanceMatrix.needsUpdate = true;
-    this.scene.remove(this.mesh);
-    this.mesh.dispose();
-    this.mesh = next;
-    this.capacity = cap;
+  /** Add an instance of `bucket`; returns its instance id. */
+  alloc(bucket: string): number {
+    const geoId = this.geometryIdFor(bucket);
+    let id: number;
+    try {
+      id = this.mesh.addInstance(geoId);
+    } catch {
+      // At capacity: double and retry (streamed into a denser region).
+      this.mesh.setInstanceCount(this.mesh.maxInstanceCount * 2);
+      id = this.mesh.addInstance(geoId);
+    }
+    this.live++;
+    this.mesh.visible = true;
+    return id;
   }
 
-  /** Reserve a slot; returns its instance index. */
-  alloc(): number {
-    const recycled = this.freeSlots.pop();
-    if (recycled !== undefined) return recycled;
-    if (this.next >= this.capacity) this.grow(this.next + 1);
-    const idx = this.next++;
-    if (this.mesh.count < this.next) this.mesh.count = this.next;
-    return idx;
+  /** Set the transform of a live instance. */
+  setMatrix(id: number, m: THREE.Matrix4): void {
+    this.mesh.setMatrixAt(id, m);
   }
 
-  /** Set the transform of an allocated slot. */
-  setMatrix(index: number, m: THREE.Matrix4): void {
-    this.mesh.setMatrixAt(index, m);
+  /** Delete a live instance (its id is recycled internally). */
+  free(id: number): void {
+    this.mesh.deleteInstance(id);
+    this.live--;
+    if (this.live <= 0) this.mesh.visible = false; // nothing left to draw
   }
 
-  /** Release a slot: hide it (zero scale) and recycle its index. */
-  free(index: number): void {
-    this.mesh.setMatrixAt(index, HIDDEN);
-    this.freeSlots.push(index);
-  }
-
-  /** Flush queued matrix writes to the GPU. */
-  flush(): void {
-    this.mesh.instanceMatrix.needsUpdate = true;
-  }
-
-  /** Current backing-buffer capacity (test/introspection). */
-  get bufferCapacity(): number {
-    return this.capacity;
+  /** Instance capacity (grows by doubling; plateaus under churn). */
+  get capacity(): number {
+    return this.mesh.maxInstanceCount;
   }
 
   dispose(): void {
     this.scene.remove(this.mesh);
-    this.mesh.dispose();
+    this.mesh.dispose(); // internal batch geometry + data textures
   }
 }
 
@@ -691,26 +696,41 @@ export class PropManager {
   private readonly registry = new Map<string, NodeState>();
   private nextId = 1;
 
-  /** Global per-bucket instance pools, created lazily and shared by all chunks. */
-  private readonly pools = new Map<string, InstancePool>();
+  /** Prop batches keyed by material group, created lazily. */
+  private readonly batches = new Map<string, PropBatch>();
 
   /** Near-player grass ring: one InstancedMesh, rebuilt on grass-cell change. */
   private grassMesh: THREE.InstancedMesh | null = null;
   private grassCellX = Number.NaN;
   private grassCellZ = Number.NaN;
+  /** In-progress incremental ring rebuild (null when idle). */
+  private grassJob: {
+    px: number;
+    pz: number;
+    gx: number; // next lattice column to process
+    minGZ: number;
+    maxGZ: number;
+    maxGX: number;
+    n: number; // instances written so far
+    ms: number; // wall-clock spent across slices
+    slices: number;
+  } | null = null;
+  /** Stats of the last COMPLETED rebuild (report/debug). */
+  private grassLast = { instances: 0, rebuildMs: 0, slices: 0 };
 
   constructor(scene: THREE.Scene) {
     this.scene = scene;
   }
 
-  /** The pool for `bucket`, created (and added to the scene) on first use. */
-  private poolFor(bucket: string): InstancePool {
-    let pool = this.pools.get(bucket);
-    if (!pool) {
-      pool = new InstancePool(this.scene, bucket);
-      this.pools.set(bucket, pool);
+  /** The batch for `bucket`'s material group, created on first use. */
+  private batchFor(bucket: string): PropBatch {
+    const group = materialGroup(bucket);
+    let batch = this.batches.get(group);
+    if (!batch) {
+      batch = new PropBatch(this.scene, group, bucket);
+      this.batches.set(group, batch);
     }
-    return pool;
+    return batch;
   }
 
   /** Force the grass ring to rebuild on the next update (quality changed live). */
@@ -719,60 +739,125 @@ export class PropManager {
     this.grassCellZ = Number.NaN;
   }
 
-  private updateGrass(px: number, pz: number): void {
+  /** Instance count + timing of the last completed ring rebuild (report/debug). */
+  grassStats(): { instances: number; rebuildMs: number; slices: number } {
+    return { ...this.grassLast };
+  }
+
+  /**
+   * Wide sparse grass ring (see SCATTER.grass): on a cell cross, start an
+   * incremental rebuild job; every call advances it within a rebuildBudgetMs
+   * time slice so even the high preset's 64m ring never hitches a frame.
+   * `sync` (boot priming) drains the whole job at once.
+   */
+  private updateGrass(px: number, pz: number, sync = false): void {
     const cell = SCATTER.grass.cell;
     const cx = Math.floor(px / cell);
     const cz = Math.floor(pz / cell);
-    if (cx === this.grassCellX && cz === this.grassCellZ && this.grassMesh) return;
-    this.grassCellX = cx;
-    this.grassCellZ = cz;
+    if (cx !== this.grassCellX || cz !== this.grassCellZ || !this.grassMesh) {
+      this.grassCellX = cx;
+      this.grassCellZ = cz;
+      this.startGrassJob(px, pz);
+    }
+    if (this.grassJob) this.processGrassJob(sync);
+  }
 
-    const G = SCATTER.grass;
-    // Quality-scaled density: grassMultiplier (1/4/8) tightens the candidate
-    // lattice (spacing ∝ 1/√mult so instance count scales ~×mult), lifts the
-    // per-ring cap, and picks the ring radius. The buffer is sized once for the
-    // max multiplier so a preset change never needs a realloc.
-    const q = qualityFlags();
-    const mult = q.grassMultiplier;
-    const radius = q.grassRadius;
-    const step = G.spacing / Math.sqrt(mult);
-    const cap = G.cap * mult;
+  private startGrassJob(px: number, pz: number): void {
     if (!this.grassMesh) {
-      const bufCap = G.cap * MAX_GRASS_MULTIPLIER;
-      this.grassMesh = new THREE.InstancedMesh(sharedGeo('grass'), sharedMat('grass'), bufCap);
+      this.grassMesh = new THREE.InstancedMesh(
+        sharedGeo('grass'),
+        sharedMat('grass'),
+        SCATTER.grass.cap,
+      );
       this.grassMesh.name = 'props grass ring';
       this.grassMesh.frustumCulled = false; // ring straddles the player, not origin
       this.scene.add(this.grassMesh);
     }
-    const mesh = this.grassMesh;
+    const radius = qualityFlags().grassRadius;
+    const step = this.grassStep();
+    this.grassJob = {
+      px,
+      pz,
+      gx: Math.floor((px - radius) / step),
+      maxGX: Math.floor((px + radius) / step),
+      minGZ: Math.floor((pz - radius) / step),
+      maxGZ: Math.floor((pz + radius) / step),
+      n: 0,
+      ms: 0,
+      slices: 0,
+    };
+  }
 
+  /** Candidate-lattice pitch (m): base spacing tightened by √grassMultiplier. */
+  private grassStep(): number {
+    return SCATTER.grass.spacing / Math.sqrt(qualityFlags().grassMultiplier);
+  }
+
+  /**
+   * Advance the ring rebuild by one time slice (whole job when `sync`).
+   * Column-at-a-time over the candidate lattice; each surviving candidate rolls
+   * density × a radial falloff (full inside falloffInner·R, lerping to
+   * falloffEdge at the rim) and shrinks toward edgeScaleMin at the rim, so the
+   * ring fades out instead of ending in a hard circle.
+   */
+  private processGrassJob(sync: boolean): void {
+    const job = this.grassJob;
+    const mesh = this.grassMesh;
+    if (!job || !mesh) return;
+    const G = SCATTER.grass;
+    const q = qualityFlags();
+    const radius = q.grassRadius;
+    const step = this.grassStep();
     const r2 = radius * radius;
+    const inner = G.falloffInner * radius;
     const [sMin, sMax] = SCATTER.scale.grass;
-    const minGX = Math.floor((px - radius) / step);
-    const maxGX = Math.floor((px + radius) / step);
-    const minGZ = Math.floor((pz - radius) / step);
-    const maxGZ = Math.floor((pz + radius) / step);
-    let n = 0;
-    for (let gx = minGX; gx <= maxGX && n < cap; gx++) {
-      for (let gz = minGZ; gz <= maxGZ && n < cap; gz++) {
-        if (hash2(GRASS_DEN, gx, gz) > G.density) continue;
+    const cap = G.cap;
+    const t0 = performance.now();
+
+    while (job.gx <= job.maxGX) {
+      const gx = job.gx;
+      for (let gz = job.minGZ; gz <= job.maxGZ && job.n < cap; gz++) {
+        const roll = hash2(GRASS_DEN, gx, gz);
+        if (roll > G.density) continue; // cheap early reject at full density
         const x = gx * step + step * 0.5 + (hash2(GRASS_JX, gx, gz) - 0.5) * step;
         const z = gz * step + step * 0.5 + (hash2(GRASS_JZ, gx, gz) - 0.5) * step;
-        const dx = x - px;
-        const dz = z - pz;
-        if (dx * dx + dz * dz > r2) continue;
+        const dx = x - job.px;
+        const dz = z - job.pz;
+        const d2 = dx * dx + dz * dz;
+        if (d2 > r2) continue;
+        // Radial density falloff: edgeT 0 inside the full-density core → 1 at rim.
+        const d = Math.sqrt(d2);
+        const edgeT = d <= inner ? 0 : (d - inner) / (radius - inner);
+        const falloff = 1 - (1 - G.falloffEdge) * edgeT;
+        if (roll > G.density * falloff) continue;
         const b = biomeAt(x, z);
         if (b !== 'meadow' && b !== 'forest') continue;
         const y = heightAt(x, z);
         if (y < SCATTER.minPlacementY) continue;
         const rot = hash2(GRASS_ROT, gx, gz) * Math.PI * 2;
-        const sc = sMin + hash2(GRASS_SCL, gx, gz) * (sMax - sMin);
-        mesh.setMatrixAt(n, compose(x, y, z, rot, sc));
-        n++;
+        const sc =
+          (sMin + hash2(GRASS_SCL, gx, gz) * (sMax - sMin)) *
+          (1 - (1 - G.edgeScaleMin) * edgeT);
+        mesh.setMatrixAt(job.n, compose(x, y, z, rot, sc));
+        job.n++;
       }
+      job.gx++;
+      if (!sync && performance.now() - t0 >= G.rebuildBudgetMs) break;
     }
-    mesh.count = n;
+
+    job.ms += performance.now() - t0;
+    job.slices++;
     mesh.instanceMatrix.needsUpdate = true;
+    if (job.gx > job.maxGX || job.n >= cap) {
+      // Done: clamp the visible range to the fresh ring (stale tail dropped).
+      mesh.count = job.n;
+      this.grassLast = { instances: job.n, rebuildMs: job.ms, slices: job.slices };
+      this.grassJob = null;
+    } else if (mesh.count < job.n) {
+      // Mid-rebuild: extend over freshly-written slots; a longer previous ring
+      // keeps its (stale, but valid) tail visible until the job completes.
+      mesh.count = job.n;
+    }
   }
 
   /**
@@ -824,7 +909,7 @@ export class PropManager {
         if (!this.loaded.has(key)) this.loaded.set(key, this.buildChunk(cx, cz, now));
       }
     }
-    this.updateGrass(playerX, playerZ);
+    this.updateGrass(playerX, playerZ, true); // boot priming: whole ring at once
     this.syncVisuals(now);
   }
 
@@ -832,8 +917,8 @@ export class PropManager {
     const placements = scatterForChunk(cx, cz);
 
     // Group placement indices by geometry bucket (`variant ?? kind`), so each
-    // tree/crystal/mesa flavour draws from its own global pool while obstacle,
-    // grapple and resource logic still key off the gameplay `kind`.
+    // tree/crystal/mesa flavour instances its own registered geometry while
+    // obstacle, grapple and resource logic still key off the gameplay `kind`.
     const byBucket = new Map<string, { p: PropPlacement; index: number }[]>();
     placements.forEach((p, index) => {
       const bucket = p.variant ?? p.kind;
@@ -848,13 +933,12 @@ export class PropManager {
     const nodes: NodeEntry[] = [];
 
     for (const [bucket, list] of byBucket) {
-      // Allocate one index in the bucket's global pool per placement; the pool
-      // spans every chunk so this is a range within one shared InstancedMesh.
-      const pool = this.poolFor(bucket);
+      // One instance id per placement in the bucket's material-group batch.
+      const batch = this.batchFor(bucket);
       const indices: number[] = [];
 
       for (const { p, index } of list) {
-        const slot = pool.alloc();
+        const slot = batch.alloc(bucket);
         indices.push(slot);
 
         const ob = placementObstacle(p);
@@ -871,10 +955,10 @@ export class PropManager {
           }
           const avail = isAvailable(node, now);
           const s = avail ? p.scale : p.scale * SCATTER.depletedScale;
-          pool.setMatrix(slot, compose(p.x, p.y, p.z, p.rot, s));
+          batch.setMatrix(slot, compose(p.x, p.y, p.z, p.rot, s));
           nodes.push({
             node,
-            pool,
+            batch,
             index: slot,
             x: p.x,
             y: p.y,
@@ -884,12 +968,11 @@ export class PropManager {
             lastAvailable: avail,
           });
         } else {
-          pool.setMatrix(slot, compose(p.x, p.y, p.z, p.rot, p.scale));
+          batch.setMatrix(slot, compose(p.x, p.y, p.z, p.rot, p.scale));
         }
       }
 
-      pool.flush();
-      allocs.push({ pool, indices });
+      allocs.push({ bucket, batch, indices });
     }
 
     return { cx, cz, allocs, obstacles, grappleColliders, nodes };
@@ -898,16 +981,13 @@ export class PropManager {
   /** Restore/dim node instances whose availability changed since last sync. */
   private syncVisuals(now: number): void {
     for (const chunk of this.loaded.values()) {
-      const dirty = new Set<InstancePool>();
       for (const e of chunk.nodes) {
         const avail = isAvailable(e.node, now);
         if (avail === e.lastAvailable) continue;
         const s = avail ? e.scale : e.scale * SCATTER.depletedScale;
-        e.pool.setMatrix(e.index, compose(e.x, e.y, e.z, e.rot, s));
+        e.batch.setMatrix(e.index, compose(e.x, e.y, e.z, e.rot, s));
         e.lastAvailable = avail;
-        dirty.add(e.pool);
       }
-      for (const pool of dirty) pool.flush();
     }
   }
 
@@ -969,40 +1049,68 @@ export class PropManager {
     return res.gained;
   }
 
-  /** Dispose every resident chunk + tear down the shared pools + grass ring. */
+  /** Dispose every resident chunk + tear down the batches + grass ring. */
   dispose(): void {
     for (const chunk of this.loaded.values()) this.disposeChunk(chunk);
     this.loaded.clear();
-    for (const pool of this.pools.values()) pool.dispose();
-    this.pools.clear();
+    for (const batch of this.batches.values()) batch.dispose();
+    this.batches.clear();
     if (this.grassMesh) {
       this.scene.remove(this.grassMesh);
       this.grassMesh.dispose();
       this.grassMesh = null;
       this.grassCellX = Number.NaN;
       this.grassCellZ = Number.NaN;
+      this.grassJob = null;
     }
   }
 
   /**
-   * Stream a chunk out: free its instance slots back to each bucket pool (hidden
-   * + recycled), retaining the pools themselves for the next chunk. The shared
-   * geometry/material and the pool buffers live on across chunk churn.
+   * Stream a chunk out: delete its instances from each material-group batch
+   * (ids recycle internally), retaining the batches themselves for the next
+   * chunk. Shared geometry/material and batch buffers live on across churn.
    */
   private disposeChunk(chunk: LoadedProps): void {
-    for (const { pool, indices } of chunk.allocs) {
-      for (const idx of indices) pool.free(idx);
-      pool.flush();
+    for (const { batch, indices } of chunk.allocs) {
+      for (const idx of indices) batch.free(idx);
     }
   }
 
   /**
-   * Pool capacities keyed by bucket (test/introspection): asserts pools don't
-   * grow without bound under streaming churn.
+   * Batch stats keyed by material group (test/introspection): instance
+   * capacity + live instance count, used by the perf churn test to assert the
+   * batches don't grow without bound under streaming.
    */
-  poolCapacities(): Record<string, number> {
-    const out: Record<string, number> = {};
-    for (const [bucket, pool] of this.pools) out[bucket] = pool.bufferCapacity;
+  poolStats(): Record<string, { capacity: number; live: number }> {
+    const out: Record<string, { capacity: number; live: number }> = {};
+    for (const [group, batch] of this.batches) {
+      out[group] = { capacity: batch.capacity, live: batch.live };
+    }
     return out;
+  }
+
+  /**
+   * Test/introspection: true if some resident chunk holds a live `bucket`
+   * instance whose batch matrix sits at (x, y, z) (within `eps`).
+   */
+  hasInstanceAt(bucket: string, x: number, y: number, z: number, eps = 1e-3): boolean {
+    const m = new THREE.Matrix4();
+    for (const chunk of this.loaded.values()) {
+      for (const alloc of chunk.allocs) {
+        if (alloc.bucket !== bucket) continue;
+        for (const id of alloc.indices) {
+          alloc.batch.mesh.getMatrixAt(id, m);
+          const e = m.elements;
+          if (
+            Math.abs(e[12]! - x) < eps &&
+            Math.abs(e[13]! - y) < eps &&
+            Math.abs(e[14]! - z) < eps
+          ) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
   }
 }

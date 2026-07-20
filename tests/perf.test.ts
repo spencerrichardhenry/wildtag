@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { sampleChunk } from '../src/world/chunks.ts';
 import { PropManager } from '../src/world/props.ts';
-import { CHUNKS } from '../src/core/constants.ts';
+import { scatterForChunk } from '../src/world/scatter.ts';
+import { CHUNKS, SCATTER } from '../src/core/constants.ts';
 
 // ---------------------------------------------------------------------------
 // Fidelity-2 P1 perf harness (unit). Two guards:
@@ -11,9 +12,11 @@ import { CHUNKS } from '../src/core/constants.ts';
 //     Machine variance is absorbed by a tolerance multiplier read from
 //     PERF_TOLERANCE (default 3), so a slow CI box doesn't flake the gate while
 //     a genuine regression (a per-vertex re-tap creeping back in) still trips.
-//  2. pool alloc/free churn — streaming chunks in and out repeatedly must not
-//     grow the global instance pools without bound: capacity plateaus once the
-//     peak concurrent instance count is reached and stays there across churn.
+//  2. batch alloc/free churn — update()-driven streaming (walk ~80 chunk
+//     neighborhoods and back, twice) must not grow the prop batches without
+//     bound: instance capacity AND live count plateau at one-neighborhood
+//     scale (deleted ids recycle), and a re-entered chunk's placements render
+//     from live batch instances again.
 // ---------------------------------------------------------------------------
 
 // Machine-tolerance multiplier. The spec's reference budget (0.4 ms/chunk @2m
@@ -64,41 +67,72 @@ describe('perf: chunk-build benchmark', () => {
 });
 
 describe('perf: instance-pool alloc/free churn', () => {
-  it('streams 50 chunks in/out with a stable (non-growing) pool capacity', () => {
+  it('walks ~80 chunk neighborhoods and back: pools plateau, re-entered chunks render', () => {
     const scene = new THREE.Scene();
     const props = new PropManager(scene);
     const now = 0;
     const CHUNK = CHUNKS.size;
 
-    // One churn lap: sweep the player across 50 distinct chunk origins (each far
-    // enough that the previous field fully streams out and a fresh one streams
-    // in), then return home. Every stream-out frees slots back to the pools and
-    // every stream-in re-allocates them from the free list.
-    const lap = (): void => {
-      for (let i = 0; i < 50; i++) {
-        const cx = (i * 37) % 400; // wander over a wide, non-repeating span
-        const cz = (i * 53) % 400;
-        props.primeAround(cx * CHUNK, cz * CHUNK, now);
-      }
-      props.primeAround(0, 0, now);
+    // update()-driven streaming (NOT primeAround, which only ever adds): each
+    // update disposes out-of-range chunks — freeing their pool slots — and
+    // builds up to SCATTER.buildsPerUpdate missing ones. Pump until the field
+    // is steady at a position.
+    const settle = (x: number, z: number, pumps = 16): void => {
+      for (let i = 0; i < pumps; i++) props.update(x, z, now);
     };
 
-    // First lap warms every region's pools to their peak concurrency; the second
-    // identical lap must NOT grow any pool further — capacity has plateaued.
-    lap();
-    const capsA = props.poolCapacities();
-    lap();
-    const capsB = props.poolCapacities();
+    // One lap: walk one chunk per step for 80 steps (80 overlapping chunk
+    // neighborhoods — every step streams a fresh edge row in and frees the
+    // trailing row's slots), then walk back to the start.
+    const STEPS = 80;
+    const lap = (): void => {
+      for (let i = 1; i <= STEPS; i++) settle(i * CHUNK, 0, 4);
+      for (let i = STEPS - 1; i >= 0; i--) settle(i * CHUNK, 0, 4);
+    };
 
-    expect(capsB).toEqual(capsA);
+    settle(0, 0); // initial full neighborhood
 
-    // Capacity is bounded by peak concurrency (a handful of resident chunks ×
-    // per-kind caps), NOT by the ~50 chunks streamed — guards a leak or a
-    // runaway grow() loop.
-    for (const [bucket, cap] of Object.entries(capsB)) {
-      expect(cap, `pool "${bucket}" capacity ${cap} unreasonably large`).toBeLessThanOrEqual(
-        1 << 15,
-      );
+    // Lap 1 warms every batch to the densest neighborhood's working set…
+    lap();
+    const statsA = props.poolStats();
+    // …and an identical lap 2 must not grow ANY batch further: capacity AND
+    // live instance count have plateaued (a leaked free() would climb both).
+    lap();
+    const statsB = props.poolStats();
+    expect(statsB).toEqual(statsA);
+
+    // (b) Capacity plateaus at ONE-NEIGHBORHOOD scale, not roam distance: a
+    // batch only ever holds the resident neighborhood's placements (deleted
+    // ids recycle), so capacity is bounded by peak live concurrency × the ×2
+    // growth slack — while ids leaked across the ~160 neighborhoods visited
+    // would keep doubling the buffers far past this.
+    const span = 2 * SCATTER.radius + 1;
+    const residentChunks = span * span; // ≤ 81 chunks ever resident at once
+    const liveBound = Math.max(...Object.values(SCATTER.caps)) * residentChunks;
+    for (const [key, s] of Object.entries(statsB)) {
+      expect(
+        s.live,
+        `batch "${key}" live count ${s.live} exceeds one-neighborhood scale (${liveBound})`,
+      ).toBeLessThanOrEqual(liveBound);
+      expect(
+        s.capacity,
+        `batch "${key}" capacity ${s.capacity} scales with roam distance`,
+      ).toBeLessThanOrEqual(8192);
+    }
+    // Sanity: the walk actually placed props (the assertions above aren't vacuous).
+    expect(Math.max(...Object.values(statsB).map((s) => s.live))).toBeGreaterThan(0);
+
+    // (c) A re-entered chunk renders correctly: back at the origin, chunk (0,0)'s
+    // deterministic placements must each occupy a live batch instance whose
+    // matrix sits at the placement's world position (re-allocation + matrix
+    // rewrite worked; a broken free/alloc path leaves stale or missing slots).
+    const placements = scatterForChunk(0, 0);
+    expect(placements.length).toBeGreaterThan(0);
+    for (const p of placements.slice(0, 12)) {
+      expect(
+        props.hasInstanceAt(p.variant ?? p.kind, p.x, p.y, p.z),
+        `re-entered chunk (0,0) placement ${p.kind}@(${p.x.toFixed(1)},${p.z.toFixed(1)}) not present in its batch`,
+      ).toBe(true);
     }
 
     props.dispose();
