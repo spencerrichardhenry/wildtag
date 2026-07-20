@@ -297,11 +297,35 @@ export const INPUT = {
 export const CHUNKS = {
   /** Chunk edge length (m). */
   size: 64,
-  /** Vertices per chunk edge (so `verts - 1` quads span `size` metres). */
+  /** Vertices per chunk edge (so `verts - 1` quads span `size` metres). 2 m
+   *  grid — the FAR LOD used everywhere the near-LOD ring doesn't reach. */
   verts: 33,
+  /**
+   * Near-LOD vertices per chunk edge (F2 P2): a 1 m grid (64 quads span the
+   * 64 m chunk) built for chunks close to the player when the `nearLod` quality
+   * flag is on. 4× the vertex density of the far grid, so the ground near the
+   * player reads as smooth rolling landscape rather than 2 m polygon plates.
+   */
+  nearVerts: 65,
+  /**
+   * Near-LOD ring hysteresis (m, chunk-centre → player). A far chunk PROMOTES
+   * to the 1 m grid once its centre is within `lodPromote`; a near chunk
+   * DEMOTES back to 2 m only past `lodDemote`. The gap between them keeps a
+   * chunk sitting on the boundary from thrashing rebuilds as the player jitters.
+   */
+  lodPromote: 88,
+  lodDemote: 104,
+  /**
+   * Edge-skirt drop (m): every chunk's rim vertices are duplicated and pushed
+   * this far straight down, skinned with a vertical wall (rim colour + normal),
+   * so the sub-metre height mismatch at a 1 m↔2 m LOD boundary hides behind a
+   * skirt instead of showing a see-through T-junction crack. No stitching.
+   */
+  skirtDrop: 0.6,
   /** Keep-resident radius in chunks (Chebyshev) around the player. */
   radius: 7,
-  /** Max chunk meshes built per `update()` call, to avoid frame hitches. */
+  /** Max chunk meshes built per `update()` call, to avoid frame hitches.
+   *  LOD promotions queue against the same budget as fresh builds. */
   buildsPerUpdate: 8,
 } as const;
 
@@ -608,6 +632,20 @@ export const ENV = {
   /** Max blend fraction toward rock on the steepest slopes. */
   slopeRockMax: 0.6,
 
+  /**
+   * Vertex ambient occlusion (F2 P2), baked into the terrain vertex colour from
+   * height-grid concavity: `d = (avg of the 4 ±STEP neighbour heights) − vertex
+   * height`. A positive `d` is a concavity (the vertex sits below its
+   * surroundings → a valley/pit) and DARKENS; a negative `d` is a convexity (a
+   * ridge/bump) and gently LIGHTENS. `aoScale` is the height delta (m) that
+   * saturates the effect; the two strengths cap the multiplier at
+   * `1 − aoDarken` (valleys) and `1 + aoLighten` (ridges). Pure & seam-safe
+   * (same ±STEP taps on both sides of a shared edge).
+   */
+  aoScale: 2.2,
+  aoDarken: 0.18,
+  aoLighten: 0.06,
+
   /** Translucent water plane (two-tone: shallow near, deep far). */
   waterY: 0.05,
   waterSize: 2200,
@@ -616,6 +654,26 @@ export const ENV = {
   waterOpacity: 0.8,
   /** Radial distance (m) over which the water fades shallow→deep tone. */
   waterToneRadius: 900,
+
+  /**
+   * Water 1.5 (F2 P2). The plane is subdivided (`waterSegments`) so a per-vertex
+   * shore-fade alpha (baked from the seabed depth = `waterY − heightAt` at each
+   * vertex, ramping 0→1 over `waterShoreFade` m of depth) softens the shoreline
+   * instead of a hard cut. A Phong material carries a shader (onBeforeCompile)
+   * that perturbs the surface normal with two scrolling procedural ripples
+   * (amplitude `waterRippleAmp`, spatial freq `waterRippleFreq`, scroll speed
+   * `waterRippleSpeed`) so the sun specular shimmers, plus a view-angle
+   * (fresnel-ish) rim that lifts opacity at grazing angles by `waterFresnel`.
+   * True reflections stay OFF (P3/high).
+   */
+  waterSegments: 128,
+  waterShoreFade: 2.5,
+  waterSpecular: 0x9fd8e8,
+  waterShininess: 90,
+  waterRippleAmp: 0.06,
+  waterRippleFreq: 0.14,
+  waterRippleSpeed: 0.8,
+  waterFresnel: 0.28,
 
   /**
    * Optional directional shadow map (perf-gated in main.ts). A single tight

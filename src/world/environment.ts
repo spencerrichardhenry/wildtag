@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { ENV } from '../core/constants.ts';
+import { heightAt } from './terrain.ts';
 
 // ---------------------------------------------------------------------------
 // Static scene environment: lighting, fog, a 3-stop gradient sky dome (with a
@@ -98,40 +99,116 @@ function radialTexture(): THREE.CanvasTexture {
 }
 
 /**
- * Two-tone translucent water plane: vertex colours ramp from a shallow tone at
- * the centre to a deeper tone toward the edges (a cheap depth read), sitting
- * just above sea level. (A true distance-from-shore fresnel alpha would be
- * fiddlier for little gain at this fidelity, so it is intentionally skipped.)
+ * Water 1.5 — a translucent Phong plane with an animated shader (F2 P2):
+ *  • two-tone vertex colours (shallow centre → deep edge, a cheap depth read);
+ *  • a per-vertex shore-fade alpha baked from the seabed depth (waterY −
+ *    heightAt) at each vertex, so the shoreline dissolves instead of a hard cut
+ *    (the plane is subdivided ENV.waterSegments² so the fade has resolution);
+ *  • two scrolling procedural ripples perturbing the surface normal in the
+ *    fragment shader → the sun specular shimmers;
+ *  • a view-angle (fresnel-ish) rim that lifts opacity at grazing angles.
+ * True planar reflections stay OFF (P3/high). The scroll clock is advanced by
+ * `updateWater` from the main loop; the compiled shader is stashed on
+ * `material.userData.shader` on first compile.
  */
 function makeWater(): THREE.Mesh {
-  const geo = new THREE.PlaneGeometry(ENV.waterSize, ENV.waterSize, 24, 24);
+  const seg = ENV.waterSegments;
+  const geo = new THREE.PlaneGeometry(ENV.waterSize, ENV.waterSize, seg, seg);
   const shallow = new THREE.Color(ENV.waterColor);
   const deep = new THREE.Color(ENV.waterColorDeep);
   const pos = geo.getAttribute('position');
   const colors = new Float32Array(pos.count * 3);
+  const shore = new Float32Array(pos.count); // per-vertex shore-fade alpha [0,1]
   const c = new THREE.Color();
   for (let i = 0; i < pos.count; i++) {
-    // Plane is built in its local XY (rotated flat below), so radius uses x/y.
-    const r = Math.hypot(pos.getX(i), pos.getY(i));
+    // Plane is built in its local XY then rotated flat below: local (x, y) maps
+    // to world (x, 0, -y). Radius (for the tone ramp) is invariant under that.
+    const lx = pos.getX(i);
+    const ly = pos.getY(i);
+    const r = Math.hypot(lx, ly);
     const t = THREE.MathUtils.clamp(r / ENV.waterToneRadius, 0, 1);
     c.copy(shallow).lerp(deep, t);
     colors[i * 3] = c.r;
     colors[i * 3 + 1] = c.g;
     colors[i * 3 + 2] = c.b;
+    // Shore fade: 0 where the seabed meets the surface (no water depth), ramping
+    // to 1 over ENV.waterShoreFade metres of depth.
+    const depth = ENV.waterY - heightAt(lx, -ly);
+    shore[i] = THREE.MathUtils.clamp(depth / ENV.waterShoreFade, 0, 1);
   }
   geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  geo.setAttribute('aShore', new THREE.BufferAttribute(shore, 1));
 
-  const mat = new THREE.MeshLambertMaterial({
+  const mat = new THREE.MeshPhongMaterial({
     vertexColors: true,
     transparent: true,
     opacity: ENV.waterOpacity,
     depthWrite: false,
+    specular: new THREE.Color(ENV.waterSpecular),
+    shininess: ENV.waterShininess,
   });
+
+  mat.onBeforeCompile = (shader) => {
+    shader.uniforms.uTime = { value: 0 };
+    shader.uniforms.uRippleAmp = { value: ENV.waterRippleAmp };
+    shader.uniforms.uRippleFreq = { value: ENV.waterRippleFreq };
+    shader.uniforms.uRippleSpeed = { value: ENV.waterRippleSpeed };
+    shader.uniforms.uFresnel = { value: ENV.waterFresnel };
+
+    // Vertex: carry the shore-fade alpha + the world XZ to the fragment shader.
+    shader.vertexShader = shader.vertexShader
+      .replace(
+        '#include <common>',
+        '#include <common>\nattribute float aShore;\nvarying float vShore;\nvarying vec2 vWXZ;',
+      )
+      .replace(
+        '#include <begin_vertex>',
+        '#include <begin_vertex>\nvShore = aShore;\nvWXZ = (modelMatrix * vec4(position, 1.0)).xz;',
+      );
+
+    // Fragment: perturb the geometric normal with two scrolling procedural
+    // ripples (specular shimmer), then a fresnel-ish rim + shore fade on alpha.
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        '#include <common>',
+        '#include <common>\nuniform float uTime;\nuniform float uRippleAmp;\nuniform float uRippleFreq;\nuniform float uRippleSpeed;\nuniform float uFresnel;\nvarying float vShore;\nvarying vec2 vWXZ;',
+      )
+      .replace(
+        '#include <normal_fragment_begin>',
+        `#include <normal_fragment_begin>
+        {
+          float t = uTime * uRippleSpeed;
+          float f = uRippleFreq;
+          // Two scrolling procedural reads → a normal-space gradient.
+          float rx = sin(vWXZ.x * f + t) + sin(vWXZ.y * f * 0.8 - t * 1.3);
+          float rz = sin(vWXZ.y * f + t * 0.9) + sin(vWXZ.x * f * 0.7 + t * 0.6);
+          normal = normalize(normal + vec3(rx, 0.0, rz) * uRippleAmp);
+        }`,
+      )
+      .replace(
+        '#include <dithering_fragment>',
+        `#include <dithering_fragment>
+        float fres = pow(1.0 - abs(dot(normalize(vNormal), normalize(vViewPosition))), 3.0);
+        gl_FragColor.a = clamp(gl_FragColor.a * vShore + fres * uFresnel, 0.0, 1.0);`,
+      );
+
+    mat.userData.shader = shader;
+  };
+
   const water = new THREE.Mesh(geo, mat);
   water.rotation.x = -Math.PI / 2;
   water.position.y = ENV.waterY;
   water.name = 'water';
   return water;
+}
+
+/** Advance the water surface's ripple clock (called each frame from main). */
+export function updateWater(scene: THREE.Scene, time: number): void {
+  const water = scene.getObjectByName('water') as THREE.Mesh | null;
+  const shader = (water?.material as THREE.Material | undefined)?.userData?.shader as
+    | { uniforms: { uTime: { value: number } } }
+    | undefined;
+  if (shader) shader.uniforms.uTime.value = time;
 }
 
 /**

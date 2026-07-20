@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { CAMERA, ENV, MAX_FRAME_DT, MOUNT, SIM_DT, STRUCTURES } from './core/constants.ts';
-import { setupEnvironment } from './world/environment.ts';
+import { setupEnvironment, updateWater } from './world/environment.ts';
 import { ChunkManager } from './world/chunks.ts';
 import { PropManager } from './world/props.ts';
 import { groundNormalAt, heightAt } from './world/terrain.ts';
@@ -1072,6 +1072,8 @@ function bootGame(): void {
     }
     farmVisuals.update(farm, roster, worldTime, SIM_DT);
     updateShadowFollow();
+    // Water 1.5: advance the shader ripple/shimmer clock (one uniform write).
+    updateWater(scene, worldTime);
     renderer.render(scene, camera);
     npcs.updateLabels(camera);
     const p = player.pos;

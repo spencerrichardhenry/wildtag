@@ -723,10 +723,12 @@ async function checkQualityPresets() {
       const q = await low.evaluate(() => window.__game.quality());
       assert(st.quality === 'low', `?quality=low → state.quality ${st.quality}`);
       assert(q.flags.shadowCascades === 0, `low shadowCascades ${q.flags.shadowCascades} != 0`);
+      // P2: near-LOD 1 m terrain is OFF on the low preset (2 m grid everywhere).
+      assert(q.flags.nearLod === false, `low nearLod ${q.flags.nearLod} != false`);
       await sleep(1000);
       lowDc = await medianDrawCalls(low);
       lowFps = await measureFps(low);
-      console.log(`    (b) low: quality=${st.quality} shadowCascades=${q.flags.shadowCascades} grassMult=${q.flags.grassMultiplier} drawCalls=${lowDc}`);
+      console.log(`    (b) low: quality=${st.quality} shadowCascades=${q.flags.shadowCascades} nearLod=${q.flags.nearLod} grassMult=${q.flags.grassMultiplier} drawCalls=${lowDc}`);
       console.log(`    (d) low fps over 3s = ${lowFps.toFixed(1)}`);
       assert(low.__errors.length === 0, `low boot errors: ${low.__errors.join(' | ')}`);
     } finally {
@@ -740,10 +742,12 @@ async function checkQualityPresets() {
       const q = await high.evaluate(() => window.__game.quality());
       assert(st.quality === 'high', `?quality=high → state.quality ${st.quality}`);
       assert(q.flags.shadowCascades === 2, `high shadowCascades ${q.flags.shadowCascades} != 2`);
+      // P2: near-LOD 1 m terrain is ON for medium+; differs from low (false).
+      assert(q.flags.nearLod === true, `high nearLod ${q.flags.nearLod} != true`);
       await sleep(1000);
       highDc = await medianDrawCalls(high);
       highFps = await measureFps(high);
-      console.log(`    (b) high: quality=${st.quality} shadowCascades=${q.flags.shadowCascades} grassMult=${q.flags.grassMultiplier} drawCalls=${highDc}`);
+      console.log(`    (b) high: quality=${st.quality} shadowCascades=${q.flags.shadowCascades} nearLod=${q.flags.nearLod} grassMult=${q.flags.grassMultiplier} drawCalls=${highDc}`);
       console.log(`    (d) high fps over 3s = ${highFps.toFixed(1)} (informational on software render)`);
       assert(high.__errors.length === 0, `high boot errors: ${high.__errors.join(' | ')}`);
     } finally {
@@ -752,7 +756,7 @@ async function checkQualityPresets() {
 
     // (b) low ≤ high draw calls, and the presets' shadow flag differs (0 vs 2).
     assert(lowDc <= highDc, `low draw calls ${lowDc} > high ${highDc}`);
-    console.log(`    (b) low.drawCalls ${lowDc} ≤ high.drawCalls ${highDc}; shadow flag differs (0 vs 2)`);
+    console.log(`    (b) low.drawCalls ${lowDc} ≤ high.drawCalls ${highDc}; shadow flag differs (0 vs 2); nearLod differs (false vs true)`);
     // (d) assert only against the low floor; high is informational on SwiftShader.
     assert(lowFps > 8, `low preset fps ${lowFps.toFixed(1)} below the software floor of 8`);
     console.log(`    fps recorded — low=${lowFps.toFixed(1)} high=${highFps.toFixed(1)} (assert: low ≥ 8)`);

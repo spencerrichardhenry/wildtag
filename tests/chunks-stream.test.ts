@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { ChunkManager } from '../src/world/chunks.ts';
+import { ChunkManager, LOD_FAR, LOD_NEAR, selectChunkLod, vertsForLod } from '../src/world/chunks.ts';
 import { CHUNKS } from '../src/core/constants.ts';
 
 // The ChunkManager streams terrain meshes around the player, capped at
@@ -22,6 +22,45 @@ function buildToSteady(m: ChunkManager, scene: THREE.Scene, x: number, z: number
   }
   return prev;
 }
+
+describe('selectChunkLod (near-LOD hysteresis)', () => {
+  it('keeps everything far when nearLod is disabled (low preset)', () => {
+    expect(selectChunkLod(0, LOD_FAR, false)).toBe(LOD_FAR);
+    expect(selectChunkLod(0, LOD_NEAR, false)).toBe(LOD_FAR);
+    expect(selectChunkLod(1000, LOD_NEAR, false)).toBe(LOD_FAR);
+  });
+
+  it('promotes a far chunk to near only inside lodPromote', () => {
+    expect(selectChunkLod(CHUNKS.lodPromote - 1, LOD_FAR, true)).toBe(LOD_NEAR);
+    // Between promote and demote, a currently-far chunk stays far (hysteresis).
+    expect(selectChunkLod(CHUNKS.lodPromote + 1, LOD_FAR, true)).toBe(LOD_FAR);
+    expect(selectChunkLod((CHUNKS.lodPromote + CHUNKS.lodDemote) / 2, LOD_FAR, true)).toBe(LOD_FAR);
+  });
+
+  it('demotes a near chunk to far only past lodDemote', () => {
+    expect(selectChunkLod(CHUNKS.lodDemote + 1, LOD_NEAR, true)).toBe(LOD_FAR);
+    // Between promote and demote, a currently-near chunk stays near (hysteresis).
+    expect(selectChunkLod(CHUNKS.lodDemote - 1, LOD_NEAR, true)).toBe(LOD_NEAR);
+    expect(selectChunkLod((CHUNKS.lodPromote + CHUNKS.lodDemote) / 2, LOD_NEAR, true)).toBe(LOD_NEAR);
+  });
+
+  it('does not thrash across a single boundary crossing (promote < demote)', () => {
+    // A chunk oscillating in the hysteresis band holds whatever LOD it had.
+    let lod = LOD_FAR;
+    const band = (CHUNKS.lodPromote + CHUNKS.lodDemote) / 2;
+    lod = selectChunkLod(band, lod, true);
+    expect(lod).toBe(LOD_FAR); // never promoted (never dipped below lodPromote)
+    lod = selectChunkLod(CHUNKS.lodPromote - 5, lod, true); // approach → promote
+    expect(lod).toBe(LOD_NEAR);
+    lod = selectChunkLod(band, lod, true); // drift back into the band → stays near
+    expect(lod).toBe(LOD_NEAR);
+  });
+
+  it('maps LOD levels to the 1 m / 2 m grids', () => {
+    expect(vertsForLod(LOD_NEAR)).toBe(CHUNKS.nearVerts);
+    expect(vertsForLod(LOD_FAR)).toBe(CHUNKS.verts);
+  });
+});
 
 describe('ChunkManager streaming + early-return', () => {
   it('builds at most buildsPerUpdate chunks per call', () => {

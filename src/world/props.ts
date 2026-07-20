@@ -500,6 +500,30 @@ function materialFor(bucket: string): THREE.Material {
     mat.emissive = new THREE.Color(e.hex);
     mat.emissiveIntensity = e.i;
   }
+  // Grass 2.0 wind (F2 P2): a vertex-shader sway on the grass-ring material via
+  // onBeforeCompile. One `uTime` uniform is advanced per frame (props.update →
+  // updateGrassWind) — NO per-instance matrix writes. Amplitude scales with the
+  // tuft's local height so the roots (y ≈ 0) stay planted while the tips sway;
+  // the phase is offset by each instance's world XZ so the field ripples rather
+  // than sways in lockstep. (Meadow flowers aren't joined: `flower` lives in the
+  // shared `standard` material group with the trees/rocks, so a wind shader
+  // there would sway the whole scenery batch — not trivially shareable.)
+  if (bucket === 'grass') {
+    mat.onBeforeCompile = (shader) => {
+      shader.uniforms.uTime = { value: 0 };
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', '#include <common>\nuniform float uTime;')
+        .replace(
+          '#include <begin_vertex>',
+          `#include <begin_vertex>
+          float windPhase = instanceMatrix[3].x * 0.35 + instanceMatrix[3].z * 0.35;
+          float windSway = sin(uTime * 1.8 + windPhase) * 0.14 * max(position.y, 0.0);
+          transformed.x += windSway;
+          transformed.z += windSway * 0.6;`,
+        );
+      mat.userData.shader = shader;
+    };
+  }
   return mat;
 }
 
@@ -893,7 +917,17 @@ export class PropManager {
     }
 
     this.updateGrass(playerX, playerZ);
+    this.updateGrassWind(now);
     this.syncVisuals(now);
+  }
+
+  /** Advance the grass-ring wind clock (one uniform write; see materialFor). */
+  private updateGrassWind(now: number): void {
+    const m = this.grassMesh?.material as THREE.Material | undefined;
+    const shader = m?.userData?.shader as
+      | { uniforms: { uTime: { value: number } } }
+      | undefined;
+    if (shader) shader.uniforms.uTime.value = now;
   }
 
   /** Build every in-range chunk synchronously (boot priming, no hitch cap). */

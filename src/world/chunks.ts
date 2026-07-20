@@ -3,22 +3,33 @@ import { CHUNKS, ENV, WORLD_SEED } from '../core/constants.ts';
 import type { Biome } from '../core/types.ts';
 import { hash2 } from '../core/rng.ts';
 import { heightAt, biomeAt } from './terrain.ts';
+import { qualityFlags } from '../core/quality.ts';
 
 // ---------------------------------------------------------------------------
 // Streaming terrain mesh. The world is tiled into CHUNKS.size-metre squares;
-// each chunk is a CHUNKS.verts×CHUNKS.verts vertex grid sampled from `heightAt`
-// (positions in world coordinates, so neighbouring chunks share edge samples
-// exactly → no seams). Vertices are coloured per biome, with a shore-sand tint
-// below ENV.sandHeight. Chunks within CHUNKS.radius chunks of the player are
-// kept resident; the rest are disposed (geometry freed, no leaks).
+// each chunk is a verts×verts vertex grid sampled from `heightAt` (positions in
+// world coordinates, so neighbouring chunks share edge samples exactly → no
+// seams). Vertices are coloured per biome (shore-sand below ENV.sandHeight),
+// smooth-shaded from per-vertex normals off the height grid, and darkened in
+// concavities by a baked vertex AO. Chunks within CHUNKS.radius of the player
+// are kept resident; the rest are disposed (geometry freed, no leaks).
+//
+// F2 P2 — near-LOD: when the `nearLod` quality flag is on, chunks close to the
+// player build at a 1 m grid (CHUNKS.nearVerts) and farther ones at the 2 m
+// grid (CHUNKS.verts). Every chunk carries a downward EDGE SKIRT so the
+// sub-metre height mismatch at a 1 m↔2 m boundary hides behind a vertical wall
+// instead of a see-through T-junction. LOD selection has hysteresis so a chunk
+// on the boundary doesn't thrash rebuilds.
 // ---------------------------------------------------------------------------
 
-const STEP = CHUNKS.size / (CHUNKS.verts - 1); // metres between grid samples
-// Biome-blend offset expressed in grid steps (ENV.blendOffset = 6 m, STEP = 2 m
-// → 3 steps). Sampling grid neighbours this many steps out lands on exactly the
-// same ±blendOffset world coords the old per-vertex path tapped, so the border
-// blend is byte-identical while costing zero extra biomeAt calls.
-const BLEND_STEPS = Math.round(ENV.blendOffset / STEP);
+/** Grid step (m between samples) for a `verts`×`verts` chunk. */
+function stepFor(verts: number): number {
+  return CHUNKS.size / (verts - 1);
+}
+
+// The FAR (2 m) grid step — the reference value the pure `terrainVertexColor` /
+// regression path uses (the grid sampler derives its own step per LOD).
+const STEP = stepFor(CHUNKS.verts); // 2 m
 
 // Pre-resolved biome → THREE.Color lookup (built once).
 const BIOME_COLOR: Record<Biome, THREE.Color> = {
@@ -37,15 +48,19 @@ function chunkKey(cx: number, cz: number): string {
   return `${cx},${cz}`;
 }
 
+function clamp(v: number, lo: number, hi: number): number {
+  return v < lo ? lo : v > hi ? hi : v;
+}
+
 // ---------------------------------------------------------------------------
 // Terrain vertex colour (pure, position-only → seam-safe: neighbouring chunks
 // share edge samples and every input below is a function of world (x, z), so a
-// shared vertex resolves to the identical colour on both sides). Three effects
-// layer on the flat biome palette: (1) a weighted BLEND across the biomes
-// sampled around the vertex so borders fade instead of snapping; (2) a slope-
-// based tint toward crag rock on steep faces; (3) a deterministic per-vertex
-// micro lightness jitter so large patches never read as flat paint. The shore
-// sand band (below ENV.sandHeight) overrides the biome blend but still jitters.
+// shared vertex resolves to the identical colour on both sides). Effects layer
+// on the flat biome palette: (1) a weighted BLEND across the biomes sampled
+// around the vertex so borders fade instead of snapping; (2) a slope-based tint
+// toward crag rock on steep faces; (3) a concavity AO darkening from the height
+// grid; (4) a deterministic per-vertex micro lightness jitter. The shore sand
+// band (below ENV.sandHeight) overrides the biome blend but still jitters + AOs.
 // ---------------------------------------------------------------------------
 
 /**
@@ -79,24 +94,53 @@ export function vertexLightnessJitter(x: number, z: number): number {
 }
 
 /**
- * Normalised ground-normal Y from four height samples taken one grid step
- * (±STEP) either side of a vertex — central differences on the height grid.
- * `y1 < 1` on tilted ground, `= 1` when flat. The chunk builder feeds this from
- * cached grid neighbours (no extra heightAt); `terrainVertexColor` samples them
- * directly. Both paths use the SAME ±STEP span, so they agree exactly.
+ * Vertex ambient-occlusion multiplier from height-grid concavity. `center` is
+ * the vertex height, `avgNeighbor` the mean of its four ±STEP neighbours. When
+ * the neighbourhood sits ABOVE the vertex (a valley / pit) the ground is
+ * concave → DARKEN (toward `1 − aoDarken`); when it sits below (a ridge / bump,
+ * convex) → gently LIGHTEN (toward `1 + aoLighten`). Flat ground (avg == center)
+ * returns exactly 1. Pure & deterministic — same ±STEP taps on both sides of a
+ * shared chunk edge, so it's seam-safe.
  */
-function slopeNormalY(hL: number, hR: number, hD: number, hU: number): number {
-  const nx = -(hR - hL) / (2 * STEP);
-  const nz = -(hU - hD) / (2 * STEP);
-  return 1 / Math.hypot(nx, 1, nz);
+export function vertexAO(center: number, avgNeighbor: number): number {
+  const t = clamp((avgNeighbor - center) / ENV.aoScale, -1, 1);
+  return t >= 0 ? 1 - t * ENV.aoDarken : 1 - t * ENV.aoLighten;
+}
+
+/**
+ * Ground normal from four height samples one grid step (±step) either side of a
+ * vertex — central differences on the height grid. Writes the unit normal into
+ * `out[o..o+2]` and returns its Y component (`= 1` when flat, `< 1` on tilted
+ * ground), which the colour path reuses as the slope factor. The chunk builder
+ * feeds this from cached grid neighbours (no extra heightAt).
+ */
+function groundNormal(
+  hL: number,
+  hR: number,
+  hD: number,
+  hU: number,
+  step: number,
+  out: Float32Array | null,
+  o: number,
+): number {
+  const nx = -(hR - hL) / (2 * step);
+  const nz = -(hU - hD) / (2 * step);
+  const inv = 1 / Math.hypot(nx, 1, nz);
+  if (out) {
+    out[o] = nx * inv;
+    out[o + 1] = inv;
+    out[o + 2] = nz * inv;
+  }
+  return inv;
 }
 
 /**
  * Full terrain colour from already-sampled inputs, written into `out`. Shore
  * sand below the waterline; otherwise the weighted `biomes` blend tinted toward
- * rock as `ny` (ground normal Y) tilts off vertical; a micro lightness jitter
- * finishes both. Pure & position-only → seam-safe. This is the single colour
- * pipeline shared by the chunk-grid builder and the direct reference below.
+ * rock as `ny` (ground normal Y) tilts off vertical; then the concavity AO and
+ * a micro lightness jitter finish both. Pure & position-only → seam-safe. This
+ * is the single colour pipeline shared by the chunk-grid builder and the direct
+ * reference below.
  */
 function colorFromSamples(
   x: number,
@@ -104,6 +148,7 @@ function colorFromSamples(
   y: number,
   biomes: Biome[],
   ny: number,
+  aoMul: number,
   out: THREE.Color,
 ): THREE.Color {
   if (y < ENV.sandHeight) {
@@ -118,18 +163,18 @@ function colorFromSamples(
       out.lerp(ROCK_COLOR, t);
     }
   }
-  out.multiplyScalar(vertexLightnessJitter(x, z));
+  out.multiplyScalar(vertexLightnessJitter(x, z) * aoMul);
   return out;
 }
 
 /**
  * Direct (per-vertex) terrain colour at world (x, z) with ground height `y`.
- * Samples the 5-tap biome blend (centre ±ENV.blendOffset) and the slope normal
- * (central differences ±STEP) itself, then defers to `colorFromSamples`. Pure &
- * seam-safe. The chunk builder does NOT call this per vertex — it caches the
- * same samples on a grid (see `sampleChunk`) — but this remains the reference
- * the grid path is regression-tested against (identical taps → identical
- * colour).
+ * Samples the 5-tap biome blend (centre ±ENV.blendOffset), the slope normal and
+ * the AO concavity (central differences ±STEP) itself, then defers to
+ * `colorFromSamples`. Pure & seam-safe. The chunk builder does NOT call this per
+ * vertex — it caches the same samples on a grid (see `sampleChunk`) — but this
+ * remains the reference the grid path is regression-tested against (identical
+ * taps → identical colour).
  */
 export function terrainVertexColor(x: number, z: number, y: number, out: THREE.Color): THREE.Color {
   const o = ENV.blendOffset;
@@ -140,54 +185,64 @@ export function terrainVertexColor(x: number, z: number, y: number, out: THREE.C
     biomeAt(x, z + o),
     biomeAt(x, z - o),
   ];
-  const ny = slopeNormalY(
-    heightAt(x - STEP, z),
-    heightAt(x + STEP, z),
-    heightAt(x, z - STEP),
-    heightAt(x, z + STEP),
-  );
-  return colorFromSamples(x, z, y, biomes, ny, out);
+  const hL = heightAt(x - STEP, z);
+  const hR = heightAt(x + STEP, z);
+  const hD = heightAt(x, z - STEP);
+  const hU = heightAt(x, z + STEP);
+  const ny = groundNormal(hL, hR, hD, hU, STEP, null, 0);
+  const aoMul = vertexAO(y, (hL + hR + hD + hU) * 0.25);
+  return colorFromSamples(x, z, y, biomes, ny, aoMul, out);
 }
 
-/**
- * Fill `positions` and `colors` (both length verts²·3) for chunk (cx, cz).
- *
- * Sampling is done ONCE per grid point into height + biome arrays carrying a
- * BLEND_STEPS-wide apron ring (so edge vertices still have the neighbours the
- * biome blend and slope normal need), then every vertex colour is assembled
- * from array lookups — no per-vertex `biomeAt`/`groundNormalAt` re-taps. Every
- * grid coord is world-position-pure (`originX + (gi - P)·STEP` etc.), so a
- * vertex shared with an adjacent chunk samples the identical world coords and
- * resolves to the identical height/colour → no seams, fully deterministic.
- */
-// Apron geometry, fixed by the constants: P rings on each side (≥ 1 so the
-// ±1-step slope normal always has neighbours), G = grid dim including apron.
-const APRON = Math.max(1, BLEND_STEPS);
-const GRID_DIM = CHUNKS.verts + 2 * APRON;
-// Reusable sampling scratch — chunks are built one at a time (never reentrant),
-// so a single shared height/biome grid avoids a per-chunk allocation + GC.
-const SCRATCH_H = new Float32Array(GRID_DIM * GRID_DIM);
-const SCRATCH_B: Biome[] = new Array(GRID_DIM * GRID_DIM);
+// ---------------------------------------------------------------------------
+// Chunk grid sampling. Done ONCE per grid point into height + biome arrays
+// carrying an apron ring (so edge vertices still have the neighbours the biome
+// blend + slope normal need), then every vertex colour/normal is assembled from
+// array lookups — no per-vertex `biomeAt`/`heightAt` re-taps. Every grid coord
+// is world-position-pure, so a vertex shared with an adjacent chunk samples the
+// identical world coords → no seams, fully deterministic. The apron width
+// scales with the grid step so the ±blendOffset biome taps always land in it.
+// ---------------------------------------------------------------------------
 
+// Scratch grids sized to the WORST case (near/1 m LOD: the largest apron + verts
+// combination). Chunks are built one at a time (never reentrant), so a single
+// shared height/biome grid avoids a per-chunk allocation + GC.
+function apronFor(verts: number): number {
+  return Math.max(1, Math.round(ENV.blendOffset / stepFor(verts)));
+}
+const MAX_GRID_DIM = CHUNKS.nearVerts + 2 * apronFor(CHUNKS.nearVerts);
+const SCRATCH_H = new Float32Array(MAX_GRID_DIM * MAX_GRID_DIM);
+const SCRATCH_B: Biome[] = new Array(MAX_GRID_DIM * MAX_GRID_DIM);
+
+/**
+ * Fill `positions` and `colors` (both length verts²·3) — and, when supplied,
+ * per-vertex `normals` (same length) — for chunk (cx, cz) at the given grid
+ * resolution (`verts` per edge; defaults to the far 2 m grid). Seam-safe &
+ * deterministic; see the block comment above.
+ */
 export function sampleChunk(
   cx: number,
   cz: number,
   positions: Float32Array,
   colors: Float32Array,
+  verts: number = CHUNKS.verts,
+  normals: Float32Array | null = null,
 ): void {
-  const n = CHUNKS.verts;
+  const n = verts;
+  const step = stepFor(n);
+  const blendSteps = Math.round(ENV.blendOffset / step);
+  const P = Math.max(1, blendSteps); // apron rings (≥ 1, covering the ±1-step normal)
+  const G = n + 2 * P; // grid dimension including the apron on both sides
   const originX = cx * CHUNKS.size;
   const originZ = cz * CHUNKS.size;
-  const P = APRON; // apron rings (also ≥ 1, covering the ±1-step normal)
-  const G = GRID_DIM; // grid dimension including the apron on both sides
 
   // One heightAt + one biomeAt per grid point (apron included), cached.
   const hGrid = SCRATCH_H;
   const bGrid = SCRATCH_B;
   for (let gj = 0; gj < G; gj++) {
-    const z = originZ + (gj - P) * STEP;
+    const z = originZ + (gj - P) * step;
     for (let gi = 0; gi < G; gi++) {
-      const x = originX + (gi - P) * STEP;
+      const x = originX + (gi - P) * step;
       const g = gj * G + gi;
       hGrid[g] = heightAt(x, z);
       bGrid[g] = biomeAt(x, z);
@@ -198,13 +253,13 @@ export function sampleChunk(
   const biomes: Biome[] = ['meadow', 'meadow', 'meadow', 'meadow', 'meadow']; // scratch, reused
   for (let j = 0; j < n; j++) {
     const gj = j + P;
-    const z = originZ + j * STEP;
+    const z = originZ + j * step;
     for (let i = 0; i < n; i++) {
       const gi = i + P;
-      const x = originX + i * STEP;
+      const x = originX + i * step;
       const g = gj * G + gi;
       // All grid indices below are in-bounds by construction (interior vertex +
-      // ≤ APRON rings), so the non-null assertions on these reads are safe.
+      // ≤ P apron rings), so the non-null assertions on these reads are safe.
       const y = hGrid[g]!;
       const vidx = (j * n + i) * 3;
 
@@ -212,16 +267,22 @@ export function sampleChunk(
       positions[vidx + 1] = y;
       positions[vidx + 2] = z;
 
-      // 5-tap biome blend: centre + neighbours ±BLEND_STEPS (== ±blendOffset m).
+      // 5-tap biome blend: centre + neighbours ±blendSteps (== ±blendOffset m).
       biomes[0] = bGrid[g]!;
-      biomes[1] = bGrid[g + BLEND_STEPS]!; // +x
-      biomes[2] = bGrid[g - BLEND_STEPS]!; // -x
-      biomes[3] = bGrid[g + BLEND_STEPS * G]!; // +z
-      biomes[4] = bGrid[g - BLEND_STEPS * G]!; // -z
-      // Slope normal Y from ±1-step (±STEP) grid neighbours — no extra heightAt.
-      const ny = slopeNormalY(hGrid[g - 1]!, hGrid[g + 1]!, hGrid[g - G]!, hGrid[g + G]!);
+      biomes[1] = bGrid[g + blendSteps]!; // +x
+      biomes[2] = bGrid[g - blendSteps]!; // -x
+      biomes[3] = bGrid[g + blendSteps * G]!; // +z
+      biomes[4] = bGrid[g - blendSteps * G]!; // -z
 
-      colorFromSamples(x, z, y, biomes, ny, c);
+      const hL = hGrid[g - 1]!;
+      const hR = hGrid[g + 1]!;
+      const hD = hGrid[g - G]!;
+      const hU = hGrid[g + G]!;
+      // Slope normal Y from ±1-step (±step) grid neighbours — no extra heightAt.
+      const ny = groundNormal(hL, hR, hD, hU, step, normals, vidx);
+      const aoMul = vertexAO(y, (hL + hR + hD + hU) * 0.25);
+
+      colorFromSamples(x, z, y, biomes, ny, aoMul, c);
       colors[vidx] = c.r;
       colors[vidx + 1] = c.g;
       colors[vidx + 2] = c.b;
@@ -229,20 +290,79 @@ export function sampleChunk(
   }
 }
 
-/** Build a chunk's mesh. Positions are in world space; mesh sits at origin. */
-function buildChunkMesh(cx: number, cz: number): THREE.Mesh {
-  const n = CHUNKS.verts;
+// ---------------------------------------------------------------------------
+// Near-LOD selection (pure). LOD_NEAR = 1 m grid, LOD_FAR = 2 m grid. Selection
+// runs against the chunk-centre → player distance with hysteresis (promote near
+// only inside `lodPromote`, demote back to far only past `lodDemote`) so a chunk
+// sitting on the boundary doesn't rebuild every time the player jitters across
+// it. When `nearLodEnabled` is off (the low preset) everything stays far.
+// ---------------------------------------------------------------------------
+export const LOD_NEAR = 0;
+export const LOD_FAR = 1;
 
-  const positions = new Float32Array(n * n * 3);
-  const colors = new Float32Array(n * n * 3);
+/** Grid resolution (verts per edge) for a LOD level. */
+export function vertsForLod(lod: number): number {
+  return lod === LOD_NEAR ? CHUNKS.nearVerts : CHUNKS.verts;
+}
 
-  // Positions + blended/tinted/jittered vertex colours, sampled once per grid
-  // point with an apron (seam-safe; see sampleChunk).
-  sampleChunk(cx, cz, positions, colors);
+/** Resolve the LOD a chunk should hold given its distance + current LOD. Pure. */
+export function selectChunkLod(dist: number, currentLod: number, nearLodEnabled: boolean): number {
+  if (!nearLodEnabled) return LOD_FAR;
+  if (currentLod === LOD_NEAR) return dist > CHUNKS.lodDemote ? LOD_FAR : LOD_NEAR;
+  return dist < CHUNKS.lodPromote ? LOD_NEAR : LOD_FAR;
+}
 
-  // Two triangles per quad; (n-1)² quads.
+// ---------------------------------------------------------------------------
+// Geometry (positions + colours + smooth normals + downward edge skirt). The
+// skirt duplicates every perimeter (rim) vertex pushed straight down by
+// CHUNKS.skirtDrop, skinned with a vertical wall carrying the rim's colour +
+// normal, so a 1 m↔2 m LOD boundary's sub-metre height mismatch hides behind
+// the skirt rather than showing a see-through T-junction. Pure builder →
+// exported so the skirt geometry is unit-testable.
+// ---------------------------------------------------------------------------
+export function buildChunkGeometry(
+  cx: number,
+  cz: number,
+  verts: number = CHUNKS.verts,
+): THREE.BufferGeometry {
+  const n = verts;
+  const grid = n * n;
+  const perim = 4 * (n - 1); // rim vertices around the border (one loop)
+  const total = grid + perim;
+
+  const positions = new Float32Array(total * 3);
+  const colors = new Float32Array(total * 3);
+  const normals = new Float32Array(total * 3);
+
+  // Interior grid (fills the first `grid` vertices; skirt fills the tail).
+  sampleChunk(cx, cz, positions, colors, n, normals);
+
+  // Perimeter loop of grid indices (top → right → bottom → left, closed).
+  const rim = new Int32Array(perim);
+  let rp = 0;
+  for (let i = 0; i < n; i++) rim[rp++] = i; // top edge  (j = 0)
+  for (let j = 1; j < n; j++) rim[rp++] = j * n + (n - 1); // right edge (i = n-1)
+  for (let i = n - 2; i >= 0; i--) rim[rp++] = (n - 1) * n + i; // bottom edge (j = n-1)
+  for (let j = n - 2; j >= 1; j--) rim[rp++] = j * n; // left edge  (i = 0)
+
+  // Skirt vertices: each rim vertex duplicated, dropped, colour + normal copied.
+  for (let k = 0; k < perim; k++) {
+    const gk = rim[k]! * 3;
+    const sk = (grid + k) * 3;
+    positions[sk] = positions[gk]!;
+    positions[sk + 1] = positions[gk + 1]! - CHUNKS.skirtDrop;
+    positions[sk + 2] = positions[gk + 2]!;
+    colors[sk] = colors[gk]!;
+    colors[sk + 1] = colors[gk + 1]!;
+    colors[sk + 2] = colors[gk + 2]!;
+    normals[sk] = normals[gk]!;
+    normals[sk + 1] = normals[gk + 1]!;
+    normals[sk + 2] = normals[gk + 2]!;
+  }
+
+  // Indices: interior quads + skirt quads (2 triangles each).
   const quads = (n - 1) * (n - 1);
-  const indices = new Uint32Array(quads * 6);
+  const indices = new Uint32Array(quads * 6 + perim * 6);
   let o = 0;
   for (let j = 0; j < n - 1; j++) {
     for (let i = 0; i < n - 1; i++) {
@@ -258,16 +378,36 @@ function buildChunkMesh(cx: number, cz: number): THREE.Mesh {
       indices[o++] = d;
     }
   }
+  // Skirt walls: rim[k] → rim[k+1] down to their dropped duplicates. Winding
+  // (a, b, sa) + (b, sb, sa) faces outward from the chunk interior.
+  for (let k = 0; k < perim; k++) {
+    const a = rim[k]!;
+    const b = rim[(k + 1) % perim]!;
+    const sa = grid + k;
+    const sb = grid + ((k + 1) % perim);
+    indices[o++] = a;
+    indices[o++] = b;
+    indices[o++] = sa;
+    indices[o++] = b;
+    indices[o++] = sb;
+    indices[o++] = sa;
+  }
 
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  geo.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
   geo.setIndex(new THREE.BufferAttribute(indices, 1));
   geo.computeBoundingSphere();
+  return geo;
+}
 
-  // flatShading derives normals from position derivatives in-shader, giving a
-  // faceted look that makes biome patches read clearly.
-  const mat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
+/** Build a chunk's mesh at the given LOD. Positions are in world space. */
+function buildChunkMesh(cx: number, cz: number, verts: number): THREE.Mesh {
+  const geo = buildChunkGeometry(cx, cz, verts);
+  // Smooth shading now (per-vertex normals off the height grid); the faceted
+  // look is retained only for props/critters (deliberate stylistic contrast).
+  const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
   const mesh = new THREE.Mesh(geo, mat);
   mesh.name = `chunk ${chunkKey(cx, cz)}`;
   // Terrain receives (and softly casts) the perf-gated directional shadow.
@@ -280,6 +420,8 @@ interface LoadedChunk {
   mesh: THREE.Mesh;
   cx: number;
   cz: number;
+  /** LOD_NEAR (1 m) or LOD_FAR (2 m) — the grid resolution this mesh was built at. */
+  lod: number;
 }
 
 /** Streams terrain-mesh chunks around a moving player position. */
@@ -290,9 +432,12 @@ export class ChunkManager {
   private lastCx = NaN;
   private lastCz = NaN;
   /**
-   * True once every in-radius chunk around `lastCx/lastCz` is resident (a build
-   * pass finished with budget to spare). While it holds AND the player is still
-   * in the same chunk, `update()` early-returns — skipping the whole ring scan.
+   * True once every in-radius chunk around `lastCx/lastCz` is resident with no
+   * pending work. Used ONLY by the far-LOD (nearLod-off) fast path: while it
+   * holds AND the player is still in the same chunk, `update()` early-returns.
+   * When nearLod is on the scan always runs — intra-chunk motion shifts per-
+   * chunk distances, so LOD reconciliation can't be skipped (the scan is cheap;
+   * only actual rebuilds cost).
    */
   private complete = false;
 
@@ -302,19 +447,22 @@ export class ChunkManager {
 
   /**
    * Keep chunks within CHUNKS.radius of (playerX, playerZ) resident; dispose
-   * the rest. Builds at most CHUNKS.buildsPerUpdate meshes per call so a large
-   * jump can't hitch a single frame (remaining chunks fill in over subsequent
-   * calls). When the player hasn't crossed a chunk boundary and the field is
-   * already fully built, the scan is skipped entirely (steady-state fast path).
+   * the rest. Each resident chunk holds the LOD its distance dictates (with
+   * hysteresis); a chunk whose required LOD changed REBUILDS. Builds + LOD
+   * rebuilds together are capped at CHUNKS.buildsPerUpdate per call so a large
+   * jump (or a wave of promotions) can't hitch a single frame.
    */
   update(playerX: number, playerZ: number): void {
     const pcx = Math.floor(playerX / CHUNKS.size);
     const pcz = Math.floor(playerZ / CHUNKS.size);
-    // Steady state: same chunk, nothing left to build — nothing to scan.
-    if (pcx === this.lastCx && pcz === this.lastCz && this.complete) return;
+    const nearLod = qualityFlags().nearLod;
+    // Steady state (far-LOD only): same chunk, nothing left to build → skip the
+    // scan. With nearLod on we always reconcile (see `complete` docs).
+    if (!nearLod && pcx === this.lastCx && pcz === this.lastCz && this.complete) return;
     this.lastCx = pcx;
     this.lastCz = pcz;
     const r = CHUNKS.radius;
+    const half = CHUNKS.size / 2;
 
     // Dispose chunks that have fallen outside the keep radius.
     for (const [key, chunk] of this.loaded) {
@@ -324,7 +472,7 @@ export class ChunkManager {
       }
     }
 
-    // Build missing chunks nearest-first, capped per call.
+    // Build missing chunks + reconcile LODs nearest-first, capped per call.
     let budget = CHUNKS.buildsPerUpdate;
     for (let ring = 0; ring <= r && budget > 0; ring++) {
       for (let dz = -ring; dz <= ring && budget > 0; dz++) {
@@ -334,16 +482,31 @@ export class ChunkManager {
           const cx = pcx + dx;
           const cz = pcz + dz;
           const key = chunkKey(cx, cz);
-          if (this.loaded.has(key)) continue;
-          const mesh = buildChunkMesh(cx, cz);
-          this.scene.add(mesh);
-          this.loaded.set(key, { mesh, cx, cz });
-          budget--;
+          const centerX = cx * CHUNKS.size + half;
+          const centerZ = cz * CHUNKS.size + half;
+          const dist = Math.hypot(centerX - playerX, centerZ - playerZ);
+          const existing = this.loaded.get(key);
+          const curLod = existing ? existing.lod : LOD_FAR;
+          const lod = selectChunkLod(dist, curLod, nearLod);
+          if (!existing) {
+            const mesh = buildChunkMesh(cx, cz, vertsForLod(lod));
+            this.scene.add(mesh);
+            this.loaded.set(key, { mesh, cx, cz, lod });
+            budget--;
+          } else if (existing.lod !== lod) {
+            // LOD changed — rebuild this chunk at the new resolution in place.
+            this.disposeChunk(existing);
+            const mesh = buildChunkMesh(cx, cz, vertsForLod(lod));
+            this.scene.add(mesh);
+            existing.mesh = mesh;
+            existing.lod = lod;
+            budget--;
+          }
         }
       }
     }
-    // Field is complete iff this pass built every missing chunk without hitting
-    // the per-call cap (leftover budget → nothing more to build this position).
+    // Field is complete iff this pass finished every build/rebuild without
+    // hitting the per-call cap (leftover budget → nothing more to do here).
     this.complete = budget > 0;
   }
 
