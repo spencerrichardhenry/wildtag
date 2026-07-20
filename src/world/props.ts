@@ -354,23 +354,36 @@ function buildMushroom(): THREE.BufferGeometry {
 }
 
 /**
- * Permanent meadow grass tuft: two small crossed quads (~0.45 m tall, ~0.5 m
- * wide — deliberately smaller than the old ring's slab-like tufts). The vertex
- * colour bakes a GREYSCALE base→top ramp (darker root, brighter tip); the
- * actual green is supplied per instance by the batch colour (setColorAt), which
- * multiplies the ramp — so every tuft gets a hash-jittered meadow-green hue
- * while keeping the root-to-tip shading. Static (no wind shader).
+ * Permanent meadow grass tuft: a small fan of three crossed TAPERED blades
+ * (trapezoid strips whose tips narrow to ~15% of the base width), each with a
+ * fixed height in a ±35% band and a slight outward lean, so the silhouette
+ * reads as a grass clump rather than crossed cards. The vertex colour bakes a
+ * GREYSCALE root→tip ramp (0.8 dark root → 1.1 bright tip); the actual green
+ * is supplied per instance by the batch colour (setColorAt), which multiplies
+ * the ramp — every tuft gets a hash-jittered meadow-green while keeping the
+ * darker-base/lighter-tip shading. Static (no wind shader); builder rng-free.
  */
-function grasstuftBlade(rotY: number): THREE.BufferGeometry {
-  const p = new THREE.PlaneGeometry(0.5, 0.45);
+function grasstuftBlade(rotY: number, h: number, lean: number): THREE.BufferGeometry {
+  const p = new THREE.PlaneGeometry(0.34, h, 1, 3);
+  p.translate(0, h / 2, 0); // base at y = 0
+  // Taper: narrow linearly toward the tip (tip width ≈ 15% of the base).
+  const raw = p.getAttribute('position');
+  for (let i = 0; i < raw.count; i++) {
+    const t = clamp01(raw.getY(i) / h);
+    raw.setX(i, raw.getX(i) * (1 - 0.85 * t));
+  }
+  p.rotateX(lean); // pivot at the base: the tip leans outward
   p.rotateY(rotY);
-  p.translate(0, 0.225, 0);
   const g = p.toNonIndexed();
   const pos = g.getAttribute('position');
   const col = new Float32Array(pos.count * 3);
   for (let i = 0; i < pos.count; i++) {
-    // 0.7 (root) → 1.0 (tip): a grey ramp the per-instance green multiplies.
-    const v = 0.7 + clamp01(pos.getY(i) / 0.45) * 0.3;
+    // 0.95 (root) → 1.35 (tip): a grey ramp the per-instance green multiplies.
+    // Deliberately >1 toward the tip: near-vertical faces receive far less
+    // direct sun than the upward-facing terrain (and the back half of the
+    // double-sided blades none), so without this lift the tufts render as
+    // dark cutouts against the meadow instead of blending into it.
+    const v = 0.95 + clamp01(pos.getY(i) / h) * 0.4;
     col[i * 3] = v;
     col[i * 3 + 1] = v;
     col[i * 3 + 2] = v;
@@ -379,7 +392,13 @@ function grasstuftBlade(rotY: number): THREE.BufferGeometry {
   return g;
 }
 function buildGrasstuft(): THREE.BufferGeometry {
-  return merge([grasstuftBlade(0), grasstuftBlade(Math.PI / 2)]);
+  // Three blades fanned at 60°, heights spanning ±35% about ~0.45 m, leans
+  // alternating so no two tips point the same way.
+  return merge([
+    grasstuftBlade(0, 0.46, 0.16),
+    grasstuftBlade(Math.PI / 3, 0.32, -0.22),
+    grasstuftBlade((2 * Math.PI) / 3, 0.58, 0.1),
+  ]);
 }
 
 // --- Crystals (crag/highlands variants) ------------------------------------
@@ -719,12 +738,17 @@ const _tuftColor = new THREE.Color();
 const _tuftHSL = { h: 0, s: 0, l: 0 };
 new THREE.Color(C.grassTuft).getHSL(_tuftHSL);
 
-/** Per-instance meadow-green tint for a grass tuft at world (x, z). */
+/**
+ * Per-instance meadow-green tint for a grass tuft at world (x, z): the jitter
+ * spans slightly-YELLOWED (hue shifted down toward yellow) to slightly-DEEPER
+ * green (hue up a touch, lightness down), so the field reads as sun-varied
+ * meadow texture rather than uniform paint.
+ */
 function grasstuftColor(x: number, z: number): THREE.Color {
   const qx = Math.round(x);
   const qz = Math.round(z);
-  const hue = _tuftHSL.h + (hash2(GRASS_HUE, qx, qz) - 0.5) * 0.06; // ±0.03
-  const lit = clamp01(_tuftHSL.l + (hash2(GRASS_LIT, qx, qz) - 0.5) * 0.18); // ±0.09
+  const hue = _tuftHSL.h + (hash2(GRASS_HUE, qx, qz) - 0.7) * 0.08; // −0.056 (yellowed) … +0.024 (deeper)
+  const lit = clamp01(_tuftHSL.l + (hash2(GRASS_LIT, qx, qz) - 0.55) * 0.16); // −0.088 … +0.072
   return _tuftColor.setHSL(hue, _tuftHSL.s, lit);
 }
 

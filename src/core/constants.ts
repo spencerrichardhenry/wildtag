@@ -532,8 +532,10 @@ export const SCATTER = {
     lilyBloom: 0xf0e7f5,
     mushroomStem: 0xd8cdb4,
     mushroomCap: 0x9c5bd0,
-    /** Meadow grass-tuft base green (per-instance hue/lightness jitter in props). */
-    grassTuft: 0x82b25a,
+    /** Meadow grass-tuft base green: ENV.biomeColors.meadow (0x7fb069) darkened
+     *  ~8% so tufts blend into the terrain as texture (per-instance yellowed→
+     *  deeper-green jitter applied in props). */
+    grassTuft: 0x75a261,
     crystalA: 0x7fb0d8,
     crystalB: 0x9d86e0,
     crystalC: 0x6fd8c0,
