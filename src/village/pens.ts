@@ -6,6 +6,7 @@ import { buildCritterModel, type CritterParts } from '../critters/models.ts';
 import { animateCritter } from '../critters/animation.ts';
 import { npcAnchors } from './npcs.ts';
 import { villageCenter } from './layout.ts';
+import { makeSurfaceMaterial } from '../core/materials.ts';
 import type { PenPersistEntry } from '../core/save.ts';
 
 // ---------------------------------------------------------------------------
@@ -88,7 +89,8 @@ function penBounds(npcId: string): PenBounds | null {
 
 function post(x: number, z: number): THREE.Mesh {
   const geo = new THREE.BoxGeometry(0.12, PEN.postHeight, 0.12);
-  const mat = new THREE.MeshLambertMaterial({ color: PEN.penColor, flatShading: true });
+  // Quality-gated like the village fences these posts visually extend.
+  const mat = makeSurfaceMaterial({ color: PEN.penColor, roughness: 0.9 });
   const m = new THREE.Mesh(geo, mat);
   m.position.set(x, heightAt(x, z) + PEN.postHeight / 2, z);
   return m;

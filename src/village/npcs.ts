@@ -3,6 +3,7 @@ import type { Vec3 } from '../core/types.ts';
 import { mulberry32 } from '../core/rng.ts';
 import { heightAt } from '../world/terrain.ts';
 import { villageLayout, type Point2 } from './layout.ts';
+import { makeSurfaceMaterial } from '../core/materials.ts';
 
 // ---------------------------------------------------------------------------
 // Haven Village NPCs — 5 procedural blocky villagers with distinct silhouettes
@@ -48,11 +49,13 @@ const AI = {
 const LABEL_MAX_DIST = 40;
 
 type MatOpts = { emissive?: number; emissiveIntensity?: number };
-function mat(color: number, opts: MatOpts = {}): THREE.MeshLambertMaterial {
-  const m = new THREE.MeshLambertMaterial({ color, flatShading: true });
-  if (opts.emissive !== undefined) {
-    m.emissive = new THREE.Color(opts.emissive);
-    m.emissiveIntensity = opts.emissiveIntensity ?? 1;
+function mat(color: number, opts: MatOpts = {}): THREE.Material {
+  // Quality-gated (Standard on medium+, Lambert on low) so villagers read the
+  // same material model as the props/critters/village around them.
+  const m = makeSurfaceMaterial({ color, roughness: 0.85 });
+  if (opts.emissive !== undefined && 'emissive' in m) {
+    (m as THREE.MeshStandardMaterial).emissive = new THREE.Color(opts.emissive);
+    (m as THREE.MeshStandardMaterial).emissiveIntensity = opts.emissiveIntensity ?? 1;
   }
   return m;
 }

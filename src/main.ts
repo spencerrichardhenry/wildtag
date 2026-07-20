@@ -551,7 +551,8 @@ function bootGame(): void {
   // that must never overwrite the player's real save — skip automatic writes.
   // `?screen=roster` injects phantom roster entries for screenshots — treat it
   // as a dev session too so they can never autosave into a real save.
-  const devSession = freshStart || devMode || debugParam !== null || screenParam === 'roster';
+  const devSession =
+    freshStart || devMode || debugParam !== null || screenParam === 'roster' || forceFx;
 
   // Autosave every 10 s + on tab close/hide (mobile-safe: pagehide fires
   // where beforeunload sometimes doesn't).

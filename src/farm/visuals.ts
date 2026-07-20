@@ -6,6 +6,7 @@ import { buildCritterModel, type CritterParts } from '../critters/models.ts';
 import { animateCritter } from '../critters/animation.ts';
 import { heightAt } from '../world/terrain.ts';
 import { villageLayout } from '../village/layout.ts';
+import { makeSurfaceMaterial } from '../core/materials.ts';
 import type { FarmState } from './farm.ts';
 import type { RosterEntry } from '../critters/roster.ts';
 
@@ -72,16 +73,17 @@ function disposeGroup(group: THREE.Object3D): void {
   });
 }
 
-function mat(color: number, opts: { emissive?: number; opacity?: number } = {}): THREE.MeshLambertMaterial {
-  const m = new THREE.MeshLambertMaterial({ color, flatShading: true });
+function mat(color: number, opts: { emissive?: number; opacity?: number } = {}): THREE.Material {
+  // Quality-gated (Standard on medium+, Lambert on low): farm dirt/wood/signs
+  // match the material model of the village merge they sit beside.
+  const m = makeSurfaceMaterial({ color, roughness: 0.95, opacity: opts.opacity }) as
+    | THREE.MeshStandardMaterial
+    | THREE.MeshLambertMaterial;
   if (opts.emissive !== undefined) {
     m.emissive = new THREE.Color(opts.emissive);
     m.emissiveIntensity = 0.4;
   }
-  if (opts.opacity !== undefined) {
-    m.transparent = true;
-    m.opacity = opts.opacity;
-  }
+  // (transparent/opacity handled inside makeSurfaceMaterial when provided)
   return m;
 }
 
