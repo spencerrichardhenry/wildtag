@@ -1,5 +1,5 @@
 import type * as THREE from 'three';
-import { ENV, SCATTER } from './constants.ts';
+import { ENV } from './constants.ts';
 
 // ---------------------------------------------------------------------------
 // Quality presets (Fidelity-2 P1). One place that maps a preset id → the
@@ -10,10 +10,11 @@ import { ENV, SCATTER } from './constants.ts';
 // one from the Esc menu.
 //
 // P1 wires only the flags that already have a consumer: `shadowCascades`
-// (>0 → shadow map on) + `shadowRes` (map size) feed main.ts's shadow gate,
-// and `grassMultiplier` + `grassRadius` feed the near-player grass ring. The
-// remaining flags (ssao/bloom/waterReflections/terrainDetailShader/nearLod)
-// are present but dormant — P2/P3 grow their consumers.
+// (>0 → shadow map on) + `shadowRes` (map size) feed main.ts's shadow gate.
+// The remaining flags (ssao/bloom/waterReflections/terrainDetailShader/nearLod)
+// are present but dormant — P2/P3 grow their consumers. (Meadow grass is now a
+// permanent, quality-independent scatter prop — see SCATTER.grasstuftChance —
+// so it no longer carries a preset flag.)
 // ---------------------------------------------------------------------------
 
 export type QualityId = 'low' | 'medium' | 'high';
@@ -51,20 +52,11 @@ export interface QualityFlags {
   terrainDetailHigh: boolean;
   /** Near-LOD 1m terrain grid within range (P2/medium+). */
   nearLod: boolean;
-  /**
-   * Grass-ring lattice density multiplier (1 / 2 / 3 — playtest-tuned down
-   * from the spec's 1/4/8: the ring is now wide + sparse with a radial
-   * falloff instead of a dense near puck).
-   */
-  grassMultiplier: 1 | 2 | 3;
-  /** Grass-ring radius (m); wider per tier (30 / 48 / 64). */
-  grassRadius: number;
 }
 
 /**
- * The preset table. `shadowRes`/`shadowCascades` and `grassMultiplier`/
- * `grassRadius` are LIVE in P1; the rest are declared here so P2/P3 only add
- * consumers, never reshape the table.
+ * The preset table. `shadowRes`/`shadowCascades` are LIVE in P1; the rest are
+ * declared here so P2/P3 only add consumers, never reshape the table.
  */
 export const QUALITY: Record<QualityId, QualityFlags> = {
   low: {
@@ -77,8 +69,6 @@ export const QUALITY: Record<QualityId, QualityFlags> = {
     standardMaterials: false,
     terrainDetailHigh: false,
     nearLod: false,
-    grassMultiplier: 1,
-    grassRadius: SCATTER.grass.radius,
   },
   medium: {
     shadowCascades: 1,
@@ -90,8 +80,6 @@ export const QUALITY: Record<QualityId, QualityFlags> = {
     standardMaterials: true,
     terrainDetailHigh: false,
     nearLod: true,
-    grassMultiplier: 2,
-    grassRadius: 48,
   },
   high: {
     shadowCascades: 2,
@@ -105,8 +93,6 @@ export const QUALITY: Record<QualityId, QualityFlags> = {
     standardMaterials: true,
     terrainDetailHigh: true,
     nearLod: true,
-    grassMultiplier: 3,
-    grassRadius: 64,
   },
 };
 

@@ -129,7 +129,12 @@ describe('perf: instance-pool alloc/free churn', () => {
     // would keep doubling the buffers far past this.
     const span = 2 * SCATTER.radius + 1;
     const residentChunks = span * span; // ≤ 81 chunks ever resident at once
-    const liveBound = Math.max(...Object.values(SCATTER.caps)) * residentChunks;
+    // Per-chunk instance ceiling: the densest capped prop, OR — for the 'double'
+    // batch (grass tufts + lily pads) — the uncapped meadow grass tufts, which
+    // place up to one per sub-cell (grid²). Bound live count against whichever
+    // is larger so uncapped ground cover doesn't false-trip the leak guard.
+    const perChunkMax = Math.max(...Object.values(SCATTER.caps), SCATTER.grid * SCATTER.grid);
+    const liveBound = perChunkMax * residentChunks;
     for (const [key, s] of Object.entries(statsB)) {
       expect(
         s.live,

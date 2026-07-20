@@ -126,7 +126,7 @@ function bootGame(): void {
 
   // Quality preset (Fidelity-2 P1): resolve `?quality=` override > stored
   // Esc-menu choice > auto-detect (software backend → low). The chosen preset
-  // drives the shadow gate + grass ring below; P2/P3 grow more consumers.
+  // drives the shadow gate below; P2/P3 grow more consumers.
   initQuality(renderer);
   // Whether the preset was auto-detected (no explicit override / stored choice):
   // only an auto preset is allowed to auto-downgrade on the fps gate below.
@@ -148,24 +148,16 @@ function bootGame(): void {
   const props = new PropManager(scene);
   const critters = new CritterManager(scene);
 
-  /** Rebuild the near-player grass ring against the live quality preset (cheap,
-   *  live-applied when the Esc-menu selector changes the grass multiplier/radius). */
-  function applyGrassQuality(): void {
-    props.refreshGrass();
-  }
-
   /**
-   * Esc-menu quality change: persist the choice, LIVE-apply the cheap flags
-   * (grass density/radius rebuild), and — because shadows/post/LOD need a fresh
-   * boot to rebuild their pipelines — toast a reload prompt when any of those
-   * reload-required flags differ from the previous preset.
+   * Esc-menu quality change: persist the choice, and — because shadows/post/LOD
+   * need a fresh boot to rebuild their pipelines — toast a reload prompt when any
+   * of those reload-required flags differ from the previous preset.
    */
   function applyQuality(id: QualityId): void {
     const prev = qualityFlags();
     if (id === currentQuality()) return;
     setQuality(id, true);
     const next = qualityFlags();
-    applyGrassQuality();
     const reloadNeeded =
       prev.shadowCascades !== next.shadowCascades ||
       prev.shadowRes !== next.shadowRes ||
@@ -1281,7 +1273,7 @@ function bootGame(): void {
       geometries: renderer.info.memory.geometries,
       textures: renderer.info.memory.textures,
     }),
-    quality: () => ({ id: currentQuality(), flags: qualityFlags(), grass: props.grassStats() }),
+    quality: () => ({ id: currentQuality(), flags: qualityFlags() }),
   });
 
   // Verification aid (Haven V4): expose deterministic village anchors + a couple
@@ -1361,7 +1353,6 @@ function bootGame(): void {
             setQuality(tierBelow(currentQuality()), false);
             syncShadowQuality();
             syncPost();
-            applyGrassQuality();
           }
           f1State.shadows = shadowRig.enabled;
           gateDecided = true;

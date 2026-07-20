@@ -9,7 +9,6 @@ import {
   type PropKind,
   type PropPlacement,
 } from './scatter.ts';
-import { biomeAt, heightAt } from './terrain.ts';
 import { hash2 } from '../core/rng.ts';
 import type { GrappleCollider } from '../player/grapple.ts';
 import {
@@ -19,7 +18,6 @@ import {
   withinHarvestCone,
   type NodeState,
 } from './resources.ts';
-import { qualityFlags } from '../core/quality.ts';
 import { makeSurfaceMaterial, ROUGHNESS } from '../core/materials.ts';
 
 // ---------------------------------------------------------------------------
@@ -87,7 +85,7 @@ function merge(parts: THREE.BufferGeometry[]): THREE.BufferGeometry {
 // per-instance variety comes from the scatter transform (scale+yaw) + which
 // variant is chosen. F2 adds a per-biome tree/crystal/mesa variant zoo, cliff
 // formations (mesa slabs, boulder stacks, scree, rock ribs), wetland reeds +
-// willows + lily pads, forest glow mushrooms and near-player grass tufts.
+// willows + lily pads, forest glow mushrooms and permanent meadow grass tufts.
 // ---------------------------------------------------------------------------
 
 const TAU = Math.PI * 2;
@@ -355,28 +353,33 @@ function buildMushroom(): THREE.BufferGeometry {
   return merge(parts);
 }
 
-/** Near-player grass tuft: two crossed quads, darker at the base (double-sided). */
-function grassBlade(rotY: number): THREE.BufferGeometry {
-  const p = new THREE.PlaneGeometry(0.45, 0.6);
+/**
+ * Permanent meadow grass tuft: two small crossed quads (~0.45 m tall, ~0.5 m
+ * wide — deliberately smaller than the old ring's slab-like tufts). The vertex
+ * colour bakes a GREYSCALE base→top ramp (darker root, brighter tip); the
+ * actual green is supplied per instance by the batch colour (setColorAt), which
+ * multiplies the ramp — so every tuft gets a hash-jittered meadow-green hue
+ * while keeping the root-to-tip shading. Static (no wind shader).
+ */
+function grasstuftBlade(rotY: number): THREE.BufferGeometry {
+  const p = new THREE.PlaneGeometry(0.5, 0.45);
   p.rotateY(rotY);
-  p.translate(0, 0.3, 0);
+  p.translate(0, 0.225, 0);
   const g = p.toNonIndexed();
   const pos = g.getAttribute('position');
   const col = new Float32Array(pos.count * 3);
-  const base = new THREE.Color(C.grassBase);
-  const top = new THREE.Color(C.grassTop);
-  const tmp = new THREE.Color();
   for (let i = 0; i < pos.count; i++) {
-    tmp.copy(base).lerp(top, clamp01(pos.getY(i) / 0.6));
-    col[i * 3] = tmp.r;
-    col[i * 3 + 1] = tmp.g;
-    col[i * 3 + 2] = tmp.b;
+    // 0.7 (root) → 1.0 (tip): a grey ramp the per-instance green multiplies.
+    const v = 0.7 + clamp01(pos.getY(i) / 0.45) * 0.3;
+    col[i * 3] = v;
+    col[i * 3 + 1] = v;
+    col[i * 3 + 2] = v;
   }
   g.setAttribute('color', new THREE.BufferAttribute(col, 3));
   return g;
 }
-function buildGrass(): THREE.BufferGeometry {
-  return merge([grassBlade(0), grassBlade(Math.PI / 2)]);
+function buildGrasstuft(): THREE.BufferGeometry {
+  return merge([grasstuftBlade(0), grasstuftBlade(Math.PI / 2)]);
 }
 
 // --- Crystals (crag/highlands variants) ------------------------------------
@@ -458,7 +461,7 @@ const BUILDERS: Record<string, () => THREE.BufferGeometry> = {
   reed: buildReed,
   lilypad: buildLilypad,
   mushroom: buildMushroom,
-  grass: buildGrass,
+  grasstuft: buildGrasstuft,
   // crystals
   crystal: buildCrystal, // defensive fallback
   crystalA: buildCrystalA,
@@ -485,7 +488,7 @@ const EMISSIVE: Record<string, { hex: number; i: number }> = {
 };
 
 // Buckets whose quads need to be visible from both sides.
-const DOUBLE_SIDED = new Set<string>(['grass', 'lilypad']);
+const DOUBLE_SIDED = new Set<string>(['grasstuft', 'lilypad']);
 
 // Per-bucket roughness for the Standard-material path (medium+). Rocks/mesas are
 // matte, trees a touch smoother, crystals slick; everything else is foliage.
@@ -517,30 +520,6 @@ function materialFor(bucket: string): THREE.Material {
     roughness: roughnessFor(bucket),
     ...(e ? { emissive: e.hex, emissiveIntensity: e.i } : {}),
   }) as THREE.MeshStandardMaterial;
-  // Grass 2.0 wind (F2 P2): a vertex-shader sway on the grass-ring material via
-  // onBeforeCompile. One `uTime` uniform is advanced per frame (props.update →
-  // updateGrassWind) — NO per-instance matrix writes. Amplitude scales with the
-  // tuft's local height so the roots (y ≈ 0) stay planted while the tips sway;
-  // the phase is offset by each instance's world XZ so the field ripples rather
-  // than sways in lockstep. (Meadow flowers aren't joined: `flower` lives in the
-  // shared `standard` material group with the trees/rocks, so a wind shader
-  // there would sway the whole scenery batch — not trivially shareable.)
-  if (bucket === 'grass') {
-    mat.onBeforeCompile = (shader) => {
-      shader.uniforms.uTime = { value: 0 };
-      shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', '#include <common>\nuniform float uTime;')
-        .replace(
-          '#include <begin_vertex>',
-          `#include <begin_vertex>
-          float windPhase = instanceMatrix[3].x * 0.35 + instanceMatrix[3].z * 0.35;
-          float windSway = sin(uTime * 1.8 + windPhase) * 0.14 * max(position.y, 0.0);
-          transformed.x += windSway;
-          transformed.z += windSway * 0.6;`,
-        );
-      mat.userData.shader = shader;
-    };
-  }
   return mat;
 }
 
@@ -698,6 +677,14 @@ class PropBatch {
     this.mesh.setMatrixAt(id, m);
   }
 
+  /**
+   * Set the per-instance colour of a live instance (BatchedMesh colours default
+   * to white on add, so instances that never call this render unmodified).
+   */
+  setColor(id: number, color: THREE.Color): void {
+    this.mesh.setColorAt(id, color);
+  }
+
   /** Delete a live instance (its id is recycled internally). */
   free(id: number): void {
     this.mesh.deleteInstance(id);
@@ -722,13 +709,24 @@ class PropBatch {
  * by chunk+placement index, so leaving and re-entering a chunk keeps a harvested
  * node depleted until its respawn time.
  */
-// Independent hash channels for the near-player grass ring (deterministic from
-// world position so the ring doesn't shimmer as the player crosses cells).
-const GRASS_JX = (WORLD_SEED ^ 0xa17f) >>> 0;
-const GRASS_JZ = (WORLD_SEED ^ 0xb28e) >>> 0;
-const GRASS_DEN = (WORLD_SEED ^ 0xc39d) >>> 0;
-const GRASS_ROT = (WORLD_SEED ^ 0xd4ac) >>> 0;
-const GRASS_SCL = (WORLD_SEED ^ 0xe5bb) >>> 0;
+// Independent hash channels for per-instance grass-tuft hue/lightness jitter
+// (deterministic from the tuft's quantised world position → same tuft, same
+// tint on every rebuild). The green base is C.grassTuft; setColorAt multiplies
+// the geometry's baked greyscale root→tip ramp.
+const GRASS_HUE = (WORLD_SEED ^ 0xa17f) >>> 0;
+const GRASS_LIT = (WORLD_SEED ^ 0xb28e) >>> 0;
+const _tuftColor = new THREE.Color();
+const _tuftHSL = { h: 0, s: 0, l: 0 };
+new THREE.Color(C.grassTuft).getHSL(_tuftHSL);
+
+/** Per-instance meadow-green tint for a grass tuft at world (x, z). */
+function grasstuftColor(x: number, z: number): THREE.Color {
+  const qx = Math.round(x);
+  const qz = Math.round(z);
+  const hue = _tuftHSL.h + (hash2(GRASS_HUE, qx, qz) - 0.5) * 0.06; // ±0.03
+  const lit = clamp01(_tuftHSL.l + (hash2(GRASS_LIT, qx, qz) - 0.5) * 0.18); // ±0.09
+  return _tuftColor.setHSL(hue, _tuftHSL.s, lit);
+}
 
 export class PropManager {
   private readonly scene: THREE.Scene;
@@ -739,25 +737,6 @@ export class PropManager {
 
   /** Prop batches keyed by material group, created lazily. */
   private readonly batches = new Map<string, PropBatch>();
-
-  /** Near-player grass ring: one InstancedMesh, rebuilt on grass-cell change. */
-  private grassMesh: THREE.InstancedMesh | null = null;
-  private grassCellX = Number.NaN;
-  private grassCellZ = Number.NaN;
-  /** In-progress incremental ring rebuild (null when idle). */
-  private grassJob: {
-    px: number;
-    pz: number;
-    gx: number; // next lattice column to process
-    minGZ: number;
-    maxGZ: number;
-    maxGX: number;
-    n: number; // instances written so far
-    ms: number; // wall-clock spent across slices
-    slices: number;
-  } | null = null;
-  /** Stats of the last COMPLETED rebuild (report/debug). */
-  private grassLast = { instances: 0, rebuildMs: 0, slices: 0 };
 
   constructor(scene: THREE.Scene) {
     this.scene = scene;
@@ -772,133 +751,6 @@ export class PropManager {
       this.batches.set(group, batch);
     }
     return batch;
-  }
-
-  /** Force the grass ring to rebuild on the next update (quality changed live). */
-  refreshGrass(): void {
-    this.grassCellX = Number.NaN;
-    this.grassCellZ = Number.NaN;
-  }
-
-  /** Instance count + timing of the last completed ring rebuild (report/debug). */
-  grassStats(): { instances: number; rebuildMs: number; slices: number } {
-    return { ...this.grassLast };
-  }
-
-  /**
-   * Wide sparse grass ring (see SCATTER.grass): on a cell cross, start an
-   * incremental rebuild job; every call advances it within a rebuildBudgetMs
-   * time slice so even the high preset's 64m ring never hitches a frame.
-   * `sync` (boot priming) drains the whole job at once.
-   */
-  private updateGrass(px: number, pz: number, sync = false): void {
-    const cell = SCATTER.grass.cell;
-    const cx = Math.floor(px / cell);
-    const cz = Math.floor(pz / cell);
-    if (cx !== this.grassCellX || cz !== this.grassCellZ || !this.grassMesh) {
-      this.grassCellX = cx;
-      this.grassCellZ = cz;
-      this.startGrassJob(px, pz);
-    }
-    if (this.grassJob) this.processGrassJob(sync);
-  }
-
-  private startGrassJob(px: number, pz: number): void {
-    if (!this.grassMesh) {
-      this.grassMesh = new THREE.InstancedMesh(
-        sharedGeo('grass'),
-        sharedMat('grass'),
-        SCATTER.grass.cap,
-      );
-      this.grassMesh.name = 'props grass ring';
-      this.grassMesh.frustumCulled = false; // ring straddles the player, not origin
-      this.scene.add(this.grassMesh);
-    }
-    const radius = qualityFlags().grassRadius;
-    const step = this.grassStep();
-    this.grassJob = {
-      px,
-      pz,
-      gx: Math.floor((px - radius) / step),
-      maxGX: Math.floor((px + radius) / step),
-      minGZ: Math.floor((pz - radius) / step),
-      maxGZ: Math.floor((pz + radius) / step),
-      n: 0,
-      ms: 0,
-      slices: 0,
-    };
-  }
-
-  /** Candidate-lattice pitch (m): base spacing tightened by √grassMultiplier. */
-  private grassStep(): number {
-    return SCATTER.grass.spacing / Math.sqrt(qualityFlags().grassMultiplier);
-  }
-
-  /**
-   * Advance the ring rebuild by one time slice (whole job when `sync`).
-   * Column-at-a-time over the candidate lattice; each surviving candidate rolls
-   * density × a radial falloff (full inside falloffInner·R, lerping to
-   * falloffEdge at the rim) and shrinks toward edgeScaleMin at the rim, so the
-   * ring fades out instead of ending in a hard circle.
-   */
-  private processGrassJob(sync: boolean): void {
-    const job = this.grassJob;
-    const mesh = this.grassMesh;
-    if (!job || !mesh) return;
-    const G = SCATTER.grass;
-    const q = qualityFlags();
-    const radius = q.grassRadius;
-    const step = this.grassStep();
-    const r2 = radius * radius;
-    const inner = G.falloffInner * radius;
-    const [sMin, sMax] = SCATTER.scale.grass;
-    const cap = G.cap;
-    const t0 = performance.now();
-
-    while (job.gx <= job.maxGX) {
-      const gx = job.gx;
-      for (let gz = job.minGZ; gz <= job.maxGZ && job.n < cap; gz++) {
-        const roll = hash2(GRASS_DEN, gx, gz);
-        if (roll > G.density) continue; // cheap early reject at full density
-        const x = gx * step + step * 0.5 + (hash2(GRASS_JX, gx, gz) - 0.5) * step;
-        const z = gz * step + step * 0.5 + (hash2(GRASS_JZ, gx, gz) - 0.5) * step;
-        const dx = x - job.px;
-        const dz = z - job.pz;
-        const d2 = dx * dx + dz * dz;
-        if (d2 > r2) continue;
-        // Radial density falloff: edgeT 0 inside the full-density core → 1 at rim.
-        const d = Math.sqrt(d2);
-        const edgeT = d <= inner ? 0 : (d - inner) / (radius - inner);
-        const falloff = 1 - (1 - G.falloffEdge) * edgeT;
-        if (roll > G.density * falloff) continue;
-        const b = biomeAt(x, z);
-        if (b !== 'meadow' && b !== 'forest') continue;
-        const y = heightAt(x, z);
-        if (y < SCATTER.minPlacementY) continue;
-        const rot = hash2(GRASS_ROT, gx, gz) * Math.PI * 2;
-        const sc =
-          (sMin + hash2(GRASS_SCL, gx, gz) * (sMax - sMin)) *
-          (1 - (1 - G.edgeScaleMin) * edgeT);
-        mesh.setMatrixAt(job.n, compose(x, y, z, rot, sc));
-        job.n++;
-      }
-      job.gx++;
-      if (!sync && performance.now() - t0 >= G.rebuildBudgetMs) break;
-    }
-
-    job.ms += performance.now() - t0;
-    job.slices++;
-    mesh.instanceMatrix.needsUpdate = true;
-    if (job.gx > job.maxGX || job.n >= cap) {
-      // Done: clamp the visible range to the fresh ring (stale tail dropped).
-      mesh.count = job.n;
-      this.grassLast = { instances: job.n, rebuildMs: job.ms, slices: job.slices };
-      this.grassJob = null;
-    } else if (mesh.count < job.n) {
-      // Mid-rebuild: extend over freshly-written slots; a longer previous ring
-      // keeps its (stale, but valid) tail visible until the job completes.
-      mesh.count = job.n;
-    }
   }
 
   /**
@@ -933,18 +785,7 @@ export class PropManager {
       }
     }
 
-    this.updateGrass(playerX, playerZ);
-    this.updateGrassWind(now);
     this.syncVisuals(now);
-  }
-
-  /** Advance the grass-ring wind clock (one uniform write; see materialFor). */
-  private updateGrassWind(now: number): void {
-    const m = this.grassMesh?.material as THREE.Material | undefined;
-    const shader = m?.userData?.shader as
-      | { uniforms: { uTime: { value: number } } }
-      | undefined;
-    if (shader) shader.uniforms.uTime.value = now;
   }
 
   /** Build every in-range chunk synchronously (boot priming, no hitch cap). */
@@ -960,7 +801,6 @@ export class PropManager {
         if (!this.loaded.has(key)) this.loaded.set(key, this.buildChunk(cx, cz, now));
       }
     }
-    this.updateGrass(playerX, playerZ, true); // boot priming: whole ring at once
     this.syncVisuals(now);
   }
 
@@ -1020,6 +860,9 @@ export class PropManager {
           });
         } else {
           batch.setMatrix(slot, compose(p.x, p.y, p.z, p.rot, p.scale));
+          // Grass tufts get a per-instance meadow-green tint (multiplies the
+          // geometry's baked greyscale root→tip ramp — see grasstuftBlade).
+          if (p.kind === 'grasstuft') batch.setColor(slot, grasstuftColor(p.x, p.z));
         }
       }
 
@@ -1100,20 +943,12 @@ export class PropManager {
     return res.gained;
   }
 
-  /** Dispose every resident chunk + tear down the batches + grass ring. */
+  /** Dispose every resident chunk + tear down the batches. */
   dispose(): void {
     for (const chunk of this.loaded.values()) this.disposeChunk(chunk);
     this.loaded.clear();
     for (const batch of this.batches.values()) batch.dispose();
     this.batches.clear();
-    if (this.grassMesh) {
-      this.scene.remove(this.grassMesh);
-      this.grassMesh.dispose();
-      this.grassMesh = null;
-      this.grassCellX = Number.NaN;
-      this.grassCellZ = Number.NaN;
-      this.grassJob = null;
-    }
   }
 
   /**

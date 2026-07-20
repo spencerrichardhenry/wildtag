@@ -495,8 +495,8 @@ export function createHelpScreen(manager: ScreenManager, quality?: QualityContro
       panel.appendChild(grid);
 
       // Quality selector (Fidelity-2 P1): three preset buttons, active one
-      // highlighted. Applying live-updates the cheap flags (grass); main.ts
-      // toasts "reload to apply" for the reload-required ones.
+      // highlighted. Applying persists the choice; main.ts toasts "reload to
+      // apply" for the reload-required flags (shadows/post/LOD).
       if (quality) {
         const active = quality.current();
         const qwrap = document.createElement('div');

@@ -728,7 +728,7 @@ async function checkQualityPresets() {
       await sleep(1000);
       lowDc = await medianDrawCalls(low);
       lowFps = await measureFps(low);
-      console.log(`    (b) low: quality=${st.quality} shadowCascades=${q.flags.shadowCascades} nearLod=${q.flags.nearLod} grassMult=${q.flags.grassMultiplier} drawCalls=${lowDc}`);
+      console.log(`    (b) low: quality=${st.quality} shadowCascades=${q.flags.shadowCascades} nearLod=${q.flags.nearLod} drawCalls=${lowDc}`);
       console.log(`    (d) low fps over 3s = ${lowFps.toFixed(1)}`);
       assert(low.__errors.length === 0, `low boot errors: ${low.__errors.join(' | ')}`);
     } finally {
@@ -747,7 +747,7 @@ async function checkQualityPresets() {
       await sleep(1000);
       highDc = await medianDrawCalls(high);
       highFps = await measureFps(high);
-      console.log(`    (b) high: quality=${st.quality} shadowCascades=${q.flags.shadowCascades} nearLod=${q.flags.nearLod} grassMult=${q.flags.grassMultiplier} drawCalls=${highDc}`);
+      console.log(`    (b) high: quality=${st.quality} shadowCascades=${q.flags.shadowCascades} nearLod=${q.flags.nearLod} drawCalls=${highDc}`);
       console.log(`    (d) high fps over 3s = ${highFps.toFixed(1)} (informational on software render)`);
       assert(high.__errors.length === 0, `high boot errors: ${high.__errors.join(' | ')}`);
     } finally {

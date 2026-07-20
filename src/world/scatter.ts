@@ -33,7 +33,7 @@ export type PropKind =
   | 'reed' // wetland reed cluster (no collision)
   | 'lilypad' // floating lake lily pad (no collision)
   | 'mushroom' // forest glow-mushroom cluster (no collision)
-  | 'grass'; // near-player grass tuft (no collision; not chunk-scattered)
+  | 'grasstuft'; // permanent meadow ground-cover tuft (no collision; static)
 
 /**
  * A single scattered prop: gameplay `kind` + world transform (y already
@@ -65,6 +65,11 @@ const S_RESIN = 0x6666;
 const S_SPARK = 0x7777;
 const S_VARIANT = 0x8888;
 const S_LILY = 0x9999;
+// Permanent meadow grass-tuft channels (independent per-sub-cell roll + jitter).
+const S_GRASS = 0xaaaa;
+const S_GRASS_JX = 0xbbbb;
+const S_GRASS_JZ = 0xcccc;
+const S_GRASS_ROT = 0xdddd;
 
 function h(salt: number, gx: number, gz: number): number {
   return hash2((WORLD_SEED ^ salt) >>> 0, gx, gz);
@@ -223,6 +228,35 @@ export function scatterForChunk(cx: number, cz: number): PropPlacement[] {
         y: sy,
         scale: scaleFor('spark', cx, cz),
         rot: h(S_ROT, cx, cz) * Math.PI * 2,
+      });
+    }
+  }
+
+  // Permanent meadow ground-cover grass tufts: an INDEPENDENT per-sub-cell roll
+  // (meadow biome only) appended AFTER the prop/spark rolls, so a tuft never
+  // shifts a resource node's placement index (registry keys stay stable). Roughly
+  // SCATTER.grasstuftChance of the grid² sub-cells sprout one static, non-
+  // colliding tuft at its own jittered point — sparse ground cover across the
+  // plains, deterministic from world position like every other placement.
+  for (let j = 0; j < GRID; j++) {
+    for (let i = 0; i < GRID; i++) {
+      const gx = cx * GRID + i;
+      const gz = cz * GRID + j;
+      if (h(S_GRASS, gx, gz) >= SCATTER.grasstuftChance) continue;
+      const jx = (h(S_GRASS_JX, gx, gz) - 0.5) * 2 * SCATTER.jitter;
+      const jz = (h(S_GRASS_JZ, gx, gz) - 0.5) * 2 * SCATTER.jitter;
+      const x = originX + (i + 0.5 + jx) * CELL;
+      const z = originZ + (j + 0.5 + jz) * CELL;
+      if (biomeAt(x, z) !== 'meadow') continue;
+      const y = heightAt(x, z);
+      if (y < SCATTER.minPlacementY) continue;
+      out.push({
+        kind: 'grasstuft',
+        x,
+        z,
+        y,
+        scale: scaleFor('grasstuft', gx, gz),
+        rot: h(S_GRASS_ROT, gx, gz) * Math.PI * 2,
       });
     }
   }

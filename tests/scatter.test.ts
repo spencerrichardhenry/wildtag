@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { scatterForChunk, placementObstacle } from '../src/world/scatter.ts';
+import {
+  scatterForChunk,
+  placementObstacle,
+  placementGrappleCollider,
+} from '../src/world/scatter.ts';
 import { biomeAt } from '../src/world/terrain.ts';
 import { SCATTER } from '../src/core/constants.ts';
 
@@ -105,9 +109,50 @@ describe('obstacle emission', () => {
     }
   });
 
-  it('does NOT emit obstacles for scree, reeds, grass, lily pads or mushrooms', () => {
-    for (const kind of ['scree', 'reed', 'grass', 'lilypad', 'mushroom'] as const) {
+  it('does NOT emit obstacles for scree, reeds, grass tufts, lily pads or mushrooms', () => {
+    for (const kind of ['scree', 'reed', 'grasstuft', 'lilypad', 'mushroom'] as const) {
       expect(placementObstacle({ kind, x: 0, z: 0, y: 5, scale: 1, rot: 0 })).toBeNull();
+    }
+  });
+});
+
+// --- Permanent meadow grass tufts -----------------------------------------
+
+describe('meadow grass tufts', () => {
+  it('scatters grass tufts deterministically into a meadow chunk', () => {
+    const a = scatterForChunk(MEADOW.cx, MEADOW.cz).filter((p) => p.kind === 'grasstuft');
+    const b = scatterForChunk(MEADOW.cx, MEADOW.cz).filter((p) => p.kind === 'grasstuft');
+    expect(a).toEqual(b);
+    expect(a.length).toBeGreaterThan(0);
+  });
+
+  it('emits grass tufts ONLY on meadow sub-cells', () => {
+    for (const c of [MEADOW, FOREST, CRAGS, { cx: 20, cz: 0 }]) {
+      for (const p of scatterForChunk(c.cx, c.cz)) {
+        if (p.kind === 'grasstuft') expect(biomeAt(p.x, p.z)).toBe('meadow');
+      }
+    }
+  });
+
+  it('never emits grass tufts in a forest or crags chunk', () => {
+    for (const c of [FOREST, CRAGS]) {
+      const tufts = scatterForChunk(c.cx, c.cz).filter((p) => p.kind === 'grasstuft');
+      expect(tufts.length).toBe(0);
+    }
+  });
+
+  it('yields ~1 tuft per meadow sub-cell (per-chunk count in the 45-64 band)', () => {
+    const tufts = scatterForChunk(MEADOW.cx, MEADOW.cz).filter((p) => p.kind === 'grasstuft');
+    expect(tufts.length).toBeGreaterThanOrEqual(45);
+    expect(tufts.length).toBeLessThanOrEqual(64); // grid² sub-cells is the hard cap
+  });
+
+  it('grass tufts are neither obstacles nor grapple anchors nor above minPlacementY-violating', () => {
+    const tufts = scatterForChunk(MEADOW.cx, MEADOW.cz).filter((p) => p.kind === 'grasstuft');
+    for (const p of tufts) {
+      expect(placementObstacle(p)).toBeNull();
+      expect(placementGrappleCollider(p)).toBeNull();
+      expect(p.y).toBeGreaterThanOrEqual(SCATTER.minPlacementY);
     }
   });
 });

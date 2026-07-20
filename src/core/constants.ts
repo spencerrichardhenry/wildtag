@@ -369,6 +369,15 @@ export const SCATTER = {
   resinOffset: 0.75,
 
   /**
+   * Permanent meadow ground-cover: per-sub-cell chance a meadow sub-cell sprouts
+   * one static, non-colliding grass tuft (an independent roll appended after the
+   * prop scatter — see scatter.ts). At grid² = 64 sub-cells this yields ~60
+   * tufts per fully-meadow chunk: sparse world-space cover, roughly 1/20 of the
+   * old near-player grass ring's full density, with no ring/bubble to follow.
+   */
+  grasstuftChance: 0.95,
+
+  /**
    * Per-biome scatter table: ordered cumulative roll thresholds. A sub-cell's
    * roll r in [0,1) picks the first entry with r < p; if it exceeds every
    * threshold the sub-cell stays empty. F2 scenery pass: trees carry a per-
@@ -470,37 +479,6 @@ export const SCATTER = {
     shard: 18,
   },
 
-  /**
-   * Near-player grass ground-cover ring (meadow/forest only). Rebuilt when the
-   * player crosses a `cell`-metre grid cell; a `spacing`-metre candidate
-   * lattice inside the quality preset's ring radius is hash-rolled at
-   * `density`. Deterministic from world position, so it doesn't shimmer.
-   *
-   * F2 P1.1 (playtest feedback — the old ring read as a dense puck): the ring
-   * is now WIDE and SPARSE with a radial density falloff — full density inside
-   * `falloffInner` × radius, lerping down to `falloffEdge` × density at the
-   * rim (and tufts shrink toward `edgeScaleMin` there) so there's no hard
-   * circular boundary. Radius/multiplier per preset live in the QUALITY table.
-   * Rebuilds are incremental: each update() slice spends at most
-   * `rebuildBudgetMs` so a wide-ring rebuild never hitches a frame.
-   */
-  grass: {
-    radius: 30, // low-preset ring radius (m); medium/high override via QUALITY
-    cell: 8,
-    spacing: 1.7,
-    density: 0.45,
-    /** Hard instance-buffer bound across all presets (high ≈ 3.6k after falloff). */
-    cap: 7000,
-    /** Fraction of the radius kept at full density before the falloff starts. */
-    falloffInner: 0.35,
-    /** Density multiplier remaining at the very rim of the ring. */
-    falloffEdge: 0.2,
-    /** Tuft scale multiplier at the rim (1 at/inside falloffInner). */
-    edgeScaleMin: 0.75,
-    /** Per-update time budget (ms) for incremental ring rebuild slices. */
-    rebuildBudgetMs: 1.5,
-  },
-
   /** Per-kind instance scale range [min, max] (uniform hash pick). */
   scale: {
     tree: [0.85, 1.6],
@@ -517,7 +495,8 @@ export const SCATTER = {
     reed: [0.8, 1.3],
     lilypad: [0.7, 1.4],
     mushroom: [0.7, 1.2],
-    grass: [0.8, 1.4],
+    /** Grass tufts: ±25% scale jitter about 1.0. */
+    grasstuft: [0.75, 1.25],
   },
 
   /** Collision-cylinder radius factor (× scale) for blocking props. */
@@ -553,8 +532,8 @@ export const SCATTER = {
     lilyBloom: 0xf0e7f5,
     mushroomStem: 0xd8cdb4,
     mushroomCap: 0x9c5bd0,
-    grassTop: 0x82b25a,
-    grassBase: 0x4f7d3c,
+    /** Meadow grass-tuft base green (per-instance hue/lightness jitter in props). */
+    grassTuft: 0x82b25a,
     crystalA: 0x7fb0d8,
     crystalB: 0x9d86e0,
     crystalC: 0x6fd8c0,

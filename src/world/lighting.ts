@@ -5,7 +5,7 @@ import { ENV } from '../core/constants.ts';
 // Cascade shadows (Fidelity-2 P3, deliverable 1) — HAND-ROLLED, not three's CSM
 // addon. The addon's `setupMaterial` REPLACES a material's onBeforeCompile and
 // its `_injectInclude` globally monkey-patches the lighting ShaderChunks; that
-// fights our terrain-detail / grass-wind / water-ripple onBeforeCompile shaders
+// fights our terrain-detail / water-ripple onBeforeCompile shaders
 // and would need per-material re-wrapping across six material families for a
 // feature that never runs in the headless suite (SwiftShader gates shadows off).
 // So we hand-roll with plain DirectionalLights — zero shader surgery, composes

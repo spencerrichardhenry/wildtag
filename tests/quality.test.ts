@@ -39,24 +39,19 @@ function memStorage(seed?: Record<string, string>): Storage {
 describe('QUALITY preset table', () => {
   it('defines all three presets with the expected P1-live flags', () => {
     expect(QUALITY_IDS).toEqual(['low', 'medium', 'high']);
-    // Shadow cascades ladder 0/1/2 per the spec; grass multiplier 1/2/3 +
-    // radius 30/48/64 per the playtest re-tune (wide sparse ring, not a puck).
+    // Shadow cascades ladder 0/1/2 per the spec. (Grass is now a permanent,
+    // quality-independent scatter prop — no preset flag, see scatter.ts.)
     expect(QUALITY.low.shadowCascades).toBe(0);
     expect(QUALITY.medium.shadowCascades).toBe(1);
     expect(QUALITY.high.shadowCascades).toBe(2);
-    expect(QUALITY.low.grassMultiplier).toBe(1);
-    expect(QUALITY.medium.grassMultiplier).toBe(2);
-    expect(QUALITY.high.grassMultiplier).toBe(3);
-    expect(QUALITY.low.grassRadius).toBe(30);
-    expect(QUALITY.medium.grassRadius).toBe(48);
-    expect(QUALITY.high.grassRadius).toBe(64);
     // Low is the floor: no shadows / no post / no near-LOD.
     expect(QUALITY.low.shadowRes).toBe(0);
     expect(QUALITY.low.ssao).toBe(false);
     expect(QUALITY.low.bloom).toBe(false);
     expect(QUALITY.low.nearLod).toBe(false);
-    // High widens the grass ring.
-    expect(QUALITY.high.grassRadius).toBeGreaterThan(QUALITY.low.grassRadius);
+    // Presets escalate near-LOD + post from low → high.
+    expect(QUALITY.high.nearLod).toBe(true);
+    expect(QUALITY.high.ssao).toBe(true);
   });
 });
 
