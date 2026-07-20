@@ -4,7 +4,7 @@ import type { Biome, CritterState, GroundQuery, Vec3 } from '../core/types.ts';
 import { hash2, mulberry32 } from '../core/rng.ts';
 import { biomeAt, groundNormalAt, heightAt } from '../world/terrain.ts';
 import { SPECIES, speciesById } from './species.ts';
-import { buildCritterModel, type CritterParts } from './models.ts';
+import { buildCritterModel, isSharedCritterMaterial, type CritterParts } from './models.ts';
 import { animateCritter } from './animation.ts';
 import { stepAI, type AIContext } from './ai.ts';
 import { inVillage } from '../village/layout.ts';
@@ -574,8 +574,10 @@ function disposeGroup(group: THREE.Group): void {
   group.traverse((obj) => {
     const mesh = obj as THREE.Mesh;
     if (mesh.geometry) mesh.geometry.dispose();
+    // Critter-model materials are shared via models.ts's cache — disposing one
+    // here would break every other critter using it. Geometries are per-build.
     const mat = mesh.material;
-    if (Array.isArray(mat)) mat.forEach((m) => m.dispose());
-    else if (mat) mat.dispose();
+    if (Array.isArray(mat)) mat.forEach((m) => !isSharedCritterMaterial(m) && m.dispose());
+    else if (mat && !isSharedCritterMaterial(mat)) mat.dispose();
   });
 }

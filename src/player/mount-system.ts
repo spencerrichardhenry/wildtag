@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { MOUNT, WORLD_SEED } from '../core/constants.ts';
 import type { GroundQuery, Vec3 } from '../core/types.ts';
 import { mulberry32 } from '../core/rng.ts';
-import { buildCritterModel, type CritterParts } from '../critters/models.ts';
+import { buildCritterModel, isSharedCritterMaterial, type CritterParts } from '../critters/models.ts';
 import { animateCritter } from '../critters/animation.ts';
 import { dismountVelocity } from './mount.ts';
 import type { PlayerController } from './controller.ts';
@@ -103,13 +103,17 @@ export class MountSystem {
     built.group.position.set(pos.x, y, pos.z);
     this.scene.add(built.group);
     // Collect per-mesh material handles for the camera-proximity ride fade.
-    // Model materials are per-part instances (jittered colours), so mutating
-    // opacity here never bleeds into wild critters.
+    // Model materials are SHARED via models.ts's cache, so the actor gets its
+    // own CLONES here — the fade mutates opacity per frame while ridden, and
+    // mutating a shared material would fade every critter in the world. The
+    // clones replace the shared originals on this group's meshes; disposeGroup
+    // recognises clones as non-shared and disposes them at teardown.
     const fades: FadeEntry[] = [];
     built.group.traverse((obj) => {
       const mesh = obj as THREE.Mesh;
       if (!mesh.isMesh || Array.isArray(mesh.material)) return;
-      const mat = mesh.material as FadeEntry['mat'];
+      const mat = (mesh.material as THREE.Material).clone() as FadeEntry['mat'];
+      mesh.material = mat;
       fades.push({ mesh, mat, baseOpacity: mat.opacity, baseTransparent: mat.transparent });
     });
     this.actor = {
@@ -338,13 +342,15 @@ function buildSaddle(): THREE.Object3D {
   return g;
 }
 
-/** Dispose every geometry + material under a group (mesh teardown). */
+/** Dispose every geometry + material under a group (mesh teardown). Shared
+ *  critter-cache materials are skipped; the actor's fade CLONES (which replace
+ *  the shared originals on this group's meshes) are not shared and dispose. */
 function disposeGroup(group: THREE.Group): void {
   group.traverse((obj) => {
     const mesh = obj as THREE.Mesh;
     if (mesh.geometry) mesh.geometry.dispose();
     const mat = mesh.material as THREE.Material | THREE.Material[] | undefined;
-    if (Array.isArray(mat)) mat.forEach((m) => m.dispose());
-    else if (mat) mat.dispose();
+    if (Array.isArray(mat)) mat.forEach((m) => !isSharedCritterMaterial(m) && m.dispose());
+    else if (mat && !isSharedCritterMaterial(mat)) mat.dispose();
   });
 }
