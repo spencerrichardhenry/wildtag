@@ -106,7 +106,9 @@ describe('critter material cache', () => {
       });
     }
     // The cache must dedupe hard: far fewer distinct materials than meshes
-    // (eye whites/highlights shared game-wide, L/R parts shared, etc).
+    // (one vertexColors material per bake class, shared game-wide).
+    // eslint-disable-next-line no-console
+    console.log(`materials: ${materials.size} distinct across ${meshCount} meshes (one of each species)`);
     expect(materials.size).toBeLessThan(meshCount / 3);
   });
 
