@@ -29,6 +29,17 @@ import { PlacementSystem, serializeStructures, deserializeStructures } from './s
 import { raycastTerrain } from './player/grapple.ts';
 import { applyStartingLoadout, loadSave, writeSave, clearSave, type SaveV2 } from './core/save.ts';
 import { buildDebugHandle } from './debug.ts';
+import {
+  currentQuality,
+  initQuality,
+  isSoftwareRenderer,
+  loadStoredQuality,
+  parseQualityOverride,
+  qualityFlags,
+  setQuality,
+  tierBelow,
+  type QualityId,
+} from './core/quality.ts';
 import { buildVillage, villageObstacles } from './village/buildings.ts';
 import { NpcManager, NPCS, npcAnchors } from './village/npcs.ts';
 import { createDialogScreen, openDialog, setRequestRenderer } from './village/dialog.ts';
@@ -99,30 +110,22 @@ if (new URLSearchParams(window.location.search).get('preview') === 'critters') {
   bootGame();
 }
 
-/**
- * Detect a software WebGL backend (SwiftShader/llvmpipe/Microsoft Basic Render)
- * via the unmasked renderer string. Such backends can't afford a shadow map, so
- * shadows are skipped outright on them (this is what keeps the headless e2e off
- * the perf-gate path). Any failure to read the string is treated as "not
- * software" so real GPUs are never wrongly downgraded.
- */
-function isSoftwareRenderer(r: THREE.WebGLRenderer): boolean {
-  try {
-    const gl = r.getContext();
-    const ext = gl.getExtension('WEBGL_debug_renderer_info');
-    const name = ext ? String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)) : '';
-    return /swiftshader|llvmpipe|software|basic render/i.test(name);
-  } catch {
-    return false;
-  }
-}
-
 /** Normal gameplay boot: scene, camera, world streaming and the FP controller. */
 function bootGame(): void {
   const debugParam = new URLSearchParams(window.location.search).get('debug');
   const debugGrapple = debugParam === 'grapple';
   const debugStructures = debugParam === 'structures';
   const debugVillage = debugParam === 'village';
+
+  // Quality preset (Fidelity-2 P1): resolve `?quality=` override > stored
+  // Esc-menu choice > auto-detect (software backend → low). The chosen preset
+  // drives the shadow gate + grass ring below; P2/P3 grow more consumers.
+  initQuality(renderer);
+  // Whether the preset was auto-detected (no explicit override / stored choice):
+  // only an auto preset is allowed to auto-downgrade on the fps gate below.
+  const qualityAuto =
+    !parseQualityOverride(window.location.search) &&
+    !loadStoredQuality(window.localStorage);
   const scene = new THREE.Scene();
 
   const camera = new THREE.PerspectiveCamera(
@@ -137,6 +140,39 @@ function bootGame(): void {
   const chunks = new ChunkManager(scene);
   const props = new PropManager(scene);
   const critters = new CritterManager(scene);
+
+  /** Rebuild the near-player grass ring against the live quality preset (cheap,
+   *  live-applied when the Esc-menu selector changes the grass multiplier/radius). */
+  function applyGrassQuality(): void {
+    props.refreshGrass();
+  }
+
+  /**
+   * Esc-menu quality change: persist the choice, LIVE-apply the cheap flags
+   * (grass density/radius rebuild), and — because shadows/post/LOD need a fresh
+   * boot to rebuild their pipelines — toast a reload prompt when any of those
+   * reload-required flags differ from the previous preset.
+   */
+  function applyQuality(id: QualityId): void {
+    const prev = qualityFlags();
+    if (id === currentQuality()) return;
+    setQuality(id, true);
+    const next = qualityFlags();
+    applyGrassQuality();
+    const reloadNeeded =
+      prev.shadowCascades !== next.shadowCascades ||
+      prev.shadowRes !== next.shadowRes ||
+      prev.ssao !== next.ssao ||
+      prev.bloom !== next.bloom ||
+      prev.waterReflections !== next.waterReflections ||
+      prev.terrainDetailShader !== next.terrainDetailShader ||
+      prev.nearLod !== next.nearLod;
+    toast(
+      reloadNeeded
+        ? `Quality: ${id} — reload to apply shadows & effects`
+        : `Quality: ${id}`,
+    );
+  }
   const skyDome = scene.getObjectByName('skyDome');
 
   // Perf-gated directional shadow (F1). The sun light (configured for shadows in
@@ -145,13 +181,33 @@ function bootGame(): void {
   // in the frame loop; the choice is mirrored onto the debug state (window.__f1).
   const sunLight = scene.getObjectByName('sunLight') as THREE.DirectionalLight | null;
   const sunDir = new THREE.Vector3(ENV.sunPos.x, ENV.sunPos.y, ENV.sunPos.z).normalize();
-  // Software renderers (SwiftShader/llvmpipe — headless e2e) never afford a
-  // shadow map: detect them up front and skip shadows immediately so the fps
-  // gate below only governs real GPUs (and e2e is never dragged by the gate
-  // window). Real hardware keeps shadows unless the measured fps gate trips.
-  let shadowsEnabled = !isSoftwareRenderer(renderer);
-  if (!shadowsEnabled) renderer.shadowMap.enabled = false;
+  // Shadows now follow the quality preset (P1): `shadowCascades > 0` turns the
+  // map on, `shadowRes` sizes it. The auto-detected `low` preset (software
+  // backends → headless e2e) has 0 cascades, so shadows are skipped up front
+  // exactly as before; real hardware keeps them unless the fps gate drops the
+  // tier below. `syncShadowQuality()` re-derives both from the live preset.
+  let shadowsEnabled = false;
   let shadowFlagFrame = 0;
+  // A software backend (SwiftShader/llvmpipe — headless e2e) can't afford a
+  // shadow map even under an explicit ?quality=high: the preset FLAGS still
+  // report the requested cascades (so the e2e feature-diff check is honest), but
+  // the actual shadow map is never turned on. Real GPUs follow the preset.
+  const softwareRenderer = isSoftwareRenderer(renderer);
+  function syncShadowQuality(): void {
+    const q = qualityFlags();
+    shadowsEnabled = q.shadowCascades > 0 && !softwareRenderer;
+    renderer.shadowMap.enabled = shadowsEnabled;
+    if (shadowsEnabled && sunLight && q.shadowRes > 0) {
+      sunLight.shadow.mapSize.set(q.shadowRes, q.shadowRes);
+      const map = sunLight.shadow.map;
+      if (map) {
+        // Force the shadow map to be reallocated at the new resolution.
+        map.dispose();
+        sunLight.shadow.map = null;
+      }
+    }
+  }
+  syncShadowQuality();
 
   /** Flag props/critters/village/terrain meshes as shadow casters/receivers. */
   function flagShadowCasters(): void {
@@ -283,8 +339,9 @@ function bootGame(): void {
   screens.register(createCraftScreen(inventory, player.unlocks, screens));
   // Field Guide (Tab): the 8-species silhouette grid (Task 10).
   screens.register(createGuideScreen(critters, screens));
-  // Pause / Help overlay (Esc): keybind reference + Resume (Task 11).
-  screens.register(createHelpScreen(screens));
+  // Pause / Help overlay (Esc): keybind reference + Resume (Task 11) + the
+  // Fidelity-2 quality selector.
+  screens.register(createHelpScreen(screens, { current: currentQuality, apply: applyQuality }));
   // Village dialog (F near an NPC): flavour + request placeholder (Task V3).
   screens.register(createDialogScreen(screens));
   // Roster (KeyB, Haven V2): bonded critters + Release. `getRoster` reads the
@@ -1200,6 +1257,15 @@ function bootGame(): void {
     save: doSave,
     resetSave,
     farmState: () => farm,
+    // Draw-call / resource counters sampled from renderer.info after the last
+    // render (Fidelity-2 P1 draw-call budget check).
+    renderStats: () => ({
+      drawCalls: renderer.info.render.calls,
+      triangles: renderer.info.render.triangles,
+      geometries: renderer.info.memory.geometries,
+      textures: renderer.info.memory.textures,
+    }),
+    quality: () => ({ id: currentQuality(), flags: qualityFlags() }),
   });
 
   // Verification aid (Haven V4): expose deterministic village anchors + a couple
@@ -1240,17 +1306,18 @@ function bootGame(): void {
   let accumulator = 0;
   let lastTime = performance.now();
 
-  // Perf gate for the shadow map: accumulate wall-clock over the first
-  // ENV.shadowGateFrames frames, then keep shadows only if the average fps
-  // clears ENV.shadowFpsGate. The decision is mirrored onto window.__f1 for the
-  // debug/e2e state. Flag the initial casters once so frame 1 already shadows.
+  // Perf gate (generalised from the F1 shadow gate into quality, P1): average
+  // wall-clock fps over the first ENV.shadowGateFrames frames; if it's below
+  // ENV.shadowFpsGate AND the preset was auto-detected, drop one quality tier
+  // (which turns shadows down/off via syncShadowQuality). An explicit ?quality=
+  // / stored choice is never auto-downgraded. Mirrored onto window.__f1.
   flagShadowCasters();
   let gateWarmup = 0;
   let gateFrames = 0;
   let gateElapsed = 0;
-  // Software renderers already decided (shadows skipped up front); real GPUs run
-  // the fps gate after a warm-up that skips the initial chunk-build hitches.
-  let gateDecided = !shadowsEnabled;
+  // Skip the measurement window when there's nothing to protect (already on the
+  // low preset → no shadows) or the preset is explicit (not auto).
+  let gateDecided = !qualityAuto || currentQuality() === 'low';
   const f1State = { shadows: shadowsEnabled, fps: 0 };
   (window as unknown as { __f1: typeof f1State }).__f1 = f1State;
 
@@ -1273,8 +1340,11 @@ function bootGame(): void {
           const avgFps = gateFrames / Math.max(gateElapsed, 1e-6);
           f1State.fps = avgFps;
           if (avgFps < ENV.shadowFpsGate) {
-            shadowsEnabled = false;
-            renderer.shadowMap.enabled = false;
+            // Under budget: drop one tier (does not persist — auto only), then
+            // re-derive shadows from the new preset.
+            setQuality(tierBelow(currentQuality()), false);
+            syncShadowQuality();
+            applyGrassQuality();
           }
           f1State.shadows = shadowsEnabled;
           gateDecided = true;

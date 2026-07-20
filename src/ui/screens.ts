@@ -2,6 +2,17 @@ import type { Inventory } from '../craft/inventory.ts';
 import { canCraft, craft, RECIPES } from '../craft/recipes.ts';
 import type { Recipe, RecipeId, ResourceKind } from '../core/types.ts';
 import { clearSave } from '../core/save.ts';
+import { QUALITY_IDS, type QualityId } from '../core/quality.ts';
+
+/**
+ * Esc-menu quality selector hook (Fidelity-2 P1). `current()` reads the live
+ * preset for the active-button highlight; `apply(id)` switches it (main.ts
+ * live-applies the cheap flags and toasts a reload for the rest).
+ */
+export interface QualityControl {
+  current(): QualityId;
+  apply(id: QualityId): void;
+}
 
 // ---------------------------------------------------------------------------
 // Screen manager: one overlay div appended to #hud, screens register a
@@ -402,6 +413,35 @@ function injectHelpStyles(): void {
     }
     .wt-help-btn:hover:not(:disabled) { background: rgba(120, 200, 150, 0.3); }
     .wt-help-btn:disabled { cursor: default; opacity: 0.4; background: rgba(255,255,255,0.05); }
+    .wt-quality {
+      margin: 4px 0 18px;
+    }
+    .wt-quality-label {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: #9fb0b8;
+      margin-bottom: 8px;
+    }
+    .wt-quality-btns { display: flex; gap: 8px; }
+    .wt-quality-btn {
+      font: inherit;
+      font-size: 13px;
+      padding: 6px 16px;
+      border-radius: 6px;
+      border: 1px solid rgba(200, 220, 230, 0.3);
+      background: rgba(255, 255, 255, 0.05);
+      color: #cfe0d6;
+      cursor: pointer;
+      text-transform: capitalize;
+    }
+    .wt-quality-btn:hover { background: rgba(200, 220, 230, 0.12); }
+    .wt-quality-btn.wt-quality-active {
+      background: rgba(120, 200, 150, 0.28);
+      border-color: rgba(120, 200, 150, 0.6);
+      color: #eef2f4;
+      font-weight: bold;
+    }
   `;
   document.head.appendChild(style);
 }
@@ -413,7 +453,7 @@ function injectHelpStyles(): void {
  * Confirm state is scoped to this call (one instance per ScreenManager), so
  * it survives the `refresh()` re-render the arm/disarm triggers.
  */
-export function createHelpScreen(manager: ScreenManager): ScreenDef {
+export function createHelpScreen(manager: ScreenManager, quality?: QualityControl): ScreenDef {
   let confirmingReset = false;
   let resetTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -453,6 +493,35 @@ export function createHelpScreen(manager: ScreenManager): ScreenDef {
         grid.append(k, d);
       }
       panel.appendChild(grid);
+
+      // Quality selector (Fidelity-2 P1): three preset buttons, active one
+      // highlighted. Applying live-updates the cheap flags (grass); main.ts
+      // toasts "reload to apply" for the reload-required ones.
+      if (quality) {
+        const active = quality.current();
+        const qwrap = document.createElement('div');
+        qwrap.className = 'wt-quality';
+        const qlabel = document.createElement('div');
+        qlabel.className = 'wt-quality-label';
+        qlabel.textContent = 'Quality';
+        qwrap.appendChild(qlabel);
+        const qbtns = document.createElement('div');
+        qbtns.className = 'wt-quality-btns';
+        for (const id of QUALITY_IDS) {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.className = `wt-quality-btn${id === active ? ' wt-quality-active' : ''}`;
+          b.dataset.quality = id;
+          b.textContent = id;
+          b.addEventListener('click', () => {
+            quality.apply(id);
+            manager.refresh(); // re-render to move the active highlight
+          });
+          qbtns.appendChild(b);
+        }
+        qwrap.appendChild(qbtns);
+        panel.appendChild(qwrap);
+      }
 
       const actions = document.createElement('div');
       actions.className = 'wt-help-actions';

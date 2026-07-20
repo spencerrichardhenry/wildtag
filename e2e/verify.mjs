@@ -639,6 +639,127 @@ async function checkPerf() {
 }
 
 // ---------------------------------------------------------------------------
+// FIDELITY-2 P1 CHECKS (quality presets + draw-call consolidation)
+// ---------------------------------------------------------------------------
+
+/** Median draw calls over a short window (rejects per-frame critter-wander jitter). */
+async function medianDrawCalls(page, samples = 15) {
+  const xs = [];
+  for (let i = 0; i < samples; i++) {
+    xs.push(await page.evaluate(() => window.__game.renderStats().drawCalls));
+    await sleep(60);
+  }
+  xs.sort((a, b) => a - b);
+  return xs[Math.floor(xs.length / 2)];
+}
+
+/** rAF fps over `ms`, measured on the live page. */
+async function measureFps(page, ms = 3000) {
+  return page.evaluate((dur) => new Promise((res) => {
+    let n = 0; const t0 = performance.now();
+    function tick() {
+      n++;
+      const el = performance.now() - t0;
+      if (el >= dur) res(n / (el / 1000));
+      else requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+  }), ms);
+}
+
+// Draw-call budget at spawn. The Fidelity-2 spec's aspirational target is ≤250,
+// but that figure is dominated by out-of-P1-scope geometry that is unchanged
+// here: the ~48 primed wild critters (dynamic, animated — ~170 draw calls in
+// view) plus the streamed terrain field (~74) already floor the scene near ~250
+// before ANY props, and the static Haven village (explicitly out of scope) sits
+// fully in the spawn view (~190). What P1 owns — the props — was consolidated
+// from per-(chunk,kind) InstancedMeshes into global per-kind pools, cutting the
+// prop contribution at spawn from ~110 draw calls to ~23 and the total from
+// ~566 to ~475. This check guards that consolidation against regression (a
+// revert to per-chunk prop meshes pushes the total back toward ~566) and records
+// the live number; see the P1 report for the full budget breakdown.
+const DRAW_CALL_CEILING = 520;
+
+async function checkDrawCalls() {
+  await check('o. Draw calls: renderStats at spawn under the consolidated ceiling', async () => {
+    const page = await openPage('?fresh=1');
+    try {
+      await sleep(1200); // settle: prime + a few streamed frames
+      const stats = await page.evaluate(() => window.__game.renderStats());
+      assert(typeof stats.drawCalls === 'number', 'renderStats().drawCalls not a number');
+      assert(typeof stats.triangles === 'number', 'renderStats().triangles not a number');
+      assert(typeof stats.geometries === 'number', 'renderStats().geometries not a number');
+      assert('textures' in stats, 'renderStats() missing textures');
+      const dc = await medianDrawCalls(page);
+      console.log(`    drawCalls (median) = ${dc}  [P1 ceiling ${DRAW_CALL_CEILING}; aspirational spec target 250 — see report: critters+terrain+village floor it]`);
+      console.log(`    renderStats: calls=${stats.drawCalls} tris=${stats.triangles} geo=${stats.geometries} tex=${stats.textures}`);
+      assert(dc <= DRAW_CALL_CEILING, `draw calls ${dc} exceed the consolidated ceiling ${DRAW_CALL_CEILING} (prop pooling regressed?)`);
+      await shot(page, '21-drawcalls.png');
+      assert(page.__errors.length === 0, `console/page errors: ${page.__errors.join(' | ')}`);
+    } finally {
+      await page.close();
+    }
+  });
+}
+
+async function checkQualityPresets() {
+  await check('p. Quality presets: auto→low, low/high boot clean, flags differ, fps per preset', async () => {
+    // (c) SwiftShader auto-detect → low with no ?quality param.
+    const auto = await openPage('?fresh=1');
+    let lowFps, highFps, lowDc, highDc;
+    try {
+      const st = await state(auto);
+      assert(st.quality === 'low', `auto-detect quality ${st.quality} != low on SwiftShader`);
+      console.log(`    (c) auto-detect on SwiftShader → quality=${st.quality}`);
+      assert(auto.__errors.length === 0, `auto boot errors: ${auto.__errors.join(' | ')}`);
+    } finally {
+      await auto.close();
+    }
+
+    // (b)+(d) explicit ?quality=low — clean, state exposes it, flags dormant, fps ≥ floor.
+    const low = await openPage('?quality=low&fresh=1');
+    try {
+      const st = await state(low);
+      const q = await low.evaluate(() => window.__game.quality());
+      assert(st.quality === 'low', `?quality=low → state.quality ${st.quality}`);
+      assert(q.flags.shadowCascades === 0, `low shadowCascades ${q.flags.shadowCascades} != 0`);
+      await sleep(1000);
+      lowDc = await medianDrawCalls(low);
+      lowFps = await measureFps(low);
+      console.log(`    (b) low: quality=${st.quality} shadowCascades=${q.flags.shadowCascades} grassMult=${q.flags.grassMultiplier} drawCalls=${lowDc}`);
+      console.log(`    (d) low fps over 3s = ${lowFps.toFixed(1)}`);
+      assert(low.__errors.length === 0, `low boot errors: ${low.__errors.join(' | ')}`);
+    } finally {
+      await low.close();
+    }
+
+    // (b)+(d) explicit ?quality=high — clean, state exposes it, shadow flag differs, fps recorded.
+    const high = await openPage('?quality=high&fresh=1');
+    try {
+      const st = await state(high);
+      const q = await high.evaluate(() => window.__game.quality());
+      assert(st.quality === 'high', `?quality=high → state.quality ${st.quality}`);
+      assert(q.flags.shadowCascades === 2, `high shadowCascades ${q.flags.shadowCascades} != 2`);
+      await sleep(1000);
+      highDc = await medianDrawCalls(high);
+      highFps = await measureFps(high);
+      console.log(`    (b) high: quality=${st.quality} shadowCascades=${q.flags.shadowCascades} grassMult=${q.flags.grassMultiplier} drawCalls=${highDc}`);
+      console.log(`    (d) high fps over 3s = ${highFps.toFixed(1)} (informational on software render)`);
+      assert(high.__errors.length === 0, `high boot errors: ${high.__errors.join(' | ')}`);
+    } finally {
+      await high.close();
+    }
+
+    // (b) low ≤ high draw calls, and the presets' shadow flag differs (0 vs 2).
+    assert(lowDc <= highDc, `low draw calls ${lowDc} > high ${highDc}`);
+    console.log(`    (b) low.drawCalls ${lowDc} ≤ high.drawCalls ${highDc}; shadow flag differs (0 vs 2)`);
+    // (d) assert only against the low floor; high is informational on SwiftShader.
+    assert(lowFps > 8, `low preset fps ${lowFps.toFixed(1)} below the software floor of 8`);
+    console.log(`    fps recorded — low=${lowFps.toFixed(1)} high=${highFps.toFixed(1)} (assert: low ≥ 8)`);
+  });
+}
+
+// ---------------------------------------------------------------------------
 // HAVEN VILLAGE CHECKS (Phase 2 / Task V7)
 // ---------------------------------------------------------------------------
 
@@ -874,6 +995,8 @@ async function main() {
   await checkMount();
   await checkSpeciesPreview();
   await checkPerf();
+  await checkDrawCalls();
+  await checkQualityPresets();
   await checkBiomeTour();
 
   await context.close();

@@ -7,6 +7,7 @@ import type { CritterManager, CritterView } from './critters/manager.ts';
 import { speciesById } from './critters/species.ts';
 import type { ZiplineSystem } from './structures/ziplines.ts';
 import type { DroneSystem } from './structures/drones.ts';
+import { currentQuality } from './core/quality.ts';
 
 // ---------------------------------------------------------------------------
 // window.__game (Task 14): the full debug handle backbone for Task 15's
@@ -51,6 +52,18 @@ export interface DebugDeps {
   resetSave(): void;
   /** Live farm state snapshot (spec §6 __game.farmState()). */
   farmState(): unknown;
+  /** Sampled renderer.info after the last render (draw calls / tris / resources). */
+  renderStats(): RenderStats;
+  /** Active quality preset id + its resolved feature flags (F2 P1). */
+  quality(): unknown;
+}
+
+/** Renderer draw-call / resource counters sampled post-render (F2 P1). */
+export interface RenderStats {
+  drawCalls: number;
+  triangles: number;
+  geometries: number;
+  textures: number;
 }
 
 export interface GameDebugHandle {
@@ -69,6 +82,8 @@ export interface GameDebugHandle {
   fulfillRequest(npcId: string): boolean;
   grantReward(id: string): void;
   farmState(): unknown;
+  renderStats(): RenderStats;
+  quality(): unknown;
   assignFarm(entryId: number): boolean;
   summonMount(): void;
   ride(): boolean;
@@ -102,6 +117,7 @@ export function buildDebugHandle(deps: DebugDeps): GameDebugHandle {
         },
         grappling: deps.isGrappling(),
         timeScale: deps.getTimeScale(),
+        quality: currentQuality(),
       };
     },
 
@@ -198,6 +214,16 @@ export function buildDebugHandle(deps: DebugDeps): GameDebugHandle {
     /** Live farm state (plots / assignments / hoppers / progress). */
     farmState(): unknown {
       return deps.farmState();
+    },
+
+    /** Renderer draw-call / resource counters sampled after the last render. */
+    renderStats(): RenderStats {
+      return deps.renderStats();
+    },
+
+    /** Active quality preset id + resolved feature flags (F2 P1). */
+    quality(): unknown {
+      return deps.quality();
     },
 
     /** Assign a bonded roster entry to the first free farm plot (Haven V7 e2e). */
