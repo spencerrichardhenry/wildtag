@@ -98,7 +98,9 @@ export const QUALITY: Record<QualityId, QualityFlags> = {
     shadowRes: 2048,
     ssao: true,
     bloom: true,
-    waterReflections: true,
+    // Not implemented — planar water reflections were deferred out of the
+    // Fidelity-2 phase entirely; keep false so quality() never advertises it.
+    waterReflections: false,
     terrainDetailShader: true,
     standardMaterials: true,
     terrainDetailHigh: true,
