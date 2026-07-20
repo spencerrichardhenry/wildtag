@@ -60,17 +60,28 @@ export function runCritterPreview(renderer: THREE.WebGLRenderer): void {
   document.body.appendChild(overlay);
 
   const rng = mulberry32(20240808);
+  // Dev close-up: `?preview=critters&focus=<id>` builds just one species big and
+  // centred so charm reads at arm's length (verification aid). `focusList` lets
+  // a few be lined up (comma-separated ids). Empty = the full 2×6 roster grid.
+  const focusParam = new URLSearchParams(window.location.search).get('focus');
+  const focusIds = focusParam
+    ? focusParam.split(',').map((s) => s.trim()).filter(Boolean)
+    : null;
+  const roster = focusIds
+    ? focusIds.map((id) => SPECIES.find((s) => s.id === id)).filter((s): s is (typeof SPECIES)[number] => !!s)
+    : SPECIES;
+
   // 2 rows × 6 columns for the 12-species roster. The back row is staggered
   // half a column into the front row's gaps and pushed well back so tall
   // front-row critters never occlude it; the camera looks down from a height.
-  const cols = 6;
-  const colSpacing = 3.6;
-  const rowZ = [3.5, -5.5]; // [front, back]
+  const cols = focusIds ? Math.min(roster.length, 3) : 6;
+  const colSpacing = focusIds ? 2.6 : 3.6;
+  const rowZ = focusIds ? [0, -3] : [3.5, -5.5]; // [front, back]
   const rowXOffset = [0, colSpacing / 2]; // stagger the back row into the gaps
-  const startX = -((cols - 1) * colSpacing) / 2 - colSpacing / 4;
+  const startX = -((cols - 1) * colSpacing) / 2 - (focusIds ? 0 : colSpacing / 4);
   const stands: Stand[] = [];
 
-  SPECIES.forEach((sp, i) => {
+  roster.forEach((sp, i) => {
     const { group, parts } = buildCritterModel(sp.id, rng);
     const rowi = Math.floor(i / cols);
     const coli = i % cols;
@@ -91,9 +102,15 @@ export function runCritterPreview(renderer: THREE.WebGLRenderer): void {
   });
 
   // Frame the whole 2×6 grid from a raised vantage so both rows read without
-  // the back row hiding behind the tall front-row critters.
-  camera.position.set(0, 9, 18);
-  camera.lookAt(0, 0.6, -1.5);
+  // the back row hiding behind the tall front-row critters. Focus mode pulls
+  // the camera in close and low so the eyes/features read at arm's length.
+  if (focusIds) {
+    camera.position.set(0, 1.6, 5.2);
+    camera.lookAt(0, 1.0, -0.8);
+  } else {
+    camera.position.set(0, 9, 18);
+    camera.lookAt(0, 0.6, -1.5);
+  }
 
   function resize(): void {
     camera.aspect = window.innerWidth / window.innerHeight;
@@ -111,7 +128,9 @@ export function runCritterPreview(renderer: THREE.WebGLRenderer): void {
     const t = (now - start) / 1000;
 
     for (const s of stands) {
-      s.group.rotation.y = t * 0.5; // slow turntable
+      // Full grid: slow full turntable. Focus close-up: hold a flattering
+      // front-3/4 view (gentle wobble) so the faces/eyes read for judging.
+      s.group.rotation.y = focusIds ? -0.5 + Math.sin(t * 0.25) * 0.35 : t * 0.5;
       animateCritter(s.parts, s.walkSpeed, t, 1 / 60, s.speciesId);
 
       // Project a point above the critter to place its label.
