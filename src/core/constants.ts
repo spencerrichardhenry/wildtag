@@ -998,6 +998,9 @@ export const VILLAGE = {
   },
   /** Wall height (m) per building kind (roof sits on top). */
   wallHeight: { farmhouse: 3.4, barter: 3.0, home: 2.8 },
+  /** Extra collision height (m) above `wallHeight` allowed for the pyramid
+   *  roof, so a building's obstacle `yTop` clears its actual roof peak. */
+  roofAllowance: 1.5,
   /** Lamp posts: count ringed around the plaza + their ring radius (m) & height (m). */
   lampCount: 6,
   lampRadius: 9.5,

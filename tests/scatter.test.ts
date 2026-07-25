@@ -89,10 +89,15 @@ describe('obstacle emission', () => {
     const tree = { kind: 'tree' as const, x: 1, z: 2, y: 5, scale: 2, rot: 0 };
     const ob = placementObstacle(tree);
     expect(ob).not.toBeNull();
-    expect(ob).toEqual({ x: 1, z: 2, r: SCATTER.obstacleRadius.tree * 2 });
+    expect(ob).toEqual({ x: 1, z: 2, r: SCATTER.obstacleRadius.tree * 2, yTop: 5 + 4.5 * 2 });
 
     const rock = { kind: 'rock' as const, x: 3, z: 4, y: 5, scale: 1, rot: 0 };
-    expect(placementObstacle(rock)).toEqual({ x: 3, z: 4, r: SCATTER.obstacleRadius.rock });
+    expect(placementObstacle(rock)).toEqual({
+      x: 3,
+      z: 4,
+      r: SCATTER.obstacleRadius.rock,
+      yTop: 5 + 1.6 * 1,
+    });
   });
 
   it('does not emit obstacles for flowers or harvestable nodes', () => {
@@ -106,6 +111,26 @@ describe('obstacle emission', () => {
       const ob = placementObstacle({ kind, x: 2, z: 3, y: 5, scale: 1, rot: 0 });
       expect(ob).not.toBeNull();
       expect(ob!.r).toBe(SCATTER.obstacleRadius[kind]);
+    }
+  });
+
+  it('gives every collidable obstacle a finite yTop that scales with instance scale', () => {
+    // Tree: yTop = p.y + GRAPPLE_TOP.tree(4.5) * p.scale — matches the grapple
+    // collider top (same "top you can reach" surface), so a glider passes over.
+    const tree = { kind: 'tree' as const, x: 1, z: 2, y: 5, scale: 2, rot: 0 };
+    const treeOb = placementObstacle(tree)!;
+    expect(treeOb.yTop).toBeCloseTo(5 + 4.5 * 2, 10);
+
+    const giantTree = { kind: 'tree' as const, x: 0, z: 0, y: 10, scale: 6, rot: 0 };
+    const giantOb = placementObstacle(giantTree)!;
+    expect(giantOb.yTop! - 10).toBeCloseTo(4.5 * 6, 1);
+
+    for (const kind of ['rock', 'mesa', 'boulder'] as const) {
+      const ob = placementObstacle({ kind, x: 0, z: 0, y: 3, scale: 2, rot: 0 })!;
+      expect(ob.yTop).toBeGreaterThan(3);
+      // yTop must match the grapple collider's top exactly (shared table).
+      const gc = placementGrappleCollider({ kind, x: 0, z: 0, y: 3, scale: 2, rot: 0 })!;
+      expect(ob.yTop).toBeCloseTo(gc.yTop, 10);
     }
   });
 

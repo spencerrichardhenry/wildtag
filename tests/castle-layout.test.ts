@@ -110,6 +110,28 @@ describe('castleObstacles', () => {
     }
   });
 
+  it('gives every obstacle a finite yTop so a glider can pass over it', () => {
+    const obs = castleObstacles();
+    // Towers top out at padHeight + towerH.
+    const towerObs = obs.filter((o) => Math.abs(o.r - CASTLE.towerR) < 1e-6);
+    expect(towerObs.length).toBeGreaterThan(0);
+    for (const o of towerObs) {
+      expect(o.yTop).toBeCloseTo(CASTLE.padHeight + CASTLE.towerH, 5);
+    }
+    // The keep circle tops out at padHeight + keepH.
+    const l = castleLayout();
+    const keepR = l.keep.half * Math.SQRT2;
+    const keepObs = obs.find((o) => Math.abs(o.r - keepR) < 1e-6);
+    expect(keepObs).toBeDefined();
+    expect(keepObs!.yTop).toBeCloseTo(CASTLE.padHeight + CASTLE.keepH, 5);
+    // Wall circles (radius CASTLE.wallT) top out at padHeight + wallH.
+    const wallObs = obs.filter((o) => Math.abs(o.r - CASTLE.wallT) < 1e-6);
+    expect(wallObs.length).toBeGreaterThan(0);
+    for (const o of wallObs) {
+      expect(o.yTop).toBeCloseTo(CASTLE.padHeight + CASTLE.wallH, 5);
+    }
+  });
+
   it('solidly covers the 3 non-gate walls (no gap wider than 2*wallT anywhere)', () => {
     const l = castleLayout();
     const obs = castleObstacles();

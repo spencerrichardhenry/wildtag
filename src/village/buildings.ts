@@ -244,12 +244,21 @@ function buildFence(seg: FenceSeg): THREE.Group {
 
 let _obstacles: Obstacle[] | null = null;
 
-/** Cache-computed collision circles for buildings (2–3 each) + lamp posts. */
+/**
+ * Cache-computed collision circles for buildings (2–3 each) + lamp posts.
+ * Each circle carries a `yTop` (absolute world Y of its top) so a player
+ * gliding above a roof or lamp head passes over it instead of being blocked
+ * by an infinite invisible column: buildings top out at ground y + wallHeight
+ * (per kind) + `VILLAGE.roofAllowance` (clears the pyramid roof peak); lamps
+ * top out at ground y + `VILLAGE.lampHeight`.
+ */
 export function villageObstacles(): Obstacle[] {
   if (_obstacles) return _obstacles;
   const layout = villageLayout();
   const out: Obstacle[] = [];
   for (const b of layout.buildings) {
+    const groundY = heightAt(b.x, b.z);
+    const yTop = groundY + VILLAGE.wallHeight[b.kind] + VILLAGE.roofAllowance;
     // Full-footprint coverage with circles along the longer local axis: radius
     // r = 1.15 × (short/2) pads slightly past the walls (buildings have no
     // interiors), which buys each circle an interval of half-width
@@ -270,10 +279,12 @@ export function villageObstacles(): Obstacle[] {
       const lz = alongX ? 0 : off;
       const wx = b.x + lx * Math.cos(b.rot) + lz * Math.sin(b.rot);
       const wz = b.z - lx * Math.sin(b.rot) + lz * Math.cos(b.rot);
-      out.push({ x: wx, z: wz, r });
+      out.push({ x: wx, z: wz, r, yTop });
     }
   }
-  for (const l of layout.lamps) out.push({ x: l.x, z: l.z, r: 0.25 });
+  for (const l of layout.lamps) {
+    out.push({ x: l.x, z: l.z, r: 0.25, yTop: heightAt(l.x, l.z) + VILLAGE.lampHeight });
+  }
   _obstacles = out;
   return out;
 }

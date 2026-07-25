@@ -334,23 +334,33 @@ export function scatterForChunk(cx: number, cz: number): PropPlacement[] {
   return out;
 }
 
-/**
- * Collision cylinder for a blocking prop (trees, rocks) scaled by its instance
- * scale; null for props that don't block (flowers, crystals, resource nodes).
- */
-export function placementObstacle(p: PropPlacement): Obstacle | null {
-  const factor = (SCATTER.obstacleRadius as Record<string, number>)[p.kind];
-  if (factor === undefined) return null;
-  return { x: p.x, z: p.z, r: factor * p.scale };
-}
-
-/** Approx. mesh top (m above base) per grappleable kind, × instance scale. */
-const GRAPPLE_TOP: Partial<Record<PropKind, number>> = {
+/** Approx. mesh top (m above base) per grappleable/collidable kind, × instance
+ *  scale. Shared by `placementObstacle` (the collision cylinder's finite top —
+ *  a player above this height glides over the prop instead of being blocked)
+ *  and `placementGrappleCollider` (the hook's reachable y-band top), since a
+ *  prop's "top you can reach" and "top that blocks you" are the same surface. */
+const PROP_TOP: Partial<Record<PropKind, number>> = {
   tree: 4.5,
   rock: 1.6,
   mesa: 5,
   boulder: 2,
 };
+
+/**
+ * Collision cylinder for a blocking prop (trees, rocks, mesas, boulders)
+ * scaled by its instance scale; null for props that don't block (flowers,
+ * crystals, resource nodes). `yTop` (absolute world Y) is the prop's
+ * approximate mesh top, so a player gliding above it passes over instead of
+ * being shoved sideways by an infinite invisible column.
+ */
+export function placementObstacle(p: PropPlacement): Obstacle | null {
+  const factor = (SCATTER.obstacleRadius as Record<string, number>)[p.kind];
+  if (factor === undefined) return null;
+  const top = PROP_TOP[p.kind];
+  const ob: Obstacle = { x: p.x, z: p.z, r: factor * p.scale };
+  if (top !== undefined) ob.yTop = p.y + top * p.scale;
+  return ob;
+}
 
 /**
  * Grapple anchor cylinder for a tree/rock (the hook latches to its trunk/body),
@@ -360,7 +370,7 @@ const GRAPPLE_TOP: Partial<Record<PropKind, number>> = {
  */
 export function placementGrappleCollider(p: PropPlacement): GrappleCollider | null {
   const rFactor = (SCATTER.obstacleRadius as Record<string, number>)[p.kind];
-  const top = GRAPPLE_TOP[p.kind];
+  const top = PROP_TOP[p.kind];
   if (rFactor === undefined || top === undefined) return null;
   return { x: p.x, z: p.z, r: rFactor * p.scale, yBase: p.y, yTop: p.y + top * p.scale };
 }

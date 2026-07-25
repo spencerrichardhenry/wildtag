@@ -65,3 +65,35 @@ describe('resolveCollision', () => {
     expect(resolveCollision(pos, 0.4, [])).toEqual({ x: 3, y: 1, z: -2 });
   });
 });
+
+// Vertical extent: `yTop` gives an obstacle a finite height so a player
+// gliding above it passes over instead of being blocked by an infinite column.
+describe('resolveCollision vertical extent (yTop)', () => {
+  it('skips pushout when the player is strictly above the obstacle top', () => {
+    // Deep inside the XZ footprint, but feet well above yTop.
+    const pos: Vec3 = { x: 0.5, y: 6, z: 0.5 };
+    const obstacles: Obstacle[] = [{ x: 0, z: 0, r: 1, yTop: 5 }];
+    expect(resolveCollision(pos, 0.4, obstacles)).toEqual({ x: 0.5, y: 6, z: 0.5 });
+  });
+
+  it('still pushes out when the player is below the obstacle top', () => {
+    const pos: Vec3 = { x: 0.5, y: 2, z: 0.5 };
+    const obstacles: Obstacle[] = [{ x: 0, z: 0, r: 1, yTop: 5 }];
+    const out = resolveCollision(pos, 0.4, obstacles);
+    expect(Math.hypot(out.x, out.z)).toBeCloseTo(1.4, 10);
+  });
+
+  it('always pushes when yTop is undefined, regardless of how high pos.y is', () => {
+    const pos: Vec3 = { x: 0.5, y: 1000, z: 0.5 };
+    const obstacles: Obstacle[] = [{ x: 0, z: 0, r: 1 }];
+    const out = resolveCollision(pos, 0.4, obstacles);
+    expect(Math.hypot(out.x, out.z)).toBeCloseTo(1.4, 10);
+  });
+
+  it('still pushes exactly on the yTop boundary (only strictly above skips)', () => {
+    const pos: Vec3 = { x: 0.5, y: 5, z: 0.5 };
+    const obstacles: Obstacle[] = [{ x: 0, z: 0, r: 1, yTop: 5 }];
+    const out = resolveCollision(pos, 0.4, obstacles);
+    expect(Math.hypot(out.x, out.z)).toBeCloseTo(1.4, 10);
+  });
+});

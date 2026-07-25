@@ -180,16 +180,23 @@ function wallCircles(
 
 let _obstacles: Obstacle[] | null = null;
 
-/** Cache-computed collision circles: towers, keep, wall segments (gate gap left open). */
+/**
+ * Cache-computed collision circles: towers, keep, wall segments (gate gap
+ * left open). Each circle carries a `yTop` (absolute world Y of its top,
+ * `CASTLE.padHeight` + the feature's height) matching `castleGrappleColliders`,
+ * so a player gliding above a wall/tower/keep passes over it instead of being
+ * blocked by an infinite invisible column.
+ */
 export function castleObstacles(): Obstacle[] {
   if (_obstacles) return _obstacles;
   const l = castleLayout();
+  const yBase = CASTLE.padHeight;
   const out: Obstacle[] = [];
-  for (const t of l.towers) out.push({ x: t.x, z: t.z, r: t.r });
+  for (const t of l.towers) out.push({ x: t.x, z: t.z, r: t.r, yTop: yBase + t.h });
   // Keep footprint: one circle covering the square corner-to-corner.
-  out.push({ x: l.keep.x, z: l.keep.z, r: l.keep.half * Math.SQRT2 });
+  out.push({ x: l.keep.x, z: l.keep.z, r: l.keep.half * Math.SQRT2, yTop: yBase + l.keep.h });
   for (const w of l.walls) {
-    for (const c of wallCircles(w, CASTLE.wallT, l.gate)) out.push(c);
+    for (const c of wallCircles(w, CASTLE.wallT, l.gate)) out.push({ ...c, yTop: yBase + w.h });
   }
   _obstacles = out;
   return out;
