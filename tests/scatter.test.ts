@@ -5,7 +5,7 @@ import {
   placementGrappleCollider,
 } from '../src/world/scatter.ts';
 import { biomeAt } from '../src/world/terrain.ts';
-import { SCATTER } from '../src/core/constants.ts';
+import { CASTLE, CHUNKS, SCATTER } from '../src/core/constants.ts';
 
 // Empirically solid single-biome chunks (see task-6 probe):
 const FOREST = { cx: -5, cz: -13 };
@@ -265,5 +265,58 @@ describe('tree size tiers (world grandeur rescale)', () => {
     const giant = { kind: 'tree' as const, x: 0, z: 0, y: 5, scale: 6, rot: 0 };
     const c = placementGrappleCollider(giant)!;
     expect(c.yTop - 5).toBeCloseTo(4.5 * 6, 1); // GRAPPLE_TOP.tree × scale
+  });
+});
+
+// --- Task 9: Cursed Castle approach mushrooms ------------------------------
+
+/** Every chunk whose square footprint could touch the castle approach ring. */
+function castleApproachChunks(): { cx: number; cz: number }[] {
+  const rMax = CASTLE.approachR[1];
+  const minCx = Math.floor((CASTLE.center.x - rMax) / CHUNKS.size) - 1;
+  const maxCx = Math.floor((CASTLE.center.x + rMax) / CHUNKS.size) + 1;
+  const minCz = Math.floor((CASTLE.center.z - rMax) / CHUNKS.size) - 1;
+  const maxCz = Math.floor((CASTLE.center.z + rMax) / CHUNKS.size) + 1;
+  const out: { cx: number; cz: number }[] = [];
+  for (let cx = minCx; cx <= maxCx; cx++) {
+    for (let cz = minCz; cz <= maxCz; cz++) out.push({ cx, cz });
+  }
+  return out;
+}
+
+function mushroomsWithinRing(): { x: number; z: number }[] {
+  const [rMin, rMax] = CASTLE.approachR;
+  const found: { x: number; z: number }[] = [];
+  for (const { cx, cz } of castleApproachChunks()) {
+    for (const p of scatterForChunk(cx, cz)) {
+      if (p.kind !== 'mushroom') continue;
+      const r = Math.hypot(p.x - CASTLE.center.x, p.z - CASTLE.center.z);
+      if (r >= rMin && r <= rMax) found.push({ x: p.x, z: p.z });
+    }
+  }
+  return found;
+}
+
+describe('castle approach mushrooms', () => {
+  it('places more than 5 mushroom clusters within the approach ring', () => {
+    expect(mushroomsWithinRing().length).toBeGreaterThan(5);
+  });
+
+  it('is deterministic across two calls', () => {
+    const a = mushroomsWithinRing();
+    const b = mushroomsWithinRing();
+    expect(a).toEqual(b);
+  });
+
+  it('never double-counts a placement across covering chunks', () => {
+    const seen = new Set<string>();
+    for (const { cx, cz } of castleApproachChunks()) {
+      for (const p of scatterForChunk(cx, cz)) {
+        if (p.kind !== 'mushroom') continue;
+        const key = `${p.x.toFixed(3)},${p.z.toFixed(3)}`;
+        expect(seen.has(key)).toBe(false);
+        seen.add(key);
+      }
+    }
   });
 });

@@ -1,0 +1,429 @@
+import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { CASTLE, CASTLE_COLORS } from '../core/constants.ts';
+import { makeSurfaceMaterial, ROUGHNESS } from '../core/materials.ts';
+import { castleLayout, type CastleLayout } from './layout.ts';
+
+// ---------------------------------------------------------------------------
+// Procedural cursed/purified castle meshes (Task 9). Follows the village
+// builder convention (`src/village/buildings.ts`): flat-shaded Lambert boxes/
+// cylinders/cones built once from the pure layout, then collapsed into a
+// handful of vertex-coloured merged meshes (`mergeCastle`, a local copy of
+// `mergeVillage`'s technique — it's private to the village module) so the
+// whole castle costs only a few draw calls regardless of dressing.
+//
+// Two dressings share identical geometry, differing only in palette + trim:
+//   cursed   — dark stonework, ember-emissive window slits on towers/keep.
+//   purified — warm limestone, ivy strips on walls, banners on towers, a
+//              handful of warm point lights at the gate + keep.
+//
+// Everything sits on `y = CASTLE.padHeight` (the flattened hilltop pad); the
+// gate is wherever `castleLayout().gate` says it is (the EAST wall for this
+// site) — nothing here hardcodes a compass side.
+// ---------------------------------------------------------------------------
+
+type Colors = (typeof CASTLE_COLORS)['cursed' | 'purified'];
+
+type MatOpts = { emissive?: number; emissiveIntensity?: number };
+
+function mat(color: number, opts: MatOpts = {}): THREE.MeshLambertMaterial {
+  const m = new THREE.MeshLambertMaterial({ color, flatShading: true });
+  if (opts.emissive !== undefined) {
+    m.emissive = new THREE.Color(opts.emissive);
+    m.emissiveIntensity = opts.emissiveIntensity ?? 1;
+  }
+  return m;
+}
+
+function box(w: number, h: number, d: number, color: number, opts: MatOpts = {}): THREE.Mesh {
+  return new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(color, opts));
+}
+
+function cylinder(rTop: number, rBottom: number, h: number, color: number): THREE.Mesh {
+  return new THREE.Mesh(new THREE.CylinderGeometry(rTop, rBottom, h, 12), mat(color));
+}
+
+function cone(r: number, h: number, color: number): THREE.Mesh {
+  const mesh = new THREE.Mesh(new THREE.ConeGeometry(r, h, 12), mat(color));
+  return mesh;
+}
+
+/** The wall whose midpoint matches the gate (i.e. the gated wall). */
+function findGateWall(l: CastleLayout) {
+  return l.walls.find(
+    (w) => Math.hypot((w.x1 + w.x2) / 2 - l.gate.x, (w.z1 + w.z2) / 2 - l.gate.z) < 1e-6,
+  )!;
+}
+
+/**
+ * Arc-length windows [start, end] (from the wall's first endpoint) that carry
+ * actual masonry on this wall run: the whole length, or — on the gate wall —
+ * the two flanks either side of the real gate gap (so the mesh matches the
+ * collider's opening, not just a decorative arch painted over solid stone).
+ */
+function wallRunSegments(
+  w: { x1: number; z1: number; x2: number; z2: number },
+  gate: { x: number; z: number; w: number },
+): [number, number][] {
+  const dx = w.x2 - w.x1;
+  const dz = w.z2 - w.z1;
+  const len = Math.hypot(dx, dz);
+  const midx = (w.x1 + w.x2) / 2;
+  const midz = (w.z1 + w.z2) / 2;
+  const isGateWall = Math.hypot(midx - gate.x, midz - gate.z) < 1e-6;
+  if (!isGateWall) return [[0, len]];
+  const gateHalf = gate.w / 2;
+  return [
+    [0, len / 2 - gateHalf],
+    [len / 2 + gateHalf, len],
+  ];
+}
+
+/** Small crenellation teeth spaced ~3 m apart along a straight run. */
+const TOOTH_SPACING = 3;
+const TOOTH_W = 1.5;
+const TOOTH_H = 0.9;
+
+function addCrenellations(
+  root: THREE.Group,
+  x1: number,
+  z1: number,
+  angle: number,
+  ux: number,
+  uz: number,
+  a: number,
+  b: number,
+  topY: number,
+  thickness: number,
+  color: number,
+): void {
+  const segLen = b - a;
+  if (segLen <= 0.01) return;
+  for (let s = TOOTH_SPACING / 2; s < segLen; s += TOOTH_SPACING) {
+    const arc = a + s;
+    const tx = x1 + ux * arc;
+    const tz = z1 + uz * arc;
+    const tooth = box(thickness * 1.05, TOOTH_H, Math.min(TOOTH_W, segLen), color);
+    tooth.position.set(tx, topY + TOOTH_H / 2, tz);
+    tooth.rotation.y = angle;
+    root.add(tooth);
+  }
+}
+
+/** One curtain-wall run: masonry (gate-aware) + crenellation teeth + purified ivy. */
+function buildWall(
+  root: THREE.Group,
+  w: CastleLayout['walls'][number],
+  gate: CastleLayout['gate'],
+  colors: Colors,
+  purified: boolean,
+  baseY: number,
+): void {
+  const dx = w.x2 - w.x1;
+  const dz = w.z2 - w.z1;
+  const len = Math.hypot(dx, dz);
+  const ux = dx / len;
+  const uz = dz / len;
+  const angle = Math.atan2(dx, dz);
+  const topY = baseY + w.h;
+
+  for (const [a, b] of wallRunSegments(w, gate)) {
+    const segLen = b - a;
+    if (segLen <= 0.01) continue;
+    const midS = (a + b) / 2;
+    const cx = w.x1 + ux * midS;
+    const cz = w.z1 + uz * midS;
+
+    const run = box(w.t, w.h, segLen, colors.stone);
+    run.position.set(cx, baseY + w.h / 2, cz);
+    run.rotation.y = angle;
+    root.add(run);
+
+    addCrenellations(root, w.x1, w.z1, angle, ux, uz, a, b, topY, w.t, colors.stoneDark);
+
+    if (purified) {
+      // A couple of thin ivy strips climbing the outward wall face.
+      for (let s = segLen * 0.3; s < segLen; s += segLen * 0.4) {
+        const ix = w.x1 + ux * (a + s);
+        const iz = w.z1 + uz * (a + s);
+        const ivy = box(w.t * 1.08, w.h * 0.75, 0.6, (colors as typeof CASTLE_COLORS.purified).ivy);
+        ivy.position.set(ix, baseY + w.h * 0.4, iz);
+        ivy.rotation.y = angle;
+        root.add(ivy);
+      }
+    }
+  }
+}
+
+/** A corner tower: cylinder body + cone roof, ember slits or a banner. */
+function buildTower(
+  root: THREE.Group,
+  t: CastleLayout['towers'][number],
+  colors: Colors,
+  purified: boolean,
+  baseY: number,
+): void {
+  const body = cylinder(t.r, t.r * 1.05, t.h, colors.stone);
+  body.position.set(t.x, baseY + t.h / 2, t.z);
+  root.add(body);
+
+  const roofH = t.r * 1.7;
+  const roofMesh = cone(t.r * 1.15, roofH, colors.roof);
+  roofMesh.position.set(t.x, baseY + t.h + roofH / 2 - 0.1, t.z);
+  root.add(roofMesh);
+
+  if (!purified) {
+    const c = colors as typeof CASTLE_COLORS.cursed;
+    for (let i = 0; i < 3; i++) {
+      const ang = (i / 3) * Math.PI * 2;
+      const sx = t.x + Math.sin(ang) * t.r * 0.98;
+      const sz = t.z + Math.cos(ang) * t.r * 0.98;
+      const slit = box(0.4, 1.6, 0.4, colors.stoneDark, {
+        emissive: c.ember,
+        emissiveIntensity: 1.4,
+      });
+      slit.position.set(sx, baseY + t.h * 0.55, sz);
+      root.add(slit);
+    }
+  } else {
+    const outAng = Math.atan2(t.x - CASTLE.center.x, t.z - CASTLE.center.z);
+    const bx = t.x + Math.sin(outAng) * (t.r + 0.05);
+    const bz = t.z + Math.cos(outAng) * (t.r + 0.05);
+    const banner = box(1.4, 2.6, 0.08, (colors as typeof CASTLE_COLORS.purified).banner);
+    banner.position.set(bx, baseY + t.h * 0.58, bz);
+    banner.rotation.y = outAng;
+    root.add(banner);
+  }
+}
+
+/** The keep: a larger crenellated box, open top (no roof — room for the crystal). */
+function buildKeep(
+  root: THREE.Group,
+  keep: CastleLayout['keep'],
+  colors: Colors,
+  purified: boolean,
+  baseY: number,
+): void {
+  const size = keep.half * 2;
+  const body = box(size, keep.h, size, colors.stone);
+  body.position.set(keep.x, baseY + keep.h / 2, keep.z);
+  root.add(body);
+
+  const half = keep.half;
+  const sides: { x1: number; z1: number; x2: number; z2: number }[] = [
+    { x1: keep.x - half, z1: keep.z - half, x2: keep.x + half, z2: keep.z - half }, // north
+    { x1: keep.x + half, z1: keep.z - half, x2: keep.x + half, z2: keep.z + half }, // east
+    { x1: keep.x + half, z1: keep.z + half, x2: keep.x - half, z2: keep.z + half }, // south
+    { x1: keep.x - half, z1: keep.z + half, x2: keep.x - half, z2: keep.z - half }, // west
+  ];
+  const topY = baseY + keep.h;
+  const thickness = CASTLE.wallT;
+  for (const s of sides) {
+    const dx = s.x2 - s.x1;
+    const dz = s.z2 - s.z1;
+    const len = Math.hypot(dx, dz);
+    const ux = dx / len;
+    const uz = dz / len;
+    const angle = Math.atan2(dx, dz);
+    addCrenellations(root, s.x1, s.z1, angle, ux, uz, 0, len, topY, thickness, colors.stoneDark);
+
+    if (!purified) {
+      const c = colors as typeof CASTLE_COLORS.cursed;
+      const midx = (s.x1 + s.x2) / 2;
+      const midz = (s.z1 + s.z2) / 2;
+      const slit = box(0.5, 2.2, 0.5, colors.stoneDark, { emissive: c.ember, emissiveIntensity: 1.4 });
+      slit.position.set(midx, baseY + keep.h * 0.5, midz);
+      root.add(slit);
+    }
+  }
+}
+
+/** Gatehouse arch over the real gate gap: two pillars + a lintel bridging above. */
+function buildGatehouse(
+  root: THREE.Group,
+  gateWall: CastleLayout['walls'][number],
+  gate: CastleLayout['gate'],
+  colors: Colors,
+  baseY: number,
+): void {
+  const dx = gateWall.x2 - gateWall.x1;
+  const dz = gateWall.z2 - gateWall.z1;
+  const len = Math.hypot(dx, dz);
+  const ux = dx / len;
+  const uz = dz / len;
+  const angle = Math.atan2(dx, dz);
+  const gateHalf = gate.w / 2;
+  const pillarSize = CASTLE.wallT * 1.3;
+
+  for (const side of [-1, 1] as const) {
+    const px = gate.x + ux * gateHalf * side;
+    const pz = gate.z + uz * gateHalf * side;
+    const pillar = box(pillarSize, CASTLE.gateH, pillarSize, colors.stoneDark);
+    pillar.position.set(px, baseY + CASTLE.gateH / 2, pz);
+    pillar.rotation.y = angle;
+    root.add(pillar);
+  }
+
+  const lintelH = Math.max(0.4, CASTLE.wallH - CASTLE.gateH);
+  const lintel = box(CASTLE.wallT, lintelH, gate.w + pillarSize, colors.stone);
+  lintel.position.set(gate.x, baseY + CASTLE.gateH + lintelH / 2, gate.z);
+  lintel.rotation.y = angle;
+  root.add(lintel);
+}
+
+/** Warm point lights at the gate + keep (purified only), ≤6 total (village-lamp style). */
+function addPurifiedLights(root: THREE.Group, layout: CastleLayout, baseY: number): void {
+  const colors = CASTLE_COLORS.purified;
+  const gateWall = findGateWall(layout);
+  const dx = gateWall.x2 - gateWall.x1;
+  const dz = gateWall.z2 - gateWall.z1;
+  const len = Math.hypot(dx, dz);
+  const ux = dx / len;
+  const uz = dz / len;
+  const gateHalf = layout.gate.w / 2;
+
+  for (const side of [-1, 1] as const) {
+    const light = new THREE.PointLight(colors.lamp, 8, 18, 1.8);
+    light.position.set(
+      layout.gate.x + ux * gateHalf * side * 0.85,
+      baseY + CASTLE.gateH + 0.6,
+      layout.gate.z + uz * gateHalf * side * 0.85,
+    );
+    root.add(light);
+  }
+
+  const keep = layout.keep;
+  for (const [sx, sz] of [
+    [1, 1],
+    [-1, -1],
+  ] as const) {
+    const light = new THREE.PointLight(colors.lamp, 8, 22, 1.8);
+    light.position.set(keep.x + sx * keep.half * 0.9, baseY + keep.h * 0.65, keep.z + sz * keep.half * 0.9);
+    root.add(light);
+  }
+}
+
+// --- static-geometry merge (mirrors village/buildings.ts `mergeVillage`,
+// copied locally since that helper is private to the village module) -------
+
+/** World-baked, vertex-coloured copy of a mesh's geometry (see mergeVillage doc). */
+function bakeMeshGeometry(mesh: THREE.Mesh): THREE.BufferGeometry {
+  const src = mesh.geometry;
+  const g = src.index ? src.toNonIndexed() : src.clone();
+  const count = g.getAttribute('position').count;
+  const col = new Float32Array(count * 3);
+  const c = (mesh.material as THREE.MeshLambertMaterial).color;
+  for (let i = 0; i < count; i++) {
+    col[i * 3] = c.r;
+    col[i * 3 + 1] = c.g;
+    col[i * 3 + 2] = c.b;
+  }
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  g.applyMatrix4(mesh.matrixWorld);
+  return g;
+}
+
+/**
+ * Collapse a fully-built castle group into a handful of merged meshes: one
+ * vertex-coloured static mesh, plus one small merged mesh per distinct
+ * emissive signature (ember slits keep their glow). Point lights are
+ * re-parented at their world positions. The originals are disposed.
+ */
+function mergeCastle(built: THREE.Group): THREE.Group {
+  built.updateMatrixWorld(true);
+
+  interface Bucket {
+    geos: THREE.BufferGeometry[];
+    emissive: THREE.Color | null;
+    emissiveIntensity: number;
+  }
+  const buckets = new Map<string, Bucket>();
+  const lights: { light: THREE.PointLight; pos: THREE.Vector3 }[] = [];
+
+  built.traverse((o) => {
+    if (o instanceof THREE.PointLight) {
+      lights.push({ light: o, pos: o.getWorldPosition(new THREE.Vector3()) });
+      return;
+    }
+    if (!(o instanceof THREE.Mesh)) return;
+    const m = o.material as THREE.MeshLambertMaterial;
+    const glowing = m.emissive && m.emissiveIntensity > 0 && m.emissive.getHex() !== 0;
+    const key = glowing ? `e:${m.emissive.getHex()}:${m.emissiveIntensity}` : 'static';
+    let bucket = buckets.get(key);
+    if (!bucket) {
+      bucket = {
+        geos: [],
+        emissive: glowing ? m.emissive.clone() : null,
+        emissiveIntensity: glowing ? m.emissiveIntensity : 0,
+      };
+      buckets.set(key, bucket);
+    }
+    bucket.geos.push(bakeMeshGeometry(o));
+    o.geometry.dispose();
+    m.dispose();
+  });
+
+  const root = new THREE.Group();
+  root.name = 'castle';
+  for (const [key, bucket] of buckets) {
+    const merged = mergeGeometries(bucket.geos);
+    for (const g of bucket.geos) g.dispose();
+    if (!merged) continue; // defensive: mergeGeometries returns null on mismatch
+    merged.computeBoundingSphere();
+    const material = makeSurfaceMaterial({
+      vertexColors: true,
+      flatShading: true,
+      roughness: ROUGHNESS.castle,
+      ...(bucket.emissive
+        ? { emissive: bucket.emissive.getHex(), emissiveIntensity: bucket.emissiveIntensity }
+        : {}),
+    });
+    const mesh = new THREE.Mesh(merged, material);
+    mesh.name = `castle-merged ${key}`;
+    root.add(mesh);
+  }
+  for (const { light, pos } of lights) {
+    light.removeFromParent();
+    light.position.copy(pos);
+    root.add(light);
+  }
+  return root;
+}
+
+/**
+ * Build the entire castle (curtain wall, 4 towers, keep, gatehouse) as one
+ * group and add it to `scene`. `purified` picks the dressing (colors + trim);
+ * geometry is otherwise identical. Call `removeCastle` first if swapping an
+ * already-built dressing for another.
+ */
+export function buildCastle(scene: THREE.Scene, purified: boolean): THREE.Group {
+  const layout = castleLayout();
+  const colors: Colors = purified ? CASTLE_COLORS.purified : CASTLE_COLORS.cursed;
+  const baseY = CASTLE.padHeight;
+  const gateWall = findGateWall(layout);
+
+  const built = new THREE.Group();
+  for (const w of layout.walls) buildWall(built, w, layout.gate, colors, purified, baseY);
+  for (const t of layout.towers) buildTower(built, t, colors, purified, baseY);
+  buildKeep(built, layout.keep, colors, purified, baseY);
+  buildGatehouse(built, gateWall, layout.gate, colors, baseY);
+  if (purified) addPurifiedLights(built, layout, baseY);
+
+  const merged = mergeCastle(built);
+  scene.add(merged);
+  return merged;
+}
+
+/** Dispose the castle group's geometries/materials and remove it from `scene`. */
+export function removeCastle(scene: THREE.Scene): void {
+  const g = scene.getObjectByName('castle');
+  if (!g) return;
+  g.traverse((o) => {
+    if (!(o instanceof THREE.Mesh)) return;
+    o.geometry.dispose();
+    const m = o.material;
+    if (Array.isArray(m)) m.forEach((mm) => mm.dispose());
+    else m.dispose();
+  });
+  scene.remove(g);
+}

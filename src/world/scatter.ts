@@ -1,9 +1,9 @@
-import { CHUNKS, ENV, SCATTER, TERRAIN, WORLD_SEED } from '../core/constants.ts';
+import { CASTLE, CHUNKS, ENV, SCATTER, TERRAIN, WORLD_SEED } from '../core/constants.ts';
 import type { Biome } from '../core/types.ts';
 import type { Obstacle } from '../player/collision.ts';
 import type { GrappleCollider } from '../player/grapple.ts';
 import { hash2 } from '../core/rng.ts';
-import { heightAt, biomeAt } from './terrain.ts';
+import { groundNormalAt, heightAt, biomeAt } from './terrain.ts';
 
 // ---------------------------------------------------------------------------
 // Deterministic prop / resource scatter. `scatterForChunk(cx, cz)` is pure and
@@ -73,6 +73,12 @@ const S_GRASS_ROT = 0xdddd;
 // Tree tier roll (Task 7 grandeur rescale): a second, independent channel
 // picks which tier's scale band a tree's S_SCALE roll lands in.
 const S_TIER = 0xeeee;
+// Cursed Castle approach mushrooms (Task 9): independent channels keyed by a
+// fixed candidate index (not a chunk grid cell — see approachMushroomsFor).
+const S_APPROACH_ANGLE = 0xf001;
+const S_APPROACH_RADIUS = 0xf002;
+const S_APPROACH_SCALE = 0xf003;
+const S_APPROACH_ROT = 0xf004;
 
 function h(salt: number, gx: number, gz: number): number {
   return hash2((WORLD_SEED ^ salt) >>> 0, gx, gz);
@@ -151,6 +157,46 @@ function kindFor(biome: Biome, roll: number): PropKind | null {
 function placeable(x: number, z: number, y: number): boolean {
   if (y < SCATTER.minPlacementY) return false;
   return biomeAt(x, z) !== 'water';
+}
+
+/** Ground-normal Y below which the approach terrain reads as too steep for a
+ *  standing mushroom cluster (mirrors AI's climb-slope gate, a little more
+ *  permissive since these are static set dressing, not a walked path). */
+const APPROACH_STEEP_NORMAL_Y = 0.6;
+
+/**
+ * Deterministic mushroom clusters along the ring `CASTLE.approachR` around
+ * `CASTLE.center` — the highlands/crags biome out there has no mushrooms in
+ * `SCATTER.biomeScatter`, so these are seeded independently of the chunk sub-
+ * cell lattice: a fixed pool of hash-seeded ring positions (3x the nominal
+ * `CASTLE.approachMushrooms` count, since several will fall on water/steep
+ * highlands terrain and get skipped). Each candidate belongs to exactly one
+ * chunk — the one its computed world position actually falls in — so calling
+ * this once per streamed chunk never double-counts a placement.
+ */
+function approachMushroomsForChunk(cx: number, cz: number): PropPlacement[] {
+  const out: PropPlacement[] = [];
+  const [rMin, rMax] = CASTLE.approachR;
+  const poolSize = CASTLE.approachMushrooms * 3;
+  for (let k = 0; k < poolSize; k++) {
+    const angle = h(S_APPROACH_ANGLE, k, 0) * Math.PI * 2;
+    const radius = rMin + h(S_APPROACH_RADIUS, k, 0) * (rMax - rMin);
+    const x = CASTLE.center.x + Math.cos(angle) * radius;
+    const z = CASTLE.center.z + Math.sin(angle) * radius;
+    if (Math.floor(x / CHUNKS.size) !== cx || Math.floor(z / CHUNKS.size) !== cz) continue;
+    const y = heightAt(x, z);
+    if (!placeable(x, z, y)) continue;
+    if (groundNormalAt(x, z).y < APPROACH_STEEP_NORMAL_Y) continue;
+    out.push({
+      kind: 'mushroom',
+      x,
+      z,
+      y,
+      scale: SCATTER.scale.mushroom[0] + h(S_APPROACH_SCALE, k, 0) * (SCATTER.scale.mushroom[1] - SCATTER.scale.mushroom[0]),
+      rot: h(S_APPROACH_ROT, k, 0) * Math.PI * 2,
+    });
+  }
+  return out;
 }
 
 /**
@@ -280,6 +326,10 @@ export function scatterForChunk(cx: number, cz: number): PropPlacement[] {
       });
     }
   }
+
+  // Cursed Castle approach: mushroom clusters seeded along the ring around
+  // CASTLE.center (independent of the sub-cell lattice — see the function doc).
+  out.push(...approachMushroomsForChunk(cx, cz));
 
   return out;
 }

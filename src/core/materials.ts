@@ -28,6 +28,8 @@ export const ROUGHNESS = {
   village: 0.9,
   /** Generic ground-cover / foliage default. */
   foliage: 0.9,
+  /** Cursed Castle stonework (Task 9) — a touch rougher than village timber. */
+  castle: 0.92,
 } as const;
 
 export interface SurfaceOpts {

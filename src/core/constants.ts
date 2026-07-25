@@ -1042,6 +1042,18 @@ export const CASTLE = {
 } as const;
 
 /**
+ * Cursed Castle mesh palette (Task 9): flat-shaded Lambert/Standard, following
+ * the village builder convention. Two dressings share the same geometry
+ * (`src/castle/builders.ts` `buildCastle`) — cursed is the default lived-in
+ * look (dark stone, ember window slits); purified is unlocked later (warm
+ * limestone, ivy, banners, lamp-lit gate/keep).
+ */
+export const CASTLE_COLORS = {
+  cursed: { stone: 0x4a4652, stoneDark: 0x37343f, roof: 0x2b2833, ember: 0xb4432a, crystal: 0x6e2bb0 },
+  purified: { stone: 0xcfc6b4, stoneDark: 0xa89e8a, roof: 0x7fb0d8, ivy: 0x4a8f52, banner: 0xd8608a, lamp: 0xffd9a0 },
+} as const;
+
+/**
  * Farm (Task V5). Pure production/aura/hopper math lives in `src/farm/farm.ts`;
  * these are its only tuning knobs (project convention: never inline). Plots are
  * 2 at baseline + 2 per Plot Deed (spec §4), capped at `maxPlots`. An assigned

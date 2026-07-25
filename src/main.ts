@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { CAMERA, ENV, MAX_FRAME_DT, MOUNT, SIM_DT, STRUCTURES } from './core/constants.ts';
+import { CAMERA, CASTLE, ENV, MAX_FRAME_DT, MOUNT, SIM_DT, STRUCTURES } from './core/constants.ts';
 import { setupEnvironment, setupDaylight, updateWater } from './world/environment.ts';
 import { daylightAt } from './core/daylight.ts';
 import { ChunkManager } from './world/chunks.ts';
@@ -52,6 +52,8 @@ import {
 import { ShadowRig, planShadows } from './world/lighting.ts';
 import { buildPostPipeline, type PostPipeline } from './world/post.ts';
 import { buildVillage, villageObstacles } from './village/buildings.ts';
+import { buildCastle } from './castle/builders.ts';
+import { castleLayout, castleObstacles, castleGrappleColliders } from './castle/layout.ts';
 import { NpcManager, NPCS, npcAnchors } from './village/npcs.ts';
 import { createDialogScreen, openDialog, setRequestRenderer } from './village/dialog.ts';
 import { villageCenter } from './village/layout.ts';
@@ -127,6 +129,7 @@ function bootGame(): void {
   const debugGrapple = debugParam === 'grapple';
   const debugStructures = debugParam === 'structures';
   const debugVillage = debugParam === 'village';
+  const debugCastle = debugParam === 'castle';
   // Dev override (`?forcefx=1`): run cascade shadows + the post composer even on
   // a software backend (SwiftShader). The software gate normally skips both so
   // the headless suite stays on the low/direct path; this forces the real code
@@ -259,6 +262,14 @@ function bootGame(): void {
   // Traded-away critters live in a pen beside their NPC (Haven V4).
   const pens = new PenSystem(scene);
 
+  // Cursed Castle (Task 9): collision + grapple colliders are pure layout
+  // geometry (memoised, ~80/56 circles) — independent of which dressing is
+  // actually built, so they're wired in regardless of the save's
+  // `castlePurified` flag. The castle mesh itself is built further down, once
+  // the save has been loaded (its dressing depends on `loaded.castlePurified`).
+  const castleObs = castleObstacles();
+  const castleGrapple = castleGrappleColliders();
+
   function resize(): void {
     const width = window.innerWidth;
     const height = window.innerHeight;
@@ -286,7 +297,7 @@ function bootGame(): void {
   const player = new PlayerController(camera, input, ground, spawn, scene, anchors);
   // Feed the grapple hook the nearby grappleable tree/rock cylinders so a fired
   // hook can latch to props, not just bare terrain.
-  player.grappleColliders = (x, z) => props.getGrappleColliders(x, z);
+  player.grappleColliders = (x, z) => props.getGrappleColliders(x, z).concat(castleGrapple);
 
   // Inventory accumulating harvested resources + the crafting tree's currency
   // (RP), consumables (darts/charms) and held deployable kits.
@@ -516,6 +527,13 @@ function bootGame(): void {
     // inventory + the starting dart loadout.
     Object.assign(inventory, applyStartingLoadout(createInventory(), null));
   }
+
+  // Cursed Castle (Task 9): the dressing follows the save (absent → cursed,
+  // the lived-in default). Fixed at boot for now — a later task makes it
+  // live-mutable via a purify event, so this stays a simple one-shot build.
+  const castlePurifiedAtBoot = loaded?.castlePurified ?? false;
+  buildCastle(scene, castlePurifiedAtBoot);
+
   if (devMode) {
     // Playtest loadout: every unlock, deep stacks of everything. The counts
     // are finite so all existing spend/decrement paths still exercise.
@@ -932,7 +950,7 @@ function bootGame(): void {
 
     // `?debug=grapple`/`?debug=structures` freeze the player for a clean static
     // screenshot while the world keeps streaming.
-    const debugFrozen = debugGrapple || debugStructures || debugVillage;
+    const debugFrozen = debugGrapple || debugStructures || debugVillage || debugCastle;
     // Day/night clock: advances at the same rate as `worldTime` (and so
     // inherits `timeScale` for free via extra accumulator steps per frame),
     // frozen under the same conditions as the rest of the sim.
@@ -945,7 +963,7 @@ function bootGame(): void {
       // Feed the controller trees/rocks near the player before it integrates,
       // plus the static village building/lamp collision circles.
       const prev = player.pos;
-      player.obstacles = props.getObstacles(prev.x, prev.z).concat(villageObs);
+      player.obstacles = props.getObstacles(prev.x, prev.z).concat(villageObs).concat(castleObs);
       player.update(dt);
       // Prismhorse mount: pin/animate the actor under the camera while riding,
       // or loosely trail the player while idle (also handles hold-Space dismount).
@@ -1269,6 +1287,33 @@ function bootGame(): void {
     props.primeAround(cx, cz, worldTime);
     // Seat the NPCs (and their labels) for the frozen frame.
     npcs.update(SIM_DT, player.pos);
+  }
+
+  // -------------------------------------------------------------------------
+  // Debug castle (`?debug=castle`): stand outside the gate (whichever wall it
+  // actually falls on — the EAST wall for this site, see castle/layout.ts)
+  // looking in toward the keep, and freeze — a static frame showing the
+  // curtain wall, towers and gate arch together. Verification-only.
+  // -------------------------------------------------------------------------
+  if (debugCastle) {
+    const layout = castleLayout();
+    // Pulled back well outside the gate so the curtain wall AND both flanking
+    // towers fit the frame together (right up against the gate, the arch fills
+    // the view and the ~18 m towers fall outside it).
+    const cx = CASTLE.center.x + CASTLE.half + 65;
+    const cz = CASTLE.center.z;
+    const camY = CASTLE.padHeight + 3;
+    // Aim at the keep rising behind the gate so wall/towers/keep all frame up.
+    const dx = layout.keep.x - cx;
+    const dz = layout.keep.z - cz;
+    const horiz = Math.hypot(dx, dz);
+    const targetY = CASTLE.padHeight + layout.keep.h * 0.7;
+    input.yaw = Math.atan2(-dx, -dz);
+    input.pitch = Math.atan2(targetY - camY, horiz);
+    player.teleport(cx, camY, cz);
+
+    chunks.update(cx, cz);
+    props.primeAround(cx, cz, worldTime);
   }
 
   // -------------------------------------------------------------------------
