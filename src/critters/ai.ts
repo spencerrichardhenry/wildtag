@@ -69,6 +69,15 @@ function pickWanderYaw(c: CritterState, rand: () => number): number {
 }
 
 /**
+ * Design note (Task 10): the gargoyle reuses the existing idle/wander/alert/
+ * flee/calm state enum rather than adding a `'perch'` CritterState.state
+ * member. Its perched behaviour is entirely gated on `sp.fleeStyle ===
+ * 'perch'` inside the relevant cases below plus the shared `locomote` — a
+ * smaller surface than a new state would need (no new arm in every switch
+ * that matches on `.state`, e.g. animation/manager code elsewhere).
+ */
+
+/**
  * Advance one critter by `dt`. Pure: returns a new state, never mutates `c`.
  */
 export function stepAI(c: CritterState, ctx: AIContext, dt: number): CritterState {
@@ -92,27 +101,50 @@ export function stepAI(c: CritterState, ctx: AIContext, dt: number): CritterStat
   let desiredYaw = c.yaw;
   let speed = 0;
 
+  const perch = sp.fleeStyle === 'perch';
+
   switch (c.state) {
     case 'idle': {
       speed = 0;
       if (canFlee && dist <= sp.awareness) {
-        enter(out, 'alert', ctx.rand);
+        enter(out, 'alert', ctx.rand, sp);
       } else if (out.stateTime >= c.stateDur) {
-        enter(out, 'wander', ctx.rand);
-        out.targetYaw = pickWanderYaw(out, ctx.rand);
+        enter(out, 'wander', ctx.rand, sp);
+        out.targetYaw = perch ? ctx.rand() * TWO_PI : pickWanderYaw(out, ctx.rand);
       }
       desiredYaw = c.yaw;
       break;
     }
 
     case 'wander': {
-      speed = sp.walkSpeed;
       if (canFlee && dist <= sp.awareness) {
-        enter(out, 'alert', ctx.rand);
+        enter(out, 'alert', ctx.rand, sp);
         speed = 0;
         desiredYaw = towardYaw;
         break;
       }
+      if (perch) {
+        // Glide a loop: fly out to a point on a circle of AI.perchGlideR
+        // around home (angle rolled into targetYaw on entry), then fly back;
+        // once close enough to home, settle into idle. Altitude itself is
+        // handled uniformly for every perch state by `locomote`.
+        const outTime = AI.perchGlideR / AI.perchGlideSpeed;
+        speed = AI.perchGlideSpeed;
+        if (out.stateTime < outTime) {
+          const gx = c.home.x + Math.cos(c.targetYaw) * AI.perchGlideR;
+          const gz = c.home.z + Math.sin(c.targetYaw) * AI.perchGlideR;
+          desiredYaw = yawTo(gx - c.pos.x, gz - c.pos.z);
+        } else {
+          desiredYaw = yawTo(c.home.x - c.pos.x, c.home.z - c.pos.z);
+          const homeDist = Math.hypot(c.pos.x - c.home.x, c.pos.z - c.home.z);
+          if (homeDist <= AI.perchSettleDist) {
+            enter(out, 'idle', ctx.rand, sp);
+            speed = 0;
+          }
+        }
+        break;
+      }
+      speed = sp.walkSpeed;
       desiredYaw = c.targetYaw;
       // Leash back toward home if we've wandered past the radius.
       const homeDist = Math.hypot(c.pos.x - c.home.x, c.pos.z - c.home.z);
@@ -123,7 +155,7 @@ export function stepAI(c: CritterState, ctx: AIContext, dt: number): CritterStat
       // near player rather than alerting.
       if (!canFlee && dist <= sp.awareness) desiredYaw = awayYaw;
       if (out.stateTime >= c.stateDur) {
-        enter(out, 'idle', ctx.rand);
+        enter(out, 'idle', ctx.rand, sp);
         speed = 0;
       }
       break;
@@ -133,7 +165,7 @@ export function stepAI(c: CritterState, ctx: AIContext, dt: number): CritterStat
       // A critter linked mid-alert (the Task 10 "Linked moment") stands down
       // immediately — linked critters never chase-panic again.
       if (!canFlee) {
-        enter(out, 'calm', ctx.rand);
+        enter(out, 'calm', ctx.rand, sp);
         speed = sp.walkSpeed * AI.calmSpeedFactor;
         break;
       }
@@ -141,7 +173,7 @@ export function stepAI(c: CritterState, ctx: AIContext, dt: number): CritterStat
       desiredYaw = towardYaw;
       out.targetYaw = towardYaw;
       if (out.stateTime >= AI.alertTime) {
-        enter(out, 'flee', ctx.rand);
+        enter(out, 'flee', ctx.rand, sp);
         out.farTime = 0;
       }
       break;
@@ -150,7 +182,7 @@ export function stepAI(c: CritterState, ctx: AIContext, dt: number): CritterStat
     case 'flee': {
       // Linked mid-flee → calm on the very next step (no flee speed).
       if (!canFlee) {
-        enter(out, 'calm', ctx.rand);
+        enter(out, 'calm', ctx.rand, sp);
         out.farTime = 0;
         speed = sp.walkSpeed * AI.calmSpeedFactor;
         break;
@@ -164,7 +196,7 @@ export function stepAI(c: CritterState, ctx: AIContext, dt: number): CritterStat
         out.farTime = 0;
       }
       if (out.farTime >= AI.calmTriggerTime) {
-        enter(out, 'calm', ctx.rand);
+        enter(out, 'calm', ctx.rand, sp);
         speed = sp.walkSpeed * AI.calmSpeedFactor;
       }
       break;
@@ -172,16 +204,18 @@ export function stepAI(c: CritterState, ctx: AIContext, dt: number): CritterStat
 
     case 'calm': {
       speed = sp.walkSpeed * AI.calmSpeedFactor;
-      desiredYaw = c.yaw;
+      // A perch critter calms by heading back toward its perch rather than
+      // holding whatever heading it fled in.
+      desiredYaw = perch ? yawTo(c.home.x - c.pos.x, c.home.z - c.pos.z) : c.yaw;
       // A re-approaching player re-triggers the chase.
       if (canFlee && dist <= sp.awareness) {
-        enter(out, 'alert', ctx.rand);
+        enter(out, 'alert', ctx.rand, sp);
         speed = 0;
         desiredYaw = towardYaw;
       } else if (out.stateTime >= AI.calmTime) {
-        enter(out, 'wander', ctx.rand);
-        out.targetYaw = pickWanderYaw(out, ctx.rand);
-        speed = sp.walkSpeed;
+        enter(out, 'wander', ctx.rand, sp);
+        out.targetYaw = perch ? ctx.rand() * TWO_PI : pickWanderYaw(out, ctx.rand);
+        speed = perch ? AI.perchGlideSpeed : sp.walkSpeed;
       }
       break;
     }
@@ -192,11 +226,20 @@ export function stepAI(c: CritterState, ctx: AIContext, dt: number): CritterStat
 }
 
 /** Enter a new state: reset the state timer and (re-)roll its dwell. */
-function enter(out: CritterState, state: CritterState['state'], rand: () => number): void {
+function enter(
+  out: CritterState,
+  state: CritterState['state'],
+  rand: () => number,
+  sp: SpeciesDef,
+): void {
   out.state = state;
   out.stateTime = 0;
-  if (state === 'idle') out.stateDur = randRange(rand, AI.idleMin, AI.idleMax);
-  else if (state === 'wander') out.stateDur = randRange(rand, AI.wanderMin, AI.wanderMax);
+  if (state === 'idle') {
+    out.stateDur =
+      sp.fleeStyle === 'perch'
+        ? randRange(rand, AI.perchDwellMin, AI.perchDwellMax)
+        : randRange(rand, AI.idleMin, AI.idleMax);
+  } else if (state === 'wander') out.stateDur = randRange(rand, AI.wanderMin, AI.wanderMax);
   else if (state === 'calm') out.stateDur = AI.calmTime;
 }
 
@@ -218,8 +261,11 @@ function fleeYaw(c: CritterState, sp: SpeciesDef, awayYaw: number, ctx: AIContex
       const sign = leg % 2 === 0 ? 1 : -1;
       return awayYaw + sign * AI.zigzagAngle;
     }
-    case 'fly': {
-      // Wide banking arcs while generally escaping the player.
+    case 'fly':
+    case 'perch': {
+      // Wide banking arcs while generally escaping the player (the gargoyle's
+      // perch flee reuses the same fly-like bank; altitude is separately
+      // clamped to home.y + AI.perchAltClamp in `locomote`).
       return awayYaw + Math.sin(c.stateTime * AI.flyArcRate) * 0.8;
     }
     case 'swim':
@@ -291,7 +337,12 @@ function locomote(
   const d = angDiff(desiredYaw, prev.yaw);
   let yaw = prev.yaw + Math.max(-maxTurn, Math.min(maxTurn, d));
 
-  const flyer = sp.fleeStyle === 'fly';
+  // Perch critters (gargoyle) are treated exactly like flyers for the
+  // obstacle-skip + freeform step below — they never collide with terrain —
+  // but get their own altitude target (see below) instead of a
+  // terrain-relative cruise band.
+  const perch = sp.fleeStyle === 'perch';
+  const flyer = sp.fleeStyle === 'fly' || perch;
   const swimmer = sp.fleeStyle === 'swim';
 
   let nx = prev.pos.x;
@@ -326,9 +377,18 @@ function locomote(
   out.pos.z = nz;
 
   // Vertical: flyers cruise at flightHeight above terrain (smooth climb),
-  // swimmers ride the water surface, walkers sit on the ground.
+  // perch critters cruise at their fixed perch altitude (home.y — NOT
+  // terrain-relative; they're circling castle towers, not the ground below
+  // them), swimmers ride the water surface, walkers sit on the ground.
   const terrainY = ctx.ground.heightAt(nx, nz);
-  if (flyer) {
+  if (perch) {
+    const target = prev.home.y;
+    const k = Math.min(1, AI.flyClimbRate * dt);
+    const y = prev.pos.y + (target - prev.pos.y) * k;
+    // Free-flight invariant (in EVERY state, not just flee): a perched
+    // critter can never climb above its own perch.
+    out.pos.y = Math.min(y, prev.home.y + AI.perchAltClamp);
+  } else if (flyer) {
     const target = terrainY + prev.flightHeight;
     const k = Math.min(1, AI.flyClimbRate * dt);
     out.pos.y = prev.pos.y + (target - prev.pos.y) * k;

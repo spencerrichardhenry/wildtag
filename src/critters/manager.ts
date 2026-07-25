@@ -165,8 +165,22 @@ export class CritterManager {
   private slotCache: SpawnSlot[] = [];
   private cacheCellX = NaN;
   private cacheCellZ = NaN;
-  /** Counts down from -1 so debug-spawned ids never collide with a real slot id. */
+  /**
+   * Counts down from -1. Shared by `addFixedSlots` (castle gargoyle perches,
+   * assigned once at boot) and `debugSpawn` (ad-hoc debug spawns) so the two
+   * never hand out the same negative id even though both draw from the same
+   * reserved negative range.
+   */
   private debugIdCounter = -1;
+  /**
+   * Fixed, non-cell spawn slots (Cursed Castle Task 10: gargoyle perches).
+   * Unlike `slotCache` (rebuilt from the per-cell table on cell change), this
+   * list is set once via `addFixedSlots` and always considered alongside it —
+   * fixed slots activate/deactivate by distance exactly like procedural ones,
+   * but skip `spawnSlotsForCell`'s biome/water/village filtering entirely
+   * (they're placed explicitly, not derived from a biome cell).
+   */
+  private fixedSlots: SpawnSlot[] = [];
   /**
    * Per-step snapshot of `list()`. Built lazily on the first `list()` call after
    * any change and reused by every subsequent caller in the same sim step
@@ -194,7 +208,9 @@ export class CritterManager {
     this.refreshSlots(playerPos);
 
     // Distances (recomputed every frame; slot table only on cell change).
-    const withDist = this.slotCache.map((slot) => ({
+    // Fixed slots (castle perches) are few and constant, so they're simply
+    // appended every frame rather than folded into the cell-change cache.
+    const withDist = [...this.slotCache, ...this.fixedSlots].map((slot) => ({
       slot,
       dist: Math.hypot(slot.home.x - playerPos.x, slot.home.z - playerPos.z),
     }));
@@ -301,6 +317,7 @@ export class CritterManager {
     this.scene.add(group);
 
     const rng = mulberry32((slot.id ^ 0x5eed5eed) >>> 0);
+    const perch = speciesById(slot.species)?.fleeStyle === 'perch';
     // Read-only registry lookup — entries are created lazily (setTagged /
     // setLinked / deactivate-with-progress) so long roams don't accumulate
     // registry entries for critters the player never touched.
@@ -319,7 +336,9 @@ export class CritterManager {
       trackProgress: persist?.trackProgress ?? 0,
       home: { ...slot.home },
       flightHeight: slot.flightHeight,
-      stateDur: AI.idleMin + rng() * (AI.idleMax - AI.idleMin),
+      stateDur: perch
+        ? AI.perchDwellMin + rng() * (AI.perchDwellMax - AI.perchDwellMin)
+        : AI.idleMin + rng() * (AI.idleMax - AI.idleMin),
       farTime: 0,
     };
     this.active.set(slot.id, { state, group, parts, rng, beacon: null });
@@ -555,6 +574,22 @@ export class CritterManager {
     const slot: SpawnSlot = { id, species: speciesId, home: { ...pos }, flightHeight: AI.flyHeightMin };
     this.activate(slot);
     return id;
+  }
+
+  /**
+   * Register fixed, always-considered spawn slots outside the per-cell
+   * streaming table (Cursed Castle Task 10: gargoyles perched on the castle
+   * towers/keep). Each gets a stable id from the same reserved negative range
+   * as `debugSpawn` (never collides with a real cell-slot id, which is always
+   * >= 0). Idempotent to call only once at boot — calling it again would
+   * duplicate slots.
+   */
+  addFixedSlots(slots: { species: string; home: Vec3; flightHeight: number }[]): void {
+    for (const s of slots) {
+      const id = this.debugIdCounter--;
+      this.fixedSlots.push({ id, species: s.species, home: { ...s.home }, flightHeight: s.flightHeight });
+    }
+    this.invalidateList();
   }
 }
 

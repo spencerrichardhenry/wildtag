@@ -342,6 +342,64 @@ describe('persistence registry growth', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Perch flee style (gargoyle) — the free-flight-impossible invariant
+// ---------------------------------------------------------------------------
+
+describe('perch flee style (gargoyle)', () => {
+  it('idles at its elevated home, never dropping to terrain', () => {
+    const home = { x: 0, y: 20, z: 0 };
+    let c = makeCritter('gargoyle', {
+      pos: { ...home },
+      home: { ...home },
+      state: 'idle',
+      stateDur: 999, // stays idle for the whole run regardless of dwell rolls
+    });
+    // Player is far away and the gargoyle is bold+untagged, so it never
+    // alerts either — this isolates the idle-state vertical handling.
+    const farPlayer = { x: 500, y: 0, z: 500 };
+    for (let i = 0; i < 120; i++) c = stepAI(c, ctx('gargoyle', farPlayer), 1 / 60);
+    expect(c.state).toBe('idle');
+    expect(c.pos.y).toBeCloseTo(20, 0); // stays perched, never drops to terrain (y=0)
+  });
+
+  it('never climbs above its perch while gliding or fleeing', () => {
+    const home = { x: 0, y: 20, z: 0 };
+    let c: CritterState = {
+      ...makeCritter('gargoyle', { pos: { ...home }, home: { ...home } }),
+      tagged: true,
+    };
+    const player = { x: 1, y: 20, z: 1 }; // adjacent → alerts, then flees
+    let maxY = 0;
+    for (let i = 0; i < 600; i++) {
+      c = stepAI(c, ctx('gargoyle', player), 1 / 60);
+      maxY = Math.max(maxY, c.pos.y);
+    }
+    expect(maxY).toBeLessThanOrEqual(20.6); // free-flight guard
+  });
+
+  it('glides a loop away from home during wander, then returns and settles into idle', () => {
+    const home = { x: 0, y: 20, z: 0 };
+    let c = makeCritter('gargoyle', {
+      pos: { ...home },
+      home: { ...home },
+      state: 'wander',
+      stateDur: 999,
+      targetYaw: 0.7, // fixed glide-loop angle
+    });
+    const farPlayer = { x: 500, y: 0, z: 500 };
+    let maxHomeDist = 0;
+    let sawIdleAgain = false;
+    for (let i = 0; i < 900; i++) {
+      c = stepAI(c, ctx('gargoyle', farPlayer), 1 / 60);
+      maxHomeDist = Math.max(maxHomeDist, Math.hypot(c.pos.x - home.x, c.pos.z - home.z));
+      if (c.state === 'idle') sawIdleAgain = true;
+    }
+    expect(maxHomeDist).toBeGreaterThan(1); // actually left the perch
+    expect(sawIdleAgain).toBe(true); // came back and settled
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Flee -> calm -> wander
 // ---------------------------------------------------------------------------
 

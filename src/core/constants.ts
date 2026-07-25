@@ -893,6 +893,24 @@ export const AI = {
   maxActive: 70,
   /** Lumen stag only spawns in cells whose centre is beyond this from origin (m). */
   lumenMinDist: 500,
+
+  /**
+   * Gargoyle perch AI (Cursed Castle Task 10). A perch critter's `home` IS its
+   * perch point (not a ground position) — idle sits there, wander glides a
+   * loop and returns, flee banks like a flyer. All three clamp altitude to
+   * `home.y + 0.5` (the free-flight invariant: perched critters can never
+   * gain net altitude).
+   */
+  perchDwellMin: 6,
+  perchDwellMax: 14,
+  /** Radius (m) of the glide loop flown around home during wander. */
+  perchGlideR: 12,
+  /** Ground speed (m/s) while gliding the wander loop. */
+  perchGlideSpeed: 5,
+  /** Distance (m) to home within which a returning glide counts as "settled". */
+  perchSettleDist: 0.5,
+  /** Hard altitude clamp (m above home.y) — the free-flight-impossible invariant. */
+  perchAltClamp: 0.5,
 } as const;
 
 /**

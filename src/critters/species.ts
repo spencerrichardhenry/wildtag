@@ -1,4 +1,5 @@
-// The game's cast: 12 procedural blocky critters (8 phase-1 + 4 Haven whimsy).
+// The game's cast: 13 procedural blocky critters (8 phase-1 + 4 Haven whimsy +
+// 1 Cursed Castle gargoyle, the sole `biomes: []` fixed-slot-only species).
 // This module is pure *content*
 // (data only) — the tracking params (trackRadius R / trackTime T, awareness,
 // fleeStyle) are binding per the design spec §4 and the Task 8 brief and are
@@ -254,6 +255,31 @@ export const SPECIES: SpeciesDef[] = [
     rewardRP: 17,
     rideable: false,
     farmRole: { kind: 'produce', resource: 'resin', amount: 3 },
+  },
+
+  // --- Cursed Castle (Task 10) -----------------------------------------------
+  {
+    // Perches on the castle towers/keep corners (fixed slots, manager.ts
+    // addFixedSlots) rather than a procedural biome cell — `biomes: []` keeps
+    // it out of the normal cell spawn table entirely. Bold: it sits stock-
+    // still until tagged, per the castle's "gargoyles come alive" fantasy.
+    id: 'gargoyle',
+    bold: true,
+    name: 'Gargoyle',
+    biomes: [],
+    size: 0.9,
+    walkSpeed: 2,
+    fleeSpeed: 8,
+    awareness: 14,
+    fleeStyle: 'perch',
+    trackRadius: 14,
+    trackTime: 16,
+    rarity: 0.3,
+    rewardSparks: 3,
+    rewardRP: 24,
+    rideable: false,
+    ringHeight: 1.1,
+    farmRole: { kind: 'aura', auraPct: 20 },
   },
 ];
 

@@ -4,8 +4,8 @@ import { SPECIES } from './species.ts';
 import { buildCritterModel, type CritterParts } from './models.ts';
 import { animateCritter } from './animation.ts';
 
-// Dev aid: `?preview=critters`. Lays out all 12 species on a flat stage before
-// a fixed camera in a 2×6 grid, each on a slow turntable and animated at its
+// Dev aid: `?preview=critters`. Lays out all 13 species on a flat stage before
+// a fixed camera in a 2×7 grid, each on a slow turntable and animated at its
 // walk speed, with a floating DOM name label projected above it. Skips the
 // normal player spawn. Kept intentionally — the turntable + labels make
 // model/animation regressions obvious at a glance, and it's what the
@@ -71,10 +71,11 @@ export function runCritterPreview(renderer: THREE.WebGLRenderer): void {
     ? focusIds.map((id) => SPECIES.find((s) => s.id === id)).filter((s): s is (typeof SPECIES)[number] => !!s)
     : SPECIES;
 
-  // 2 rows × 6 columns for the 12-species roster. The back row is staggered
-  // half a column into the front row's gaps and pushed well back so tall
-  // front-row critters never occlude it; the camera looks down from a height.
-  const cols = focusIds ? Math.min(roster.length, 3) : 6;
+  // 2 rows × 7 columns for the 13-species roster (13 → 7 front + 6 back). The
+  // back row is staggered half a column into the front row's gaps and pushed
+  // well back so tall front-row critters never occlude it; the camera looks
+  // down from a height.
+  const cols = focusIds ? Math.min(roster.length, 3) : 7;
   const colSpacing = focusIds ? 2.6 : 3.6;
   const rowZ = focusIds ? [0, -3] : [3.5, -5.5]; // [front, back]
   const rowXOffset = [0, colSpacing / 2]; // stagger the back row into the gaps

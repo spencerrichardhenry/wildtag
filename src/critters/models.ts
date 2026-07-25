@@ -1408,6 +1408,121 @@ function bakeCritterGroup(group: THREE.Group, parts: CritterParts): void {
   bakeSubtree(group, roots);
 }
 
+// --- Cursed Castle (+1) -------------------------------------------------------
+
+/**
+ * Gargoyle — a crouched, plump stone statue that comes alive: perches
+ * motionless on the castle towers (bold — sits stock-still until tagged),
+ * then glides on folded bat wings. Stone-gray body + segmented brow horns,
+ * glowing amber lantern eyes, and two-rib folded bat-wing membranes angled
+ * back over the shoulders (they flap via the generic `parts.wings` handling
+ * in animation.ts whenever it moves).
+ */
+function buildGargoyle(rng: () => number): { group: THREE.Group; parts: CritterParts } {
+  const g = new THREE.Group();
+  const stone = jitterColor(0x8a8894, rng, 0.02, 0.05);
+  const stoneDark = jitterColor(0x5e5a66, rng, 0.02, 0.05);
+  const clawC = jitterColor(0x3a3640, rng, 0.02, 0.04);
+  const amber = 0xffab3c;
+
+  const bodyY = 0.5;
+  const body = new THREE.Group();
+  body.position.y = bodyY;
+  // Crouched plump egg torso, hunched low over its haunches.
+  const torso = egg(0.32, 0.56, stone, {}, 0.38, 9);
+  body.add(torso);
+  const haunch = sphere(0.26, stoneDark, {}, 7, 5);
+  haunch.scale.set(1.05, 0.8, 0.95);
+  haunch.position.set(0, -0.14, -0.06);
+  body.add(haunch);
+  g.add(body);
+
+  const head = new THREE.Group();
+  head.position.set(0, bodyY + 0.5, 0.16);
+  const skull = sphere(0.24, stone, {}, 8, 6);
+  skull.scale.set(1, 0.92, 1.05);
+  head.add(skull);
+  const brow = sphere(0.16, stoneDark, {}, 6, 4);
+  brow.scale.set(1.3, 0.5, 0.7);
+  brow.position.set(0, 0.12, 0.14);
+  head.add(brow);
+  const muzzle = sphere(0.12, stone, {}, 6, 4);
+  muzzle.scale.set(0.85, 0.7, 0.9);
+  muzzle.position.set(0, -0.1, 0.18);
+  head.add(muzzle);
+  for (const e of eyePair(
+    0.11,
+    0.05,
+    0.2,
+    0.08,
+    { sclera: 0xffd79a, scleraEmissive: amber, scleraEmissiveIntensity: 1.5, iris: 0x2a1608, irisR: 0.5 },
+    0.14,
+  )) {
+    head.add(e);
+  }
+  const mouth = smile(0.06, 0.016, 0x241c22, 1.6);
+  mouth.position.set(0, -0.19, 0.22);
+  head.add(mouth);
+  // Segmented brow horns, curving back over the skull. Kept RIDGED (flat) —
+  // faceting reads as chiselled stone rather than soft organic antler.
+  for (const sx of [-1, 1] as const) {
+    const pts: ReadonlyArray<readonly [number, number, number]> = [
+      [sx * 0.13, 0.2, 0.1],
+      [sx * 0.2, 0.34, 0.0],
+      [sx * 0.22, 0.42, -0.16],
+    ];
+    head.add(segmentedHorn(pts, 0.055, 0.018, stoneDark, { flat: true }, 5));
+  }
+  g.add(head);
+
+  // Folded bat wings: two flattened-capsule "ribs" per side, chained
+  // shoulder→elbow→tip and angled back over the haunches (resting/folded
+  // shape) — animateCritter flaps the whole wing GROUP about its local Z axis
+  // (rotation.z) whenever the gargoyle is moving, swinging the folded unit
+  // like a real folded-wing flap.
+  const up = new THREE.Vector3(0, 1, 0);
+  const wings: THREE.Object3D[] = [];
+  for (const sx of [-1, 1] as const) {
+    const w = new THREE.Group();
+    w.position.set(sx * 0.26, bodyY + 0.32, 0.02);
+    // Shoulder → elbow: back and slightly up/out.
+    const dir1 = new THREE.Vector3(sx * 0.35, 0.12, -0.93).normalize();
+    const upper = capsule(0.09, 0.34, stoneDark, {}, 2, 5);
+    upper.scale.set(1, 1, 0.42); // flatten into a membrane-like rib
+    upper.quaternion.setFromUnitVectors(up, dir1);
+    upper.position.copy(dir1).multiplyScalar(0.17);
+    w.add(upper);
+    // Elbow → tip: folds further back and down, tucked against the haunch.
+    const elbow = dir1.clone().multiplyScalar(0.34);
+    const dir2 = new THREE.Vector3(sx * 0.55, -0.3, -0.75).normalize();
+    const fold = capsule(0.075, 0.28, stoneDark, {}, 2, 5);
+    fold.scale.set(1, 1, 0.42);
+    fold.quaternion.setFromUnitVectors(up, dir2);
+    fold.position.copy(elbow).add(dir2.clone().multiplyScalar(0.14));
+    w.add(fold);
+    wings.push(w);
+    g.add(w);
+  }
+
+  // Two stout crouched legs with clawed feet (the perched squat).
+  const legs: THREE.Object3D[] = [];
+  for (const sx of [-1, 1] as const) {
+    const l = legGroup(sx * 0.2, bodyY - 0.14, 0.08, 0.13, 0.16, 0.3, stoneDark, sx * 0.12, clawC);
+    legs.push(l);
+    g.add(l);
+  }
+
+  const wRoll = rng();
+  if (wRoll < 0.3) {
+    // A weathered chipped-stone accent on some individuals.
+    const chip = blob(0.045, stoneDark);
+    chip.position.set(0.22, bodyY + 0.1, 0.3);
+    g.add(chip);
+  }
+
+  return { group: g, parts: { legs, wings, head, body } };
+}
+
 const BUILDERS: Record<string, (rng: () => number) => { group: THREE.Group; parts: CritterParts }> = {
   puffle: buildPuffle,
   skitterling: buildSkitterling,
@@ -1421,6 +1536,7 @@ const BUILDERS: Record<string, (rng: () => number) => { group: THREE.Group; part
   bumblewhale: buildBumblewhale,
   snickerdoodle: buildSnickerdoodle,
   gloomgobbler: buildGloomgobbler,
+  gargoyle: buildGargoyle,
 };
 
 /**

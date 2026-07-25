@@ -23,6 +23,7 @@ const FLAVOR: Record<string, string> = {
   zephyrfinch: 'A gust with feathers — blink and it is a dot on the horizon.',
   emberpup: 'Warm to the touch and impossible to corner; zigzags on principle.',
   lumenstag: 'The living lantern of the deep wood. Few ever see it. Fewer link it.',
+  gargoyle: 'Stone by day, wings by night — it only stirs once you dare tag it.',
 };
 
 /** Human-readable flee-style labels. */
@@ -33,6 +34,7 @@ const FLEE_LABEL: Record<SpeciesDef['fleeStyle'], string> = {
   fly: 'takes flight',
   swim: 'dives & swims',
   ledge: 'scales ledges',
+  perch: 'Perches',
 };
 
 function capitalize(s: string): string {
@@ -40,6 +42,9 @@ function capitalize(s: string): string {
 }
 
 function biomeHint(biomes: Biome[]): string {
+  // The gargoyle's biomes: [] (fixed castle-perch slots, no procedural cell
+  // spawn) would otherwise render as a blank line here.
+  if (biomes.length === 0) return 'Castle towers';
   return biomes.map(capitalize).join(' / ');
 }
 

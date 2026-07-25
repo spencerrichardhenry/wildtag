@@ -116,7 +116,7 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 
 // Dev hook: `?preview=critters` takes over the renderer with the critter
-// showcase (all 12 species on a turntable) and skips the normal player spawn.
+// showcase (all 13 species on a turntable) and skips the normal player spawn.
 if (new URLSearchParams(window.location.search).get('preview') === 'critters') {
   runCritterPreview(renderer);
 } else {
@@ -533,6 +533,17 @@ function bootGame(): void {
   // live-mutable via a purify event, so this stays a simple one-shot build.
   const castlePurifiedAtBoot = loaded?.castlePurified ?? false;
   buildCastle(scene, castlePurifiedAtBoot);
+
+  // Cursed Castle (Task 10): a gargoyle perched on each tower top + keep
+  // corner. Fixed slots (negative ids), not part of the procedural per-cell
+  // spawn table — see CritterManager.addFixedSlots.
+  critters.addFixedSlots(
+    castleLayout().perches.map((p) => ({
+      species: 'gargoyle',
+      home: p,
+      flightHeight: p.y - heightAt(p.x, p.z),
+    })),
+  );
 
   if (devMode) {
     // Playtest loadout: every unlock, deep stacks of everything. The counts

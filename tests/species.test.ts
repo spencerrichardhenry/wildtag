@@ -17,11 +17,12 @@ const TABLE = [
   { id: 'bumblewhale', bold: true, rideable: false, awareness: 10, fleeStyle: 'fly', trackRadius: 14, trackTime: 20, rewardRP: 24, rewardSparks: 4, farmRole: { kind: 'aura', special: 'hopperCap' } },
   { id: 'snickerdoodle', bold: false, rideable: false, awareness: 12, fleeStyle: 'zigzag', trackRadius: 10, trackTime: 8, rewardRP: 9, rewardSparks: 1, farmRole: { kind: 'produce', resource: 'fiber', amount: 1, special: 'adjacencyDouble' } },
   { id: 'gloomgobbler', bold: false, rideable: false, awareness: 15, fleeStyle: 'sprint', trackRadius: 12, trackTime: 14, rewardRP: 17, rewardSparks: 3, farmRole: { kind: 'produce', resource: 'resin', amount: 3 } },
+  { id: 'gargoyle', bold: true, rideable: false, awareness: 14, fleeStyle: 'perch', trackRadius: 14, trackTime: 16, rewardRP: 24, rewardSparks: 3, farmRole: { kind: 'aura', auraPct: 20 } },
 ] as const;
 
 describe('SPECIES roster', () => {
-  it('has exactly 12 species', () => {
-    expect(SPECIES).toHaveLength(12);
+  it('has exactly 13 species', () => {
+    expect(SPECIES).toHaveLength(13);
   });
 
   it('has unique ids', () => {
@@ -109,10 +110,21 @@ describe('data sanity', () => {
     }
   });
 
-  it('every species has at least one biome', () => {
+  it('every procedurally-spawned species has at least one biome', () => {
+    // The gargoyle is the sole exception: biomes: [] is intentional — it
+    // never appears in the procedural per-cell spawn table (manager.ts
+    // spawnSlotsForCell filters candidates by biome membership, so an empty
+    // list yields zero candidates), and instead comes only from the castle's
+    // fixed perch slots (CritterManager.addFixedSlots).
     for (const s of SPECIES) {
+      if (s.id === 'gargoyle') continue;
       expect(s.biomes.length).toBeGreaterThanOrEqual(1);
     }
+  });
+
+  it('the gargoyle is the sole fixed-slot-only species (biomes: [])', () => {
+    const fixedOnly = SPECIES.filter((s) => s.biomes.length === 0);
+    expect(fixedOnly.map((s) => s.id)).toEqual(['gargoyle']);
   });
 
   it('sizes are in (0, 3]', () => {
