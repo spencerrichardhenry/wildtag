@@ -7,6 +7,43 @@ import {
   inCastleRegion,
 } from '../src/castle/layout.ts';
 
+/**
+ * Project `circles` onto wall segment `w`'s line, keeping only those that
+ * (a) lie on the line (perpendicular offset ~0) and (b) have radius `rTarget`
+ * (distinguishes wall circles from tower/keep circles that also sit near a
+ * wall's corners). Returns arc-length offsets (0 = w's first endpoint),
+ * sorted ascending.
+ */
+function wallLineOffsets(
+  w: { x1: number; z1: number; x2: number; z2: number },
+  circles: { x: number; z: number; r: number }[],
+  rTarget: number,
+): number[] {
+  const dx = w.x2 - w.x1;
+  const dz = w.z2 - w.z1;
+  const len = Math.hypot(dx, dz);
+  const ux = dx / len;
+  const uz = dz / len;
+  const out: number[] = [];
+  for (const c of circles) {
+    if (Math.abs(c.r - rTarget) > 1e-6) continue;
+    const relx = c.x - w.x1;
+    const relz = c.z - w.z1;
+    const s = relx * ux + relz * uz;
+    const perp = Math.abs(relx * uz - relz * ux);
+    if (perp < 0.25 && s > -1e-6 && s < len + 1e-6) out.push(s);
+  }
+  out.sort((a, b) => a - b);
+  return out;
+}
+
+/** The wall whose midpoint matches the gate (i.e. the gated wall). */
+function findGateWall(l: ReturnType<typeof castleLayout>) {
+  return l.walls.find(
+    (w) => Math.hypot((w.x1 + w.x2) / 2 - l.gate.x, (w.z1 + w.z2) / 2 - l.gate.z) < 1e-6,
+  )!;
+}
+
 describe('castleLayout', () => {
   it('is deterministic with 4 towers, 4 walls, gate in a wall', () => {
     const a = castleLayout();
@@ -71,6 +108,46 @@ describe('castleObstacles', () => {
       );
       expect(found).toBe(true);
     }
+  });
+
+  it('solidly covers the 3 non-gate walls (no gap wider than 2*wallT anywhere)', () => {
+    const l = castleLayout();
+    const obs = castleObstacles();
+    const gateWall = findGateWall(l);
+    const nonGateWalls = l.walls.filter((w) => w !== gateWall);
+    expect(nonGateWalls).toHaveLength(3);
+
+    for (const w of nonGateWalls) {
+      const len = Math.hypot(w.x2 - w.x1, w.z2 - w.z1);
+      const offsets = wallLineOffsets(w, obs, CASTLE.wallT);
+      expect(offsets.length).toBeGreaterThan(1);
+      // Flush with both corners...
+      expect(offsets[0]).toBeLessThanOrEqual(CASTLE.wallT + 1e-6);
+      expect(offsets[offsets.length - 1]).toBeGreaterThanOrEqual(len - CASTLE.wallT - 1e-6);
+      // ...and no gap between neighbours wide enough to slip a wallT-radius
+      // cylinder through: this is what makes the wall an actual obstacle.
+      for (let i = 1; i < offsets.length; i++) {
+        expect(offsets[i] - offsets[i - 1]).toBeLessThanOrEqual(2 * CASTLE.wallT + 1e-6);
+      }
+    }
+  });
+
+  it('leaves the gate wall genuinely clear at the gate span (mechanism actually fires)', () => {
+    const l = castleLayout();
+    const obs = castleObstacles();
+    const gateWall = findGateWall(l);
+    const len = Math.hypot(gateWall.x2 - gateWall.x1, gateWall.z2 - gateWall.z1);
+    const gateHalf = CASTLE.gateW / 2;
+    const offsets = wallLineOffsets(gateWall, obs, CASTLE.wallT);
+
+    // No wall circle centre lands within the gate span...
+    for (const s of offsets) {
+      expect(Math.abs(s - len / 2)).toBeGreaterThanOrEqual(gateHalf - 1e-6);
+    }
+    // ...but both flanks are still populated (the exclusion isn't just
+    // "no circles on this wall at all").
+    expect(offsets.some((s) => s < len / 2 - gateHalf)).toBe(true);
+    expect(offsets.some((s) => s > len / 2 + gateHalf)).toBe(true);
   });
 });
 

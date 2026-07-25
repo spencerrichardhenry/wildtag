@@ -8,9 +8,10 @@ import type { GrappleCollider } from '../player/grapple.ts';
 // The castle is a square curtain wall (CASTLE.half) with a tower at each
 // corner, a central keep, and a gate cut into whichever wall faces back
 // toward the origin/spawn (the site sits NW of spawn, mostly along +x, so
-// the origin-facing wall here is the EAST wall — see `gateWallOf` below;
-// the brief's working assumption of a "south" gate doesn't hold for this
-// site and the naming is adjusted accordingly).
+// the origin-facing wall here is the EAST wall — see the gateWallIndex
+// computation in computeCastleLayout below; the brief's working assumption
+// of a "south" gate doesn't hold for this site and the naming is adjusted
+// accordingly).
 //
 // Everything is computed once from CASTLE and memoised: `castleLayout()`
 // for the raw geometry, `castleObstacles()` / `castleGrappleColliders()` for
@@ -119,16 +120,36 @@ export function castleLayout(): CastleLayout {
 }
 
 /**
- * Evenly spaced circle positions along wall segment `w` (approximating it
- * as `count` cylinders of radius `r`). If `gate` sits on this wall (its
- * midpoint matches the wall's midpoint), any circle whose along-wall offset
- * falls within the gate span is skipped, leaving a walkable gap.
+ * Arc-length offsets (m, from 0) of circle centres of radius `r` that fully
+ * cover a straight run of length `segLen`, flush with both ends: first
+ * centre at `r`, last at `segLen - r`, spacing between neighbours <= 2r so
+ * adjacent circles always touch or overlap. Degenerates to a single centred
+ * circle when the run is too short to fit two.
+ */
+function coverSegment(segLen: number, r: number): number[] {
+  if (segLen <= 0) return [];
+  if (segLen <= 2 * r) return [segLen / 2];
+  const n = Math.ceil((segLen - 2 * r) / (2 * r)) + 1;
+  if (n <= 1) return [segLen / 2];
+  const step = (segLen - 2 * r) / (n - 1);
+  const out: number[] = [];
+  for (let i = 0; i < n; i++) out.push(r + i * step);
+  return out;
+}
+
+/**
+ * Circle positions of radius `r` that solidly cover wall segment `w` — no
+ * gap wider than 2r anywhere along it, so the wall actually blocks a
+ * cylinder of radius <= r (not just a sparse sketch with incidental holes).
+ * If `gate` sits on this wall (its midpoint matches the wall's midpoint),
+ * the wall is covered as two flush segments flanking the real gate gap
+ * (arc-length [len/2 - gateHalf, len/2 + gateHalf]) instead of one, so the
+ * gate stays genuinely open however densely the flanks are packed.
  */
 function wallCircles(
   w: { x1: number; z1: number; x2: number; z2: number },
   r: number,
   gate: { x: number; z: number; w: number },
-  count = 4,
 ): { x: number; z: number; r: number }[] {
   const dx = w.x2 - w.x1;
   const dz = w.z2 - w.z1;
@@ -140,12 +161,19 @@ function wallCircles(
   const isGateWall = Math.hypot(midx - gate.x, midz - gate.z) < 1e-6;
   const gateHalf = gate.w / 2;
 
+  const segments: [number, number][] = isGateWall
+    ? [
+        [0, len / 2 - gateHalf],
+        [len / 2 + gateHalf, len],
+      ]
+    : [[0, len]];
+
   const out: { x: number; z: number; r: number }[] = [];
-  for (let i = 0; i < count; i++) {
-    const t = (i + 0.5) / count;
-    const s = t * len;
-    if (isGateWall && Math.abs(s - len / 2) < gateHalf) continue;
-    out.push({ x: w.x1 + ux * s, z: w.z1 + uz * s, r });
+  for (const [a, b] of segments) {
+    for (const off of coverSegment(b - a, r)) {
+      const s = a + off;
+      out.push({ x: w.x1 + ux * s, z: w.z1 + uz * s, r });
+    }
   }
   return out;
 }
