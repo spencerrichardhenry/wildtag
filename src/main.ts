@@ -8,6 +8,7 @@ import { groundNormalAt, heightAt } from './world/terrain.ts';
 import type { GroundQuery, Vec3 } from './core/types.ts';
 import { Input } from './player/input.ts';
 import { PlayerController } from './player/controller.ts';
+import { createHealth, isDazed, stepHealth } from './player/health.ts';
 import { createInventory, addResource } from './craft/inventory.ts';
 import { ScreenManager, createCraftScreen, createHelpScreen } from './ui/screens.ts';
 import { createGuideScreen } from './ui/guide.ts';
@@ -329,6 +330,10 @@ function bootGame(): void {
   let farm: FarmState = createFarm(getDeedCount());
   let lastDeeds = getDeedCount();
   const farmVisuals = new FarmVisuals(scene);
+
+  // Player HP (Cursed Castle Task 6): pure state stepped each frame. No
+  // damage sources exist yet — goblins (Task 11) will call `applyHit`.
+  let health = createHealth();
 
   /** Replace a roster entry's status (immutably, so the screen re-reads it). */
   function setEntryStatus(id: number, status: RosterEntry['status']): void {
@@ -923,6 +928,7 @@ function bootGame(): void {
     // below still fire so KeyC/Esc can close it. Chunk/prop streaming keeps
     // running so nothing pops in when the menu closes.
     const paused = screens.isOpen();
+    if (!paused) health = stepHealth(health, dt);
 
     // `?debug=grapple`/`?debug=structures` freeze the player for a clean static
     // screenshot while the world keeps streaming.
@@ -1120,6 +1126,8 @@ function bootGame(): void {
       yaw: input.yaw,
       stamina: player.stamina,
       exhausted: player.exhausted,
+      hp: health.hp,
+      dazed: isDazed(health),
       inventory,
       unlocks: player.unlocks,
       critters: critters.list(),

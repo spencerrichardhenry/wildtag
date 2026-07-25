@@ -3,7 +3,7 @@ import type { Vec3 } from '../core/types.ts';
 import type { Inventory } from '../craft/inventory.ts';
 import type { CritterView } from '../critters/manager.ts';
 import { speciesById } from '../critters/species.ts';
-import { MOVE, SCATTER } from '../core/constants.ts';
+import { HEALTH, MOVE, SCATTER } from '../core/constants.ts';
 import { toast } from './toasts.ts';
 import {
   HUD as HUDT,
@@ -37,6 +37,10 @@ export interface HudFrame {
   stamina: number;
   /** Movement core's exhaustion latch (true below 1 stamina until ≥20). */
   exhausted: boolean;
+  /** Player HP (Cursed Castle Task 6), 0..HEALTH.max. */
+  hp: number;
+  /** True while the post-death daze window is active (invulnerable). */
+  dazed: boolean;
   inventory: Inventory;
   unlocks: ReadonlySet<string>;
   /** Live critters (for rings + compass pips). */
@@ -116,6 +120,8 @@ export class HUD {
   private readonly harvestLabel: HTMLDivElement;
   private readonly stamina: HTMLDivElement;
   private readonly staminaFill: HTMLDivElement;
+  private readonly health: HTMLDivElement;
+  private readonly healthFill: HTMLDivElement;
   private readonly resEls = new Map<string, { dot: HTMLElement; count: HTMLElement; last: number }>();
   private readonly slots: {
     root: HTMLDivElement;
@@ -143,6 +149,9 @@ export class HUD {
   private staminaFullSince: number | null = null;
   private staminaShown = false;
   private lastExhausted = false;
+  private healthFullSince: number | null = null;
+  private healthShown = false;
+  private lastDazed = false;
   private linkTimes = new Map<number, number>();
 
   // First-run hint one-shots.
@@ -240,6 +249,12 @@ export class HUD {
     this.stamina.appendChild(this.staminaFill);
     this.root.appendChild(this.stamina);
 
+    // --- HP bar (bottom-centre, stacked above stamina) ---------------------
+    this.health = el('div', 'wt-health');
+    this.healthFill = el('div', 'wt-health-fill');
+    this.health.appendChild(this.healthFill);
+    this.root.appendChild(this.health);
+
     // --- Hotbar (bottom-centre) --------------------------------------------
     const hotbar = el('div', 'wt-hotbar');
     const defs = [
@@ -291,6 +306,7 @@ export class HUD {
 
     this.paintCrosshair(frame);
     this.paintStamina(frame.stamina, frame.exhausted);
+    this.paintHealth(frame.hp, frame.dazed);
     this.paintResources(frame.inventory);
     this.paintHotbar(frame);
     this.paintCompass(frame);
@@ -387,6 +403,34 @@ export class HUD {
     if (show !== this.staminaShown) {
       this.stamina.classList.toggle('wt-visible', show);
       this.staminaShown = show;
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // HP — fill %, red flash while dazed, auto-hide when full for
+  // HEALTH.barLingerS (Cursed Castle Task 6; no damage sources until Task 11).
+  // -------------------------------------------------------------------------
+  private paintHealth(hp: number, dazed: boolean): void {
+    const pct = Math.max(0, Math.min(1, hp / HEALTH.max));
+    this.healthFill.style.width = `${(pct * 100).toFixed(1)}%`;
+
+    if (dazed !== this.lastDazed) {
+      this.health.classList.toggle('wt-dazed', dazed);
+      this.lastDazed = dazed;
+    }
+
+    const now = performance.now();
+    const full = hp >= HEALTH.max - 0.5;
+    let show = true;
+    if (full && !dazed) {
+      if (this.healthFullSince === null) this.healthFullSince = now;
+      if (now - this.healthFullSince > HEALTH.barLingerS * 1000) show = false;
+    } else {
+      this.healthFullSince = null;
+    }
+    if (show !== this.healthShown) {
+      this.health.classList.toggle('wt-visible', show);
+      this.healthShown = show;
     }
   }
 
@@ -846,6 +890,33 @@ const STYLE = `
   animation: wt-flash 0.5s steps(2, start) infinite;
 }
 @keyframes wt-flash { 0% { opacity: 1; } 50% { opacity: 0.35; } 100% { opacity: 1; } }
+
+/* HP ------------------------------------------------------------------ */
+.wt-health {
+  position: fixed;
+  left: 50%;
+  bottom: 118px;
+  transform: translateX(-50%);
+  width: 220px;
+  height: 6px;
+  background: rgba(10, 14, 16, 0.6);
+  border: 1px solid rgba(200, 220, 230, 0.22);
+  border-radius: 4px;
+  overflow: hidden;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  z-index: 5;
+}
+.wt-health.wt-visible { opacity: 1; }
+.wt-health-fill {
+  height: 100%;
+  width: 100%;
+  background: #e0463a;
+  transition: width 0.12s linear;
+}
+.wt-health.wt-dazed .wt-health-fill {
+  animation: wt-flash 0.5s steps(2, start) infinite;
+}
 
 /* Hotbar ------------------------------------------------------------------ */
 .wt-hotbar {

@@ -153,6 +153,21 @@ export const MOVE = {
 } as const;
 
 /**
+ * Player HP (Cursed Castle Task 6). Pure state lives in
+ * `src/player/health.ts`; no damage sources exist yet (goblins, Task 11).
+ */
+export const HEALTH = {
+  max: 100,
+  regenDelayS: 4,
+  regenPerS: 12,
+  dazedS: 3,
+  /** m the dazed stumble carries the player away from the castle. */
+  dazedRetreat: 16,
+  /** HP bar auto-hides this long after reaching full (s). */
+  barLingerS: 2,
+} as const;
+
+/**
  * Grapple hook — Terraria-style projectile model (Task 16, reworked from the
  * original hitscan/reel of Task 12 per direct user feedback). The hook now
  * *flies* as a ballistic projectile (`hookSpeed` along the look dir under
