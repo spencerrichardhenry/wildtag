@@ -21,6 +21,9 @@ Decisions locked with Spencer:
 - Crystal: **direct dart, no gate; transformation permanent**.
 - Architecture: **goblins are a new hostile module**, NOT critters; gargoyles ARE
   regular critters.
+- Mushrooms become **forageable** and are a purifying-dart ingredient.
+- The world gets a **grandeur rescale**: trees range up to 10–15× player height,
+  terrain features grow to match, castle towers ~10× player height.
 
 ## Non-negotiable invariants preserved
 
@@ -38,6 +41,9 @@ Decisions locked with Spencer:
 
 - Procedural stone castle in the Haven-buildings style: square curtain wall,
   4 corner towers, gatehouse, central **open-roofed keep** holding the dark crystal.
+- **Scale: imposing.** Corner towers and the keep reach ~10× player height
+  (≈17–20 m); curtain walls ≈8 m; footprint roughly 80–100 m on a side. It should
+  dwarf the player and read from far across the island.
 - Placed on elevated terrain a few hundred meters from spawn, roughly opposite
   Haven, so it reads as "the far scary place." Exact site chosen during
   implementation by sampling `heightAt` for a suitably prominent hill; position
@@ -106,10 +112,15 @@ Decisions locked with Spencer:
 
 ## 5. Purifying darts & elves
 
+- **Forageable mushrooms:** the existing glow-mushroom clusters become
+  harvestable resource nodes (`mushroom` joins fiber/resin/shard/spark as a
+  `ResourceKind`, using the same deplete/respawn `NodeState` system and harvest
+  cone). Forest remains their home biome; spawn caps rise enough (and clusters
+  also scatter along the castle approach) that stocking up for darts is a
+  pleasant forage loop, not a grind.
 - New recipe in `src/craft/recipes.ts`: **Purifying Dart ×5**, RP-gated at a
-  mid tier, costing existing gatherable resources plus a new castle-region
-  resource node (e.g. moonpetal flowers around the castle approach —
-  final resource mix tuned during implementation).
+  mid tier. Ingredients: **glow mushrooms** plus existing gatherables
+  (e.g. 3 mushroom + 2 shard + 1 fiber; exact mix playtest-tuned).
 - Ballistics reuse `tracking/darts.ts` spawn/step exactly (same feel); the
   payload differs: on goblin hit → sparkle burst → goblin replaced by an elf.
   On critter hit: harmless sparkle (critters are already pure). Purifying darts
@@ -133,17 +144,47 @@ Decisions locked with Spencer:
   residents.
 - State: `castlePurified: boolean` in save — permanent, no reset.
 
-## 7. Save (v3)
+## 7. World grandeur rescale
+
+The world currently reads "small and clean": trees top out ≈7 m (~2–4× the
+1.65 m player) and crag spires at ~55 m. Kids want person-scale grandeur —
+short trees AND giants, with mountains that still dwarf them.
+
+- **Trees** (constants + `props.ts` builders): per-biome height tiers replace
+  the flat `scale.tree [0.85, 1.6]` band:
+  - *common* ≈4–9 m (bulk of spawns),
+  - *tall* ≈10–16 m,
+  - *rare giants* ≈20–28 m (10–15× player; roughly one per few chunks, biome
+    flavored — ancient oak, great pine, elder willow) with proportionally
+    thicker trunks. Giants are grappleable like all trees, so their crowns
+    become chain-climb playgrounds (no free flight — existing constraints).
+  - Per-chunk tree caps drop slightly to keep density from choking views;
+    BatchedMesh consolidation absorbs the added geometry.
+- **Terrain** (`TERRAIN` constants only; `heightAt` formula unchanged):
+  feature wavelength up ~30% (baseFrequency 1/260 → ≈1/340) and crag spires
+  roughly doubled (cragSpire 55 → ≈100) so peaks remain 3–4× the tallest
+  giants. Mesas/boulders scale up ~2×. Island radius unchanged.
+- **Knock-on audit (explicit implementation tasks):** grapple reach vs giant
+  crowns and taller crags (chain-climb must still summit everything
+  grappleable); Haven pad, castle pad, zipline/drone anchors, and barter pens
+  re-validated against the reshaped `heightAt`; existing saves load with
+  positions snapped to the new ground height; e2e biome screenshots refreshed.
+- Movement constants are NOT retuned preemptively — a playtest-tuning task at
+  the end adjusts only what the audit or feel demands.
+
+## 8. Save (v3)
 
 - Save bumps to v3 (same localStorage key, migrates v2 → v3, which migrates v1).
 - New fields: day/night clock time, purifying-dart inventory + recipe unlock
   (existing inventory/unlock structures), elf count/state, `castlePurified`.
 
-## 8. Testing & debug
+## 9. Testing & debug
 
 - **Vitest (TDD, pure):** daylight clock math, goblin FSM transitions, chase
   speed invariant, HP damage/regen/dazed logic, purify interactions, recipe
-  gating/costs, crystal state machine, elf persistence, save v2→v3 migration.
+  gating/costs, crystal state machine, elf persistence, save v2→v3 migration
+  (including position ground-snap), mushroom node harvest/respawn, tree-tier
+  selection math.
 - **Playwright (`e2e/verify.mjs`):** new asserted checks + screenshots —
   castle by day, night sky at castle, goblins spawned at night, HP bar visible
   after a hit, purified elf city. Driven via debug handles.
