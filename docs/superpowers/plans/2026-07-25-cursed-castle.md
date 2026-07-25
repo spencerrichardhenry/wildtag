@@ -912,3 +912,17 @@ Sequence in `purifyCastle()`: flash (white full-screen veil fading 0.5 s — reu
 - Perch "glide between perches" is implemented as glide-loops around each gargoyle's own perch (pure per-critter AI has no shared perch registry) — visually equivalent; noted as an accepted spec adaptation.
 - Task 11 leaves `GOBLIN.chaseSpeed` as a formula against the real MOVE sprint constant because MOVE's field name must be read from constants.ts:104 — the test asserting `chaseSpeed < sprint` makes this safe.
 - Type/name consistency: `Inventory.purifiers`, `grants: 'purifiers'`, `hudUi.selected`, `CastleSystem.goblinTargets/purifyGoblin/crystalTarget/purifyCastle`, `ElfSystem.setCount/addAt/count`, `daylightAt/DaylightSample`, `HealthState/applyHit/stepHealth/isDazed`, `castleLayout/castleObstacles/castleGrappleColliders/inCastleRegion` — used identically across tasks.
+
+---
+
+### Task 16 (added mid-run from Spencer's playtest feedback): vertical obstacle extents
+
+Obstacles (`Obstacle {x,z,r}`) collide as infinite vertical cylinders — castle walls and giant trees block the player even when gliding far above their tops. Give obstacles an optional top.
+
+**Files:**
+- Modify: `src/player/collision.ts` (Obstacle.yTop?, resolveCollision skip), `src/world/scatter.ts` (placementObstacle yTop from the GRAPPLE_TOP table × scale), `src/castle/layout.ts` (castleObstacles yTop from wall/tower/keep heights), `src/village/buildings.ts` (villageObstacles yTop from VILLAGE.wallHeight/lampHeight + roof margin)
+- Test: `tests/collision.test.ts` (or wherever resolveCollision is tested), `tests/scatter.test.ts`, `tests/castle-layout.test.ts`
+
+**Semantics:** `yTop?: number` (absolute world Y). `resolveCollision(pos, radius, obstacles)` skips any obstacle with `yTop !== undefined && pos.y > yTop` (player feet above the top → no pushout; undefined keeps today's infinite behavior). Player must be able to glide/fall over a castle wall (top = padHeight + wallH) into the courtyard, and over tree tops.
+
+**Steps:** failing tests for the skip semantics + yTop population (castle wall/tower/keep values; tree yTop scales with instance scale) → implement → full gates → behavioral check in headless browser (glide over a castle wall) → commit.
