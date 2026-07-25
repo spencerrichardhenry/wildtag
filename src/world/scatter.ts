@@ -70,6 +70,9 @@ const S_GRASS = 0xaaaa;
 const S_GRASS_JX = 0xbbbb;
 const S_GRASS_JZ = 0xcccc;
 const S_GRASS_ROT = 0xdddd;
+// Tree tier roll (Task 7 grandeur rescale): a second, independent channel
+// picks which tier's scale band a tree's S_SCALE roll lands in.
+const S_TIER = 0xeeee;
 
 function h(salt: number, gx: number, gz: number): number {
   return hash2((WORLD_SEED ^ salt) >>> 0, gx, gz);
@@ -109,7 +112,24 @@ function isWetlandLake(x: number, z: number, y: number): boolean {
   return ang >= 3 * q && ang < 5 * q; // wetland sector (S)
 }
 
+/** Tiered scale roll for trees: first pick a tier by cumulative `p`, then roll
+ *  uniform within that tier's [min, max] scale band. */
+function treeScaleFor(gx: number, gz: number): number {
+  const tierRoll = h(S_TIER, gx, gz);
+  const tiers = SCATTER.treeTiers;
+  let tier = tiers[tiers.length - 1]!;
+  for (const t of tiers) {
+    if (tierRoll < t.p) {
+      tier = t;
+      break;
+    }
+  }
+  const t = h(S_SCALE, gx, gz);
+  return tier.scale[0] + t * (tier.scale[1] - tier.scale[0]);
+}
+
 function scaleFor(kind: PropKind, gx: number, gz: number): number {
+  if (kind === 'tree') return treeScaleFor(gx, gz);
   const range = SCATTER.scale[kind as keyof typeof SCATTER.scale] ?? [1, 1];
   const t = h(S_SCALE, gx, gz);
   return range[0] + t * (range[1] - range[0]);

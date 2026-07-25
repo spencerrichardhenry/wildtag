@@ -238,3 +238,32 @@ describe('per-chunk instance caps', () => {
     }
   });
 });
+
+// --- Task 7: world grandeur rescale — tiered giant trees -------------------
+
+describe('tree size tiers (world grandeur rescale)', () => {
+  it('tree scales follow the three tiers and giants are rare', () => {
+    let giants = 0;
+    let total = 0;
+    for (let cx = -20; cx < 20; cx++) {
+      for (let cz = -20; cz < 20; cz++) {
+        for (const p of scatterForChunk(cx, cz)) {
+          if (p.kind !== 'tree') continue;
+          total++;
+          expect(p.scale).toBeGreaterThanOrEqual(SCATTER.treeTiers[0].scale[0]);
+          expect(p.scale).toBeLessThanOrEqual(SCATTER.treeTiers[2].scale[1]);
+          if (p.scale >= SCATTER.treeTiers[2].scale[0]) giants++;
+        }
+      }
+    }
+    expect(total).toBeGreaterThan(200);
+    expect(giants / total).toBeGreaterThan(0.01);
+    expect(giants / total).toBeLessThan(0.12);
+  });
+
+  it('tree grapple collider tops scale with instance scale', () => {
+    const giant = { kind: 'tree' as const, x: 0, z: 0, y: 5, scale: 6, rot: 0 };
+    const c = placementGrappleCollider(giant)!;
+    expect(c.yTop - 5).toBeCloseTo(4.5 * 6, 1); // GRAPPLE_TOP.tree × scale
+  });
+});

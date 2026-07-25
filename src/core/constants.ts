@@ -36,7 +36,7 @@ export const TERRAIN = {
   falloffStrength: 200,
 
   /** fbm settings for the primary rolling-height noise field. */
-  baseFrequency: 1 / 260,
+  baseFrequency: 1 / 340,
   octaves: 5,
   lacunarity: 2,
   gain: 0.5,
@@ -52,7 +52,7 @@ export const TERRAIN = {
   /** Ridged noise used to sharpen crag spires. */
   ridgeFrequency: 1 / 130,
   ridgeOctaves: 4,
-  cragSpire: 55,
+  cragSpire: 100,
 
   /** Moisture noise field (biome refinement). */
   moistureFrequency: 1 / 420,
@@ -480,7 +480,7 @@ export const SCATTER = {
 
   /** Hard per-chunk instance cap per kind — variety over density. */
   caps: {
-    tree: 24,
+    tree: 16,
     rock: 30,
     crystal: 20,
     flower: 28,
@@ -494,9 +494,13 @@ export const SCATTER = {
     shard: 18,
   },
 
-  /** Per-kind instance scale range [min, max] (uniform hash pick). */
+  /**
+   * Per-kind instance scale range [min, max] (uniform hash pick). `tree` is
+   * NOT here — tree scale is rolled from `treeTiers` below instead (a tiered
+   * roll, not a flat uniform range), so a chunk can carry both common trees
+   * and rare giants.
+   */
   scale: {
-    tree: [0.85, 1.6],
     rock: [0.6, 1.5],
     crystal: [0.5, 1.15],
     flower: [0.7, 1.3],
@@ -504,8 +508,8 @@ export const SCATTER = {
     resin: [0.7, 1.1],
     shard: [0.7, 1.35],
     spark: [0.85, 1.2],
-    mesa: [0.8, 1.5],
-    boulder: [0.7, 1.4],
+    mesa: [1.6, 3.0],
+    boulder: [1.0, 2.0],
     scree: [0.7, 1.3],
     reed: [0.8, 1.3],
     lilypad: [0.7, 1.4],
@@ -513,6 +517,18 @@ export const SCATTER = {
     /** Grass tufts: ±25% scale jitter about 1.0. */
     grasstuft: [0.75, 1.25],
   },
+
+  /**
+   * Tree size tiers (world grandeur rescale, Task 7): cumulative probability →
+   * uniform scale band. Base tree geometry ≈ 4 m tall at scale 1. Rolled via
+   * an extra hash channel in scatter.ts: first roll picks the tier by
+   * cumulative `p`, second rolls uniform within the tier's scale band.
+   */
+  treeTiers: [
+    { p: 0.68, scale: [1.1, 2.2] }, // common ≈ 4.5–9 m
+    { p: 0.95, scale: [2.4, 4.0] }, // tall   ≈ 10–16 m
+    { p: 1.0, scale: [5.0, 7.0] }, // giants ≈ 20–28 m (10–15× player)
+  ],
 
   /** Collision-cylinder radius factor (× scale) for blocking props. */
   obstacleRadius: { tree: 0.5, rock: 0.9, mesa: 1.6, boulder: 1.1 },

@@ -64,6 +64,13 @@ describe('heightAt', () => {
   it('is walkable land at spawn', () => {
     expect(heightAt(0, 0)).toBeGreaterThan(0.5);
   });
+
+  it('reaches dramatically taller crag peaks after the grandeur rescale', () => {
+    // (-420, 0) is the crags biome-tour vantage (e2e/verify.mjs checkBiomeTour);
+    // cragSpire 55→100 + baseFrequency broadening should push crag terrain well
+    // above the old ~40-55m peaks.
+    expect(heightAt(-420, 0)).toBeGreaterThan(70);
+  });
 });
 
 describe('biomeAt', () => {
