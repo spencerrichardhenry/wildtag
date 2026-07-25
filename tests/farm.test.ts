@@ -14,7 +14,7 @@ import {
 import { speciesById } from '../src/critters/species.ts';
 import type { RosterEntry } from '../src/critters/roster.ts';
 import { FARM } from '../src/core/constants.ts';
-import { decodeSave, encodeSave, type SaveV2 } from '../src/core/save.ts';
+import { decodeSave, encodeSave, type SaveV3 } from '../src/core/save.ts';
 import { createInventory } from '../src/craft/inventory.ts';
 
 // ---------------------------------------------------------------------------
@@ -285,9 +285,9 @@ describe('tick — purity / determinism', () => {
 });
 
 describe('save round-trip', () => {
-  function baseSave(farm: FarmState | undefined): SaveV2 {
+  function baseSave(farm: FarmState | undefined): SaveV3 {
     return {
-      v: 2,
+      v: 3,
       inventory: createInventory(),
       unlocks: [],
       critterPersist: {},

@@ -3,12 +3,13 @@ import {
   applyStartingLoadout,
   decodeSave,
   encodeSave,
-  type SaveV2,
+  snapToGround,
+  type SaveV3,
 } from '../src/core/save.ts';
 import { createInventory } from '../src/craft/inventory.ts';
 import { PLAYER_START } from '../src/core/constants.ts';
 
-function sampleSave(over: Partial<SaveV2> = {}): SaveV2 {
+function sampleSave(over: Partial<SaveV3> = {}): SaveV3 {
   const inventory = createInventory();
   inventory.fiber = 12;
   inventory.resin = 3;
@@ -19,7 +20,7 @@ function sampleSave(over: Partial<SaveV2> = {}): SaveV2 {
   inventory.kits = { zipline: 2, beacon: 0, drone: 1 };
 
   return {
-    v: 2,
+    v: 3,
     inventory,
     unlocks: ['grapple', 'boots'],
     critterPersist: {
@@ -110,16 +111,16 @@ describe('encodeSave / decodeSave', () => {
     expect(decodeSave(JSON.stringify(rest))).toBeNull();
   });
 
-  it('rejects a wrong version number (neither 1 nor 2)', () => {
-    expect(decodeSave(JSON.stringify({ ...sampleSave(), v: 3 }))).toBeNull();
+  it('rejects a wrong version number (neither 1, 2, nor 3)', () => {
+    expect(decodeSave(JSON.stringify({ ...sampleSave(), v: 4 }))).toBeNull();
     expect(decodeSave(JSON.stringify({ ...sampleSave(), v: 0 }))).toBeNull();
     expect(decodeSave(JSON.stringify({ ...sampleSave(), v: '2' }))).toBeNull();
   });
 
   // --- Haven V7: v1 → v2 migration matrix ------------------------------------
 
-  it('migrates a pure-v1 save (no Haven fields) losslessly into the v2 shape', () => {
-    // A genuine pre-Haven v1 blob: v:1, NONE of the Haven keys present.
+  it('migrates a pure-v1 save (no Haven/castle fields) losslessly into the v3 shape', () => {
+    // A genuine pre-Haven v1 blob: v:1, NONE of the Haven or castle keys present.
     const v1blob = {
       v: 1,
       inventory: { fiber: 5, resin: 2, shard: 1, spark: 0, rp: 20, darts: 3 },
@@ -132,7 +133,7 @@ describe('encodeSave / decodeSave', () => {
     const decoded = decodeSave(JSON.stringify(v1blob));
     expect(decoded).not.toBeNull();
     // Normalized to the current version.
-    expect(decoded!.v).toBe(2);
+    expect(decoded!.v).toBe(3);
     // Every v1 field survives untouched.
     expect(decoded!.unlocks).toEqual(['grapple']);
     expect(decoded!.player).toEqual(v1blob.player);
@@ -145,9 +146,13 @@ describe('encodeSave / decodeSave', () => {
     expect('rewards' in decoded!).toBe(false);
     expect(decoded!.farm).toBeUndefined();
     expect('mount' in decoded!).toBe(false);
+    // No phantom castle keys either.
+    expect('daylightT' in decoded!).toBe(false);
+    expect('elves' in decoded!).toBe(false);
+    expect('castlePurified' in decoded!).toBe(false);
   });
 
-  it('accepts a v2 save natively and round-trips it', () => {
+  it('accepts a v3 save natively and round-trips it', () => {
     const state = sampleSave({
       roster: [{ id: 1, speciesId: 'puffle', nickname: 'Beans', status: { kind: 'idle' } }],
       rewards: ['saddle'],
@@ -155,7 +160,7 @@ describe('encodeSave / decodeSave', () => {
     });
     const decoded = decodeSave(encodeSave(state));
     expect(decoded).toEqual(state);
-    expect(decoded!.v).toBe(2);
+    expect(decoded!.v).toBe(3);
   });
 
   it('rejects a structurally unsound shape (missing player.pos)', () => {
@@ -429,6 +434,96 @@ describe('encodeSave / decodeSave', () => {
     expect(decoded).not.toBeNull();
     expect(decoded?.structures.drones).toEqual([good]);
     expect(decoded?.structures.ziplines).toEqual(state.structures.ziplines);
+  });
+
+  // --- Cursed Castle: v3 fields (daylightT / elves / castlePurified) --------
+
+  it('v2 saves load as v3 with castle fields defaulted', () => {
+    // A literal v:2 JSON fixture — hand-built (not via encodeSave, which now
+    // emits v:3) so this genuinely exercises the v2 → v3 migration path.
+    const v2json = JSON.stringify({
+      v: 2,
+      inventory: { fiber: 12, resin: 3, shard: 5, spark: 2, rp: 44, darts: 7 },
+      unlocks: ['grapple', 'boots'],
+      critterPersist: {
+        3: { tagged: true, linked: false, trackProgress: 4.5, species: 'puffle' },
+      },
+      structures: { ziplines: [], drones: [] },
+      player: { pos: { x: 12.5, y: 3.2, z: -7.1 }, yaw: 1.23 },
+      hints: ['boot', 'lock'],
+      roster: [],
+    });
+    const s = decodeSave(v2json)!;
+    expect(s).not.toBeNull();
+    expect(s.v).toBe(3);
+    expect(s.daylightT ?? 0).toBe(0);
+    expect(s.castlePurified ?? false).toBe(false);
+    expect(s.elves ?? 0).toBe(0);
+    expect('daylightT' in s).toBe(false);
+    expect('elves' in s).toBe(false);
+    expect('castlePurified' in s).toBe(false);
+  });
+
+  it('v3 castle fields round-trip', () => {
+    const st = { ...sampleSave(), daylightT: 123.5, elves: 4, castlePurified: true };
+    const s = decodeSave(encodeSave(st))!;
+    expect(s.daylightT).toBe(123.5);
+    expect(s.elves).toBe(4);
+    expect(s.castlePurified).toBe(true);
+  });
+
+  it('rejects garbage castle fields', () => {
+    const j = JSON.parse(encodeSave(sampleSave()));
+    j.elves = 'many';
+    j.daylightT = null;
+    j.castlePurified = 1;
+    const s = decodeSave(JSON.stringify(j))!;
+    expect(s.elves ?? 0).toBe(0);
+    expect(s.daylightT ?? 0).toBe(0);
+    expect(s.castlePurified ?? false).toBe(false);
+  });
+
+  it('drops (rather than rejects) a non-finite daylightT / elves or non-boolean castlePurified, keeping the rest of the save', () => {
+    const raw = { ...sampleSave(), daylightT: 'noon', elves: 'lots', castlePurified: 'yes' };
+    const s = decodeSave(JSON.stringify(raw));
+    expect(s).not.toBeNull();
+    expect('daylightT' in s!).toBe(false);
+    expect('elves' in s!).toBe(false);
+    expect('castlePurified' in s!).toBe(false);
+    expect(s!.inventory).toEqual(sampleSave().inventory);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// snapToGround — restore a saved position against the live terrain, clamping
+// it back onto the ground if the terrain has reshaped underneath it.
+// ---------------------------------------------------------------------------
+
+describe('snapToGround', () => {
+  it('leaves the position unchanged when within tolerance of groundY', () => {
+    const pos = { x: 5, y: 10, z: -2 };
+    const snapped = snapToGround(pos, 8); // |10 - 8| = 2, within default tolerance 3
+    expect(snapped).toEqual({ x: 5, y: 10, z: -2 });
+  });
+
+  it('snaps to groundY + 0.5 when outside tolerance', () => {
+    const pos = { x: 5, y: 40, z: -2 };
+    const snapped = snapToGround(pos, 8); // |40 - 8| = 32, outside tolerance
+    expect(snapped).toEqual({ x: 5, y: 8.5, z: -2 });
+  });
+
+  it('respects a custom tolerance', () => {
+    const pos = { x: 0, y: 10, z: 0 };
+    expect(snapToGround(pos, 8, 1)).toEqual({ x: 0, y: 8.5, z: 0 }); // |10-8|=2 > 1
+    expect(snapToGround(pos, 8, 5)).toEqual({ x: 0, y: 10, z: 0 }); // |10-8|=2 <= 5
+  });
+
+  it('returns a new object, never the same reference', () => {
+    const pos = { x: 1, y: 2, z: 3 };
+    const snapped = snapToGround(pos, 2);
+    expect(snapped).not.toBe(pos);
+    const snappedFar = snapToGround(pos, 100);
+    expect(snappedFar).not.toBe(pos);
   });
 });
 

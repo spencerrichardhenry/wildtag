@@ -27,7 +27,14 @@ import { ZiplineSystem } from './structures/ziplines.ts';
 import { DroneSystem } from './structures/drones.ts';
 import { PlacementSystem, serializeStructures, deserializeStructures } from './structures/placement.ts';
 import { raycastTerrain } from './player/grapple.ts';
-import { applyStartingLoadout, loadSave, writeSave, clearSave, type SaveV2 } from './core/save.ts';
+import {
+  applyStartingLoadout,
+  loadSave,
+  writeSave,
+  clearSave,
+  snapToGround,
+  type SaveV3,
+} from './core/save.ts';
 import { buildDebugHandle } from './debug.ts';
 import {
   currentQuality,
@@ -422,7 +429,7 @@ function bootGame(): void {
   // `?dev=1`: playtest mode — everything unlocked, effectively-infinite darts
   // and materials. Implies a fresh throwaway session (never touches the save).
   const devMode = new URLSearchParams(window.location.search).get('dev') === '1';
-  let loaded: SaveV2 | null = freshStart || devMode ? null : loadSave();
+  let loaded: SaveV3 | null = freshStart || devMode ? null : loadSave();
   let primePos: Vec3 = spawn;
   if (loaded) {
     try {
@@ -455,10 +462,15 @@ function bootGame(): void {
       farm = loaded.farm ? setDeeds(loaded.farm, getDeedCount()) : createFarm(getDeedCount());
       lastDeeds = getDeedCount();
       deserializeStructures(loaded.structures, ziplines, drones);
-      player.teleport(loaded.player.pos.x, loaded.player.pos.y, loaded.player.pos.z);
+      // Cursed Castle: snap the restored position back onto the live terrain if
+      // it's reshaped underneath an old save (e.g. the world grandeur rescale)
+      // — otherwise the player could resurrect buried in or floating far above
+      // the new ground.
+      const restoredPos = snapToGround(loaded.player.pos, heightAt(loaded.player.pos.x, loaded.player.pos.z));
+      player.teleport(restoredPos.x, restoredPos.y, restoredPos.z);
       input.yaw = loaded.player.yaw;
       hudUi.setHintFlags(loaded.hints);
-      primePos = { ...loaded.player.pos };
+      primePos = { ...restoredPos };
       // Mount (Haven V6): respawn the active-mount actor at its saved position
       // (or near the player if the field is absent but a roster entry still
       // carries the 'mount' status). Saddle mesh iff the Saddle reward is owned.
@@ -506,10 +518,10 @@ function bootGame(): void {
     toast('DEV MODE — all unlocks, 999 darts, deep material stacks (no saving)');
   }
 
-  /** Build the current in-memory state as a plain-data SaveV2 snapshot. */
-  function buildSaveState(): SaveV2 {
+  /** Build the current in-memory state as a plain-data SaveV3 snapshot. */
+  function buildSaveState(): SaveV3 {
     return {
-      v: 2,
+      v: 3,
       inventory: { ...inventory, kits: { ...inventory.kits } },
       unlocks: [...player.unlocks],
       critterPersist: critters.exportRegistry(),

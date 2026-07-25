@@ -13,7 +13,7 @@ import {
 import { stepTracking } from '../src/tracking/progress.ts';
 import { createInventory } from '../src/craft/inventory.ts';
 import type { Roster, RosterEntry } from '../src/critters/roster.ts';
-import { decodeSave, encodeSave, type SaveV2 } from '../src/core/save.ts';
+import { decodeSave, encodeSave, type SaveV3 } from '../src/core/save.ts';
 import type { SpeciesDef } from '../src/core/types.ts';
 import { speciesById } from '../src/critters/species.ts';
 
@@ -212,9 +212,9 @@ describe('golden dart multiplier (pure)', () => {
 });
 
 describe('save round-trip — V4 fields', () => {
-  function baseSave(over: Partial<SaveV2>): SaveV2 {
+  function baseSave(over: Partial<SaveV3>): SaveV3 {
     return {
-      v: 2,
+      v: 3,
       inventory: createInventory(),
       unlocks: [],
       critterPersist: {},
@@ -243,7 +243,7 @@ describe('save round-trip — V4 fields', () => {
       baseSave({
         barter: [{ npcId: 'juno', seq: 1, fulfilled: 1 }, { bad: true }],
         pens: [{ npcId: 'bram', speciesId: 'craghorn', nickname: 'Quill' }, { npcId: 5 }],
-      } as unknown as Partial<SaveV2>),
+      } as unknown as Partial<SaveV3>),
     );
     const decoded = decodeSave(raw);
     expect(decoded?.barter).toHaveLength(1);

@@ -7,22 +7,26 @@ import type { FarmState } from '../farm/farm.ts';
 import type { Request } from '../village/barter.ts';
 
 // ---------------------------------------------------------------------------
-// Save v2 (Task 14 → Haven V7). Plain JSON, version-guarded. `encodeSave`/
-// `decodeSave` are pure (no localStorage, no window) so they're trivially
-// unit-testable; `loadSave`/`writeSave`/`clearSave` are the thin browser glue on
-// top, reading/writing `localStorage[SAVE_KEY]`. A missing or malformed save
-// (wrong/absent `v`, JSON.parse throwing, wrong shape) always resolves to `null`
-// — the caller's contract is "null → fresh start", never a thrown exception.
+// Save v3 (Task 14 → Haven V7; Cursed Castle → v3). Plain JSON, version-guarded.
+// `encodeSave`/`decodeSave` are pure (no localStorage, no window) so they're
+// trivially unit-testable; `loadSave`/`writeSave`/`clearSave` are the thin
+// browser glue on top, reading/writing `localStorage[SAVE_KEY]`. A missing or
+// malformed save (wrong/absent `v`, JSON.parse throwing, wrong shape) always
+// resolves to `null` — the caller's contract is "null → fresh start", never a
+// thrown exception.
 //
-// VERSION HISTORY / MIGRATION (v1 → v2):
+// VERSION HISTORY / MIGRATION (v1 → v2 → v3):
 //   v1 (Task 14) was the pre-Haven shape. The Haven fields (roster, barter,
 //   pens, rewards, farm, mount, inventory.charms) were shipped INCREMENTALLY as
 //   optional add-ons ON TOP of v1 across V2–V6 — a v1 save simply lacked them.
-//   V7 bumps the on-disk version to 2 to mark "Haven-complete". `decodeSave`
-//   MIGRATES v1 → v2: it accepts either version, defaults every absent Haven
-//   field to its empty value, and always returns a v2-shaped object. So a
-//   pure-v1 save (no Haven keys) loads losslessly into the v2 shape; a v2 save
-//   round-trips; anything else (`v` absent/other, garbage, unsound) → null.
+//   V7 bumped the on-disk version to 2 to mark "Haven-complete". Cursed Castle
+//   bumps it again to 3, adding `daylightT`/`elves`/`castlePurified` — again
+//   shipped as optional add-ons so v1/v2 saves migrate losslessly. `decodeSave`
+//   MIGRATES v1/v2 → v3: it accepts any of the three versions, defaults every
+//   absent field to its empty value, and always returns a v3-shaped object. So
+//   a pure-v1 save (no Haven/castle keys) loads losslessly into the v3 shape; a
+//   v2 or v3 save round-trips; anything else (`v` absent/other, garbage,
+//   unsound) → null.
 // ---------------------------------------------------------------------------
 
 /** Per-slot persisted critter gameplay flags (mirrors CritterManager's registry). */
@@ -33,8 +37,8 @@ export interface CritterPersistEntry {
   species?: string;
 }
 
-export interface SaveV2 {
-  v: 2;
+export interface SaveV3 {
+  v: 3;
   inventory: Inventory;
   unlocks: string[];
   /** Keyed by critter slot id (as a string key in the JSON object). */
@@ -80,6 +84,25 @@ export interface SaveV2 {
    * absent but a roster entry still carries the 'mount' status).
    */
   mount?: MountPersist;
+  /**
+   * Cursed Castle: world-clock seconds into the day/night cycle (Task 5 owns
+   * writing/reading it in `buildSaveState()`/the load path — this task only
+   * adds the decode/encode support). Optional + shape-guarded (absent → 0 at
+   * the call site) so pre-Castle saves migrate losslessly.
+   */
+  daylightT?: number;
+  /**
+   * Cursed Castle: purified-elf count (castle residents). Optional +
+   * shape-guarded (absent → 0 at the call site) so pre-Castle saves migrate
+   * losslessly.
+   */
+  elves?: number;
+  /**
+   * Cursed Castle: permanent castle-purified transformation flag. Optional +
+   * shape-guarded (absent → false at the call site) so pre-Castle saves
+   * migrate losslessly.
+   */
+  castlePurified?: boolean;
 }
 
 /** Persisted active-mount state (Haven V6). */
@@ -119,7 +142,7 @@ export interface PenPersistEntry {
 export const SAVE_KEY = 'wildtag-save-v1';
 
 /** Serialize a save state to a JSON string. Pure. */
-export function encodeSave(state: SaveV2): string {
+export function encodeSave(state: SaveV3): string {
   return JSON.stringify(state);
 }
 
@@ -250,15 +273,16 @@ function parseFarm(v: unknown): FarmState | undefined {
  * garbage input, a missing/wrong `v` (version guard), or any structurally
  * unsound shape — the caller always falls back to a fresh start.
  */
-export function decodeSave(json: string): SaveV2 | null {
+export function decodeSave(json: string): SaveV3 | null {
   try {
     const data: unknown = JSON.parse(json);
     if (!data || typeof data !== 'object') return null;
     const o = data as Record<string, unknown>;
-    // Version guard + migration: accept v1 (pre-Haven / incremental Haven) and
-    // v2 (Haven-complete); anything else is a fresh start. The output is always
-    // normalized to v2 (see the `v: 2` in `sanitized` below).
-    if (o.v !== 1 && o.v !== 2) return null;
+    // Version guard + migration: accept v1 (pre-Haven / incremental Haven), v2
+    // (Haven-complete), and v3 (Cursed Castle); anything else is a fresh start.
+    // The output is always normalized to v3 (see the `v: 3` in `sanitized`
+    // below).
+    if (o.v !== 1 && o.v !== 2 && o.v !== 3) return null;
     if (!o.inventory || typeof o.inventory !== 'object') return null;
     // Field-level inventory guard: every resource/rp/darts count must be a
     // finite number ≥ 0 (a tampered/garbage value rejects the whole save →
@@ -357,11 +381,28 @@ export function decodeSave(json: string): SaveV2 | null {
       if (!Number.isFinite(m.entryId) || !Number.isFinite(m.x) || !Number.isFinite(m.z)) return null;
       mount = { entryId: m.entryId as number, x: m.x as number, z: m.z as number };
     }
+    // Castle fields (Cursed Castle, v3): all optional. Unlike nameCursor/mount,
+    // a present-but-malformed value is simply DROPPED (field left absent, so
+    // the call site's `?? 0`/`?? false` default kicks in) rather than
+    // rejecting the whole save — these are minor cosmetic/world-state fields,
+    // not worth losing an entire save over a tampered/garbage value.
+    let daylightT: number | undefined;
+    if (o.daylightT !== undefined && o.daylightT !== null && Number.isFinite(o.daylightT)) {
+      daylightT = o.daylightT as number;
+    }
+    let elves: number | undefined;
+    if (o.elves !== undefined && o.elves !== null && Number.isFinite(o.elves)) {
+      elves = o.elves as number;
+    }
+    let castlePurified: boolean | undefined;
+    if (typeof o.castlePurified === 'boolean') {
+      castlePurified = o.castlePurified;
+    }
     // Sanitize structure elements: drop malformed entries, keep valid siblings
     // (and the rest of the save) so a partly-corrupt save never crashes boot.
     const sanitized: Record<string, unknown> = {
       ...o,
-      v: 2, // migrate/normalize: a decoded save is always the current v2 shape
+      v: 3, // migrate/normalize: a decoded save is always the current v3 shape
       inventory,
       structures: {
         ziplines: structures.ziplines.filter(isZiplineEntry),
@@ -384,14 +425,22 @@ export function decodeSave(json: string): SaveV2 | null {
     // pre-V7 save decodes to exactly its old shape (no phantom key).
     delete sanitized.nameCursor;
     if (nameCursor !== undefined) sanitized.nameCursor = nameCursor;
-    return sanitized as unknown as SaveV2;
+    // Same "only surface when present" treatment for the Cursed Castle fields,
+    // so a pre-Castle save decodes to exactly its old shape (no phantom keys).
+    delete sanitized.daylightT;
+    if (daylightT !== undefined) sanitized.daylightT = daylightT;
+    delete sanitized.elves;
+    if (elves !== undefined) sanitized.elves = elves;
+    delete sanitized.castlePurified;
+    if (castlePurified !== undefined) sanitized.castlePurified = castlePurified;
+    return sanitized as unknown as SaveV3;
   } catch {
     return null;
   }
 }
 
 /** Read + decode the save from `storage` (defaults to `window.localStorage`). */
-export function loadSave(storage: Storage = window.localStorage): SaveV2 | null {
+export function loadSave(storage: Storage = window.localStorage): SaveV3 | null {
   const raw = storage.getItem(SAVE_KEY);
   if (raw === null) return null;
   return decodeSave(raw);
@@ -410,7 +459,7 @@ export function loadSave(storage: Storage = window.localStorage): SaveV2 | null 
 let saveSuppressed = false;
 
 /** Encode + write a save to `storage` (defaults to `window.localStorage`). */
-export function writeSave(state: SaveV2, storage: Storage = window.localStorage): void {
+export function writeSave(state: SaveV3, storage: Storage = window.localStorage): void {
   if (saveSuppressed) return;
   storage.setItem(SAVE_KEY, encodeSave(state));
 }
@@ -432,7 +481,28 @@ export function clearSave(storage: Storage = window.localStorage): void {
  * loadout. Pure — `createInventory()` itself stays a zero-value constructor;
  * this is the one place `PLAYER_START.startingDarts` is ever applied.
  */
-export function applyStartingLoadout(base: Inventory, loaded: SaveV2 | null): Inventory {
+export function applyStartingLoadout(base: Inventory, loaded: SaveV3 | null): Inventory {
   if (loaded) return { ...loaded.inventory, kits: { ...loaded.inventory.kits } };
   return { ...base, kits: { ...base.kits }, darts: base.darts + PLAYER_START.startingDarts };
+}
+
+/**
+ * Snap a restored player position to the (possibly-reshaped) terrain: if the
+ * saved `y` is more than `tolerance` units off the live ground height at that
+ * `(x, z)`, replace it with `groundY + 0.5` (a small hover clearance); otherwise
+ * the position is returned unchanged. Pure — `groundY` is passed in as a
+ * number (the caller looks it up via `heightAt`, not imported here) so this
+ * stays testable without three/terrain. Always returns a NEW object; never
+ * mutates `pos`.
+ *
+ * Guards against loading an old save whose player position was valid against
+ * a terrain shape that has since changed (e.g. Cursed Castle's world
+ * grandeur rescale) — without this, an old save could resurrect the player
+ * buried in or floating far above the new terrain.
+ */
+export function snapToGround(pos: Vec3, groundY: number, tolerance = 3): Vec3 {
+  if (Math.abs(pos.y - groundY) > tolerance) {
+    return { ...pos, y: groundY + 0.5 };
+  }
+  return { ...pos };
 }
