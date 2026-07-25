@@ -5,7 +5,9 @@ import { CritterManager, spawnSlotsForCell } from '../src/critters/manager.ts';
 import { speciesById } from '../src/critters/species.ts';
 import type { Biome, CritterState, GroundQuery, SpeciesDef, Vec3 } from '../src/core/types.ts';
 import { mulberry32 } from '../src/core/rng.ts';
-import { AI } from '../src/core/constants.ts';
+import { AI, VILLAGE } from '../src/core/constants.ts';
+import { biomeAt } from '../src/world/terrain.ts';
+import { inVillage } from '../src/village/layout.ts';
 
 // ---------------------------------------------------------------------------
 // Test scaffolding: flat ground, simple biome fields, and a critter factory.
@@ -493,5 +495,129 @@ describe('CritterManager streaming', () => {
     expect(again).toBeDefined();
     expect(again!.tagged).toBe(true);
     expect(again!.linked).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// CritterManager.addFixedSlots (Cursed Castle Task 10: gargoyle perches)
+// ---------------------------------------------------------------------------
+
+/** Scan outward from the origin for a real (x, z) the world classifies as water. */
+function findWaterPoint(): { x: number; z: number } {
+  for (let r = 0; r <= 900; r += 15) {
+    for (const [x, z] of [
+      [r, 0],
+      [-r, 0],
+      [0, r],
+      [0, -r],
+      [r, r],
+      [-r, -r],
+    ] as const) {
+      if (biomeAt(x, z) === 'water') return { x, z };
+    }
+  }
+  throw new Error('findWaterPoint: no water tile found within scan range');
+}
+
+/** Scan the village footprint for a real (x, z) inside it (inVillage() true). */
+function findVillagePoint(): { x: number; z: number } {
+  for (let dx = -60; dx <= 60; dx += 4) {
+    for (let dz = -60; dz <= 60; dz += 4) {
+      const x = VILLAGE.nominalCenter.x + dx;
+      const z = VILLAGE.nominalCenter.z + dz;
+      if (inVillage(x, z)) return { x, z };
+    }
+  }
+  throw new Error('findVillagePoint: no village tile found within scan range');
+}
+
+describe('CritterManager.addFixedSlots (Cursed Castle Task 10)', () => {
+  it('assigns unique ids from the reserved negative range (-1..-n)', () => {
+    const scene = new THREE.Scene();
+    const mgr = new CritterManager(scene);
+    mgr.addFixedSlots([
+      { species: 'gargoyle', home: { x: 0, y: 20, z: 0 }, flightHeight: 20 },
+      { species: 'gargoyle', home: { x: 5, y: 20, z: 5 }, flightHeight: 20 },
+      { species: 'gargoyle', home: { x: 10, y: 20, z: 10 }, flightHeight: 20 },
+    ]);
+    mgr.update(1 / 60, { x: 0, y: 0, z: 0 });
+    const gargoyles = mgr.list().filter((c) => c.species === 'gargoyle');
+    expect(gargoyles).toHaveLength(3);
+    for (const g of gargoyles) expect(g.id).toBeLessThan(0);
+    expect(new Set(gargoyles.map((g) => g.id)).size).toBe(3); // all distinct
+    expect(gargoyles.map((g) => g.id).sort((a, b) => b - a)).toEqual([-1, -2, -3]);
+  });
+
+  it('shares its negative id counter with debugSpawn — never collides', () => {
+    const scene = new THREE.Scene();
+    const mgr = new CritterManager(scene);
+    mgr.addFixedSlots([
+      { species: 'gargoyle', home: { x: 0, y: 20, z: 0 }, flightHeight: 20 },
+      { species: 'gargoyle', home: { x: 5, y: 20, z: 5 }, flightHeight: 20 },
+    ]);
+    const debugId = mgr.debugSpawn('puffle', { x: 500, y: 0, z: 500 });
+    expect(debugId).toBe(-3); // continues the SAME counter, not a fresh -1
+    mgr.update(1 / 60, { x: 0, y: 0, z: 0 });
+    mgr.update(1 / 60, { x: 500, y: 0, z: 500 });
+    const ids = mgr.list().map((c) => c.id);
+    expect(new Set(ids).size).toBe(ids.length); // no duplicate id anywhere
+  });
+
+  it('bypasses the water/village/biome drop rules a procedural slot would hit', () => {
+    const waterPos = findWaterPoint();
+    const villagePos = findVillagePoint();
+    // Confirm these really do trip the procedural rules a land species is
+    // normally subject to (spawnSlotsForCell: water tiles and the village
+    // footprint never host a land-species slot).
+    expect(biomeAt(waterPos.x, waterPos.z)).toBe('water');
+    expect(inVillage(villagePos.x, villagePos.z)).toBe(true);
+
+    const scene = new THREE.Scene();
+    const mgr = new CritterManager(scene);
+    // 'puffle' (biomes: ['meadow'], fleeStyle 'sprint') is an ordinary land
+    // species — spawnSlotsForCell would drop it at either location. A fixed
+    // slot goes through no such filtering: addFixedSlots never calls
+    // spawnSlotsForCell at all.
+    mgr.addFixedSlots([
+      { species: 'puffle', home: { x: waterPos.x, y: 0, z: waterPos.z }, flightHeight: 0 },
+      { species: 'puffle', home: { x: villagePos.x, y: 0, z: villagePos.z }, flightHeight: 0 },
+    ]);
+    // First call on a fresh manager: ids are deterministically -1 then -2.
+    mgr.update(1 / 60, { x: waterPos.x, y: 0, z: waterPos.z });
+    expect(mgr.byId(-1)).toBeDefined();
+    mgr.update(1 / 60, { x: villagePos.x, y: 0, z: villagePos.z });
+    expect(mgr.byId(-2)).toBeDefined();
+  });
+
+  it('activates within AI.activeRadius, deactivates beyond AI.deactivateRadius, and preserves registry-backed tagged/linked across the round trip', () => {
+    const scene = new THREE.Scene();
+    const mgr = new CritterManager(scene);
+    mgr.addFixedSlots([{ species: 'gargoyle', home: { x: 0, y: 20, z: 0 }, flightHeight: 20 }]);
+
+    // Far beyond deactivateRadius: never activates in the first place.
+    mgr.update(1 / 60, { x: AI.deactivateRadius + 100, y: 0, z: 0 });
+    expect(mgr.list().some((c) => c.species === 'gargoyle')).toBe(false);
+
+    // Within activeRadius: activates.
+    mgr.update(1 / 60, { x: 0, y: 0, z: 0 });
+    const g = mgr.list().find((c) => c.species === 'gargoyle');
+    expect(g).toBeDefined();
+    const id = g!.id;
+    mgr.setTagged(id);
+    mgr.setLinked(id);
+
+    // Beyond deactivateRadius again: drops out of the active set (state
+    // itself is discarded — only the registry-backed flags persist).
+    mgr.update(1 / 60, { x: AI.deactivateRadius + 100, y: 0, z: 0 });
+    expect(mgr.byId(id)).toBeUndefined();
+
+    // Back within range: reactivates fresh (state reset) but tagged/linked
+    // survive via the persistence registry, exactly like a procedural slot.
+    mgr.update(1 / 60, { x: 0, y: 0, z: 0 });
+    const again = mgr.byId(id);
+    expect(again).toBeDefined();
+    expect(again!.tagged).toBe(true);
+    expect(again!.linked).toBe(true);
+    expect(again!.trackProgress).toBe(0); // state reset — not registry-backed until set
   });
 });

@@ -541,6 +541,11 @@ function bootGame(): void {
     castleLayout().perches.map((p) => ({
       species: 'gargoyle',
       home: p,
+      // SpawnSlot requires flightHeight, so it's still computed here for
+      // shape-completeness, but it's INERT for fleeStyle:'perch' — ai.ts's
+      // locomote targets `home.y` directly for perch critters and never
+      // reads flightHeight (that field only drives the terrain-relative
+      // cruise band for ordinary 'fly' fleers).
       flightHeight: p.y - heightAt(p.x, p.z),
     })),
   );

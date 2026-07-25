@@ -34,7 +34,7 @@ const FLEE_LABEL: Record<SpeciesDef['fleeStyle'], string> = {
   fly: 'takes flight',
   swim: 'dives & swims',
   ledge: 'scales ledges',
-  perch: 'Perches',
+  perch: 'perches',
 };
 
 function capitalize(s: string): string {

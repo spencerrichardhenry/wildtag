@@ -94,6 +94,28 @@ describe('encodeSave / decodeSave', () => {
     expect(decoded?.critterPersist).toEqual(state.critterPersist);
   });
 
+  it('round-trips a negative critterPersist key (Cursed Castle fixed-slot gargoyle ids)', () => {
+    // CritterManager.addFixedSlots (castle perches) and debugSpawn both hand
+    // out ids from a reserved negative range (-1, -2, ...), distinct from the
+    // >= 0 ids the per-cell spawn table uses. JSON object keys are always
+    // strings ("-3"), and CritterManager.importRegistry recovers the numeric
+    // id via `Number(key)` — this guards that whole path end-to-end through a
+    // real encode/decode round-trip, not just the manager's own parsing.
+    const state = sampleSave({
+      critterPersist: {
+        ...sampleSave().critterPersist,
+        '-3': { tagged: true, linked: true, trackProgress: 5, species: 'gargoyle' },
+      },
+    });
+    const decoded = decodeSave(encodeSave(state));
+    expect(decoded?.critterPersist).toEqual(state.critterPersist);
+    const entry = decoded?.critterPersist[-3];
+    expect(entry).toEqual({ tagged: true, linked: true, trackProgress: 5, species: 'gargoyle' });
+    // Round-trip the exact recovery step importRegistry performs.
+    expect(Number.isFinite(Number('-3'))).toBe(true);
+    expect(Number('-3')).toBe(-3);
+  });
+
   it('rejects garbage JSON', () => {
     expect(decodeSave('not json at all {{{')).toBeNull();
   });
