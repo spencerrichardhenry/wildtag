@@ -8,6 +8,7 @@ import { speciesById } from './critters/species.ts';
 import type { ZiplineSystem } from './structures/ziplines.ts';
 import type { DroneSystem } from './structures/drones.ts';
 import { currentQuality } from './core/quality.ts';
+import { DAYLIGHT } from './core/constants.ts';
 
 // ---------------------------------------------------------------------------
 // window.__game (Task 14): the full debug handle backbone for Task 15's
@@ -32,6 +33,8 @@ export interface DebugDeps {
   isGrappling(): boolean;
   getTimeScale(): number;
   setTimeScale(f: number): void;
+  /** Set the day/night world clock (seconds since world start), Task 5 e2e. */
+  setWorldClock(t: number): void;
   /** Bond a critter into the roster (spec §6 __game.bond). Returns success. */
   bond(id: number): boolean;
   /** Force-fulfil an NPC's barter request ignoring cost (spec §6). Returns success. */
@@ -88,6 +91,12 @@ export interface GameDebugHandle {
   summonMount(): void;
   ride(): boolean;
   setTimeScale(f: number): void;
+  /**
+   * Jump the day/night clock to a named phase's START, or to an absolute
+   * seconds position within the cycle (Cursed Castle Task 5 e2e verification:
+   * `__game.setTimeOfDay('night')` should immediately read as dark).
+   */
+  setTimeOfDay(phase: 'day' | 'dusk' | 'night' | 'dawn' | number): void;
   listCritters(): CritterView[];
   save(): void;
   reset(): void;
@@ -244,6 +253,26 @@ export function buildDebugHandle(deps: DebugDeps): GameDebugHandle {
     /** Multiply the fixed-step accumulator's dt feed (clamped 0.1..16). */
     setTimeScale(f: number): void {
       deps.setTimeScale(f);
+    },
+
+    /**
+     * A phase name jumps the world clock to that phase's start (day→0,
+     * dusk→dayS, night→dayS+duskS, dawn→dayS+duskS+nightS); a number sets the
+     * clock to that many seconds into the cycle directly.
+     */
+    setTimeOfDay(phase: 'day' | 'dusk' | 'night' | 'dawn' | number): void {
+      if (typeof phase === 'number') {
+        deps.setWorldClock(phase);
+        return;
+      }
+      const d = DAYLIGHT;
+      const starts: Record<'day' | 'dusk' | 'night' | 'dawn', number> = {
+        day: 0,
+        dusk: d.dayS,
+        night: d.dayS + d.duskS,
+        dawn: d.dayS + d.duskS + d.nightS,
+      };
+      deps.setWorldClock(starts[phase]);
     },
 
     listCritters(): CritterView[] {

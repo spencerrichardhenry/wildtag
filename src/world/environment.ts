@@ -1,6 +1,8 @@
 import * as THREE from 'three';
-import { ENV } from '../core/constants.ts';
+import { ENV, DAYLIGHT, WORLD_SEED } from '../core/constants.ts';
 import { heightAt } from './terrain.ts';
+import { lerpColorHex, type DaylightSample } from '../core/daylight.ts';
+import { mulberry32 } from '../core/rng.ts';
 
 // ---------------------------------------------------------------------------
 // Static scene environment: lighting, fog, a 3-stop gradient sky dome (with a
@@ -18,30 +20,50 @@ import { heightAt } from './terrain.ts';
  * dome along the sun direction (billboarded, far) so they track the camera with
  * the dome and never parallax.
  */
-function makeSkyDome(): THREE.Object3D {
-  const geo = new THREE.SphereGeometry(ENV.skyRadius, 32, 16);
-
-  // Per-vertex 3-stop gradient: horizon (y≈0) → mid (ENV.skyMidStop) → zenith.
-  const top = new THREE.Color(ENV.skyTop);
-  const mid = new THREE.Color(ENV.skyMid);
-  const horizon = new THREE.Color(ENV.skyHorizon);
-  const pos = geo.getAttribute('position');
+/**
+ * Per-vertex 3-stop vertical gradient (horizon y≈0 → mid `midStop` → zenith)
+ * over a sphere's position attribute. Shared by the day dome build and the
+ * daylight rig's precomputed night-stop colors so both blend from/to
+ * identically-shaped gradients (`world/daylight` lerps day↔night per vertex).
+ */
+function skyGradientColors(
+  pos: THREE.BufferAttribute,
+  radius: number,
+  midStop: number,
+  top: THREE.Color,
+  mid: THREE.Color,
+  horizon: THREE.Color,
+): Float32Array {
   const colors = new Float32Array(pos.count * 3);
   const c = new THREE.Color();
-  const stop = ENV.skyMidStop;
   for (let i = 0; i < pos.count; i++) {
-    const t = THREE.MathUtils.clamp(pos.getY(i) / ENV.skyRadius, 0, 1);
-    if (t < stop) {
-      c.copy(horizon).lerp(mid, t / stop);
+    const t = THREE.MathUtils.clamp(pos.getY(i) / radius, 0, 1);
+    if (t < midStop) {
+      c.copy(horizon).lerp(mid, t / midStop);
     } else {
       // Ease the mid→zenith leg so the upper dome deepens smoothly.
-      const u = Math.pow((t - stop) / (1 - stop), 0.8);
+      const u = Math.pow((t - midStop) / (1 - midStop), 0.8);
       c.copy(mid).lerp(top, u);
     }
     colors[i * 3] = c.r;
     colors[i * 3 + 1] = c.g;
     colors[i * 3 + 2] = c.b;
   }
+  return colors;
+}
+
+function makeSkyDome(): THREE.Object3D {
+  const geo = new THREE.SphereGeometry(ENV.skyRadius, 32, 16);
+
+  const pos = geo.getAttribute('position') as THREE.BufferAttribute;
+  const colors = skyGradientColors(
+    pos,
+    ENV.skyRadius,
+    ENV.skyMidStop,
+    new THREE.Color(ENV.skyTop),
+    new THREE.Color(ENV.skyMid),
+    new THREE.Color(ENV.skyHorizon),
+  );
   geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 
   const mat = new THREE.MeshBasicMaterial({
@@ -54,15 +76,22 @@ function makeSkyDome(): THREE.Object3D {
   dome.name = 'skyDome';
 
   // Sun disc + glow along the sun direction, seated just inside the dome.
+  // Named so the daylight rig (setupDaylight) can fade them out at night.
   const dir = new THREE.Vector3(ENV.sunPos.x, ENV.sunPos.y, ENV.sunPos.z).normalize();
   const at = dir.multiplyScalar(ENV.skyRadius * 0.92);
-  dome.add(makeSunSprite(ENV.sunGlowColor, ENV.sunGlowSize, at, 0.55)); // broad glow
-  dome.add(makeSunSprite(ENV.sunDiscColor, ENV.sunDiscSize, at, 0.95)); // tight disc
+  dome.add(makeSunSprite(ENV.sunGlowColor, ENV.sunGlowSize, at, 0.55, 'sunGlowSprite')); // broad glow
+  dome.add(makeSunSprite(ENV.sunDiscColor, ENV.sunDiscSize, at, 0.95, 'sunDiscSprite')); // tight disc
   return dome;
 }
 
-/** A soft radial billboard (additive) for the sun disc / glow. */
-function makeSunSprite(color: number, size: number, at: THREE.Vector3, alpha: number): THREE.Sprite {
+/** A soft radial billboard (additive) for the sun disc / glow / moon. */
+function makeSunSprite(
+  color: number,
+  size: number,
+  at: THREE.Vector3,
+  alpha: number,
+  name?: string,
+): THREE.Sprite {
   const mat = new THREE.SpriteMaterial({
     map: radialTexture(),
     color,
@@ -76,6 +105,7 @@ function makeSunSprite(color: number, size: number, at: THREE.Vector3, alpha: nu
   const sprite = new THREE.Sprite(mat);
   sprite.position.copy(at);
   sprite.scale.set(size, size, 1);
+  if (name) sprite.name = name;
   return sprite;
 }
 
@@ -244,4 +274,142 @@ export function setupEnvironment(scene: THREE.Scene): void {
 
   scene.add(makeSkyDome());
   scene.add(makeWater());
+}
+
+/**
+ * Drives the visible day/night cycle: sun/hemi intensity + sun color, fog +
+ * background color, the sky dome's vertex gradient, sun disc/glow fade, and a
+ * moon + starfield that fade in at night. Call `setupDaylight(scene)` ONCE
+ * right after `setupEnvironment(scene)`; feed it a `daylightAt(worldClock)`
+ * sample every frame via `update()`.
+ */
+export interface DaylightRig {
+  /**
+   * Apply a daylight sample to the scene's lights/sky/fog/stars. Cheap no-op
+   * when darkness + phase haven't meaningfully moved since the last call.
+   */
+  update(sample: DaylightSample): void;
+  /**
+   * Sun intensity scale factor for the current sample: 1 at full day, ramping
+   * toward `DAYLIGHT.night.sunIntensity / ENV.sunIntensity` at full night.
+   * main.ts feeds this into `ShadowRig.setSunScale` each frame so the cascade
+   * intensity shares stay proportionally correct instead of this rig fighting
+   * the per-cascade `baseIntensity * share` split with a direct intensity set.
+   */
+  readonly sunScale: number;
+}
+
+/** Install the day/night rig's moon/star geometry and wire per-frame `update`. */
+export function setupDaylight(scene: THREE.Scene): DaylightRig {
+  const sun = scene.getObjectByName('sunLight') as THREE.DirectionalLight | null;
+  const hemi = scene.getObjectByName('hemiLight') as THREE.HemisphereLight | null;
+  const dome = scene.getObjectByName('skyDome') as THREE.Mesh | null;
+  const N = DAYLIGHT.night;
+
+  const domeGeo = dome?.geometry as THREE.BufferGeometry | undefined;
+  const domePos = domeGeo?.getAttribute('position') as THREE.BufferAttribute | undefined;
+  const domeColorAttr = domeGeo?.getAttribute('color') as THREE.BufferAttribute | undefined;
+  // Snapshot the day gradient once so the night blend always lerps from the
+  // ORIGINAL day colors, never from a previously-blended (already darkened) one.
+  const dayColors = domeColorAttr ? (domeColorAttr.array as Float32Array).slice() : null;
+  const nightColors =
+    domePos && domeColorAttr
+      ? skyGradientColors(
+          domePos,
+          ENV.skyRadius,
+          ENV.skyMidStop,
+          new THREE.Color(N.skyTop),
+          new THREE.Color(N.skyMid),
+          new THREE.Color(N.skyHorizon),
+        )
+      : null;
+
+  const sunDisc = dome?.getObjectByName('sunDiscSprite') as THREE.Sprite | undefined;
+  const sunGlow = dome?.getObjectByName('sunGlowSprite') as THREE.Sprite | undefined;
+  const sunDiscBaseAlpha = (sunDisc?.material as THREE.SpriteMaterial | undefined)?.opacity ?? 0.95;
+  const sunGlowBaseAlpha = (sunGlow?.material as THREE.SpriteMaterial | undefined)?.opacity ?? 0.55;
+
+  // Moon: a sprite mirrored roughly opposite the sun direction, parented under
+  // the dome (same billboard-along-direction pattern as the sun disc/glow).
+  const moonDir = new THREE.Vector3(-ENV.sunPos.x, ENV.sunPos.y * 0.9, -ENV.sunPos.z).normalize();
+  const moonAt = moonDir.multiplyScalar(ENV.skyRadius * 0.92);
+  const moon = makeSunSprite(N.moonColor, N.moonSize, moonAt, 0, 'moonSprite');
+  dome?.add(moon);
+
+  // Stars: a deterministic THREE.Points cloud on the upper hemisphere, seeded
+  // off WORLD_SEED so the sky reads the same across reloads.
+  const starGeo = new THREE.BufferGeometry();
+  const starPositions = new Float32Array(N.starCount * 3);
+  const rand = mulberry32(WORLD_SEED ^ 0x57a75);
+  const starRadius = ENV.skyRadius * 0.95;
+  for (let i = 0; i < N.starCount; i++) {
+    // Uniform-ish point on the upper hemisphere: random azimuth + a uniform y
+    // in [0,1] (upper half only), ring radius from the unit-sphere equation.
+    const az = rand() * Math.PI * 2;
+    const y = rand();
+    const ring = Math.sqrt(Math.max(0, 1 - y * y));
+    starPositions[i * 3] = Math.cos(az) * ring * starRadius;
+    starPositions[i * 3 + 1] = y * starRadius;
+    starPositions[i * 3 + 2] = Math.sin(az) * ring * starRadius;
+  }
+  starGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
+  const starMat = new THREE.PointsMaterial({
+    color: 0xffffff,
+    size: N.starSize,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    fog: false,
+  });
+  const stars = new THREE.Points(starGeo, starMat);
+  stars.name = 'stars';
+  dome?.add(stars);
+
+  let lastK = -1;
+  let lastPhase: DaylightSample['phase'] | null = null;
+  let lastDomeK = -1;
+  let sunScale = 1;
+
+  return {
+    get sunScale(): number {
+      return sunScale;
+    },
+    update(sample: DaylightSample): void {
+      const k = sample.darkness;
+      // Cheap no-op when nothing meaningfully changed since the last call.
+      if (Math.abs(k - lastK) < 0.005 && sample.phase === lastPhase) return;
+      lastK = k;
+      lastPhase = sample.phase;
+
+      sunScale = THREE.MathUtils.lerp(1, N.sunIntensity / ENV.sunIntensity, k);
+      if (sun) sun.color.setHex(lerpColorHex(ENV.sunColor, N.sunColor, k));
+      if (hemi) hemi.intensity = THREE.MathUtils.lerp(ENV.hemiIntensity, N.hemiIntensity, k);
+
+      const fogColor = lerpColorHex(ENV.fogColor, N.fogColor, k);
+      if (scene.fog instanceof THREE.Fog) {
+        scene.fog.color.setHex(fogColor);
+        scene.fog.near = THREE.MathUtils.lerp(ENV.fogNear, N.fogNear, k);
+        scene.fog.far = THREE.MathUtils.lerp(ENV.fogFar, N.fogFar, k);
+      }
+      if (scene.background instanceof THREE.Color) scene.background.setHex(fogColor);
+      else scene.background = new THREE.Color(fogColor);
+
+      // Sky dome vertex rewrite is the priciest part (561 verts) — gated at a
+      // coarser 0.01 delta on top of the outer 0.005 early-return.
+      if (dayColors && nightColors && domeColorAttr && Math.abs(k - lastDomeK) >= 0.01) {
+        lastDomeK = k;
+        const arr = domeColorAttr.array as Float32Array;
+        for (let i = 0; i < arr.length; i++) {
+          const d = dayColors[i]!;
+          arr[i] = d + (nightColors[i]! - d) * k;
+        }
+        domeColorAttr.needsUpdate = true;
+      }
+
+      if (sunDisc) (sunDisc.material as THREE.SpriteMaterial).opacity = sunDiscBaseAlpha * (1 - k);
+      if (sunGlow) (sunGlow.material as THREE.SpriteMaterial).opacity = sunGlowBaseAlpha * (1 - k);
+      (moon.material as THREE.SpriteMaterial).opacity = k * 0.95;
+      starMat.opacity = k;
+    },
+  };
 }

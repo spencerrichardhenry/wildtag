@@ -48,6 +48,10 @@ export interface HudFrame {
   locked: boolean;
   /** True while a full-screen menu is open — the gameplay HUD hides. */
   screenOpen: boolean;
+  /** Day/night cycle fraction [0,1) — positions the day-arc indicator dot. */
+  dayCycleT: number;
+  /** Day/night darkness [0,1] — colors the dot sun (< 0.5) vs moon (≥ 0.5). */
+  dayDarkness: number;
 }
 
 const RES_COLOR: Record<string, string> = {
@@ -128,6 +132,10 @@ export class HUD {
   private readonly critterPips = new Map<number, HTMLDivElement>();
   private readonly rings: HTMLDivElement;
   private readonly ringNodes = new Map<number, RingNode>();
+  private readonly dayCycle: HTMLDivElement;
+  private readonly dayCycleDot: HTMLDivElement;
+  private lastCycleT = -1;
+  private lastDarkness = -1;
 
   private selected = 1;
   private crosshairOverride: string | null = null;
@@ -191,6 +199,12 @@ export class HUD {
       this.resEls.set(kind, { dot, count, last: -1 });
     }
     this.root.appendChild(res);
+
+    // --- Day/night cycle indicator (top-right) ------------------------------
+    this.dayCycle = el('div', 'wt-daycycle');
+    this.dayCycleDot = el('div', 'wt-daycycle-dot');
+    this.dayCycle.appendChild(this.dayCycleDot);
+    this.root.appendChild(this.dayCycle);
 
     // --- Compass (top-centre) ----------------------------------------------
     const compass = el('div', 'wt-compass');
@@ -281,6 +295,7 @@ export class HUD {
     this.paintHotbar(frame);
     this.paintCompass(frame);
     this.paintRings(frame);
+    this.paintDayCycle(frame);
   }
 
   /**
@@ -373,6 +388,20 @@ export class HUD {
       this.stamina.classList.toggle('wt-visible', show);
       this.staminaShown = show;
     }
+  }
+
+  // -------------------------------------------------------------------------
+  // Day/night arc — a small track + dot, positioned by cycleT, sun/moon
+  // coloured by darkness (Cursed Castle Task 5). Diffed like the rest of the
+  // HUD so a steady state (cycleT/darkness unchanged) touches no DOM.
+  // -------------------------------------------------------------------------
+  private paintDayCycle(frame: HudFrame): void {
+    if (frame.dayCycleT === this.lastCycleT && frame.dayDarkness === this.lastDarkness) return;
+    this.lastCycleT = frame.dayCycleT;
+    this.lastDarkness = frame.dayDarkness;
+    const t = Math.max(0, Math.min(1, frame.dayCycleT));
+    this.dayCycleDot.style.left = `${(t * 100).toFixed(2)}%`;
+    this.dayCycleDot.classList.toggle('wt-moon', frame.dayDarkness >= 0.5);
   }
 
   // -------------------------------------------------------------------------
@@ -708,6 +737,31 @@ const STYLE = `
 .wt-res-rp { border-radius: 3px; }
 .wt-res-count { min-width: 12px; font-weight: bold; }
 .wt-res-tag { font-size: 11px; color: #9fb0b8; }
+
+/* Day/night arc ------------------------------------------------------------ */
+.wt-daycycle {
+  position: fixed;
+  right: 14px;
+  top: 12px;
+  width: 60px;
+  height: 8px;
+  background: rgba(10, 14, 16, 0.55);
+  border: 1px solid rgba(200, 220, 230, 0.24);
+  border-radius: 4px;
+  z-index: 5;
+}
+.wt-daycycle-dot {
+  position: absolute;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  background: #ffdca0;
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.7);
+  transition: left 0.2s linear;
+}
+.wt-daycycle-dot.wt-moon { background: #9db4e0; }
 
 /* Compass ----------------------------------------------------------------- */
 .wt-compass {

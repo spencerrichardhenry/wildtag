@@ -119,6 +119,17 @@ export class ShadowRig {
   private readonly baseIntensity: number;
   private nearLight: THREE.DirectionalLight | null = null;
   private active = 0;
+  /** Cascades' intensity shares from the last `apply()`, reused by `applyScale`. */
+  private farShare = 1;
+  private nearShare = 0;
+  /**
+   * Day/night visual multiplier (Cursed Castle Task 5): fed each frame from
+   * `DaylightRig.sunScale` (1 at day, dimmer at night). Multiplies every
+   * `baseIntensity`-derived intensity below so night dimming survives a
+   * `apply()` re-plan (quality change / fps gate) without either system
+   * fighting the other over `sun.intensity`.
+   */
+  private sunScale = 1;
 
   constructor(scene: THREE.Scene, sun: THREE.DirectionalLight) {
     this.scene = scene;
@@ -154,8 +165,10 @@ export class ShadowRig {
     this.active = renderShadows ? plan.cascades : 0;
 
     if (this.active === 0) {
-      // Shadowless: sun at full intensity, no cascade maps allocated.
-      this.sun.intensity = this.baseIntensity;
+      // Shadowless: sun at full (scaled) intensity, no cascade maps allocated.
+      this.farShare = 1;
+      this.nearShare = 0;
+      this.sun.intensity = this.baseIntensity * this.sunScale;
       this.sun.castShadow = false;
       this.disposeMap(this.sun);
       if (this.nearLight) {
@@ -167,18 +180,44 @@ export class ShadowRig {
     }
 
     const far = plan.specs[0]!;
+    this.farShare = far.intensityShare;
     this.configureCascade(this.sun, far);
-    this.sun.intensity = this.baseIntensity * far.intensityShare;
+    this.sun.intensity = this.baseIntensity * far.intensityShare * this.sunScale;
 
     if (this.active >= 2) {
       const near = plan.specs[1]!;
+      this.nearShare = near.intensityShare;
       const nl = this.ensureNear();
       this.configureCascade(nl, near);
-      nl.intensity = this.baseIntensity * near.intensityShare;
-    } else if (this.nearLight) {
-      this.nearLight.intensity = 0;
-      this.nearLight.castShadow = false;
-      this.disposeMap(this.nearLight);
+      nl.intensity = this.baseIntensity * near.intensityShare * this.sunScale;
+    } else {
+      this.nearShare = 0;
+      if (this.nearLight) {
+        this.nearLight.intensity = 0;
+        this.nearLight.castShadow = false;
+        this.disposeMap(this.nearLight);
+      }
+    }
+  }
+
+  /**
+   * Day/night visual hook (Task 5): rescale every cascade's intensity by `f`
+   * (1 = day, dimmer at night per `DaylightRig.sunScale`) without touching
+   * shadow map allocation — cheap enough to call every frame.
+   */
+  setSunScale(f: number): void {
+    this.sunScale = f;
+    this.applyScale();
+  }
+
+  private applyScale(): void {
+    if (this.active === 0) {
+      this.sun.intensity = this.baseIntensity * this.sunScale;
+      return;
+    }
+    this.sun.intensity = this.baseIntensity * this.farShare * this.sunScale;
+    if (this.active >= 2 && this.nearLight) {
+      this.nearLight.intensity = this.baseIntensity * this.nearShare * this.sunScale;
     }
   }
 

@@ -20,6 +20,26 @@ export interface DaylightSample {
 const smooth = (t: number) => t * t * (3 - 2 * t);
 
 /**
+ * Lerp two 0xRRGGBB hex colors channel-independently, t clamped to [0,1].
+ * Pure integer math (no `three` dependency) so it's cheap to unit-test and
+ * safe to import from non-jsdom vitest runs; `world/environment.ts` re-uses
+ * it to blend the sky dome / fog / sun+hemi colors toward the night palette.
+ */
+export function lerpColorHex(a: number, b: number, t: number): number {
+  const u = Math.max(0, Math.min(1, t));
+  const ar = (a >> 16) & 0xff;
+  const ag = (a >> 8) & 0xff;
+  const ab = a & 0xff;
+  const br = (b >> 16) & 0xff;
+  const bg = (b >> 8) & 0xff;
+  const bb = b & 0xff;
+  const r = Math.floor(ar + (br - ar) * u);
+  const g = Math.floor(ag + (bg - ag) * u);
+  const bl = Math.floor(ab + (bb - ab) * u);
+  return (r << 16) | (g << 8) | bl;
+}
+
+/**
  * Total seconds in one complete day/night cycle.
  */
 export function cycleLength(): number {

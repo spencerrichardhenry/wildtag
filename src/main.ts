@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { CAMERA, ENV, MAX_FRAME_DT, MOUNT, SIM_DT, STRUCTURES } from './core/constants.ts';
-import { setupEnvironment, updateWater } from './world/environment.ts';
+import { setupEnvironment, setupDaylight, updateWater } from './world/environment.ts';
+import { daylightAt } from './core/daylight.ts';
 import { ChunkManager } from './world/chunks.ts';
 import { PropManager } from './world/props.ts';
 import { groundNormalAt, heightAt } from './world/terrain.ts';
@@ -150,6 +151,10 @@ function bootGame(): void {
   );
 
   setupEnvironment(scene);
+  // Day/night visuals (Cursed Castle Task 5): sun/hemi/fog/sky-dome/stars react
+  // to `worldClock` below; `daylight.sunScale` is fed into the shadow rig each
+  // frame (created further down) so cascade shares stay proportionally correct.
+  const daylight = setupDaylight(scene);
 
   const chunks = new ChunkManager(scene);
   const props = new PropManager(scene);
@@ -430,6 +435,10 @@ function bootGame(): void {
   // and materials. Implies a fresh throwaway session (never touches the save).
   const devMode = new URLSearchParams(window.location.search).get('dev') === '1';
   let loaded: SaveV3 | null = freshStart || devMode ? null : loadSave();
+  // Day/night clock (Cursed Castle Task 5): seconds since world start, fed
+  // through `daylightAt()` each frame. Restored from the save (absent on
+  // pre-v3 saves → fresh day-1 boot).
+  let worldClock = loaded?.daylightT ?? 0;
   let primePos: Vec3 = spawn;
   if (loaded) {
     try {
@@ -541,6 +550,9 @@ function bootGame(): void {
       pens: pens.serialize(),
       rewards: [...grantedRewards()],
       farm: { plots: farm.plots.map((p) => ({ ...p, hopper: { ...p.hopper } })) },
+      // Day/night clock (Cursed Castle Task 5): so a reload resumes at the
+      // same time of day instead of always waking up at dawn.
+      daylightT: worldClock,
       // Mount (Haven V6): only surfaced when a mount is active, so pre-mount
       // saves round-trip to exactly their old shape.
       ...(mounts.saveState() ? { mount: mounts.saveState()! } : {}),
@@ -915,6 +927,10 @@ function bootGame(): void {
     // `?debug=grapple`/`?debug=structures` freeze the player for a clean static
     // screenshot while the world keeps streaming.
     const debugFrozen = debugGrapple || debugStructures || debugVillage;
+    // Day/night clock: advances at the same rate as `worldTime` (and so
+    // inherits `timeScale` for free via extra accumulator steps per frame),
+    // frozen under the same conditions as the rest of the sim.
+    if (!paused && !debugFrozen) worldClock += dt;
     if (!paused && !debugFrozen) {
       // Zipline ride / recall runs first: while riding it drives the controller's
       // pos/vel and the controller skips its normal pipeline. Suppressed while
@@ -1081,6 +1097,12 @@ function bootGame(): void {
       lantern.visible = false;
     }
     farmVisuals.update(farm, roster, worldTime, SIM_DT);
+    // Day/night visuals (Task 5): sun/hemi/fog/sky-dome/moon/stars react to the
+    // live daylight sample; the resolved sun-scale feeds the cascade rig so
+    // night dimming survives a shadow re-plan (quality change / fps gate).
+    const daylightSample = daylightAt(worldClock);
+    daylight.update(daylightSample);
+    shadowRig.setSunScale(daylight.sunScale);
     updateShadowFollow();
     // Water 1.5: advance the shader ripple/shimmer clock (one uniform write).
     updateWater(scene, worldTime);
@@ -1105,6 +1127,8 @@ function bootGame(): void {
       spawn,
       locked: input.locked,
       screenOpen: screens.isOpen(),
+      dayCycleT: daylightSample.cycleT,
+      dayDarkness: daylightSample.darkness,
     });
   }
 
@@ -1261,6 +1285,9 @@ function bootGame(): void {
     getTimeScale: () => timeScale,
     setTimeScale: (f: number) => {
       timeScale = Math.max(0.1, Math.min(16, f));
+    },
+    setWorldClock: (t: number) => {
+      worldClock = t;
     },
     bond: (id: number) => {
       // Force-Link then bond — convenience for headless verification.
