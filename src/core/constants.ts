@@ -1117,6 +1117,37 @@ export const GOBLIN = {
 } as const;
 
 /**
+ * Elves (Cursed Castle Task 12): happy, persistent castle residents. Purified
+ * goblins become elves (wiring lives in the NEXT task — this block only tunes
+ * the pure placement math + wander/dance FSM in `src/castle/elves.ts`). Homes
+ * sit on a golden-angle spiral around `CASTLE.center` (see `elfHomePosition`),
+ * radius growing from 8 m toward `CASTLE.half` so residents settle inside/near
+ * the courtyard rather than out at `CASTLE.regionR`. Distances in m, speeds
+ * m/s, times s — mirrors the shape of `src/village/npcs.ts`'s local `AI` block.
+ */
+export const ELF = {
+  /** Ground speed while wandering toward a target (m/s). */
+  walkSpeed: 1.4,
+  /** Wander target radius around home (m). */
+  wanderR: 30,
+  /** Chance a pause rolls into a spin+bob "dance" instead of standing still. */
+  danceChance: 0.35,
+  /** Dance bob period (s) — one full up/down cycle. */
+  dancePeriod: 2.2,
+  /** Dance bob amplitude (m). */
+  danceBobAmp: 0.14,
+  /** Dance yaw spin rate (rad/s). */
+  danceSpinRate: 3,
+  /** Pause dwell before picking a new wander target: uniform in [pauseMin, pauseMax] (s). */
+  pauseMin: 2,
+  pauseMax: 5,
+  /** Max yaw turn rate (rad/s) while wandering toward a target. */
+  turnRate: 2.4,
+  /** Arrival radius (m) for a wander target. */
+  arriveDist: 0.6,
+} as const;
+
+/**
  * Farm (Task V5). Pure production/aura/hopper math lives in `src/farm/farm.ts`;
  * these are its only tuning knobs (project convention: never inline). Plots are
  * 2 at baseline + 2 per Plot Deed (spec §4), capped at `maxPlots`. An assigned

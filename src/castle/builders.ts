@@ -532,3 +532,109 @@ export function buildGoblin(rng: () => number): THREE.Group {
   root.add(inner);
   return root;
 }
+
+// ---------------------------------------------------------------------------
+// Elf model (Task 12). Persistent, happy castle residents — the opposite
+// silhouette of the goblin: a plump green-tunic body, cream face, a jaunty
+// pointy hat, small pointy ears, dark friendly eyes and a permanent curved
+// grin (a thin torus arc). ~0.9 m tall at scale 1. Faces +Z, feet at y=0.
+// Per-elf Groups are cheap (a handful concurrently live) so no merge pass.
+// ---------------------------------------------------------------------------
+
+const ELF_COLORS = {
+  tunic: 0x2f8f4a,
+  tunicDark: 0x24703a,
+  skin: 0xf3dab3,
+  hat: 0xc23f4a,
+  hatDark: 0x9c2f3a,
+  ear: 0xe8c79a,
+  eye: 0x2a2018,
+  grin: 0x7a2f2f,
+  shoe: 0x5a3b26,
+} as const;
+
+/** One small pointy ear, angled outward from the head. */
+function elfEar(r: number, color: number, side: -1 | 1): THREE.Group {
+  const g = new THREE.Group();
+  const e = cone(r, r * 2.2, color);
+  e.rotation.x = -Math.PI / 2.4;
+  g.add(e);
+  g.rotation.z = side * 0.7;
+  g.rotation.y = side * 0.5;
+  return g;
+}
+
+/** A thin upward-curving arc mesh — the permanent happy grin. */
+function elfGrin(r: number, color: number): THREE.Mesh {
+  const mesh = new THREE.Mesh(new THREE.TorusGeometry(r, r * 0.22, 4, 10, Math.PI * 0.8), mat(color));
+  mesh.rotation.z = Math.PI + (Math.PI - Math.PI * 0.8) / 2; // open edge faces up → a smile
+  return mesh;
+}
+
+/**
+ * Build one elf model from a seeded per-individual `rng` (scale + slight
+ * tunic colour jitter, same convention as `buildGoblin`). ~0.9 m tall.
+ *
+ * Per-individual size jitter lives on an inner group (`root.children[0]`),
+ * matching `buildGoblin`'s convention so a future per-frame bob/squash on the
+ * root's own transform never clobbers it.
+ */
+export function buildElf(rng: () => number): THREE.Group {
+  const scale = 0.8 + rng() * 0.3;
+  const tunicJitter = rng() > 0.5 ? ELF_COLORS.tunic : ELF_COLORS.tunicDark;
+
+  const inner = new THREE.Group();
+
+  // Plump egg-shaped tunic body.
+  const bodyR = 0.22;
+  const body = sphere(bodyR, tunicJitter);
+  body.scale.set(1, 1.3, 0.92);
+  const bodyY = bodyR * 1.3;
+  body.position.y = bodyY;
+  inner.add(body);
+
+  // Tiny feet peeking out from under the tunic hem.
+  for (const side of [-1, 1] as const) {
+    const foot = box(0.1, 0.08, 0.14, ELF_COLORS.shoe);
+    foot.position.set(side * 0.08, 0.04, 0.03);
+    inner.add(foot);
+  }
+
+  // Cream head.
+  const headR = 0.14;
+  const headY = bodyY + bodyR * 1.3 + headR * 0.9;
+  const head = sphere(headR, ELF_COLORS.skin);
+  head.position.y = headY;
+  inner.add(head);
+
+  // Small pointy ears, flared out to the sides of the head.
+  for (const side of [-1, 1] as const) {
+    const ear = elfEar(0.045, ELF_COLORS.ear, side);
+    ear.position.set(side * headR * 0.85, headY + 0.01, -headR * 0.1);
+    inner.add(ear);
+  }
+
+  // Dark friendly eyes.
+  for (const side of [-1, 1] as const) {
+    const eye = sphere(0.022, ELF_COLORS.eye);
+    eye.position.set(side * 0.055, headY + 0.01, headR * 0.92);
+    inner.add(eye);
+  }
+
+  // Permanent happy grin.
+  const grin = elfGrin(0.055, ELF_COLORS.grin);
+  grin.position.set(0, headY - 0.05, headR * 0.88);
+  inner.add(grin);
+
+  // Jaunty pointy hat, tipped slightly.
+  const hatColor = rng() > 0.5 ? ELF_COLORS.hat : ELF_COLORS.hatDark;
+  const hat = cone(headR * 0.95, headR * 1.7, hatColor);
+  hat.position.y = headY + headR * 0.75 + (headR * 1.7) / 2;
+  hat.rotation.z = (rng() - 0.5) * 0.3;
+  inner.add(hat);
+
+  inner.scale.setScalar(scale);
+  const root = new THREE.Group();
+  root.add(inner);
+  return root;
+}

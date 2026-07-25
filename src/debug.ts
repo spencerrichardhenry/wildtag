@@ -68,6 +68,13 @@ export interface DebugDeps {
    * current phase (Cursed Castle Task 11 e2e verification). Returns its id.
    */
   spawnGoblin(): number;
+  /** Live elf count (Cursed Castle Task 12 — state().elfCount / verification). */
+  elfCount(): number;
+  /**
+   * Debug-only: reconcile the live elf count to `n` (Cursed Castle Task 12
+   * e2e verification — `__game.setElves(6)`).
+   */
+  setElves(n: number): void;
 }
 
 /** Renderer draw-call / resource counters sampled post-render (F2 P1). */
@@ -111,6 +118,8 @@ export interface GameDebugHandle {
   reset(): void;
   /** Debug-only: force-spawn one goblin near the player. Returns its id. */
   spawnGoblin(): number;
+  /** Debug-only: reconcile the live elf count to `n` (Cursed Castle Task 12 e2e). */
+  setElves(n: number): void;
 }
 
 /** Build the `window.__game` debug handle from the live systems main.ts owns. */
@@ -140,6 +149,7 @@ export function buildDebugHandle(deps: DebugDeps): GameDebugHandle {
         quality: currentQuality(),
         hp: deps.hp(),
         goblinCount: deps.goblinCount(),
+        elfCount: deps.elfCount(),
       };
     },
 
@@ -303,6 +313,11 @@ export function buildDebugHandle(deps: DebugDeps): GameDebugHandle {
     /** Debug-only: force-spawn one goblin near the player. Returns its id. */
     spawnGoblin(): number {
       return deps.spawnGoblin();
+    },
+
+    /** Debug-only: reconcile the live elf count to `n` (Cursed Castle Task 12 e2e). */
+    setElves(n: number): void {
+      deps.setElves(n);
     },
   };
 }

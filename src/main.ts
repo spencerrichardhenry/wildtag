@@ -55,6 +55,7 @@ import { buildVillage, villageObstacles } from './village/buildings.ts';
 import { buildCastle } from './castle/builders.ts';
 import { castleLayout, castleObstacles, castleGrappleColliders } from './castle/layout.ts';
 import { CastleSystem } from './castle/system.ts';
+import { ElfSystem } from './castle/elves.ts';
 import { NpcManager, NPCS, npcAnchors } from './village/npcs.ts';
 import { createDialogScreen, openDialog, setRequestRenderer } from './village/dialog.ts';
 import { villageCenter } from './village/layout.ts';
@@ -560,6 +561,13 @@ function bootGame(): void {
     },
   });
 
+  // Cursed Castle (Task 12): happy elves — persistent castle residents that
+  // wander/dance around the grounds. Purified goblins become elves (the
+  // CastleSystem.purifyGoblin → elves.addAt wiring lives in the NEXT task);
+  // for now, count is just restored from the save (defaults to 0 elves).
+  const elves = new ElfSystem(scene, ground);
+  elves.setCount(loaded?.elves ?? 0);
+
   // Cursed Castle (Task 10): a gargoyle perched on each tower top + keep
   // corner. Fixed slots (negative ids), not part of the procedural per-cell
   // spawn table — see CritterManager.addFixedSlots.
@@ -618,6 +626,8 @@ function bootGame(): void {
       // Day/night clock (Cursed Castle Task 5): so a reload resumes at the
       // same time of day instead of always waking up at dawn.
       daylightT: worldClock,
+      // Elves (Cursed Castle Task 12): persistent resident count.
+      elves: elves.count,
       // Mount (Haven V6): only surfaced when a mount is active, so pre-mount
       // saves round-trip to exactly their old shape.
       ...(mounts.saveState() ? { mount: mounts.saveState()! } : {}),
@@ -1041,6 +1051,9 @@ function bootGame(): void {
     // Night goblins (Task 11): frozen while a screen is open, parity with the
     // rest of combat/progress (health regen, tracking) above.
     if (!paused) castleSys.update(dt, p, daylightAt(worldClock));
+    // Elves (Task 12): ambient wander/dance, frozen while a screen is open
+    // (parity with the rest of the world sim above).
+    if (!paused) elves.update(dt, p);
     pens.update(dt, worldTime);
 
     // Farm production (Haven V5): assigned critters accrue toward their hoppers.
@@ -1435,6 +1448,9 @@ function bootGame(): void {
       const p = player.pos;
       return castleSys.spawnOne({ x: p.x + dirX * 6, y: p.y, z: p.z + dirZ * 6 });
     },
+    elfCount: () => elves.count,
+    // Debug: reconcile the live elf count (Cursed Castle Task 12 e2e).
+    setElves: (n: number) => elves.setCount(n),
   });
 
   // Verification aid (Haven V4): expose deterministic village anchors + a couple
