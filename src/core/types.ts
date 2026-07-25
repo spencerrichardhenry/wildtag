@@ -3,7 +3,7 @@
 
 export type Vec3 = { x: number; y: number; z: number };
 export type Biome = 'meadow' | 'forest' | 'wetland' | 'crags' | 'highlands' | 'water';
-export type ResourceKind = 'fiber' | 'resin' | 'shard' | 'spark';
+export type ResourceKind = 'fiber' | 'resin' | 'shard' | 'spark' | 'mushroom';
 
 // ---------------------------------------------------------------------------
 // Crafting tree (Task 7). Recipe ids/tiers/RP gates are exact per the design

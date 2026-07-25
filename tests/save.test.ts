@@ -249,6 +249,34 @@ describe('encodeSave / decodeSave', () => {
     expect(decodeSave(JSON.stringify(nan))).toBeNull();
   });
 
+  // --- Cursed Castle: mushroom (inventory) ------------------------------------
+
+  it('mushroom count round-trips', () => {
+    const state = sampleSave();
+    state.inventory.mushroom = 7;
+    expect(decodeSave(encodeSave(state))?.inventory.mushroom).toBe(7);
+  });
+
+  it('v2 save without mushroom field loads with mushroom 0', () => {
+    const state = sampleSave();
+    const { mushroom, ...invNoMushroom } = state.inventory;
+    void mushroom;
+    const raw = { ...state, inventory: invNoMushroom };
+    const decoded = decodeSave(JSON.stringify(raw));
+    expect(decoded).not.toBeNull();
+    expect(decoded?.inventory.mushroom).toBe(0);
+    expect(decoded?.inventory.fiber).toBe(state.inventory.fiber);
+  });
+
+  it('rejects a negative / non-finite mushroom count', () => {
+    const negative = sampleSave();
+    negative.inventory.mushroom = -3;
+    expect(decodeSave(JSON.stringify(negative))).toBeNull();
+
+    const nan = { ...sampleSave(), inventory: { ...sampleSave().inventory, mushroom: 'lots' } };
+    expect(decodeSave(JSON.stringify(nan))).toBeNull();
+  });
+
   it('round-trips the bonded roster', () => {
     const state = sampleSave({
       roster: [

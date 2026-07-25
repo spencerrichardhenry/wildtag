@@ -274,6 +274,10 @@ export function decodeSave(json: string): SaveV2 | null {
     // value is still validated (a tampered/negative count rejects the save).
     if (inv.charms !== undefined && !isCount(inv.charms)) return null;
     const charms = isCount(inv.charms) ? (inv.charms as number) : 0;
+    // `mushroom` mirrors `charms`: forward-compat for pre-Cursed-Castle saves
+    // (missing → defaults to 0), but a present tampered/negative value rejects.
+    if (inv.mushroom !== undefined && !isCount(inv.mushroom)) return null;
+    const mushroom = isCount(inv.mushroom) ? (inv.mushroom as number) : 0;
     const kits: Inventory['kits'] = { zipline: 0, beacon: 0, drone: 0 };
     if (inv.kits !== undefined && inv.kits !== null) {
       if (typeof inv.kits !== 'object') return null;
@@ -291,6 +295,7 @@ export function decodeSave(json: string): SaveV2 | null {
       spark: inv.spark as number,
       rp: inv.rp as number,
       darts: inv.darts as number,
+      mushroom,
       charms,
       kits,
     };

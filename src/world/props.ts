@@ -564,7 +564,7 @@ function sharedMat(bucket: string): THREE.Material {
   return m;
 }
 
-const RESOURCE_KINDS = new Set<PropKind>(['fiber', 'resin', 'shard', 'spark']);
+const RESOURCE_KINDS = new Set<PropKind>(['fiber', 'resin', 'shard', 'spark', 'mushroom']);
 
 interface NodeEntry {
   node: NodeState;

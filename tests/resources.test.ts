@@ -7,7 +7,7 @@ import {
   type NodeState,
 } from '../src/world/resources.ts';
 import { SCATTER } from '../src/core/constants.ts';
-import { createInventory, addResource } from '../src/craft/inventory.ts';
+import { createInventory, addResource, spend } from '../src/craft/inventory.ts';
 
 function fiberNode(id: number): NodeState {
   return makeNode(id, 'fiber', 10, 0, 20);
@@ -52,6 +52,14 @@ describe('harvest', () => {
     const res = harvest([fiberNode(1)], 99, 100);
     expect(res.gained).toBeNull();
   });
+
+  it('mushroom nodes harvest and respawn like other resources', () => {
+    const nodes = [makeNode(1, 'mushroom', 5, 5, 1)];
+    const { nodes: after, gained } = harvest(nodes, 1, 100);
+    expect(gained).toBe('mushroom');
+    expect(isAvailable(after[0]!, 100)).toBe(false);
+    expect(isAvailable(after[0]!, 100 + SCATTER.respawnS)).toBe(true);
+  });
 });
 
 describe('withinHarvestCone', () => {
@@ -83,6 +91,7 @@ describe('inventory', () => {
       resin: 0,
       shard: 0,
       spark: 0,
+      mushroom: 0,
       rp: 0,
       darts: 0,
       charms: 0,
@@ -98,5 +107,14 @@ describe('inventory', () => {
     expect(inv.fiber).toBe(5);
     expect(inv.shard).toBe(1);
     expect(inv.resin).toBe(0);
+  });
+
+  it('inventory tracks mushrooms', () => {
+    const inv = createInventory();
+    expect(inv.mushroom).toBe(0);
+    addResource(inv, 'mushroom', 3);
+    expect(inv.mushroom).toBe(3);
+    expect(spend(inv, { mushroom: 2 })!.mushroom).toBe(1);
+    expect(spend(inv, { mushroom: 9 })).toBeNull();
   });
 });

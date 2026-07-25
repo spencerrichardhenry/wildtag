@@ -14,6 +14,8 @@ export interface Inventory {
   resin: number;
   shard: number;
   spark: number;
+  /** Foraged glow mushrooms (Cursed Castle) — later spent on purifying darts. */
+  mushroom: number;
   /** Research points (gates crafting tiers — never spent). */
   rp: number;
   /** Tracker darts on hand (Task 10). */
@@ -31,6 +33,7 @@ export function createInventory(): Inventory {
     resin: 0,
     shard: 0,
     spark: 0,
+    mushroom: 0,
     rp: 0,
     darts: 0,
     charms: 0,

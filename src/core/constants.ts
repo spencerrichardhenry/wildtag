@@ -475,7 +475,7 @@ export const SCATTER = {
     scree: 18,
     reed: 14,
     lilypad: 18,
-    mushroom: 4,
+    mushroom: 8,
     shard: 18,
   },
 
@@ -994,6 +994,9 @@ export const FARM = {
     resin: 0xe0932a,
     shard: 0xb07fe0,
     spark: 0xffe06a,
+    // Mushrooms aren't farmable (forage-only) but ResourceKind is exhaustive
+    // here — reuse the mushroom cap colour so this compiles meaningfully.
+    mushroom: 0x9c5bd0,
   },
 } as const;
 
