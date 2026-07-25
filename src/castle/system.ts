@@ -40,6 +40,17 @@ export class CastleSystem {
    * would see `!want` (still day) and wipe it out again within one frame.
    */
   private readonly nightManaged = new Set<number>();
+  /**
+   * True once the current dusk/night presence has already spawned its ring.
+   * Deliberately NOT inferred from `nightManaged.size` — once Task 12 wires
+   * `purifyGoblin`, purifying every remaining night goblin before dawn would
+   * empty `nightManaged` while `want` is still true, and a size-based check
+   * would misread that as "haven't spawned yet" and respawn a fresh 8 mid-
+   * night. This flag only flips back to false on the presence's OWN falling
+   * edge (`want` going false), so a fully-purified night stays clear until
+   * the next dusk.
+   */
+  private spawnedThisPresence = false;
   private nextId = 0;
   private nightIndex = -1;
 
@@ -55,11 +66,13 @@ export class CastleSystem {
   /** Spawn/despawn per the live daylight sample, step FSMs, sync meshes. */
   update(dt: number, playerPos: Vec3, sample: DaylightSample): void {
     const want = shouldSpawnGoblins(this.opts.purified(), sample.phase);
-    if (want && this.nightManaged.size === 0) {
+    if (want && !this.spawnedThisPresence) {
       this.nightIndex++;
       this.spawnNight();
-    } else if (!want && this.nightManaged.size > 0) {
+      this.spawnedThisPresence = true;
+    } else if (!want && this.spawnedThisPresence) {
       this.despawnAll();
+      this.spawnedThisPresence = false;
     }
 
     for (let i = 0; i < this.goblins.length; i++) {
@@ -105,6 +118,7 @@ export class CastleSystem {
     for (const id of [...this.meshes.keys()]) this.removeGoblin(id);
     this.goblins.length = 0;
     this.nightManaged.clear();
+    this.spawnedThisPresence = false;
   }
 
   // -------------------------------------------------------------------------
