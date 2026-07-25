@@ -1008,6 +1008,40 @@ export const VILLAGE = {
 } as const;
 
 /**
+ * Cursed Castle (Task 8). Site picked by a one-off scan (see task-8 report)
+ * of the highlands lobe ring r ∈ [420, 620], angle −3π/4 ± 0.5 rad, for the
+ * max-height point — a hilltop in the NW highlands. `heightAt` flattens a
+ * pad there (see `src/world/terrain.ts`); `src/castle/layout.ts` derives the
+ * pure tower/wall/keep/perch geometry and colliders from this block.
+ */
+export const CASTLE = {
+  /** World position of the castle courtyard centre (highlands hilltop, NW lobe). */
+  center: { x: -424.7, z: -176.6 },
+  /** heightAt(center) BEFORE the pad existed (site-picker output, rounded to 0.1). */
+  padHeight: 101.1,
+  /** heightAt() is flattened to padHeight inside padRadius, blending back over padBlend. */
+  padRadius: 80,
+  padBlend: 45,
+  /** Footprint half-width of the square curtain wall (m). */
+  half: 45,
+  wallH: 8,
+  wallT: 2.4,
+  towerH: 18,
+  towerR: 5,
+  keepH: 20,
+  keepHalf: 10,
+  gateW: 9,
+  gateH: 7,
+  /** Gargoyle perch pads: computed from geometry, this many total. */
+  perchCount: 6,
+  /** Goblins stay within this radius of center. */
+  regionR: 130,
+  /** Mushroom clusters scattered along the approach. */
+  approachMushrooms: 10,
+  approachR: [90, 180],
+} as const;
+
+/**
  * Farm (Task V5). Pure production/aura/hopper math lives in `src/farm/farm.ts`;
  * these are its only tuning knobs (project convention: never inline). Plots are
  * 2 at baseline + 2 per Plot Deed (spec §4), capped at `maxPlots`. An assigned

@@ -1,4 +1,4 @@
-import { WORLD_SEED, TERRAIN } from '../core/constants.ts';
+import { WORLD_SEED, TERRAIN, CASTLE } from '../core/constants.ts';
 import type { Biome, Vec3 } from '../core/types.ts';
 import { makeNoise2D } from './noise.ts';
 
@@ -153,6 +153,22 @@ export function heightAt(x: number, z: number): number {
 
   // Radial coast falloff: everything drops below sea level past the shore.
   h -= TERRAIN.falloffStrength * smootherstep(TERRAIN.falloffStart, TERRAIN.falloffEnd, r);
+
+  // Castle pad: flatten to CASTLE.padHeight inside padRadius, smootherstep
+  // back over padBlend outside it. Cheap bounding-square check first (no
+  // sqrt), then a bounding-circle check, so the sqrt only runs for the
+  // handful of queries that land near the castle site.
+  const cdx = x - CASTLE.center.x;
+  const cdz = z - CASTLE.center.z;
+  const padOuter = CASTLE.padRadius + CASTLE.padBlend;
+  if (Math.abs(cdx) < padOuter && Math.abs(cdz) < padOuter) {
+    const cd2 = cdx * cdx + cdz * cdz;
+    if (cd2 < padOuter * padOuter) {
+      const d = Math.sqrt(cd2);
+      const w = 1 - smootherstep(CASTLE.padRadius, padOuter, d); // 1 inside, 0 at outer
+      h = h + (CASTLE.padHeight - h) * w;
+    }
+  }
 
   return h;
 }

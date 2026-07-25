@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { makeNoise2D } from '../src/world/noise.ts';
 import { biomeAt, groundNormalAt, heightAt } from '../src/world/terrain.ts';
+import { CASTLE } from '../src/core/constants.ts';
 import type { Biome } from '../src/core/types.ts';
 
 describe('makeNoise2D', () => {
@@ -70,6 +71,18 @@ describe('heightAt', () => {
     // cragSpire 55→100 + baseFrequency broadening should push crag terrain well
     // above the old ~40-55m peaks.
     expect(heightAt(-420, 0)).toBeGreaterThan(70);
+  });
+
+  it('castle pad is flat inside padRadius and blends smoothly outside', () => {
+    const c = CASTLE.center;
+    expect(heightAt(c.x, c.z)).toBeCloseTo(CASTLE.padHeight, 3);
+    expect(heightAt(c.x + CASTLE.padRadius * 0.7, c.z)).toBeCloseTo(CASTLE.padHeight, 3);
+    const rim = heightAt(c.x + CASTLE.padRadius + CASTLE.padBlend + 30, c.z);
+    expect(Math.abs(rim - CASTLE.padHeight)).toBeGreaterThan(0.01); // untouched terrain beyond blend
+    // monotone-ish blend: no cliff at the rim
+    const a = heightAt(c.x + CASTLE.padRadius + 5, c.z);
+    const b = heightAt(c.x + CASTLE.padRadius + CASTLE.padBlend - 5, c.z);
+    expect(Number.isFinite(a) && Number.isFinite(b)).toBe(true);
   });
 });
 
