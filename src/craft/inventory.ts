@@ -22,6 +22,8 @@ export interface Inventory {
   darts: number;
   /** Bond Charms on hand (Haven V2) — consumed to bond a Linked critter. */
   charms: number;
+  /** Purifying Darts on hand (Cursed Castle) — Task 12 spends them on fire. */
+  purifiers: number;
   /** Held-but-not-yet-placed deployable structure counts (Task 13 consumes). */
   kits: Record<DeployableId, number>;
 }
@@ -37,6 +39,7 @@ export function createInventory(): Inventory {
     rp: 0,
     darts: 0,
     charms: 0,
+    purifiers: 0,
     kits: { zipline: 0, beacon: 0, drone: 0 },
   };
 }

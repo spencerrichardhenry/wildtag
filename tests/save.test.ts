@@ -277,6 +277,34 @@ describe('encodeSave / decodeSave', () => {
     expect(decodeSave(JSON.stringify(nan))).toBeNull();
   });
 
+  // --- Cursed Castle: purifiers (inventory) -----------------------------------
+
+  it('purifiers count round-trips', () => {
+    const state = sampleSave();
+    state.inventory.purifiers = 5;
+    expect(decodeSave(encodeSave(state))?.inventory.purifiers).toBe(5);
+  });
+
+  it('v2 save without purifiers field loads with purifiers 0', () => {
+    const state = sampleSave();
+    const { purifiers, ...invNoPurifiers } = state.inventory;
+    void purifiers;
+    const raw = { ...state, inventory: invNoPurifiers };
+    const decoded = decodeSave(JSON.stringify(raw));
+    expect(decoded).not.toBeNull();
+    expect(decoded?.inventory.purifiers).toBe(0);
+    expect(decoded?.inventory.fiber).toBe(state.inventory.fiber);
+  });
+
+  it('rejects a negative / non-finite purifiers count', () => {
+    const negative = sampleSave();
+    negative.inventory.purifiers = -3;
+    expect(decodeSave(JSON.stringify(negative))).toBeNull();
+
+    const nan = { ...sampleSave(), inventory: { ...sampleSave().inventory, purifiers: 'lots' } };
+    expect(decodeSave(JSON.stringify(nan))).toBeNull();
+  });
+
   it('round-trips the bonded roster', () => {
     const state = sampleSave({
       roster: [

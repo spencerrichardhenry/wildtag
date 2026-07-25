@@ -183,7 +183,8 @@ describe('full crafting tree — affordability walk', () => {
   it('every recipe is craftable in tier order once granted its resources + RP, and the final state matches all unlocks/kits/darts/charms', () => {
     const inv = createInventory();
     inv.rp = 200; // clears every tier's RP gate up front
-    grant(inv, { fiber: 36, resin: 19, shard: 33, spark: 17 }); // sum of every recipe's cost below (incl. charm)
+    grant(inv, { fiber: 37, resin: 19, shard: 35, spark: 17 }); // sum of every recipe's cost below (incl. charm, purifier)
+    inv.mushroom = 3; // purifier's non-{fiber,resin,shard,spark} cost
 
     const unlocks = new Set<string>();
     const order: RecipeId[] = RECIPES
@@ -204,9 +205,34 @@ describe('full crafting tree — affordability walk', () => {
     expect(working.kits).toEqual({ zipline: 1, beacon: 0, drone: 1 });
     expect(working.darts).toBe(10);
     expect(working.charms).toBe(2);
+    expect(working.purifiers).toBe(5);
     expect(working.fiber).toBe(0);
     expect(working.resin).toBe(0);
     expect(working.shard).toBe(0);
     expect(working.spark).toBe(0);
+    expect(working.mushroom).toBe(0);
+  });
+});
+
+describe('craft — Purifying Dart (Cursed Castle)', () => {
+  it('purifier recipe crafts a batch of 5 into the purifiers counter', () => {
+    const inv = createInventory();
+    inv.rp = 75;
+    inv.mushroom = 3;
+    inv.shard = 2;
+    inv.fiber = 1;
+    expect(canCraft(inv, 'purifier', new Set()).ok).toBe(true);
+    const r = craft(inv, 'purifier', new Set());
+    expect(r.inv.purifiers).toBe(5);
+    expect(r.inv.mushroom).toBe(0);
+  });
+
+  it('purifier is RP-gated at 75', () => {
+    const inv = createInventory();
+    inv.mushroom = 3;
+    inv.shard = 2;
+    inv.fiber = 1;
+    inv.rp = 74;
+    expect(canCraft(inv, 'purifier', new Set())).toEqual({ ok: false, reason: 'rp' });
   });
 });

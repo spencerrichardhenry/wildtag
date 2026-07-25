@@ -278,6 +278,11 @@ export function decodeSave(json: string): SaveV2 | null {
     // (missing → defaults to 0), but a present tampered/negative value rejects.
     if (inv.mushroom !== undefined && !isCount(inv.mushroom)) return null;
     const mushroom = isCount(inv.mushroom) ? (inv.mushroom as number) : 0;
+    // `purifiers` mirrors `mushroom`: forward-compat for pre-Cursed-Castle
+    // saves (missing → defaults to 0), but a present tampered/negative value
+    // rejects.
+    if (inv.purifiers !== undefined && !isCount(inv.purifiers)) return null;
+    const purifiers = isCount(inv.purifiers) ? (inv.purifiers as number) : 0;
     const kits: Inventory['kits'] = { zipline: 0, beacon: 0, drone: 0 };
     if (inv.kits !== undefined && inv.kits !== null) {
       if (typeof inv.kits !== 'object') return null;
@@ -297,6 +302,7 @@ export function decodeSave(json: string): SaveV2 | null {
       darts: inv.darts as number,
       mushroom,
       charms,
+      purifiers,
       kits,
     };
     if (!Array.isArray(o.unlocks) || !o.unlocks.every((u) => typeof u === 'string')) return null;

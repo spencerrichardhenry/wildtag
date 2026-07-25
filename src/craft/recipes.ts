@@ -56,6 +56,18 @@ export const RECIPES: Recipe[] = [
   },
   // --- Tier 2 (75 RP) --------------------------------------------------------
   {
+    // Cursed Castle: glow mushrooms (Task 1) become ammo that cleanses
+    // corrupted critters — one Purifying Dart per shot (Task 12).
+    id: 'purifier',
+    name: 'Purifying Dart',
+    tier: 2,
+    rpRequired: 75,
+    cost: { mushroom: 3, shard: 2, fiber: 1 },
+    kind: 'consumable',
+    batch: 5,
+    grants: 'purifiers',
+  },
+  {
     id: 'glider',
     name: 'Glider',
     tier: 2,
@@ -156,7 +168,8 @@ export function craft(inv: Inventory, recipeId: RecipeId, unlocks: ReadonlySet<s
   if (recipe.kind === 'consumable') {
     const gained = recipe.batch ?? 1;
     // Which counter the batch lands in — 'darts' by default (the original dart
-    // recipe), 'charms' for the Bond Charm. Both are plain numeric fields.
+    // recipe), 'charms' for the Bond Charm, 'purifiers' for the Purifying
+    // Dart. All are plain numeric fields.
     const target = recipe.grants ?? 'darts';
     return { inv: { ...paid, [target]: paid[target] + gained } };
   }

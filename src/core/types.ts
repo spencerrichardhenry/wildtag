@@ -15,6 +15,7 @@ export type ResourceKind = 'fiber' | 'resin' | 'shard' | 'spark' | 'mushroom';
 export type RecipeId =
   | 'dart'
   | 'charm'
+  | 'purifier'
   | 'grapple'
   | 'boots'
   | 'glider'
@@ -41,9 +42,10 @@ export interface Recipe {
   /**
    * For `consumable` recipes: which inventory counter the batch lands in.
    * Defaults to 'darts' when absent (the original dart recipe). Generalized in
-   * Haven V2 so the Bond Charm recipe can stock `charms` through the same path.
+   * Haven V2 so the Bond Charm recipe can stock `charms` through the same
+   * path; Cursed Castle adds `purifiers` for the Purifying Dart.
    */
-  grants?: 'darts' | 'charms';
+  grants?: 'darts' | 'charms' | 'purifiers';
 }
 
 export interface MoveInput {

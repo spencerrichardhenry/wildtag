@@ -58,6 +58,7 @@ const RES_COLOR: Record<string, string> = {
   mushroom: '#9c5bd0', // glow-mushroom cap colour
   dart: '#66e0ff',
   charm: '#d98cff', // Bond Charm — distinct violet
+  purifier: '#8ef0c0', // Purifying Dart — pale minty green
   rp: '#9fd8b8',
 };
 
@@ -167,7 +168,7 @@ export class HUD {
 
     // --- Resource strip (top-left) -----------------------------------------
     const res = el('div', 'wt-resources');
-    for (const kind of ['fiber', 'resin', 'shard', 'spark', 'mushroom', 'dart', 'charm', 'rp'] as const) {
+    for (const kind of ['fiber', 'resin', 'shard', 'spark', 'mushroom', 'dart', 'charm', 'purifier', 'rp'] as const) {
       const item = el('div', 'wt-res');
       const dot = el('span', 'wt-res-dot');
       if (kind === 'rp') dot.classList.add('wt-res-rp');
@@ -176,7 +177,15 @@ export class HUD {
       count.textContent = '0';
       const tag = el('span', 'wt-res-tag');
       tag.textContent =
-        kind === 'rp' ? 'RP' : kind === 'dart' ? 'darts' : kind === 'charm' ? 'charms' : '';
+        kind === 'rp'
+          ? 'RP'
+          : kind === 'dart'
+            ? 'darts'
+            : kind === 'charm'
+              ? 'charms'
+              : kind === 'purifier'
+                ? 'Purifiers'
+                : '';
       item.append(dot, count, tag);
       res.appendChild(item);
       this.resEls.set(kind, { dot, count, last: -1 });
@@ -378,6 +387,7 @@ export class HUD {
       mushroom: inv.mushroom,
       dart: inv.darts,
       charm: inv.charms,
+      purifier: inv.purifiers,
       rp: inv.rp,
     };
     for (const [kind, ref] of this.resEls) {

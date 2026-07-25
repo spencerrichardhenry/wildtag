@@ -95,6 +95,7 @@ describe('inventory', () => {
       rp: 0,
       darts: 0,
       charms: 0,
+      purifiers: 0,
       kits: { zipline: 0, beacon: 0, drone: 0 },
     });
   });
