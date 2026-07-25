@@ -1072,6 +1072,51 @@ export const CASTLE_COLORS = {
 } as const;
 
 /**
+ * Night goblins (Task 11). Pure FSM lives in `src/castle/goblins.ts`; these are
+ * its only tuning knobs. Goblins patrol their spawn point, notice + chase the
+ * player, wind up and lunge for melee damage, then recover — never leaving
+ * `CASTLE.regionR` of the castle. Distances in m, speeds m/s, times s.
+ */
+export const GOBLIN = {
+  /** Concurrent goblins spawned each dusk (skipped once the castle is purified). */
+  count: 8,
+  /** Ground speed while patrolling a loop around its spawn point (home). */
+  patrolSpeed: 1.8,
+  /** Patrol wander radius around home (m). */
+  patrolR: 25,
+  /** Distance (m) within which a patrolling goblin notices the player. */
+  noticeR: 20,
+  /** Seconds a goblin freezes, facing the player, before giving chase. */
+  alertS: 0.4,
+  /**
+   * Chase ground speed (m/s). MUST stay strictly below the player's sprint
+   * speed (MOVE.sprint = 9.5), or a chased player could never outrun a goblin
+   * — 0.85 × 9.5 = 8.075. Asserted in tests/goblins.test.ts against MOVE.sprint.
+   */
+  chaseSpeed: 8.075,
+  /** Distance (m) at which a chasing goblin winds up for a lunge. */
+  lungeRange: 2.4,
+  /** Telegraph freeze before a lunge (s) — the player's dodge window. */
+  windupS: 0.5,
+  /** Lunge hop duration (s): a fixed-direction dash at `lungeSpeed`. */
+  lungeS: 0.35,
+  /** Lunge hop ground speed (m/s). */
+  lungeSpeed: 11,
+  /** Distance (m) within which a lunging goblin's hop connects. */
+  hitRange: 1.2,
+  /** Radius (m) used for purifying-dart hit tests against a live goblin. */
+  hitRadius: 0.9,
+  /** Vulnerable recovery freeze after a lunge (s). */
+  recoverS: 1.2,
+  /** HP damage dealt on a landed lunge. */
+  damage: 25,
+  /** Knockback impulse (m/s) applied to the player on a landed lunge. */
+  knockback: 7.5,
+  /** Chase gives up (returns to patrol) beyond this distance from the goblin (m). */
+  giveUpR: 40,
+} as const;
+
+/**
  * Farm (Task V5). Pure production/aura/hopper math lives in `src/farm/farm.ts`;
  * these are its only tuning knobs (project convention: never inline). Plots are
  * 2 at baseline + 2 per Plot Deed (spec §4), capped at `maxPlots`. An assigned

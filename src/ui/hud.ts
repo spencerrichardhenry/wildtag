@@ -142,6 +142,8 @@ export class HUD {
   private readonly dayCycleDot: HTMLDivElement;
   private lastCycleT = -1;
   private lastDarkness = -1;
+  private readonly dazeVeil: HTMLDivElement;
+  private lastDazeVeil = false;
 
   private selected = 1;
   private crosshairOverride: string | null = null;
@@ -278,6 +280,12 @@ export class HUD {
     }
     this.root.appendChild(hotbar);
 
+    // --- Dazed daze veil (Cursed Castle Task 11) — a full-screen dim/red
+    // vignette while the post-death daze window is active. Added last so it
+    // paints over everything else.
+    this.dazeVeil = el('div', 'wt-daze-veil');
+    this.root.appendChild(this.dazeVeil);
+
     this.host.appendChild(this.root);
   }
 
@@ -307,6 +315,7 @@ export class HUD {
     this.paintCrosshair(frame);
     this.paintStamina(frame.stamina, frame.exhausted);
     this.paintHealth(frame.hp, frame.dazed);
+    this.paintDazeVeil(frame.dazed);
     this.paintResources(frame.inventory);
     this.paintHotbar(frame);
     this.paintCompass(frame);
@@ -432,6 +441,18 @@ export class HUD {
       this.health.classList.toggle('wt-visible', show);
       this.healthShown = show;
     }
+  }
+
+  // -------------------------------------------------------------------------
+  // Dazed daze veil — full-screen dim/red vignette while HEALTH.isDazed
+  // (Cursed Castle Task 11). Reuses the wt-flash pattern's spirit (CSS-driven,
+  // class-toggled) but as an opacity transition rather than a hard blink —
+  // this one lingers for the whole daze window, not a hit-flash.
+  // -------------------------------------------------------------------------
+  private paintDazeVeil(dazed: boolean): void {
+    if (dazed === this.lastDazeVeil) return;
+    this.lastDazeVeil = dazed;
+    this.dazeVeil.classList.toggle('wt-visible', dazed);
   }
 
   // -------------------------------------------------------------------------
@@ -917,6 +938,18 @@ const STYLE = `
 .wt-health.wt-dazed .wt-health-fill {
   animation: wt-flash 0.5s steps(2, start) infinite;
 }
+
+/* Dazed daze veil ----------------------------------------------------------- */
+.wt-daze-veil {
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(ellipse at center, rgba(120, 20, 20, 0) 32%, rgba(90, 8, 8, 0.6) 100%);
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  z-index: 8;
+  pointer-events: none;
+}
+.wt-daze-veil.wt-visible { opacity: 1; }
 
 /* Hotbar ------------------------------------------------------------------ */
 .wt-hotbar {

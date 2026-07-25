@@ -69,6 +69,19 @@ export class PlayerController {
   private usedAirJump = false;
 
   /**
+   * Dazed retreat (Cursed Castle Task 11): non-null while the player's HP is
+   * dazed. Rather than faking an input axis (constrained to MOVE.walk/sprint
+   * ground speeds and fought by the core's own ground friction), `update()`
+   * masks all move/jump/dash/rocket input to zero for the frame AND then
+   * force-overrides the resulting horizontal pos/vel to a straight walk along
+   * this vector — a minimal, self-contained seam (mirrors how `rideStep`/
+   * `mountStep` already bypass the normal pipeline for their own modes) that
+   * doesn't touch the pure movement core. Vertical (gravity/ground snap) is
+   * left untouched. `main.ts` sets this every frame from `isDazed(health)`.
+   */
+  private stumbleVel: Vec3 | null = null;
+
+  /**
    * Post-dismount camera-height decay: seconds since the last dismount, or
    * `Infinity` when inactive. While active (< MOUNT.dismountEyeLerp) the camera
    * carries a decaying slice of MOUNT.eyeHeightBonus so the eye eases down from
@@ -314,6 +327,21 @@ export class PlayerController {
     if (!this.unlocks.has('glider')) masked.jumpHeld = false;
     if (!this.unlocks.has('rocket')) masked.rocket = false;
 
+    // --- Dazed stumble (Cursed Castle Task 11): while active, WASD/jump/dash/
+    // rocket are all suppressed — the pure core sees zero intent — and the
+    // post-step override below forces a straight walk along `stumbleVel`
+    // instead. See the field doc for why this bypasses the core's own
+    // accel/friction rather than faking an input axis.
+    if (this.stumbleVel) {
+      masked.forward = 0;
+      masked.strafe = 0;
+      masked.sprint = false;
+      masked.jump = false;
+      masked.jumpHeld = false;
+      masked.dash = false;
+      masked.rocket = false;
+    }
+
     // --- Swim mode: set from the terrain column under the feet -------------
     // heightAt < sea level → the ground here is submerged, so we surface-swim.
     // (Zipline mode already returned above, so `mode` is only 'normal'|'swim'.)
@@ -393,6 +421,14 @@ export class PlayerController {
     // --- Surface swimming holds the player at the water line ---------------
     if (next.mode === 'swim') {
       next.pos.y = TERRAIN.seaLevel;
+    }
+
+    // --- Dazed stumble override (horizontal only; see the field doc above) --
+    if (this.stumbleVel) {
+      next.pos.x = prev.pos.x + this.stumbleVel.x * dt;
+      next.pos.z = prev.pos.z + this.stumbleVel.z * dt;
+      next.vel.x = this.stumbleVel.x;
+      next.vel.z = this.stumbleVel.z;
     }
 
     // --- Obstacle pushout (XZ only; y untouched) ---------------------------
@@ -498,6 +534,26 @@ export class PlayerController {
   /** Current feet position (read-only snapshot). */
   get pos(): Vec3 {
     return { ...this.state.pos };
+  }
+
+  /**
+   * Add an instantaneous velocity impulse (Cursed Castle Task 11: goblin
+   * lunge knockback). Adds to the current velocity — does not set it.
+   */
+  applyImpulse(v: Vec3): void {
+    this.state = {
+      ...this.state,
+      vel: { x: this.state.vel.x + v.x, y: this.state.vel.y + v.y, z: this.state.vel.z + v.z },
+    };
+  }
+
+  /**
+   * Cursed Castle Task 11: set/clear the dazed auto-stumble velocity. Pass a
+   * horizontal vector to suppress normal input and carry the player along it
+   * every frame instead; pass null to release control back to normal input.
+   */
+  setStumble(v: Vec3 | null): void {
+    this.stumbleVel = v ? { ...v } : null;
   }
 
   /** Current stamina / grounded snapshots for the debug HUD. */

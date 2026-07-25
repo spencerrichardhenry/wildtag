@@ -59,6 +59,15 @@ export interface DebugDeps {
   renderStats(): RenderStats;
   /** Active quality preset id + its resolved feature flags (F2 P1). */
   quality(): unknown;
+  /** Player HP (Cursed Castle Task 11 — state().hp / verification). */
+  hp(): number;
+  /** Live goblin count (Cursed Castle Task 11). */
+  goblinCount(): number;
+  /**
+   * Debug-only: force-spawn one goblin near the player regardless of the
+   * current phase (Cursed Castle Task 11 e2e verification). Returns its id.
+   */
+  spawnGoblin(): number;
 }
 
 /** Renderer draw-call / resource counters sampled post-render (F2 P1). */
@@ -100,6 +109,8 @@ export interface GameDebugHandle {
   listCritters(): CritterView[];
   save(): void;
   reset(): void;
+  /** Debug-only: force-spawn one goblin near the player. Returns its id. */
+  spawnGoblin(): number;
 }
 
 /** Build the `window.__game` debug handle from the live systems main.ts owns. */
@@ -127,6 +138,8 @@ export function buildDebugHandle(deps: DebugDeps): GameDebugHandle {
         grappling: deps.isGrappling(),
         timeScale: deps.getTimeScale(),
         quality: currentQuality(),
+        hp: deps.hp(),
+        goblinCount: deps.goblinCount(),
       };
     },
 
@@ -285,6 +298,11 @@ export function buildDebugHandle(deps: DebugDeps): GameDebugHandle {
 
     reset(): void {
       deps.resetSave();
+    },
+
+    /** Debug-only: force-spawn one goblin near the player. Returns its id. */
+    spawnGoblin(): number {
+      return deps.spawnGoblin();
     },
   };
 }

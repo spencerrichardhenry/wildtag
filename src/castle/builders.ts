@@ -427,3 +427,108 @@ export function removeCastle(scene: THREE.Scene): void {
   });
   scene.remove(g);
 }
+
+// ---------------------------------------------------------------------------
+// Night goblin model (Task 11). Deliberately NOT built from the critters
+// module (`buildCritterModel`'s helpers like `plumpEar` are private to
+// critters) — a small, self-contained builder here, in the same flat-shaded
+// Lambert style as the rest of this file. Per-goblin Groups are cheap (≤8
+// concurrently live) so no merge/bake pass is needed.
+//
+// Silhouette: a knee-high chunky egg-shaped body, two big flared ears, a
+// tattered hood cone (a few ragged flap teeth around its rim), and a pair of
+// small glowing yellow eyes low on the face. Faces +Z, feet at y=0.
+// ---------------------------------------------------------------------------
+
+const GOBLIN_COLORS = {
+  skin: 0x4f7a3d,
+  skinDark: 0x3d5f2e,
+  hood: 0x5a4a3a,
+  hoodDark: 0x463824,
+  eye: 0xe8d84a,
+} as const;
+
+function sphere(r: number, color: number, opts: MatOpts = {}): THREE.Mesh {
+  return new THREE.Mesh(new THREE.SphereGeometry(r, 8, 6), mat(color, opts));
+}
+
+/** One flared ear: a squashed sphere angled outward from the head. */
+function goblinEar(r: number, color: number, side: -1 | 1): THREE.Group {
+  const g = new THREE.Group();
+  const e = sphere(r, color);
+  e.scale.set(0.55, 1.5, 0.4);
+  g.add(e);
+  g.rotation.z = side * 0.55;
+  g.rotation.y = side * 0.3;
+  return g;
+}
+
+/** Ragged flap teeth around the hood's rim — a handful of tiny cones. */
+function hoodTatters(rimR: number, y: number, color: number, rng: () => number): THREE.Group {
+  const g = new THREE.Group();
+  const n = 5 + Math.floor(rng() * 3);
+  for (let i = 0; i < n; i++) {
+    const ang = (i / n) * Math.PI * 2 + rng() * 0.3;
+    const len = 0.08 + rng() * 0.08;
+    const flap = cone(0.05, len, color);
+    flap.position.set(Math.sin(ang) * rimR, y - len / 2, Math.cos(ang) * rimR);
+    flap.rotation.x = Math.PI; // apex points down — a hanging tatter
+    g.add(flap);
+  }
+  return g;
+}
+
+/**
+ * Build one goblin model from a seeded per-individual `rng` (scale + slight
+ * colour jitter so a pack of 8 never looks cloned). ~knee-high (~0.55-0.65 m).
+ *
+ * The per-individual size jitter lives on an INNER group (`root.children[0]`),
+ * not on the returned root itself — `CastleSystem.syncMesh` drives per-frame
+ * squash-stretch/bob via the root's own `.scale`/`.position`, which would
+ * otherwise clobber this jitter every frame if they shared one transform.
+ */
+export function buildGoblin(rng: () => number): THREE.Group {
+  const scale = 0.85 + rng() * 0.3;
+  const skinJitter = rng() > 0.5 ? GOBLIN_COLORS.skin : GOBLIN_COLORS.skinDark;
+
+  const inner = new THREE.Group();
+
+  // Chunky egg body (a squashed, slightly bottom-heavy sphere).
+  const bodyR = 0.32;
+  const body = sphere(bodyR, skinJitter);
+  body.scale.set(1, 1.25, 0.92);
+  body.position.y = bodyR * 1.15;
+  inner.add(body);
+
+  // Big flared ears, set on the upper body/head area.
+  const earY = bodyR * 1.85;
+  for (const side of [-1, 1] as const) {
+    const ear = goblinEar(0.16, GOBLIN_COLORS.skinDark, side);
+    ear.position.set(side * bodyR * 0.75, earY, -bodyR * 0.1);
+    inner.add(ear);
+  }
+
+  // Tattered hood: a cone over the head + a ring of small hanging tatters.
+  const hoodY = bodyR * 1.55;
+  const hood = cone(bodyR * 0.85, bodyR * 1.1, GOBLIN_COLORS.hood);
+  hood.position.y = hoodY + (bodyR * 1.1) / 2 - 0.02;
+  inner.add(hood);
+  const tatters = hoodTatters(bodyR * 0.62, hoodY + 0.05, GOBLIN_COLORS.hoodDark, rng);
+  inner.add(tatters);
+
+  // Glowing yellow eyes, low on the face under the hood's brim.
+  const eyeY = bodyR * 1.05;
+  for (const side of [-1, 1] as const) {
+    const eye = sphere(0.045, GOBLIN_COLORS.eye, {
+      emissive: GOBLIN_COLORS.eye,
+      emissiveIntensity: 1.6,
+    });
+    eye.position.set(side * 0.09, eyeY, bodyR * 0.92);
+    inner.add(eye);
+  }
+
+  inner.scale.setScalar(scale);
+  const root = new THREE.Group();
+  root.add(inner);
+  return root;
+}

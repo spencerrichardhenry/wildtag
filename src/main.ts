@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { CAMERA, CASTLE, ENV, MAX_FRAME_DT, MOUNT, SIM_DT, STRUCTURES } from './core/constants.ts';
+import { CAMERA, CASTLE, ENV, GOBLIN, HEALTH, MAX_FRAME_DT, MOUNT, SIM_DT, STRUCTURES } from './core/constants.ts';
 import { setupEnvironment, setupDaylight, updateWater } from './world/environment.ts';
 import { daylightAt } from './core/daylight.ts';
 import { ChunkManager } from './world/chunks.ts';
@@ -8,7 +8,7 @@ import { groundNormalAt, heightAt } from './world/terrain.ts';
 import type { GroundQuery, Vec3 } from './core/types.ts';
 import { Input } from './player/input.ts';
 import { PlayerController } from './player/controller.ts';
-import { createHealth, isDazed, stepHealth } from './player/health.ts';
+import { createHealth, applyHit, isDazed, stepHealth } from './player/health.ts';
 import { createInventory, addResource } from './craft/inventory.ts';
 import { ScreenManager, createCraftScreen, createHelpScreen } from './ui/screens.ts';
 import { createGuideScreen } from './ui/guide.ts';
@@ -23,7 +23,7 @@ import { canAssignToFarm, canMount, canSummon, setActiveMount } from './player/m
 import { DartSystem } from './tracking/darts.ts';
 import { updateTracking } from './tracking/tracker.ts';
 import { toast } from './ui/toasts.ts';
-import { chime } from './ui/audio.ts';
+import { blip, chime } from './ui/audio.ts';
 import { AnchorRegistry } from './structures/anchors.ts';
 import { ZiplineSystem } from './structures/ziplines.ts';
 import { DroneSystem } from './structures/drones.ts';
@@ -54,6 +54,7 @@ import { buildPostPipeline, type PostPipeline } from './world/post.ts';
 import { buildVillage, villageObstacles } from './village/buildings.ts';
 import { buildCastle } from './castle/builders.ts';
 import { castleLayout, castleObstacles, castleGrappleColliders } from './castle/layout.ts';
+import { CastleSystem } from './castle/system.ts';
 import { NpcManager, NPCS, npcAnchors } from './village/npcs.ts';
 import { createDialogScreen, openDialog, setRequestRenderer } from './village/dialog.ts';
 import { villageCenter } from './village/layout.ts';
@@ -534,6 +535,31 @@ function bootGame(): void {
   const castlePurifiedAtBoot = loaded?.castlePurified ?? false;
   buildCastle(scene, castlePurifiedAtBoot);
 
+  /** Direction from `from` toward `to`, scaled to `mag` (horizontal), plus a
+   *  modest vertical lift — the lift matters: while airborne with no player
+   *  input, the movement core skips ground friction entirely (see
+   *  movement.ts's airborne branch), so a purely-horizontal impulse would
+   *  otherwise be eaten by MOVE.accelGround within a couple of frames. */
+  function awayFrom(from: Vec3, to: Vec3, mag: number): Vec3 {
+    const dx = to.x - from.x;
+    const dz = to.z - from.z;
+    const len = Math.hypot(dx, dz) || 1;
+    return { x: (dx / len) * mag, y: mag * 0.3, z: (dz / len) * mag };
+  }
+
+  // Cursed Castle (Task 11): night goblins — spawn at dusk, chase/lunge, deal
+  // damage on a landed hit (knockback + a hit blip), skipped once purified.
+  const castleSys = new CastleSystem(scene, ground, {
+    purified: () => castlePurifiedAtBoot,
+    onPlayerHit: (dmg, from) => {
+      if (!isDazed(health)) {
+        health = applyHit(health, dmg);
+        player.applyImpulse(awayFrom(from, player.pos, GOBLIN.knockback));
+        blip(180, 0.12);
+      }
+    },
+  });
+
   // Cursed Castle (Task 10): a gargoyle perched on each tower top + keep
   // corner. Fixed slots (negative ids), not part of the procedural per-cell
   // spawn table — see CritterManager.addFixedSlots.
@@ -980,6 +1006,19 @@ function bootGame(): void {
       // plus the static village building/lamp collision circles.
       const prev = player.pos;
       player.obstacles = props.getObstacles(prev.x, prev.z).concat(villageObs).concat(castleObs);
+      // Dazed retreat (Cursed Castle Task 11): normal input is suppressed and
+      // the controller instead carries the player straight away from the
+      // castle centre, covering HEALTH.dazedRetreat metres over the daze
+      // window (HEALTH.dazedS) — see PlayerController.setStumble's doc for why.
+      if (isDazed(health)) {
+        const dx = prev.x - CASTLE.center.x;
+        const dz = prev.z - CASTLE.center.z;
+        const len = Math.hypot(dx, dz) || 1;
+        const speed = HEALTH.dazedRetreat / HEALTH.dazedS;
+        player.setStumble({ x: (dx / len) * speed, y: 0, z: (dz / len) * speed });
+      } else {
+        player.setStumble(null);
+      }
       player.update(dt);
       // Prismhorse mount: pin/animate the actor under the camera while riding,
       // or loosely trail the player while idle (also handles hold-Space dismount).
@@ -999,6 +1038,9 @@ function bootGame(): void {
     props.update(p.x, p.z, worldTime);
     critters.update(dt, p);
     npcs.update(dt, p);
+    // Night goblins (Task 11): frozen while a screen is open, parity with the
+    // rest of combat/progress (health regen, tracking) above.
+    if (!paused) castleSys.update(dt, p, daylightAt(worldClock));
     pens.update(dt, worldTime);
 
     // Farm production (Haven V5): assigned critters accrue toward their hoppers.
@@ -1382,6 +1424,17 @@ function bootGame(): void {
       textures: renderer.info.memory.textures,
     }),
     quality: () => ({ id: currentQuality(), flags: qualityFlags() }),
+    hp: () => health.hp,
+    goblinCount: () => castleSys.goblinCount(),
+    // Debug: spawn one goblin 6 m ahead of the player, regardless of phase
+    // (Cursed Castle Task 11 e2e verification).
+    spawnGoblin: () => {
+      const yaw = input.yaw;
+      const dirX = -Math.sin(yaw);
+      const dirZ = -Math.cos(yaw);
+      const p = player.pos;
+      return castleSys.spawnOne({ x: p.x + dirX * 6, y: p.y, z: p.z + dirZ * 6 });
+    },
   });
 
   // Verification aid (Haven V4): expose deterministic village anchors + a couple
