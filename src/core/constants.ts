@@ -934,6 +934,22 @@ export const DART = {
   trailLength: 10,
 } as const;
 
+/**
+ * Purifying darts (Cursed Castle Task 13). Reuse the tracker dart's ballistic
+ * core (`spawnDart`/`stepDart`, DART speed/gravity/maxLife) — these are only
+ * the visual/effect knobs: the dart body/trail tint, and the sparkle-burst
+ * shell (a short-lived additive `THREE.Points` sphere) that plays on a
+ * goblin/crystal hit.
+ */
+export const PURIFIER = {
+  /** Dart body + trail + sparkle-burst tint (pale minty green). */
+  color: 0x8ef0c0,
+  /** Sparkle-burst lifetime (s): expands to `burstR`, fading out, then disposed. */
+  burstS: 0.6,
+  /** Sparkle-burst max radius (m). */
+  burstR: 1.6,
+} as const;
+
 /** Tag-tracking progress tuning (tracking/progress.ts). */
 export const TRACKING = {
   /** Progress decay rate outside the ring, as a fraction of the accrual rate. */

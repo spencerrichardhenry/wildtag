@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   clamp,
+  clampHotbarSlot,
   wrap180,
   mod360,
   facingBearingDeg,
@@ -256,5 +257,28 @@ describe('HUD tuning', () => {
   it('exposes a positive ring reach and compass span', () => {
     expect(HUD.ringMaxDist).toBeGreaterThan(0);
     expect(HUD.compassSpanDeg).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// hotbar slot clamp (Cursed Castle Task 13 — the DOM-free seam behind
+// HUD.selectHotbar; the HUD class itself needs `document` and isn't
+// unit-testable in this suite's DOM-free node environment).
+// ---------------------------------------------------------------------------
+
+describe('clampHotbarSlot', () => {
+  it('accepts every slot in range, including the new Purify slot 5', () => {
+    expect(clampHotbarSlot(1)).toBe(1);
+    expect(clampHotbarSlot(4)).toBe(4);
+    expect(clampHotbarSlot(5)).toBe(5);
+  });
+
+  it('ignores a request past the last slot', () => {
+    expect(clampHotbarSlot(6)).toBeNull();
+  });
+
+  it('ignores a request below slot 1', () => {
+    expect(clampHotbarSlot(0)).toBeNull();
+    expect(clampHotbarSlot(-1)).toBeNull();
   });
 });

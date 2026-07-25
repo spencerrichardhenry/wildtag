@@ -18,6 +18,8 @@ export const HUD = {
   compassTickStepDeg: 15,
   /** Critter head offset above its feet position, as a factor of species size. */
   ringHeadFactor: 1.2,
+  /** Number of selectable hotbar slots (Cursed Castle Task 13 added Purify). */
+  hotbarSlots: 5,
 } as const;
 
 /** A projected point in normalised device coordinates ([-1, 1], +y up). */
@@ -34,6 +36,16 @@ export type ProjectFn = (world: Vec3) => Projected;
 /** Clamp `v` to [lo, hi]. */
 export function clamp(v: number, lo: number, hi: number): number {
   return v < lo ? lo : v > hi ? hi : v;
+}
+
+/**
+ * Validate a requested hotbar slot: `slot` is accepted (returned as-is) when
+ * it falls within [1, max]; otherwise `null` (the request is ignored).
+ * Extracted from `HUD.selectHotbar` so the clamp is unit-testable without DOM
+ * (mirrors `EdgeLatch`'s extraction from `Input`).
+ */
+export function clampHotbarSlot(slot: number, max: number = HUD.hotbarSlots): number | null {
+  return slot >= 1 && slot <= max ? slot : null;
 }
 
 /** Wrap `deg` into (-180, 180]. */

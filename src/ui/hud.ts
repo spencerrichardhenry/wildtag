@@ -8,6 +8,7 @@ import { toast } from './toasts.ts';
 import {
   HUD as HUDT,
   CARDINALS as CARDINAL_LABEL,
+  clampHotbarSlot,
   compassTicks,
   facingBearingDeg,
   worldBearingDeg,
@@ -145,7 +146,7 @@ export class HUD {
   private readonly dazeVeil: HTMLDivElement;
   private lastDazeVeil = false;
 
-  private selected = 1;
+  private _selected = 1;
   private crosshairOverride: string | null = null;
   private lastCrosshair = '';
   private staminaFullSince: number | null = null;
@@ -264,6 +265,7 @@ export class HUD {
       { key: '2', name: 'Grapple' },
       { key: '3', name: 'Zipline' },
       { key: '4', name: 'Drone' },
+      { key: '5', name: 'Purify' },
     ];
     for (const d of defs) {
       const slot = el('div', 'wt-slot');
@@ -289,10 +291,16 @@ export class HUD {
     this.host.appendChild(this.root);
   }
 
-  /** Active hotbar slot (1–4). Forwarded from the input hotbar action. */
+  /** Active hotbar slot (1–5). Forwarded from the input hotbar action. */
   selectHotbar(slot: number): void {
-    if (slot < 1 || slot > 4) return;
-    this.selected = slot;
+    const s = clampHotbarSlot(slot);
+    if (s !== null) this._selected = s;
+  }
+
+  /** The currently-selected hotbar slot (1–5) — main.ts's LMB dispatch reads
+   *  this to route the fire action to darts (slot 1) vs. purifier (slot 5). */
+  get selected(): number {
+    return this._selected;
   }
 
   /**
@@ -498,27 +506,31 @@ export class HUD {
   // -------------------------------------------------------------------------
   private paintHotbar(frame: HudFrame): void {
     const inv = frame.inventory;
-    // Slot 1 (darts) is never *locked* — darts are craftable from spawn; with
-    // zero ammo it dims and shows a "0" badge instead of the padlock, which
-    // is reserved for genuinely locked slots (uncrafted unlock / no kits).
+    // Slot 1 (darts) and slot 5 (purify) are never *locked* — both are
+    // consumable recipes (craft.ts never adds a consumable's id to
+    // `unlocks`, only `kind: 'unlock'` recipes land there), so with zero ammo
+    // they dim and show a "0" badge instead of the padlock, which is reserved
+    // for genuinely locked slots (uncrafted unlock / no kits).
     const locked = [
       false, // 1 Darts — ammo state, not a lock
       !frame.unlocks.has('grapple'), // 2 Grapple
       inv.kits.zipline <= 0, // 3 Zipline
       inv.kits.drone <= 0, // 4 Drone
+      false, // 5 Purify — ammo state, not a lock (same as Darts)
     ];
-    const dimmed = [inv.darts <= 0, locked[1]!, locked[2]!, locked[3]!];
+    const dimmed = [inv.darts <= 0, locked[1]!, locked[2]!, locked[3]!, inv.purifiers <= 0];
     for (let i = 0; i < this.slots.length; i++) {
       const slot = this.slots[i]!;
       slot.root.classList.toggle('wt-slot-locked', locked[i]!);
       slot.root.classList.toggle('wt-slot-dim', dimmed[i]!);
-      slot.root.classList.toggle('wt-slot-active', this.selected === i + 1);
-      // Darts always show their live count (including 0); deployables show
-      // their kit count once they have any.
+      slot.root.classList.toggle('wt-slot-active', this._selected === i + 1);
+      // Darts/Purify always show their live count (including 0); deployables
+      // show their kit count once they have any.
       let badge = '';
       if (i === 0) badge = String(inv.darts);
       else if (i === 2 && inv.kits.zipline > 0) badge = String(inv.kits.zipline);
       else if (i === 3 && inv.kits.drone > 0) badge = String(inv.kits.drone);
+      else if (i === 4) badge = String(inv.purifiers);
       if (slot.badge.textContent !== badge) slot.badge.textContent = badge;
     }
   }

@@ -56,6 +56,7 @@ import { buildCastle } from './castle/builders.ts';
 import { castleLayout, castleObstacles, castleGrappleColliders } from './castle/layout.ts';
 import { CastleSystem } from './castle/system.ts';
 import { ElfSystem } from './castle/elves.ts';
+import { PurifierSystem } from './castle/purifier.ts';
 import { NpcManager, NPCS, npcAnchors } from './village/npcs.ts';
 import { createDialogScreen, openDialog, setRequestRenderer } from './village/dialog.ts';
 import { villageCenter } from './village/layout.ts';
@@ -568,6 +569,25 @@ function bootGame(): void {
   const elves = new ElfSystem(scene, ground);
   elves.setCount(loaded?.elves ?? 0);
 
+  // Cursed Castle (Task 13): purifying darts — hotbar slot 5's fire path.
+  // Reuses the tracker dart's ballistics (PurifierSystem); on a goblin hit it
+  // purifies the goblin (removed from CastleSystem) into a happy elf at its
+  // last position. `crystalTarget` returns null until Task 14 builds the
+  // corruption crystal — the callback shape is wired now so this task never
+  // needs revisiting.
+  const purifier = new PurifierSystem(scene, camera, inventory, ground, {
+    goblinTargets: () => castleSys.goblinTargets(),
+    onPurifyGoblin: (id) => {
+      const pos = castleSys.purifyGoblin(id);
+      if (pos) {
+        elves.addAt(pos);
+        toast('A goblin becomes a happy elf!');
+      }
+    },
+    crystalTarget: () => null,
+    onPurifyCrystal: () => {},
+  });
+
   // Cursed Castle (Task 10): a gargoyle perched on each tower top + keep
   // corner. Fixed slots (negative ids), not part of the procedural per-cell
   // spawn table — see CritterManager.addFixedSlots.
@@ -1074,6 +1094,7 @@ function bootGame(): void {
     // unfair progress decay while the player is frozen).
     if (!paused) {
       darts.update(dt);
+      purifier.update(dt);
       updateTracking(dt, {
         manager: critters,
         inventory,
@@ -1170,9 +1191,13 @@ function bootGame(): void {
         if (placement.active) {
           placement.confirm(); // LMB confirms a placement
         } else if (player.mode !== 'zipline') {
-          // LMB throws a tracker dart (the grapple now lives entirely on RMB —
-          // no reel binding); suppressed only while riding a zipline.
-          darts.tryThrow();
+          // LMB fires the selected hotbar tool (the grapple now lives
+          // entirely on RMB — no reel binding); suppressed only while riding
+          // a zipline. Slot 5 (Purify) throws a purifying dart; every other
+          // slot throws a tracker dart (slot 1's own tool, and the default
+          // for slots without a dedicated LMB action).
+          if (hudUi.selected === 5) purifier.tryThrow();
+          else darts.tryThrow();
         }
       }
     }
