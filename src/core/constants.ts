@@ -678,6 +678,36 @@ export const ENV = {
 } as const;
 
 /**
+ * Day/night cycle timing (seconds) and night look. Consumed by core/daylight.ts and world/environment.ts.
+ */
+export const DAYLIGHT = {
+  /** Day phase duration (seconds). */
+  dayS: 480,
+  /** Dusk phase duration (seconds) — darkness ramps from 0 to 1. */
+  duskS: 60,
+  /** Night phase duration (seconds) — full darkness. */
+  nightS: 240,
+  /** Dawn phase duration (seconds) — darkness ramps from 1 to 0. */
+  dawnS: 60,
+  /** Night sky/fog/light targets, lerped by darkness. */
+  night: {
+    skyTop: 0x070d1f,
+    skyMid: 0x101c38,
+    skyHorizon: 0x1d2942,
+    fogColor: 0x0d1424,
+    fogNear: 110,
+    fogFar: 720,
+    sunIntensity: 0.22,
+    sunColor: 0x9db4e0,
+    hemiIntensity: 0.25,
+    moonColor: 0xe8efff,
+    moonSize: 46,
+    starCount: 350,
+    starSize: 1.5,
+  },
+} as const;
+
+/**
  * Procedural critter animation tuning (critters/animation.ts). Pure math on
  * Object3D poses; gait/flap frequency and amplitude scale with move speed and
  * saturate at `speedCap` so sprints don't blur.
