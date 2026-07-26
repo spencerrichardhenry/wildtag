@@ -1,10 +1,16 @@
+import { MOVE } from '../core/constants.ts';
 import type { Vec3 } from '../core/types.ts';
 
 // ---------------------------------------------------------------------------
 // Pure cylinder pushout collision (XZ plane only). Trees, rocks, castle walls
 // and village buildings are modelled as vertical cylinders; the player is a
 // cylinder of `radius`. If the player's centre lies within (radius +
-// obstacle.r) of an obstacle centre it is pushed radially outward to the rim.
+// obstacle.r) of an obstacle centre it is pushed radially outward — by up to
+// `MOVE.maxPushoutPerStep` per call (deep penetration of a large obstacle,
+// e.g. the castle keep, resolves gradually over several frames instead of
+// snapping straight to the rim in one teleport-feeling pop; shallow
+// penetration, the common case, reaches the rim in a single call exactly as
+// before since it's already under that distance).
 // The terrain floor is handled separately by the movement core via
 // GroundQuery, so `y` is passed straight through here.
 //
@@ -16,7 +22,9 @@ import type { Vec3 } from '../core/types.ts';
 // stretching to infinity. `yTop` left undefined preserves the original
 // infinite-cylinder behaviour (always blocks, regardless of pos.y).
 //
-// No `three` import, no randomness — plain { x, y, z } math.
+// Imports MOVE for the pushout clamp (the project's tuning-constants-live-in-
+// constants.ts convention) but stays otherwise pure: no `three`, no
+// randomness — plain { x, y, z } math.
 // ---------------------------------------------------------------------------
 
 /** A vertical collision cylinder: centre (x, z), radius r (metres), and an
@@ -37,7 +45,12 @@ export interface Obstacle {
  * mutated. A position sitting exactly on an obstacle centre is pushed along +X
  * as a deterministic fallback (the radial direction is otherwise undefined).
  * Obstacles whose `pos.y` sits strictly above their `yTop` are skipped (the
- * player's feet are above the obstacle's top, so it can't push them).
+ * player's feet are above the obstacle's top, so it can't push them). Each
+ * obstacle's pushout is capped at `MOVE.maxPushoutPerStep`: the player moves
+ * along the same outward radial line either the full penetration depth or
+ * the cap, whichever is smaller — so it always moves monotonically toward
+ * the rim (never past it, never sideways off that line) and can only need
+ * more than one call to fully resolve when penetrating a large obstacle deeply.
  */
 export function resolveCollision(pos: Vec3, radius: number, obstacles: Obstacle[]): Vec3 {
   let x = pos.x;
@@ -51,15 +64,14 @@ export function resolveCollision(pos: Vec3, radius: number, obstacles: Obstacle[
     const dist = Math.hypot(dx, dz);
     if (dist >= minDist) continue; // outside (or exactly on the rim) — no push
 
-    if (dist < 1e-9) {
-      // Exactly on the centre: radial direction undefined, push along +X.
-      x = ob.x + minDist;
-      z = ob.z;
-    } else {
-      const scale = minDist / dist;
-      x = ob.x + dx * scale;
-      z = ob.z + dz * scale;
-    }
+    // Outward unit normal from the obstacle centre through the player
+    // (deterministic +X fallback when sitting exactly on the centre).
+    const nx = dist < 1e-9 ? 1 : dx / dist;
+    const nz = dist < 1e-9 ? 0 : dz / dist;
+    const penetration = minDist - dist;
+    const step = Math.min(penetration, MOVE.maxPushoutPerStep);
+    x += nx * step;
+    z += nz * step;
   }
 
   return { x, y: pos.y, z };

@@ -150,6 +150,19 @@ export const MOVE = {
   rocketCost: 40,
   /** Minimum time between rockets (s). */
   rocketCooldown: 4,
+  /**
+   * Max XZ distance (m) `resolveCollision` (collision.ts) will push the
+   * player out of a single obstacle in ONE call. A player who spawns/glides
+   * deep inside a large-radius obstacle (e.g. the castle keep, r ≈ 14.14)
+   * would otherwise be snapped straight to the rim in a single frame — a
+   * multi-metre teleport-feeling "pop". Clamping means deep penetration
+   * resolves gradually over several frames instead (still monotonically
+   * toward the rim along the same radial line, so it can never overshoot
+   * past the rim or tunnel through the obstacle); shallow penetration
+   * (the overwhelmingly common case — trees, rocks, wall segments) is
+   * unaffected since it's already well under this distance.
+   */
+  maxPushoutPerStep: 1.5,
 } as const;
 
 /**
@@ -998,9 +1011,16 @@ export const VILLAGE = {
   },
   /** Wall height (m) per building kind (roof sits on top). */
   wallHeight: { farmhouse: 3.4, barter: 3.0, home: 2.8 },
-  /** Extra collision height (m) above `wallHeight` allowed for the pyramid
-   *  roof, so a building's obstacle `yTop` clears its actual roof peak. */
-  roofAllowance: 1.5,
+  /**
+   * Pyramid-roof height as a fraction of the footprint's longer side
+   * (`roof()` in buildings.ts: `roofH = max(w, d) * roofPitch`). Shared with
+   * `villageObstacles()`, which derives each building's collision `yTop` as
+   * `wallHeight[kind] + max(w, d) * roofPitch` above ground — the exact roof
+   * apex height (plus a hair of slack from the mesh's own -0.05 seating
+   * offset), so a gliding player is only skipped once they clear the real
+   * roof peak, never before.
+   */
+  roofPitch: 0.42,
   /** Lamp posts: count ringed around the plaza + their ring radius (m) & height (m). */
   lampCount: 6,
   lampRadius: 9.5,

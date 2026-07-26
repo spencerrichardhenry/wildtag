@@ -61,7 +61,7 @@ function palette(kind: BuildingPlacement['kind']): { wall: number; roof: number 
 /** A pyramid roof squared over a w×d footprint, sitting at wall-top `h`. */
 function roof(w: number, d: number, h: number, color: number): THREE.Mesh {
   const radius = Math.hypot(w, d) / 2 + 0.15;
-  const roofH = Math.max(w, d) * 0.42;
+  const roofH = Math.max(w, d) * VILLAGE.roofPitch;
   const geo = new THREE.ConeGeometry(radius, roofH, 4);
   const mesh = new THREE.Mesh(geo, mat(color, { emissiveIntensity: 0 }));
   mesh.rotation.y = Math.PI / 4; // square the 4-sided cone onto the walls
@@ -248,9 +248,13 @@ let _obstacles: Obstacle[] | null = null;
  * Cache-computed collision circles for buildings (2–3 each) + lamp posts.
  * Each circle carries a `yTop` (absolute world Y of its top) so a player
  * gliding above a roof or lamp head passes over it instead of being blocked
- * by an infinite invisible column: buildings top out at ground y + wallHeight
- * (per kind) + `VILLAGE.roofAllowance` (clears the pyramid roof peak); lamps
- * top out at ground y + `VILLAGE.lampHeight`.
+ * by an infinite invisible column: buildings top out at ground y +
+ * `wallHeight[kind]` + the building's OWN roof height (`max(w, d) *
+ * VILLAGE.roofPitch`, the exact formula `roof()` uses) — derived per
+ * building rather than a flat allowance, so it stays correct if footprints
+ * ever change and actually clears the roof apex for every kind (a flat
+ * allowance undershot the farmhouse/barter roof peaks). Lamps top out at
+ * ground y + `VILLAGE.lampHeight`.
  */
 export function villageObstacles(): Obstacle[] {
   if (_obstacles) return _obstacles;
@@ -258,7 +262,8 @@ export function villageObstacles(): Obstacle[] {
   const out: Obstacle[] = [];
   for (const b of layout.buildings) {
     const groundY = heightAt(b.x, b.z);
-    const yTop = groundY + VILLAGE.wallHeight[b.kind] + VILLAGE.roofAllowance;
+    const roofH = Math.max(b.w, b.d) * VILLAGE.roofPitch;
+    const yTop = groundY + VILLAGE.wallHeight[b.kind] + roofH;
     // Full-footprint coverage with circles along the longer local axis: radius
     // r = 1.15 × (short/2) pads slightly past the walls (buildings have no
     // interiors), which buys each circle an interval of half-width

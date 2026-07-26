@@ -159,6 +159,48 @@ describe('villageObstacles coverage', () => {
   });
 });
 
+describe('villageObstacles roof-apex yTop', () => {
+  it('derives each building obstacle yTop from its own roof apex (max(w,d) * roofPitch), not a flat allowance', () => {
+    const layout = villageLayout();
+    const obstacles = villageObstacles();
+    for (const b of layout.buildings) {
+      const groundY = heightAt(b.x, b.z);
+      const roofH = Math.max(b.w, b.d) * VILLAGE.roofPitch;
+      const expectedTop = groundY + VILLAGE.wallHeight[b.kind] + roofH;
+      const maxOffset = Math.max(b.w, b.d) / 2 + 0.5;
+      // At least one obstacle circle belonging to this building sits at this yTop.
+      const found = obstacles.some(
+        (o) => Math.hypot(o.x - b.x, o.z - b.z) < maxOffset && Math.abs((o.yTop ?? -1) - expectedTop) < 1e-6,
+      );
+      expect(found).toBe(true);
+    }
+  });
+
+  it('farmhouse yTop clears the real roof apex (a flat 1.5m allowance previously undershot it)', () => {
+    const layout = villageLayout();
+    const farmhouse = layout.buildings.find((b) => b.kind === 'farmhouse')!;
+    expect(farmhouse).toBeDefined();
+    const groundY = heightAt(farmhouse.x, farmhouse.z);
+    // True mesh apex above the wall top, per roof(): max(w,d)*roofPitch - 0.05
+    // seating offset. footprint 8x6 -> roofH 3.36, true apex-above-walltop 3.31.
+    const trueApexAboveWallTop = Math.max(farmhouse.w, farmhouse.d) * VILLAGE.roofPitch - 0.05;
+    const trueApex = groundY + VILLAGE.wallHeight.farmhouse + trueApexAboveWallTop;
+    const obstacles = villageObstacles();
+    // Obstacle circles for a building sit along its own long axis, offset at
+    // most long/2 from its centre — use that (plus a small margin) rather
+    // than a generous radius that could sweep in a neighbouring building's
+    // circles (buildings ring a plaza just ~16m apart).
+    const maxOffset = Math.max(farmhouse.w, farmhouse.d) / 2 + 0.5;
+    const farmhouseObs = obstacles.filter(
+      (o) => Math.hypot(o.x - farmhouse.x, o.z - farmhouse.z) < maxOffset,
+    );
+    expect(farmhouseObs.length).toBeGreaterThan(0);
+    for (const o of farmhouseObs) {
+      expect(o.yTop).toBeGreaterThanOrEqual(trueApex - 1e-9);
+    }
+  });
+});
+
 describe('inVillage', () => {
   it('is true at the plaza and false at the world origin', () => {
     const c = findVillageCenter();
