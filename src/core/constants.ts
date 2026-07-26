@@ -1124,6 +1124,19 @@ export const CASTLE = {
   towerR: 5,
   keepH: 20,
   keepHalf: 10,
+  /**
+   * Keep shell (Task 14 review follow-up): the keep is a HOLLOW crenellated
+   * room (4 perimeter walls + open top + a floor slab), not a solid block —
+   * the dark crystal sits inside it, reachable on foot through the entrance
+   * or by grapple-climbing straight over a wall. `keepWallT` is thinner than
+   * the curtain wall (`wallT`) so the room reads as an interior, not another
+   * fortification ring. The entrance sits on the same compass side as the
+   * main gate (see `layout.ts`'s `gateWallIndex` reuse) so the gate → keep
+   * approach is a straight line across the courtyard.
+   */
+  keepWallT: 1.4,
+  keepEntranceW: 3,
+  keepEntranceH: 3.5,
   gateW: 9,
   gateH: 7,
   /** Gargoyle perch pads: computed from geometry, this many total. */

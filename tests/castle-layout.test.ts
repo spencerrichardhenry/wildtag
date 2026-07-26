@@ -44,6 +44,13 @@ function findGateWall(l: ReturnType<typeof castleLayout>) {
   )!;
 }
 
+/** The keep wall whose midpoint matches its entrance (i.e. the entrance wall). */
+function findKeepEntranceWall(l: ReturnType<typeof castleLayout>) {
+  return l.keepWalls.find(
+    (w) => Math.hypot((w.x1 + w.x2) / 2 - l.keep.entrance.x, (w.z1 + w.z2) / 2 - l.keep.entrance.z) < 1e-6,
+  )!;
+}
+
 describe('castleLayout', () => {
   it('is deterministic with 4 towers, 4 walls, gate in a wall', () => {
     const a = castleLayout();
@@ -51,8 +58,31 @@ describe('castleLayout', () => {
     expect(a).toBe(b); // memoised
     expect(a.towers).toHaveLength(4);
     expect(a.walls).toHaveLength(4);
+    expect(a.keepWalls).toHaveLength(4);
     expect(a.keep.h).toBe(CASTLE.keepH);
     expect(a.crystalPos.y).toBeCloseTo(CASTLE.padHeight + 1.2);
+  });
+
+  it('keep entrance sits on the same compass side as the main gate, on a keep wall', () => {
+    const l = castleLayout();
+    // The entrance's arc-length position on its wall must actually lie ON
+    // that wall (both endpoints share an axis with keepHalf).
+    const dxHalf = Math.abs(Math.abs(l.keep.entrance.x - CASTLE.center.x) - CASTLE.keepHalf);
+    const dzHalf = Math.abs(Math.abs(l.keep.entrance.z - CASTLE.center.z) - CASTLE.keepHalf);
+    expect(Math.min(dxHalf, dzHalf)).toBeLessThan(1e-6);
+    expect(l.keep.entrance.w).toBe(CASTLE.keepEntranceW);
+    expect(l.keep.entrance.h).toBe(CASTLE.keepEntranceH);
+
+    // Same side as the gate: whichever axis is pinned (x or z), the entrance
+    // and the gate pin the SAME axis to the SAME sign.
+    const gateOnX = Math.abs(Math.abs(l.gate.x - CASTLE.center.x) - CASTLE.half) < 1e-6;
+    const entranceOnX = Math.abs(Math.abs(l.keep.entrance.x - CASTLE.center.x) - CASTLE.keepHalf) < 1e-6;
+    expect(entranceOnX).toBe(gateOnX);
+    if (gateOnX) {
+      expect(Math.sign(l.keep.entrance.x - CASTLE.center.x)).toBe(Math.sign(l.gate.x - CASTLE.center.x));
+    } else {
+      expect(Math.sign(l.keep.entrance.z - CASTLE.center.z)).toBe(Math.sign(l.gate.z - CASTLE.center.z));
+    }
   });
 
   it('towers sit at the four corners of the square footprint', () => {
@@ -118,18 +148,80 @@ describe('castleObstacles', () => {
     for (const o of towerObs) {
       expect(o.yTop).toBeCloseTo(CASTLE.padHeight + CASTLE.towerH, 5);
     }
-    // The keep circle tops out at padHeight + keepH.
+    // Keep wall circles (radius CASTLE.keepWallT — a perimeter ring, NOT one
+    // solid disc over the footprint) top out at padHeight + keepH.
     const l = castleLayout();
-    const keepR = l.keep.half * Math.SQRT2;
-    const keepObs = obs.find((o) => Math.abs(o.r - keepR) < 1e-6);
-    expect(keepObs).toBeDefined();
-    expect(keepObs!.yTop).toBeCloseTo(CASTLE.padHeight + CASTLE.keepH, 5);
+    const keepWallObs = obs.filter((o) => Math.abs(o.r - CASTLE.keepWallT) < 1e-6);
+    expect(keepWallObs.length).toBeGreaterThan(0);
+    for (const o of keepWallObs) {
+      expect(o.yTop).toBeCloseTo(CASTLE.padHeight + CASTLE.keepH, 5);
+    }
     // Wall circles (radius CASTLE.wallT) top out at padHeight + wallH.
     const wallObs = obs.filter((o) => Math.abs(o.r - CASTLE.wallT) < 1e-6);
     expect(wallObs.length).toBeGreaterThan(0);
     for (const o of wallObs) {
       expect(o.yTop).toBeCloseTo(CASTLE.padHeight + CASTLE.wallH, 5);
     }
+  });
+
+  it('the keep is a hollow perimeter ring — no solid disc obstacle near its centre, crystalPos is clear', () => {
+    const l = castleLayout();
+    const obs = castleObstacles();
+    // Task 14 review: a single fat disc (r ~= keepHalf*sqrt(2) ~= 14.14) used
+    // to cover the whole keep footprint — that made the interior (and the
+    // crystal inside it) physically unreachable. It must be gone now.
+    const oldSolidDiscR = l.keep.half * Math.SQRT2;
+    const solidDisc = obs.find((o) => Math.abs(o.r - oldSolidDiscR) < 1e-6);
+    expect(solidDisc).toBeUndefined();
+
+    // No obstacle at all sits close enough to swallow the exact keep centre.
+    for (const o of obs) {
+      const d = Math.hypot(o.x - l.keep.x, o.z - l.keep.z);
+      expect(d).toBeGreaterThan(o.r);
+    }
+
+    // The crystal's own position (keep centre) is inside no obstacle circle.
+    const cp = l.crystalPos;
+    for (const o of obs) {
+      const d = Math.hypot(o.x - cp.x, o.z - cp.z);
+      expect(d).toBeGreaterThan(o.r);
+    }
+  });
+
+  it('solidly covers the 3 non-entrance keep walls (no gap wider than 2*keepWallT anywhere)', () => {
+    const l = castleLayout();
+    const obs = castleObstacles();
+    const entranceWall = findKeepEntranceWall(l);
+    const nonEntranceWalls = l.keepWalls.filter((w) => w !== entranceWall);
+    expect(nonEntranceWalls).toHaveLength(3);
+
+    for (const w of nonEntranceWalls) {
+      const len = Math.hypot(w.x2 - w.x1, w.z2 - w.z1);
+      const offsets = wallLineOffsets(w, obs, CASTLE.keepWallT);
+      expect(offsets.length).toBeGreaterThan(1);
+      expect(offsets[0]).toBeLessThanOrEqual(CASTLE.keepWallT + 1e-6);
+      expect(offsets[offsets.length - 1]).toBeGreaterThanOrEqual(len - CASTLE.keepWallT - 1e-6);
+      for (let i = 1; i < offsets.length; i++) {
+        expect(offsets[i] - offsets[i - 1]).toBeLessThanOrEqual(2 * CASTLE.keepWallT + 1e-6);
+      }
+    }
+  });
+
+  it('leaves the keep entrance span genuinely clear (a player can walk in)', () => {
+    const l = castleLayout();
+    const obs = castleObstacles();
+    const entranceWall = findKeepEntranceWall(l);
+    const len = Math.hypot(entranceWall.x2 - entranceWall.x1, entranceWall.z2 - entranceWall.z1);
+    const entranceHalf = CASTLE.keepEntranceW / 2;
+    const offsets = wallLineOffsets(entranceWall, obs, CASTLE.keepWallT);
+
+    // No keep-wall circle centre lands within the entrance span...
+    for (const s of offsets) {
+      expect(Math.abs(s - len / 2)).toBeGreaterThanOrEqual(entranceHalf - 1e-6);
+    }
+    // ...but both flanks are still populated.
+    expect(offsets.some((s) => s < len / 2 - entranceHalf)).toBe(true);
+    expect(offsets.some((s) => s > len / 2 + entranceHalf)).toBe(true);
   });
 
   it('solidly covers the 3 non-gate walls (no gap wider than 2*wallT anywhere)', () => {
@@ -185,6 +277,13 @@ describe('castleGrappleColliders', () => {
     const wallCol = cols.find((c) => Math.abs(c.r - CASTLE.wallT * 1.5) < 1e-6);
     expect(wallCol).toBeDefined();
     expect(wallCol!.yTop).toBeCloseTo(CASTLE.padHeight + CASTLE.wallH, 5);
+  });
+
+  it('keep wall grapple colliders use r = keepWallT * 1.5 and climb to padHeight + keepH (climb straight over into the room)', () => {
+    const cols = castleGrappleColliders();
+    const keepCol = cols.find((c) => Math.abs(c.r - CASTLE.keepWallT * 1.5) < 1e-6);
+    expect(keepCol).toBeDefined();
+    expect(keepCol!.yTop).toBeCloseTo(CASTLE.padHeight + CASTLE.keepH, 5);
   });
 });
 

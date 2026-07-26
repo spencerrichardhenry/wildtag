@@ -27,7 +27,9 @@ export interface CastleLayout {
   center: Point2;
   towers: { x: number; z: number; r: number; h: number }[]; // 4
   walls: { x1: number; z1: number; x2: number; z2: number; h: number; t: number }[]; // 4
-  keep: { x: number; z: number; half: number; h: number };
+  keep: { x: number; z: number; half: number; h: number; entrance: { x: number; z: number; w: number; h: number } };
+  /** The keep's own 4 perimeter walls (hollow room, not a solid block — Task 14 review). */
+  keepWalls: { x1: number; z1: number; x2: number; z2: number; h: number; t: number }[]; // 4
   gate: { x: number; z: number; w: number };
   crystalPos: Vec3;
   perches: Vec3[]; // CASTLE.perchCount, on tower tops + keep corners
@@ -94,7 +96,46 @@ function computeCastleLayout(): CastleLayout {
     w: CASTLE.gateW,
   };
 
-  const keep = { x: center.x, z: center.z, half: CASTLE.keepHalf, h: CASTLE.keepH };
+  // The keep's own 4 perimeter walls (a hollow room, not a solid block —
+  // Task 14 review: the dark crystal must be visible/reachable inside).
+  // Same NE/SE/SW/NW corner + north/east/south/west order as the curtain
+  // wall above, just at `keepHalf` instead of `half`.
+  const kNE: Point2 = { x: center.x + CASTLE.keepHalf, z: center.z - CASTLE.keepHalf };
+  const kSE: Point2 = { x: center.x + CASTLE.keepHalf, z: center.z + CASTLE.keepHalf };
+  const kSW: Point2 = { x: center.x - CASTLE.keepHalf, z: center.z + CASTLE.keepHalf };
+  const kNW: Point2 = { x: center.x - CASTLE.keepHalf, z: center.z - CASTLE.keepHalf };
+  const keepWallDefs: WallDef[] = [
+    { a: kNW, b: kNE }, // north
+    { a: kNE, b: kSE }, // east
+    { a: kSE, b: kSW }, // south
+    { a: kSW, b: kNW }, // west
+  ];
+  const keepWalls = keepWallDefs.map((w) => ({
+    x1: w.a.x,
+    z1: w.a.z,
+    x2: w.b.x,
+    z2: w.b.z,
+    h: CASTLE.keepH,
+    t: CASTLE.keepWallT,
+  }));
+  // The entrance sits on the SAME compass side as the main gate (reusing
+  // `gateWallIndex`) so a player entering the main gate finds the keep's
+  // door straight ahead across the courtyard, instead of having to circle it.
+  const keepEntranceWall = keepWallDefs[gateWallIndex]!;
+  const keepEntrance = {
+    x: (keepEntranceWall.a.x + keepEntranceWall.b.x) / 2,
+    z: (keepEntranceWall.a.z + keepEntranceWall.b.z) / 2,
+    w: CASTLE.keepEntranceW,
+    h: CASTLE.keepEntranceH,
+  };
+
+  const keep = {
+    x: center.x,
+    z: center.z,
+    half: CASTLE.keepHalf,
+    h: CASTLE.keepH,
+    entrance: keepEntrance,
+  };
   const crystalPos: Vec3 = { x: center.x, y: CASTLE.padHeight + 1.2, z: center.z };
 
   const towerPerches: Vec3[] = towers.map((t) => ({
@@ -108,7 +149,7 @@ function computeCastleLayout(): CastleLayout {
   ];
   const perches = [...towerPerches, ...keepPerches];
 
-  return { center, towers, walls, keep, gate, crystalPos, perches };
+  return { center, towers, walls, keep, keepWalls, gate, crystalPos, perches };
 }
 
 let _cached: CastleLayout | null = null;
@@ -181,11 +222,19 @@ function wallCircles(
 let _obstacles: Obstacle[] | null = null;
 
 /**
- * Cache-computed collision circles: towers, keep, wall segments (gate gap
- * left open). Each circle carries a `yTop` (absolute world Y of its top,
- * `CASTLE.padHeight` + the feature's height) matching `castleGrappleColliders`,
- * so a player gliding above a wall/tower/keep passes over it instead of being
- * blocked by an infinite invisible column.
+ * Cache-computed collision circles: towers, curtain wall + keep wall segments
+ * (gate/entrance gaps left open). Each circle carries a `yTop` (absolute
+ * world Y of its top, `CASTLE.padHeight` + the feature's height) matching
+ * `castleGrappleColliders`, so a player gliding above a wall/tower/keep
+ * passes over it instead of being blocked by an infinite invisible column.
+ *
+ * The keep is a PERIMETER RING of circles along its 4 own walls (Task 14
+ * review follow-up) — NOT one solid disc over the whole footprint — with its
+ * entrance span left clear, exactly like the curtain wall's gate. A solid
+ * disc would make the keep's interior (and the crystal inside it) physically
+ * unreachable: `resolveCollision` pushes a player back out of ANY obstacle
+ * whose `yTop` they're at or below, everywhere inside its radius, including
+ * dead centre.
  */
 export function castleObstacles(): Obstacle[] {
   if (_obstacles) return _obstacles;
@@ -193,8 +242,9 @@ export function castleObstacles(): Obstacle[] {
   const yBase = CASTLE.padHeight;
   const out: Obstacle[] = [];
   for (const t of l.towers) out.push({ x: t.x, z: t.z, r: t.r, yTop: yBase + t.h });
-  // Keep footprint: one circle covering the square corner-to-corner.
-  out.push({ x: l.keep.x, z: l.keep.z, r: l.keep.half * Math.SQRT2, yTop: yBase + l.keep.h });
+  for (const w of l.keepWalls) {
+    for (const c of wallCircles(w, CASTLE.keepWallT, l.keep.entrance)) out.push({ ...c, yTop: yBase + w.h });
+  }
   for (const w of l.walls) {
     for (const c of wallCircles(w, CASTLE.wallT, l.gate)) out.push({ ...c, yTop: yBase + w.h });
   }
@@ -204,20 +254,23 @@ export function castleObstacles(): Obstacle[] {
 
 let _grapple: GrappleCollider[] | null = null;
 
-/** Cache-computed climbable cylinders: towers, keep, wall segments (gate gap left open). */
+/**
+ * Cache-computed climbable cylinders: towers, curtain wall + keep wall
+ * segments (gate/entrance gaps left open) — the keep's own walls climb to
+ * `keepH` exactly like the curtain wall climbs to `wallH`, so grapple-
+ * climbing straight over a keep wall (skipping the entrance) still works.
+ */
 export function castleGrappleColliders(): GrappleCollider[] {
   if (_grapple) return _grapple;
   const l = castleLayout();
   const yBase = CASTLE.padHeight;
   const out: GrappleCollider[] = [];
   for (const t of l.towers) out.push({ x: t.x, z: t.z, r: t.r, yBase, yTop: yBase + t.h });
-  out.push({
-    x: l.keep.x,
-    z: l.keep.z,
-    r: l.keep.half * Math.SQRT2,
-    yBase,
-    yTop: yBase + l.keep.h,
-  });
+  for (const w of l.keepWalls) {
+    for (const c of wallCircles(w, CASTLE.keepWallT * 1.5, l.keep.entrance)) {
+      out.push({ x: c.x, z: c.z, r: c.r, yBase, yTop: yBase + w.h });
+    }
+  }
   for (const w of l.walls) {
     for (const c of wallCircles(w, CASTLE.wallT * 1.5, l.gate)) {
       out.push({ x: c.x, z: c.z, r: c.r, yBase, yTop: yBase + w.h });

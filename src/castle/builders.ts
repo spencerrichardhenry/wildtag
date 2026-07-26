@@ -196,46 +196,83 @@ function buildTower(
   }
 }
 
-/** The keep: a larger crenellated box, open top (no roof — room for the crystal). */
+/**
+ * The keep (Task 14 review follow-up): a HOLLOW crenellated room — 4
+ * perimeter walls (thin, `CASTLE.keepWallT`) + a stone floor slab + open top
+ * (no roof) — NOT a solid block. The dark crystal (built separately by
+ * `CastleSystem`) sits on the floor at the centre, visible from above the
+ * walls and through the entrance opening. The entrance sits on the same
+ * compass side as the main gate (`layout.ts` picks it via the same
+ * `gateWallIndex`), so it's a straight walk-in from the courtyard — flanked
+ * by a lintel so it reads as a doorway, not a construction gap.
+ *
+ * Mirrors `buildWall`'s gate-aware segment pattern almost exactly, just
+ * against `layout.keepWalls` + `layout.keep.entrance` instead of the curtain
+ * wall's `walls` + `gate`.
+ */
 function buildKeep(
   root: THREE.Group,
-  keep: CastleLayout['keep'],
+  layout: CastleLayout,
   colors: Colors,
   purified: boolean,
   baseY: number,
 ): void {
+  const keep = layout.keep;
   const size = keep.half * 2;
-  const body = box(size, keep.h, size, colors.stone);
-  body.position.set(keep.x, baseY + keep.h / 2, keep.z);
-  root.add(body);
 
-  const half = keep.half;
-  const sides: { x1: number; z1: number; x2: number; z2: number }[] = [
-    { x1: keep.x - half, z1: keep.z - half, x2: keep.x + half, z2: keep.z - half }, // north
-    { x1: keep.x + half, z1: keep.z - half, x2: keep.x + half, z2: keep.z + half }, // east
-    { x1: keep.x + half, z1: keep.z + half, x2: keep.x - half, z2: keep.z + half }, // south
-    { x1: keep.x - half, z1: keep.z + half, x2: keep.x - half, z2: keep.z - half }, // west
-  ];
+  // Thin stone floor — the crystal's plinth sits on/into this.
+  const floor = box(size, 0.3, size, colors.stone);
+  floor.position.set(keep.x, baseY + 0.15, keep.z);
+  root.add(floor);
+
   const topY = baseY + keep.h;
-  const thickness = CASTLE.wallT;
-  for (const s of sides) {
-    const dx = s.x2 - s.x1;
-    const dz = s.z2 - s.z1;
+
+  for (const w of layout.keepWalls) {
+    const dx = w.x2 - w.x1;
+    const dz = w.z2 - w.z1;
     const len = Math.hypot(dx, dz);
     const ux = dx / len;
     const uz = dz / len;
     const angle = Math.atan2(dx, dz);
-    addCrenellations(root, s.x1, s.z1, angle, ux, uz, 0, len, topY, thickness, colors.stoneDark);
+    const midx = (w.x1 + w.x2) / 2;
+    const midz = (w.z1 + w.z2) / 2;
+    const isEntranceWall = Math.hypot(midx - keep.entrance.x, midz - keep.entrance.z) < 1e-6;
 
-    if (!purified) {
+    for (const [a, b] of wallRunSegments(w, keep.entrance)) {
+      const segLen = b - a;
+      if (segLen <= 0.01) continue;
+      const midS = (a + b) / 2;
+      const cx = w.x1 + ux * midS;
+      const cz = w.z1 + uz * midS;
+
+      const run = box(w.t, w.h, segLen, colors.stone);
+      run.position.set(cx, baseY + w.h / 2, cz);
+      run.rotation.y = angle;
+      root.add(run);
+
+      addCrenellations(root, w.x1, w.z1, angle, ux, uz, a, b, topY, w.t, colors.stoneDark);
+    }
+
+    // Ember slit (cursed only, matching the original keep dressing) — skipped
+    // on the entrance wall, where the mid-wall point sits in the open doorway.
+    if (!isEntranceWall && !purified) {
       const c = colors as typeof CASTLE_COLORS.cursed;
-      const midx = (s.x1 + s.x2) / 2;
-      const midz = (s.z1 + s.z2) / 2;
       const slit = box(0.5, 2.2, 0.5, colors.stoneDark, { emissive: c.ember, emissiveIntensity: 1.4 });
       slit.position.set(midx, baseY + keep.h * 0.5, midz);
       root.add(slit);
     }
   }
+
+  // Lintel bridging the entrance opening, so it reads as a doorway.
+  const entranceWall = layout.keepWalls.find(
+    (w) => Math.hypot((w.x1 + w.x2) / 2 - keep.entrance.x, (w.z1 + w.z2) / 2 - keep.entrance.z) < 1e-6,
+  )!;
+  const entAngle = Math.atan2(entranceWall.x2 - entranceWall.x1, entranceWall.z2 - entranceWall.z1);
+  const lintelH = Math.max(0.4, keep.h - keep.entrance.h);
+  const lintel = box(entranceWall.t, lintelH, keep.entrance.w + entranceWall.t, colors.stoneDark);
+  lintel.position.set(keep.entrance.x, baseY + keep.entrance.h + lintelH / 2, keep.entrance.z);
+  lintel.rotation.y = entAngle;
+  root.add(lintel);
 }
 
 /** Gatehouse arch over the real gate gap: two pillars + a lintel bridging above. */
@@ -405,7 +442,7 @@ export function buildCastle(scene: THREE.Scene, purified: boolean): THREE.Group 
   const built = new THREE.Group();
   for (const w of layout.walls) buildWall(built, w, layout.gate, colors, purified, baseY);
   for (const t of layout.towers) buildTower(built, t, colors, purified, baseY);
-  buildKeep(built, layout.keep, colors, purified, baseY);
+  buildKeep(built, layout, colors, purified, baseY);
   buildGatehouse(built, gateWall, layout.gate, colors, baseY);
   if (purified) addPurifiedLights(built, layout, baseY);
 
