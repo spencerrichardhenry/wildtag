@@ -27,10 +27,31 @@ function sampleFor(phase: DaylightSample['phase']): DaylightSample {
   return { phase, darkness: phase === 'day' ? 0 : 1, cycleT: 0 };
 }
 
-function makeSystem(purified = false, onPlayerHit: (dmg: number, from: Vec3) => void = () => {}) {
+/**
+ * Mutable-purified test harness: `purified()` reads back a local flag that
+ * `onPurified()` flips true — mirrors main.ts's real `let castlePurified`
+ * closure, so `purifyCastle()`'s idempotency (second call is a no-op) is
+ * actually exercised the same way it is in production.
+ */
+function makeSystem(
+  purified = false,
+  onPlayerHit: (dmg: number, from: Vec3) => void = () => {},
+  extra: {
+    onPurified?: () => void;
+    addElf?: (pos: Vec3) => void;
+    flashPurify?: () => void;
+  } = {},
+) {
+  let purifiedFlag = purified;
   return new CastleSystem(new THREE.Scene(), flatGround, {
     onPlayerHit,
-    purified: () => purified,
+    purified: () => purifiedFlag,
+    onPurified: () => {
+      purifiedFlag = true;
+      extra.onPurified?.();
+    },
+    addElf: extra.addElf ?? (() => {}),
+    flashPurify: extra.flashPurify ?? (() => {}),
   });
 }
 
@@ -126,5 +147,60 @@ describe('CastleSystem', () => {
       expect(d).toBeLessThanOrEqual(CASTLE.regionR);
       expect(t.r).toBe(GOBLIN.hitRadius);
     }
+  });
+
+  // -------------------------------------------------------------------------
+  // Dark crystal + purify sequence (Cursed Castle Task 14).
+  // -------------------------------------------------------------------------
+
+  it('crystalTarget().active flips false the moment the castle is purified', () => {
+    const sys = makeSystem();
+    expect(sys.crystalTarget().active).toBe(true);
+    expect(sys.crystalTarget().r).toBe(1.4);
+    sys.purifyCastle();
+    expect(sys.crystalTarget().active).toBe(false);
+  });
+
+  it('purifyCastle turns every live goblin into an elf exactly once (idempotent)', () => {
+    const elfSpawns: Vec3[] = [];
+    let purifiedCalls = 0;
+    let flashCalls = 0;
+    const sys = makeSystem(false, () => {}, {
+      addElf: (pos) => elfSpawns.push(pos),
+      onPurified: () => {
+        purifiedCalls++;
+      },
+      flashPurify: () => {
+        flashCalls++;
+      },
+    });
+    sys.update(DT, FAR_PLAYER, sampleFor('dusk'));
+    expect(sys.goblinCount()).toBe(GOBLIN.count);
+
+    sys.purifyCastle();
+    expect(elfSpawns.length).toBe(GOBLIN.count);
+    expect(sys.goblinCount()).toBe(0);
+    expect(purifiedCalls).toBe(1);
+    expect(flashCalls).toBe(1);
+
+    // A second call (e.g. a stray dart passing through the now-inactive
+    // crystal, or a debug double-call) must be a total no-op.
+    sys.purifyCastle();
+    expect(elfSpawns.length).toBe(GOBLIN.count);
+    expect(purifiedCalls).toBe(1);
+    expect(flashCalls).toBe(1);
+  });
+
+  it('after purifyCastle, a dusk transition spawns zero goblins', () => {
+    const sys = makeSystem();
+    sys.update(DT, FAR_PLAYER, sampleFor('dusk'));
+    expect(sys.goblinCount()).toBe(GOBLIN.count);
+
+    sys.purifyCastle();
+    expect(sys.goblinCount()).toBe(0);
+
+    sys.update(DT, FAR_PLAYER, sampleFor('day'));
+    sys.update(DT, FAR_PLAYER, sampleFor('dusk'));
+    expect(sys.goblinCount()).toBe(0);
   });
 });

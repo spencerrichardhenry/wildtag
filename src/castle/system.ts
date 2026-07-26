@@ -1,9 +1,10 @@
 import * as THREE from 'three';
-import { GOBLIN } from '../core/constants.ts';
+import { CRYSTAL, GOBLIN, PURIFIER } from '../core/constants.ts';
 import type { DaylightSample } from '../core/daylight.ts';
 import { mulberry32 } from '../core/rng.ts';
 import type { GroundQuery, Vec3 } from '../core/types.ts';
-import { buildGoblin } from './builders.ts';
+import { toast } from '../ui/toasts.ts';
+import { buildCastle, buildCrystal, buildGoblin, removeCastle, removeCrystal, type CrystalMesh } from './builders.ts';
 import {
   goblinSpawnPoints,
   makeGoblin,
@@ -11,6 +12,8 @@ import {
   stepGoblin,
   type GoblinState,
 } from './goblins.ts';
+import { castleLayout } from './layout.ts';
+import { purifySequenceSteps } from './state.ts';
 
 // ---------------------------------------------------------------------------
 // CastleSystem (Cursed Castle Task 11): the three.js presentation + spawning
@@ -24,6 +27,12 @@ import {
 // jump straight past dusk, still spawns the night's goblins on the very next
 // frame. `nightIndex` (seeding `goblinSpawnPoints`) increments once per actual
 // spawn event, so each night's ring is reproducible and distinct.
+//
+// Task 14 (the finale): this class also owns the dark/purified crystal mesh
+// (pulsing every frame) and `purifyCastle()` — the one-shot, idempotent
+// sequence a landed purifying-dart hit on the crystal triggers: every live
+// goblin becomes a happy elf, the castle rebuilds in its bright dressing, the
+// crystal swaps look, and `opts.onPurified()` flips the flag `main.ts` owns.
 // ---------------------------------------------------------------------------
 
 export class CastleSystem {
@@ -54,14 +63,44 @@ export class CastleSystem {
   private nextId = 0;
   private nightIndex = -1;
 
+  /** The dark/purified crystal (Task 14) — owned here, not merged into the
+   *  `buildCastle` group, so its emissive pulse can update every frame. */
+  private crystal: CrystalMesh;
+  /** Elapsed seconds, driving the crystal's emissive pulse. */
+  private time = 0;
+  /** The purify moment's expanding sparkle ring, while one is playing. */
+  private ring: {
+    points: THREE.Points;
+    material: THREE.PointsMaterial;
+    /** Unit XZ directions (2 floats per point) the ring expands along. */
+    dirs: Float32Array;
+    origin: Vec3;
+    age: number;
+  } | null = null;
+
   constructor(
     private readonly scene: THREE.Scene,
     private readonly ground: GroundQuery,
     private readonly opts: {
       onPlayerHit: (damage: number, fromPos: Vec3) => void;
       purified: () => boolean;
+      /** Called once, the moment `purifyCastle()` actually runs (main.ts
+       *  flips its own `castlePurified` flag here — this system never holds
+       *  that flag itself, only reads it back via `opts.purified()`). */
+      onPurified: () => void;
+      /** Spawn a happy elf at `pos` (Task 12's `ElfSystem.addAt`, injected as
+       *  a plain callback so this system stays testable without a real
+       *  `ElfSystem`/scene chain). */
+      addElf: (pos: Vec3) => void;
+      /** One-shot full-screen white flash (HUD hook) for the purify moment. */
+      flashPurify: () => void;
     },
-  ) {}
+  ) {
+    this.crystal = buildCrystal(opts.purified());
+    const cp = castleLayout().crystalPos;
+    this.crystal.group.position.set(cp.x, cp.y, cp.z);
+    this.scene.add(this.crystal.group);
+  }
 
   /** Spawn/despawn per the live daylight sample, step FSMs, sync meshes. */
   update(dt: number, playerPos: Vec3, sample: DaylightSample): void {
@@ -83,11 +122,60 @@ export class CastleSystem {
       if (step.hitPlayer) this.opts.onPlayerHit(GOBLIN.damage, step.g.pos);
       this.syncMesh(step.g);
     }
+
+    this.time += dt;
+    const purified = this.opts.purified();
+    const base = purified ? CRYSTAL.purifiedPulseBase : CRYSTAL.cursedPulseBase;
+    const amp = purified ? CRYSTAL.purifiedPulseAmp : CRYSTAL.cursedPulseAmp;
+    const freq = purified ? CRYSTAL.purifiedPulseFreq : CRYSTAL.cursedPulseFreq;
+    this.crystal.material.emissiveIntensity = base + amp * Math.sin(freq * this.time);
+    this.updateRing(dt);
   }
 
   /** Live goblin id/pos/radius, for purifying-dart hit tests (Task 12). */
   goblinTargets(): { id: number; pos: Vec3; r: number }[] {
     return this.goblins.map((g) => ({ id: g.id, pos: { ...g.pos }, r: GOBLIN.hitRadius }));
+  }
+
+  /**
+   * The crystal's live purifying-dart target (Task 14 fills in the `null`
+   * stub `main.ts` passed in Task 13): `active` flips false the moment the
+   * castle is purified, so `PurifierSystem` stops hit-testing it entirely —
+   * belt-and-braces alongside `purifyCastle()`'s own idempotency guard.
+   */
+  crystalTarget(): { pos: Vec3; r: number; active: boolean } {
+    return { pos: { ...castleLayout().crystalPos }, r: CRYSTAL.hitR, active: !this.opts.purified() };
+  }
+
+  /**
+   * The full purify sequence, run once a purifying dart lands on the
+   * crystal: idempotent — a second call while already purified is a no-op
+   * (no double elves, no second flash/toast/rebuild). Every currently-live
+   * goblin (nightManaged or debug-spawned alike) becomes a happy elf at its
+   * last position, the castle mesh rebuilds bright, the crystal swaps to its
+   * purified dressing, and `opts.onPurified()` flips the flag `main.ts` owns.
+   */
+  purifyCastle(): void {
+    if (this.opts.purified()) return;
+
+    const positions = this.clearAllGoblins();
+    const { elfSpawns } = purifySequenceSteps(positions);
+    for (const pos of elfSpawns) this.opts.addElf(pos);
+
+    this.opts.flashPurify();
+    this.spawnRing(castleLayout().crystalPos);
+
+    removeCastle(this.scene);
+    buildCastle(this.scene, true);
+
+    removeCrystal(this.scene, this.crystal);
+    this.crystal = buildCrystal(true);
+    const cp = castleLayout().crystalPos;
+    this.crystal.group.position.set(cp.x, cp.y, cp.z);
+    this.scene.add(this.crystal.group);
+
+    this.opts.onPurified();
+    toast('The castle is purified! ✨');
   }
 
   /** Remove goblin `id` (e.g. purified by a dart). Returns its last position, or null if unknown. */
@@ -119,9 +207,82 @@ export class CastleSystem {
     this.goblins.length = 0;
     this.nightManaged.clear();
     this.spawnedThisPresence = false;
+    removeCrystal(this.scene, this.crystal);
+    this.removeRing();
   }
 
   // -------------------------------------------------------------------------
+
+  /**
+   * Remove EVERY live goblin's mesh/rng/state — unlike `despawnAll` (which
+   * only touches `nightManaged`), the purify moment converts every last
+   * goblin standing, including a debug-spawned one. Returns their last
+   * positions (purify order preserved).
+   */
+  private clearAllGoblins(): Vec3[] {
+    const positions = this.goblins.map((g) => ({ ...g.pos }));
+    for (const g of this.goblins) this.removeGoblin(g.id);
+    this.goblins.length = 0;
+    this.nightManaged.clear();
+    return positions;
+  }
+
+  /** A short-lived expanding ring of sparkle points, in the XZ plane, at `origin`. */
+  private spawnRing(origin: Vec3): void {
+    const n = CRYSTAL.ringPointCount;
+    const dirs = new Float32Array(n * 2);
+    const positions = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) {
+      const ang = (i / n) * Math.PI * 2;
+      dirs[i * 2] = Math.sin(ang);
+      dirs[i * 2 + 1] = Math.cos(ang);
+      positions[i * 3] = origin.x;
+      positions[i * 3 + 1] = origin.y;
+      positions[i * 3 + 2] = origin.z;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const material = new THREE.PointsMaterial({
+      color: PURIFIER.color,
+      size: 0.5,
+      transparent: true,
+      opacity: 1,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const points = new THREE.Points(geo, material);
+    this.scene.add(points);
+    this.ring = { points, material, dirs, origin: { ...origin }, age: 0 };
+  }
+
+  private updateRing(dt: number): void {
+    if (!this.ring) return;
+    this.ring.age += dt;
+    if (this.ring.age >= CRYSTAL.ringS) {
+      this.removeRing();
+      return;
+    }
+    const t = this.ring.age / CRYSTAL.ringS;
+    const radius = t * CRYSTAL.ringMaxR;
+    const attr = this.ring.points.geometry.getAttribute('position') as THREE.BufferAttribute;
+    const arr = attr.array as Float32Array;
+    const n = CRYSTAL.ringPointCount;
+    for (let i = 0; i < n; i++) {
+      arr[i * 3] = this.ring.origin.x + this.ring.dirs[i * 2]! * radius;
+      arr[i * 3 + 1] = this.ring.origin.y;
+      arr[i * 3 + 2] = this.ring.origin.z + this.ring.dirs[i * 2 + 1]! * radius;
+    }
+    attr.needsUpdate = true;
+    this.ring.material.opacity = 1 - t;
+  }
+
+  private removeRing(): void {
+    if (!this.ring) return;
+    this.scene.remove(this.ring.points);
+    this.ring.points.geometry.dispose();
+    this.ring.material.dispose();
+    this.ring = null;
+  }
 
   private spawnNight(): void {
     const points = goblinSpawnPoints(this.nightIndex, GOBLIN.count);

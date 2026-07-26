@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { CASTLE, CASTLE_COLORS } from '../core/constants.ts';
+import { CASTLE, CASTLE_COLORS, CRYSTAL } from '../core/constants.ts';
 import { makeSurfaceMaterial, ROUGHNESS } from '../core/materials.ts';
 import { castleLayout, type CastleLayout } from './layout.ts';
 
@@ -426,6 +426,62 @@ export function removeCastle(scene: THREE.Scene): void {
     else m.dispose();
   });
   scene.remove(g);
+}
+
+// ---------------------------------------------------------------------------
+// The dark crystal (Task 14): the keep-centre corruption core, owned and
+// positioned directly by `CastleSystem` (NOT merged into the `buildCastle`
+// group above) so it can keep pulsing every frame independent of the
+// castle's static merged mesh. Built from two cones stacked apex-to-apex — a
+// hand-built octahedron/bipyramid "gem" in this file's flat-shaded Lambert
+// style — on a small stone plinth. The gem's shared base (the octahedron's
+// widest equator) sits at the group's local origin, so positioning the group
+// at `castleLayout().crystalPos` puts that origin exactly at the crystal's
+// hit-test centre; the plinth hangs below it down to the floor.
+// ---------------------------------------------------------------------------
+
+export interface CrystalMesh {
+  group: THREE.Group;
+  /** The gem's shared material (both cones) — `CastleSystem` drives its
+   *  `emissiveIntensity` every frame for the cursed/purified pulse. */
+  material: THREE.MeshLambertMaterial;
+}
+
+/** Build the crystal (cursed or purified dressing) — NOT added to any scene. */
+export function buildCrystal(purified: boolean): CrystalMesh {
+  const group = new THREE.Group();
+  group.name = 'castle-crystal';
+
+  const plinthColor = purified ? CASTLE_COLORS.purified.stoneDark : CASTLE_COLORS.cursed.stoneDark;
+  const plinth = cylinder(CRYSTAL.plinthR * 1.1, CRYSTAL.plinthR, CRYSTAL.plinthH, plinthColor);
+  plinth.position.y = -CRYSTAL.plinthH / 2;
+  group.add(plinth);
+
+  const gemColor = purified ? CASTLE_COLORS.purified.roof : CASTLE_COLORS.cursed.crystal;
+  const material = mat(gemColor, {
+    emissive: gemColor,
+    emissiveIntensity: purified ? CRYSTAL.purifiedPulseBase : CRYSTAL.cursedPulseBase,
+  });
+
+  const top = new THREE.Mesh(new THREE.ConeGeometry(CRYSTAL.gemR, CRYSTAL.gemH, 6), material);
+  top.position.y = CRYSTAL.gemH / 2;
+  group.add(top);
+
+  const bottom = new THREE.Mesh(new THREE.ConeGeometry(CRYSTAL.gemR, CRYSTAL.gemH, 6), material);
+  bottom.rotation.x = Math.PI; // flip so its apex points down — the bipyramid's other half
+  bottom.position.y = -CRYSTAL.gemH / 2;
+  group.add(bottom);
+
+  return { group, material };
+}
+
+/** Dispose a crystal built by `buildCrystal` and remove it from `scene`. */
+export function removeCrystal(scene: THREE.Scene, crystal: CrystalMesh): void {
+  crystal.group.traverse((o) => {
+    if (o instanceof THREE.Mesh) o.geometry.dispose();
+  });
+  crystal.material.dispose();
+  scene.remove(crystal.group);
 }
 
 // ---------------------------------------------------------------------------

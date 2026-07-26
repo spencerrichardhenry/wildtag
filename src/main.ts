@@ -532,10 +532,11 @@ function bootGame(): void {
   }
 
   // Cursed Castle (Task 9): the dressing follows the save (absent → cursed,
-  // the lived-in default). Fixed at boot for now — a later task makes it
-  // live-mutable via a purify event, so this stays a simple one-shot build.
-  const castlePurifiedAtBoot = loaded?.castlePurified ?? false;
-  buildCastle(scene, castlePurifiedAtBoot);
+  // the lived-in default). Task 14 makes this live-mutable: one purifying
+  // dart on the keep's crystal flips it permanently (`CastleSystem.purifyCastle`
+  // → `onPurified` below), so this is a `let`, not a boot-time constant.
+  let castlePurified = loaded?.castlePurified ?? false;
+  buildCastle(scene, castlePurified);
 
   /** Direction from `from` toward `to`, scaled to `mag` (horizontal), plus a
    *  modest vertical lift — the lift matters: while airborne with no player
@@ -549,10 +550,20 @@ function bootGame(): void {
     return { x: (dx / len) * mag, y: mag * 0.3, z: (dz / len) * mag };
   }
 
+  // Cursed Castle (Task 12): happy elves — persistent castle residents that
+  // wander/dance around the grounds. Purified goblins become elves; count is
+  // restored from the save (defaults to 0 elves) and grows via `elves.addAt`
+  // (single goblin purify) or the Task 14 castle-wide purify burst. Built
+  // BEFORE `castleSys` below, which closes over it (`opts.addElf`).
+  const elves = new ElfSystem(scene, ground);
+  elves.setCount(loaded?.elves ?? 0);
+
   // Cursed Castle (Task 11): night goblins — spawn at dusk, chase/lunge, deal
   // damage on a landed hit (knockback + a hit blip), skipped once purified.
+  // Task 14: also owns the keep's dark crystal + `purifyCastle()`, the
+  // finale sequence a landed purifying-dart crystal hit runs.
   const castleSys = new CastleSystem(scene, ground, {
-    purified: () => castlePurifiedAtBoot,
+    purified: () => castlePurified,
     onPlayerHit: (dmg, from) => {
       if (!isDazed(health)) {
         health = applyHit(health, dmg);
@@ -560,21 +571,18 @@ function bootGame(): void {
         blip(180, 0.12);
       }
     },
+    onPurified: () => {
+      castlePurified = true;
+    },
+    addElf: (pos) => elves.addAt(pos),
+    flashPurify: () => hudUi.flash(),
   });
-
-  // Cursed Castle (Task 12): happy elves — persistent castle residents that
-  // wander/dance around the grounds. Purified goblins become elves (the
-  // CastleSystem.purifyGoblin → elves.addAt wiring lives in the NEXT task);
-  // for now, count is just restored from the save (defaults to 0 elves).
-  const elves = new ElfSystem(scene, ground);
-  elves.setCount(loaded?.elves ?? 0);
 
   // Cursed Castle (Task 13): purifying darts — hotbar slot 5's fire path.
   // Reuses the tracker dart's ballistics (PurifierSystem); on a goblin hit it
   // purifies the goblin (removed from CastleSystem) into a happy elf at its
-  // last position. `crystalTarget` returns null until Task 14 builds the
-  // corruption crystal — the callback shape is wired now so this task never
-  // needs revisiting.
+  // last position. On a crystal hit (Task 14), `castleSys.purifyCastle()`
+  // runs the whole finale sequence.
   const purifier = new PurifierSystem(scene, camera, inventory, ground, {
     goblinTargets: () => castleSys.goblinTargets(),
     onPurifyGoblin: (id) => {
@@ -584,8 +592,8 @@ function bootGame(): void {
         toast('A goblin becomes a happy elf!');
       }
     },
-    crystalTarget: () => null,
-    onPurifyCrystal: () => {},
+    crystalTarget: () => castleSys.crystalTarget(),
+    onPurifyCrystal: () => castleSys.purifyCastle(),
   });
 
   // Cursed Castle (Task 10): a gargoyle perched on each tower top + keep
@@ -648,6 +656,8 @@ function bootGame(): void {
       daylightT: worldClock,
       // Elves (Cursed Castle Task 12): persistent resident count.
       elves: elves.count,
+      // Castle purified (Cursed Castle Task 14): permanent, round-trips a reload.
+      castlePurified,
       // Mount (Haven V6): only surfaced when a mount is active, so pre-mount
       // saves round-trip to exactly their old shape.
       ...(mounts.saveState() ? { mount: mounts.saveState()! } : {}),
@@ -1476,6 +1486,9 @@ function bootGame(): void {
     elfCount: () => elves.count,
     // Debug: reconcile the live elf count (Cursed Castle Task 12 e2e).
     setElves: (n: number) => elves.setCount(n),
+    castlePurified: () => castlePurified,
+    // Debug: run the full crystal-purify sequence (Cursed Castle Task 14 e2e).
+    purifyCrystal: () => castleSys.purifyCastle(),
   });
 
   // Verification aid (Haven V4): expose deterministic village anchors + a couple

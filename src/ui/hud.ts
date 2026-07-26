@@ -145,6 +145,11 @@ export class HUD {
   private lastDarkness = -1;
   private readonly dazeVeil: HTMLDivElement;
   private lastDazeVeil = false;
+  /** One-shot full-screen white flash overlay (Cursed Castle Task 14 — the
+   *  crystal-purify moment). Separate from `dazeVeil`: that one is a
+   *  continuous, state-driven vignette (`frame.dazed`); this is a fire-and-
+   *  forget animation triggered once by `flash()`, not painted from a frame. */
+  private readonly purifyFlash: HTMLDivElement;
 
   private _selected = 1;
   private crosshairOverride: string | null = null;
@@ -288,6 +293,12 @@ export class HUD {
     this.dazeVeil = el('div', 'wt-daze-veil');
     this.root.appendChild(this.dazeVeil);
 
+    // --- Purify flash (Cursed Castle Task 14) — a one-shot white flash for
+    // the crystal-purify moment. Added last of all, so it paints over even
+    // the daze veil.
+    this.purifyFlash = el('div', 'wt-purify-flash');
+    this.root.appendChild(this.purifyFlash);
+
     this.host.appendChild(this.root);
   }
 
@@ -329,6 +340,19 @@ export class HUD {
     this.paintCompass(frame);
     this.paintRings(frame);
     this.paintDayCycle(frame);
+  }
+
+  /**
+   * One-shot full-screen white flash, fading over `CRYSTAL.flashS` (Cursed
+   * Castle Task 14 — the crystal-purify moment). A CSS keyframe animation
+   * (not a `frame`-driven paint like the daze veil): re-triggerable by
+   * forcing a reflow before re-adding the class, so a rapid repeat call
+   * (e.g. debug spam) always restarts the flash from full white.
+   */
+  flash(): void {
+    this.purifyFlash.classList.remove('wt-purify-flash-active');
+    void this.purifyFlash.offsetWidth; // force reflow so re-adding restarts the animation
+    this.purifyFlash.classList.add('wt-purify-flash-active');
   }
 
   /**
@@ -962,6 +986,27 @@ const STYLE = `
   pointer-events: none;
 }
 .wt-daze-veil.wt-visible { opacity: 1; }
+
+/* Purify flash (Cursed Castle Task 14) -------------------------------------
+   One-shot: wt-purify-flash-active starts the animation, which ends at
+   opacity 0 and stays there (forwards) -- no removal needed between plays,
+   HUD.flash() just forces a reflow before re-adding the class. Duration
+   mirrors CRYSTAL.flashS (core/constants.ts). ------------------------------ */
+.wt-purify-flash {
+  position: fixed;
+  inset: 0;
+  background: #ffffff;
+  opacity: 0;
+  z-index: 9;
+  pointer-events: none;
+}
+.wt-purify-flash.wt-purify-flash-active {
+  animation: wt-purify-flash-anim 0.5s ease-out forwards;
+}
+@keyframes wt-purify-flash-anim {
+  0% { opacity: 1; }
+  100% { opacity: 0; }
+}
 
 /* Hotbar ------------------------------------------------------------------ */
 .wt-hotbar {

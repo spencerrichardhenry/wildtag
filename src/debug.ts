@@ -75,6 +75,14 @@ export interface DebugDeps {
    * e2e verification — `__game.setElves(6)`).
    */
   setElves(n: number): void;
+  /** True once the castle's dark crystal has been purified (Cursed Castle Task 14). */
+  castlePurified(): boolean;
+  /**
+   * Debug-only: run the full crystal-purify sequence immediately, regardless
+   * of dart position (Cursed Castle Task 14 e2e verification —
+   * `__game.purifyCrystal()`).
+   */
+  purifyCrystal(): void;
 }
 
 /** Renderer draw-call / resource counters sampled post-render (F2 P1). */
@@ -120,6 +128,8 @@ export interface GameDebugHandle {
   spawnGoblin(): number;
   /** Debug-only: reconcile the live elf count to `n` (Cursed Castle Task 12 e2e). */
   setElves(n: number): void;
+  /** Debug-only: run the full crystal-purify sequence (Cursed Castle Task 14 e2e). */
+  purifyCrystal(): void;
 }
 
 /** Build the `window.__game` debug handle from the live systems main.ts owns. */
@@ -150,6 +160,7 @@ export function buildDebugHandle(deps: DebugDeps): GameDebugHandle {
         hp: deps.hp(),
         goblinCount: deps.goblinCount(),
         elfCount: deps.elfCount(),
+        castlePurified: deps.castlePurified(),
       };
     },
 
@@ -318,6 +329,11 @@ export function buildDebugHandle(deps: DebugDeps): GameDebugHandle {
     /** Debug-only: reconcile the live elf count to `n` (Cursed Castle Task 12 e2e). */
     setElves(n: number): void {
       deps.setElves(n);
+    },
+
+    /** Debug-only: run the full crystal-purify sequence (Cursed Castle Task 14 e2e). */
+    purifyCrystal(): void {
+      deps.purifyCrystal();
     },
   };
 }

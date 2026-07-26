@@ -963,6 +963,43 @@ export const PURIFIER = {
   burstR: 1.6,
 } as const;
 
+/**
+ * The dark crystal (Cursed Castle Task 14): the keep-centre corruption core
+ * at `castleLayout().crystalPos`, built from two cones stacked apex-to-apex
+ * (a hand-built octahedron/bipyramid — see `buildCrystal` in
+ * `src/castle/builders.ts`) on a stone plinth. One purifying-dart hit runs
+ * `CastleSystem.purifyCastle()`'s full sequence: a full-screen white flash,
+ * an expanding sparkle ring (a scaled-up version of the purifier's own
+ * hit-burst), every live goblin becoming a happy elf, and the whole castle
+ * rebuilding in its bright dressing.
+ */
+export const CRYSTAL = {
+  /** Each stacked cone's radius / height (m) — together an octahedron gem. */
+  gemR: 1.1,
+  gemH: 1.4,
+  /** Stone plinth beneath the gem: height / base radius (m). */
+  plinthH: 1.0,
+  plinthR: 1.6,
+  /** Purifying-dart hit-test radius against the crystal (m). */
+  hitR: 1.4,
+  /** Cursed emissive pulse: `base + amp * sin(freq * t)`. */
+  cursedPulseBase: 0.4,
+  cursedPulseAmp: 0.3,
+  cursedPulseFreq: 2,
+  /** Purified emissive pulse: slower and gentler than cursed. */
+  purifiedPulseBase: 0.5,
+  purifiedPulseAmp: 0.15,
+  purifiedPulseFreq: 0.6,
+  /** `purifyCastle()`'s full-screen flash fade duration (s). */
+  flashS: 0.5,
+  /** `purifyCastle()`'s expanding sparkle ring: grows to this radius (m)... */
+  ringMaxR: 60,
+  /** ...over this many seconds. */
+  ringS: 1.5,
+  /** Points sampled evenly around the ring's circumference. */
+  ringPointCount: 90,
+} as const;
+
 /** Tag-tracking progress tuning (tracking/progress.ts). */
 export const TRACKING = {
   /** Progress decay rate outside the ring, as a fraction of the accrual rate. */
