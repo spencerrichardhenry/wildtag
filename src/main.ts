@@ -53,7 +53,7 @@ import { ShadowRig, planShadows } from './world/lighting.ts';
 import { buildPostPipeline, type PostPipeline } from './world/post.ts';
 import { buildVillage, villageObstacles } from './village/buildings.ts';
 import { buildCastle } from './castle/builders.ts';
-import { castleLayout, castleObstacles, castleGrappleColliders } from './castle/layout.ts';
+import { castleLayout, castleObstacles, castleGrappleColliders, inCastleRegion } from './castle/layout.ts';
 import { CastleSystem } from './castle/system.ts';
 import { ElfSystem } from './castle/elves.ts';
 import { PurifierSystem } from './castle/purifier.ts';
@@ -592,6 +592,15 @@ function bootGame(): void {
         toast('A goblin becomes a happy elf!');
       }
     },
+    // Spec §5 (final-review fix): a purifying dart on an ordinary critter
+    // (e.g. a perched gargoyle) is a harmless sparkle — same target shape
+    // DartSystem.update maps for its own critter hit test.
+    critterTargets: () =>
+      critters.list().map((c) => ({
+        id: c.id,
+        pos: c.pos,
+        r: speciesById(c.species)?.size ?? 0.5,
+      })),
     crystalTarget: () => castleSys.crystalTarget(),
     onPurifyCrystal: () => castleSys.purifyCastle(),
   });
@@ -1261,6 +1270,10 @@ function bootGame(): void {
       screenOpen: screens.isOpen(),
       dayCycleT: daylightSample.cycleT,
       dayDarkness: daylightSample.darkness,
+      // Spec §4 (final-review fix): the HP bar surfaces within the castle
+      // region at night even at full HP — a live ambush threat, not just a
+      // damage readout. Purified castle = no danger = no bar.
+      dangerZone: inCastleRegion(p.x, p.z) && daylightSample.darkness > 0.5 && !castlePurified,
     });
   }
 

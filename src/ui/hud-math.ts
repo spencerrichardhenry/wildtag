@@ -149,6 +149,19 @@ export interface RingState {
 }
 
 /**
+ * HP bar hide-eligibility (Cursed Castle spec §4 / final-review fix): the bar
+ * is otherwise eligible to auto-hide (after `HEALTH.barLingerS`, handled by
+ * the caller's own timer) only when HP is full, the player isn't dazed, AND
+ * they aren't standing in the castle's night "danger zone" — so the bar stays
+ * up at full HP while `dangerZone` is true (a live threat, even before any
+ * damage lands), and still lingers `barLingerS` after leaving before hiding.
+ * Pure — the timer/`performance.now()` bookkeeping stays in hud.ts.
+ */
+export function healthBarHideEligible(full: boolean, dazed: boolean, dangerZone: boolean): boolean {
+  return full && !dazed && !dangerZone;
+}
+
+/**
  * Screen state for a tagged critter's tracking ring. Projects a point above
  * the critter's head via `projectFn`; if it lands offscreen (or behind the
  * camera) the returned x/y is clamped onto the [-1, 1] edge box so the HUD can

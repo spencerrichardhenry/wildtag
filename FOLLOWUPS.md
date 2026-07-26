@@ -17,14 +17,6 @@ playtest). None block ship; listed here so they aren't lost.
 - **HP/stamina bars flash visible ~2s at boot** (`ui/hud.ts`): both bars are
   briefly visible before their steady-state fade-in settles; not a functional
   bug, just a visible pop worth smoothing.
-- **Elf/goblin wander ignores castle wall colliders** (`castle/elves.ts`,
-  `castle/goblins.ts`): both FSMs steer by pure home/target math and never
-  consult `castleObstacles()`/`castleGrappleColliders()`, so a wandering elf
-  or a chasing goblin can visually clip through a curtain wall or the keep.
-- **No cap on elf count growth** (`castle/elves.ts` `ElfSystem.addAt` /
-  `setCount`): every goblin purified (per-goblin dart hit, or the crystal's
-  full-castle burst) adds an elf with no upper bound — over many nights this
-  could in principle grow past what the spiral home layout comfortably seats.
 - **Purify-flash CSS duration hardcoded** (`ui/hud.ts:1004`, `0.5s`) **vs
   `CRYSTAL.flashS`** (`core/constants.ts:994`, `0.5`): same value today, but
   the two aren't wired together — retuning `CRYSTAL.flashS` alone would
@@ -70,6 +62,29 @@ Constants sanity-checked (numbers hold up, no change made):
 
 ## Resolved
 
+- Elf/goblin wander now respects castle wall colliders — every `stepGoblin`
+  step (chase, patrol, and the lunge hop alike) and every `ElfSystem.update`
+  wander step runs the resulting (x, z) through `resolveCollision` against
+  `castleObstacles()` (own body radius `GOBLIN.bodyR`/`ELF.bodyR`), so a
+  chasing goblin or a wandering elf is pushed out at the curtain wall/keep/
+  tower rim instead of ghosting through — the gate/keep-entrance gaps stay
+  legitimately open. (`castle/goblins.ts` / `castle/elves.ts` / `castle/system.ts`)
+- Elf count growth capped — `ELF.maxCount` (28); `ElfSystem.addAt`/`setCount`
+  both clamp to it, so an unbroken run of purified goblins can no longer grow
+  the resident count past what the spiral home layout comfortably seats.
+  (`castle/elves.ts` / `core/constants.ts`)
+- Spec §5 gap closed — a purifying dart landing on an ordinary critter (e.g. a
+  perched gargoyle) is now a harmless sparkle: `PurifierSystem` gained a
+  `critterTargets` hit-test tier (priority: goblins, then critters, then the
+  crystal), so a dart no longer flies through critters silently, and a critter
+  in front of a goblin/crystal legitimately shields it without being tagged,
+  tracked, or transformed itself. (`castle/purifier.ts` / `main.ts`)
+- Spec §4 gap closed — the HP bar now surfaces within the castle region at
+  night even at full HP (`HudFrame.dangerZone`, computed in `main.ts` from
+  `inCastleRegion` + darkness + `!castlePurified`), not only after damage
+  lands; it still lingers `HEALTH.barLingerS` after leaving before hiding, and
+  a purified castle shows no bar (no danger). (`ui/hud.ts` / `ui/hud-math.ts` /
+  `main.ts`)
 - Zipline rider-clearance — `validateZipline` now requires the cable clear
   `losClearance + ziplineHang` along the span; added a `'low'` reason (rider
   would drag) distinct from `'los'` + placement toast copy. (`structures/ziplines.ts`)

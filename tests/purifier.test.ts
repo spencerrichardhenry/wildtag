@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { dartHitTarget } from '../src/castle/purifier.ts';
+import * as THREE from 'three';
+import { dartHitTarget, PurifierSystem } from '../src/castle/purifier.ts';
 import type { DartState } from '../src/tracking/darts.ts';
-import type { Vec3 } from '../src/core/types.ts';
+import type { GroundQuery, Vec3 } from '../src/core/types.ts';
+import { createInventory } from '../src/craft/inventory.ts';
 
 // ---------------------------------------------------------------------------
 // dartHitTarget (Cursed Castle Task 13): mirrors tests/tracking.test.ts's
@@ -54,5 +56,114 @@ describe('dartHitTarget', () => {
 
   it('returns null against an empty target list', () => {
     expect(dartHitTarget(stationary, [])).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PurifierSystem hit priority (spec §5 + final-review fix): goblins first,
+// then critters (a harmless sparkle — never tagged/tracked/transformed), then
+// the crystal. `new THREE.Scene()`/`new THREE.PerspectiveCamera()` work
+// headlessly here exactly as they do in tests/castle-system.test.ts and
+// tests/elves.test.ts.
+// ---------------------------------------------------------------------------
+
+const flatGround: GroundQuery = {
+  heightAt: () => -1000, // keep every dart well above "ground" for the one step under test
+  normalAt: () => ({ x: 0, y: 1, z: 0 }),
+};
+
+/** A camera at the origin looking straight down +x, with matrixWorld resolved
+ *  so `getWorldDirection` reads back a real direction (not the default -z). */
+function makeCamera(): THREE.PerspectiveCamera {
+  const camera = new THREE.PerspectiveCamera();
+  camera.position.set(0, 0, 0);
+  camera.up.set(0, 1, 0);
+  camera.lookAt(1, 0, 0);
+  camera.updateMatrixWorld(true);
+  return camera;
+}
+
+/** A target sitting squarely on the dart's straight +x flight path. */
+function onPathTarget(id: number, r = 1): { id: number; pos: Vec3; r: number } {
+  return { id, pos: { x: 2, y: 0, z: 0 }, r };
+}
+
+describe('PurifierSystem hit priority', () => {
+  it('a goblin overlapping a critter at the same spot is purified — the critter is untouched', () => {
+    const scene = new THREE.Scene();
+    const camera = makeCamera();
+    const inventory = createInventory();
+    inventory.purifiers = 1;
+    const purifiedGoblinIds: number[] = [];
+    let crystalHits = 0;
+
+    const sys = new PurifierSystem(scene, camera, inventory, flatGround, {
+      goblinTargets: () => [onPathTarget(1)],
+      onPurifyGoblin: (id) => purifiedGoblinIds.push(id),
+      critterTargets: () => [onPathTarget(2)],
+      crystalTarget: () => ({ pos: { x: 2, y: 0, z: 0 }, r: 1, active: true }),
+      onPurifyCrystal: () => {
+        crystalHits++;
+      },
+    });
+
+    expect(sys.tryThrow()).toBe(true);
+    sys.update(0.1); // one big step: crosses the shared (2,0,0) spot in a single sweep
+
+    expect(purifiedGoblinIds).toEqual([1]);
+    expect(crystalHits).toBe(0);
+  });
+
+  it('a critter-only hit is a harmless sparkle: no goblin purify, no crystal purify', () => {
+    const scene = new THREE.Scene();
+    const camera = makeCamera();
+    const inventory = createInventory();
+    inventory.purifiers = 1;
+    let goblinHits = 0;
+    let crystalHits = 0;
+    const pointsBefore = scene.children.filter((c) => c instanceof THREE.Points).length;
+
+    const sys = new PurifierSystem(scene, camera, inventory, flatGround, {
+      goblinTargets: () => [],
+      onPurifyGoblin: () => {
+        goblinHits++;
+      },
+      critterTargets: () => [onPathTarget(9)],
+      crystalTarget: () => ({ pos: { x: 2, y: 0, z: 0 }, r: 1, active: true }),
+      onPurifyCrystal: () => {
+        crystalHits++;
+      },
+    });
+
+    expect(sys.tryThrow()).toBe(true);
+    sys.update(0.1);
+
+    expect(goblinHits).toBe(0);
+    expect(crystalHits).toBe(0);
+    // The sparkle burst (a THREE.Points shell) was still spawned at the hit point.
+    const pointsAfter = scene.children.filter((c) => c instanceof THREE.Points).length;
+    expect(pointsAfter).toBe(pointsBefore + 1);
+  });
+
+  it('a critter shields the crystal exactly like a goblin does', () => {
+    const scene = new THREE.Scene();
+    const camera = makeCamera();
+    const inventory = createInventory();
+    inventory.purifiers = 1;
+    let crystalHits = 0;
+
+    const sys = new PurifierSystem(scene, camera, inventory, flatGround, {
+      goblinTargets: () => [],
+      onPurifyGoblin: () => {},
+      critterTargets: () => [onPathTarget(4)],
+      crystalTarget: () => ({ pos: { x: 2, y: 0, z: 0 }, r: 1, active: true }),
+      onPurifyCrystal: () => {
+        crystalHits++;
+      },
+    });
+
+    expect(sys.tryThrow()).toBe(true);
+    sys.update(0.1);
+    expect(crystalHits).toBe(0);
   });
 });

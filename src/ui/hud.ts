@@ -14,6 +14,7 @@ import {
   worldBearingDeg,
   bearingToStripX,
   ringScreenState,
+  healthBarHideEligible,
   type ProjectFn,
 } from './hud-math.ts';
 
@@ -57,6 +58,13 @@ export interface HudFrame {
   dayCycleT: number;
   /** Day/night darkness [0,1] — colors the dot sun (< 0.5) vs moon (≥ 0.5). */
   dayDarkness: number;
+  /**
+   * True while the player stands in the castle region at night with the
+   * castle not yet purified (Cursed Castle spec §4, final-review fix): the HP
+   * bar stays visible even at full HP while this is true, since a goblin
+   * ambush is a live possibility regardless of current HP.
+   */
+  dangerZone: boolean;
 }
 
 const RES_COLOR: Record<string, string> = {
@@ -333,7 +341,7 @@ export class HUD {
 
     this.paintCrosshair(frame);
     this.paintStamina(frame.stamina, frame.exhausted);
-    this.paintHealth(frame.hp, frame.dazed);
+    this.paintHealth(frame.hp, frame.dazed, frame.dangerZone);
     this.paintDazeVeil(frame.dazed);
     this.paintResources(frame.inventory);
     this.paintHotbar(frame);
@@ -450,8 +458,12 @@ export class HUD {
   // -------------------------------------------------------------------------
   // HP — fill %, red flash while dazed, auto-hide when full for
   // HEALTH.barLingerS (Cursed Castle Task 6; no damage sources until Task 11).
+  // Also stays visible at full HP while `dangerZone` (spec §4, final-review
+  // fix) — a goblin ambush is a live threat inside the castle at night
+  // regardless of current HP — and still lingers `barLingerS` after leaving
+  // before hiding, same as the full-HP case.
   // -------------------------------------------------------------------------
-  private paintHealth(hp: number, dazed: boolean): void {
+  private paintHealth(hp: number, dazed: boolean, dangerZone: boolean): void {
     const pct = Math.max(0, Math.min(1, hp / HEALTH.max));
     this.healthFill.style.width = `${(pct * 100).toFixed(1)}%`;
 
@@ -462,8 +474,9 @@ export class HUD {
 
     const now = performance.now();
     const full = hp >= HEALTH.max - 0.5;
+    const hideEligible = healthBarHideEligible(full, dazed, dangerZone);
     let show = true;
-    if (full && !dazed) {
+    if (hideEligible) {
       if (this.healthFullSince === null) this.healthFullSince = now;
       if (now - this.healthFullSince > HEALTH.barLingerS * 1000) show = false;
     } else {

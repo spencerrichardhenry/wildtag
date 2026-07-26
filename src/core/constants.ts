@@ -1203,6 +1203,13 @@ export const GOBLIN = {
   knockback: 7.5,
   /** Chase gives up (returns to patrol) beyond this distance from the goblin (m). */
   giveUpR: 40,
+  /**
+   * Body collision radius (m) run through `resolveCollision` against
+   * `castleObstacles()` every step (final-review fix) — goblins pushed out
+   * of the curtain wall/keep/towers instead of ghosting through, while the
+   * gate/keep-entrance gaps stay legitimately open.
+   */
+  bodyR: 0.5,
 } as const;
 
 /**
@@ -1234,6 +1241,19 @@ export const ELF = {
   turnRate: 2.4,
   /** Arrival radius (m) for a wander target. */
   arriveDist: 0.6,
+  /**
+   * Body collision radius (m) run through `resolveCollision` against
+   * `castleObstacles()` every step (final-review fix) — a wandering elf is
+   * pushed out of the curtain wall/keep/towers instead of ghosting through.
+   */
+  bodyR: 0.4,
+  /**
+   * Hard cap on live elf count (final-review fix): every purified goblin adds
+   * an elf with no upper bound otherwise, and the spiral home layout
+   * (`elfHomePosition`) only comfortably seats so many. `addAt`/`setCount`
+   * both clamp to this.
+   */
+  maxCount: 28,
 } as const;
 
 /**

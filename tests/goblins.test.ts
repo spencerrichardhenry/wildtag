@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { CASTLE, GOBLIN, MOVE } from '../src/core/constants.ts';
 import type { GroundQuery, Vec3 } from '../src/core/types.ts';
-import { inCastleRegion } from '../src/castle/layout.ts';
+import { inCastleRegion, castleObstacles } from '../src/castle/layout.ts';
+import type { Obstacle } from '../src/player/collision.ts';
 import { makeGoblin, stepGoblin, goblinSpawnPoints, type GoblinState } from '../src/castle/goblins.ts';
 
 // ---------------------------------------------------------------------------
@@ -41,12 +42,13 @@ function run(
   playerPos: Vec3,
   seconds: number,
   rand: () => number = seededRand(),
+  obstacles?: Obstacle[],
 ): { g: GoblinState; hits: number } {
   let cur = g;
   let hits = 0;
   const steps = Math.round(seconds / DT);
   for (let i = 0; i < steps; i++) {
-    const step = stepGoblin(cur, { playerPos, ground: flatGround, rand }, DT);
+    const step = stepGoblin(cur, { playerPos, ground: flatGround, rand, obstacles }, DT);
     cur = step.g;
     if (step.hitPlayer) hits++;
   }
@@ -159,6 +161,109 @@ describe('goblins FSM', () => {
     expect(goblinSpawnPoints(3, 8)).toEqual(goblinSpawnPoints(3, 8));
     for (const p of goblinSpawnPoints(1, 8)) {
       expect(inCastleRegion(p.x, p.z)).toBe(true);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Wall/tower/keep collision (final-review fix): a goblin chasing a player
+// through an obstacle line stops at its rim instead of ghosting through, and
+// the same holds for a real ring-spawned goblin against the actual castle
+// obstacle set (walls/towers/keep).
+// ---------------------------------------------------------------------------
+
+describe('goblins FSM — wall collision', () => {
+  it('a chasing goblin is blocked at a wall rim, never crossing it', () => {
+    // Home and player sit on the same line (z=0) straddling a wall circle
+    // centred at the castle centre — the goblin must chase straight through
+    // it to reach the player, so any leak would show up as x crossing 0.
+    const home = fromCenter(-10, 0);
+    const player = fromCenter(10, 0);
+    const wall: Obstacle = { x: CASTLE.center.x, z: CASTLE.center.z, r: 3 };
+    const minDist = wall.r + GOBLIN.bodyR;
+
+    let g = makeGoblin(10, home);
+    const rand = seededRand(3);
+    const steps = Math.round(10 / DT);
+    for (let i = 0; i < steps; i++) {
+      const step = stepGoblin(g, { playerPos: player, ground: flatGround, rand, obstacles: [wall] }, DT);
+      g = step.g;
+      const dFromWall = Math.hypot(g.pos.x - wall.x, g.pos.z - wall.z);
+      expect(dFromWall).toBeGreaterThanOrEqual(minDist - 1e-6);
+    }
+    // Never made it to (or past) the far side where the player stands.
+    expect(g.pos.x).toBeLessThan(0);
+  });
+
+  it('a lunge hop is clamped at the wall rim too', () => {
+    // Hand-construct a goblin already mid-lunge, parked at the wall's rim and
+    // aimed straight through it (the lunge's direction is fixed for the whole
+    // hop — see stepGoblin's 'lunge' case) — isolates the movement clamp
+    // itself without depending on the chase FSM ever navigating there.
+    const wall: Obstacle = { x: CASTLE.center.x, z: CASTLE.center.z, r: 1 };
+    const minDist = wall.r + GOBLIN.bodyR;
+    let g: GoblinState = {
+      id: 11,
+      pos: { x: wall.x - minDist, y: 0, z: wall.z },
+      yaw: Math.PI / 2, // sin=1, cos=0 → straight +x, through the wall
+      phase: 'lunge',
+      phaseT: 0,
+      home: { x: wall.x - minDist - 5, y: 0, z: wall.z },
+    };
+    const player: Vec3 = { x: wall.x + 10, y: 0, z: wall.z }; // far past the wall
+    const rand = seededRand(5);
+    const steps = Math.round((GOBLIN.lungeS + 0.1) / DT);
+    for (let i = 0; i < steps; i++) {
+      const step = stepGoblin(g, { playerPos: player, ground: flatGround, rand, obstacles: [wall] }, DT);
+      g = step.g;
+      const dFromWall = Math.hypot(g.pos.x - wall.x, g.pos.z - wall.z);
+      expect(dFromWall).toBeGreaterThanOrEqual(minDist - 1e-6);
+    }
+    // Confirms the hop actually tried to move (would otherwise trivially pass).
+    expect(g.pos.x).toBeLessThan(wall.x);
+  });
+
+  it('a ring-spawned goblin baited straight at the player never lands inside any real castle obstacle', () => {
+    const obstacles = castleObstacles();
+    const points = goblinSpawnPoints(9, GOBLIN.count);
+    const rand = seededRand(11);
+    for (const home3 of points) {
+      const home: Vec3 = { ...home3, y: 0 };
+      // Bait toward the opposite side of the castle centre so the chase path
+      // is likely to cross a wall/tower/keep segment.
+      const dx = CASTLE.center.x - home.x;
+      const dz = CASTLE.center.z - home.z;
+      const bait: Vec3 = { x: CASTLE.center.x + dx, y: 0, z: CASTLE.center.z + dz };
+
+      let g = makeGoblin(100, home);
+      // Settle first: a spawn point can by chance land already embedded in an
+      // obstacle's collision circle (the ring straddles the 45 m curtain
+      // wall) — the pushout clamp (MOVE.maxPushoutPerStep) resolves any such
+      // deep penetration within a couple of frames, so this warmup is
+      // unchecked and only the steady-state afterward is asserted.
+      const warmupSteps = Math.round(3 / DT);
+      for (let i = 0; i < warmupSteps; i++) {
+        g = stepGoblin(g, { playerPos: bait, ground: flatGround, rand, obstacles }, DT).g;
+      }
+
+      const steps = Math.round(5 / DT);
+      for (let i = 0; i < steps; i++) {
+        const step = stepGoblin(g, { playerPos: bait, ground: flatGround, rand, obstacles }, DT);
+        g = step.g;
+        for (const ob of obstacles) {
+          if (ob.yTop !== undefined && g.pos.y > ob.yTop) continue;
+          const d = Math.hypot(g.pos.x - ob.x, g.pos.z - ob.z);
+          // `resolveCollision` is a single sequential pass (documented in
+          // player/collision.ts): where two of the wall's covering circles
+          // legitimately overlap (adjacent centres spaced <= 2r apart), a
+          // push out of one can leave a few mm of residual penetration into
+          // its neighbour rather than the strict rim distance — a real,
+          // pre-existing property of the shared collision system, not a
+          // regression. 0.05 m comfortably covers that seam residual while
+          // still catching a meaningful (kid-visible) wall-clip regression.
+          expect(d).toBeGreaterThanOrEqual(ob.r + GOBLIN.bodyR - 0.05);
+        }
+      }
     }
   });
 });

@@ -1,5 +1,6 @@
 import { CASTLE, GOBLIN, WORLD_SEED } from '../core/constants.ts';
 import type { DayPhase } from '../core/daylight.ts';
+import { resolveCollision, type Obstacle } from '../player/collision.ts';
 import { mulberry32 } from '../core/rng.ts';
 import type { GroundQuery, Vec3 } from '../core/types.ts';
 import { inCastleRegion } from './layout.ts';
@@ -41,6 +42,15 @@ export interface GoblinCtx {
   ground: GroundQuery;
   /** Deterministic PRNG in [0,1); reserved for future patrol variety. */
   rand: () => number;
+  /**
+   * Castle wall/tower/keep collision circles (final-review fix): when given,
+   * every step's resulting (x, z) is pushed out of any overlapping obstacle
+   * via `resolveCollision`, so goblins can't ghost through the curtain wall
+   * or keep (the gate/keep-entrance gaps stay open since those obstacle sets
+   * already leave them uncovered — see `castleObstacles()`). Optional so the
+   * FSM stays testable with a custom obstacle set, or none at all.
+   */
+  obstacles?: Obstacle[];
 }
 
 export interface GoblinStep {
@@ -166,6 +176,19 @@ export function stepGoblin(g: GoblinState, ctx: GoblinCtx, dt: number): GoblinSt
     }
   }
   // alert / windup / recover: hold position (already cloned above).
+
+  // --- 2b. Wall/tower/keep collision (final-review fix) ---------------------
+  // Applies uniformly to whatever step 2 just produced — patrol drift, chase
+  // pursuit, or a lunge hop alike — so a lunge through a wall line is clamped
+  // at the rim exactly like every other movement. `pos.y` at the PREVIOUS
+  // ground height is a fine probe for the yTop glide-over check: goblins
+  // never leave ground level, so it tracks the new (x, z)'s height closely
+  // enough over one step.
+  if (ctx.obstacles && ctx.obstacles.length > 0) {
+    const probe = resolveCollision({ x: out.pos.x, y: g.pos.y, z: out.pos.z }, GOBLIN.bodyR, ctx.obstacles);
+    out.pos.x = probe.x;
+    out.pos.z = probe.z;
+  }
 
   // --- 3. Invariants: ground truth + never leave the castle region ----------
   const clampedXZ = clampRadius(out.pos.x, out.pos.z, CASTLE.center.x, CASTLE.center.z, CASTLE.regionR);

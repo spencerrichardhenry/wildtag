@@ -90,10 +90,18 @@ const TRAIL_LENGTH = 10;
 const BURST_COUNT = 40;
 
 export interface PurifierOpts {
-  /** Live goblin id/pos/hit-radius, tested before the crystal (Task 11). */
+  /** Live goblin id/pos/hit-radius, tested before critters/the crystal (Task 11). */
   goblinTargets: () => { id: number; pos: Vec3; r: number }[];
   /** Called with the purified goblin's id on a hit. */
   onPurifyGoblin: (id: number) => void;
+  /**
+   * Live critter id/pos/radius (spec §5, final-review fix): tested after
+   * goblins, before the crystal — a purifying dart landing on an ordinary
+   * critter (e.g. a gargoyle) is a harmless sparkle, never a goblin-style
+   * purify or a tracker-style tag. A goblin standing in front of a critter
+   * still gets purified first (goblins win the priority tie).
+   */
+  critterTargets: () => { id: number; pos: Vec3; r: number }[];
   /** The corruption crystal's live target, or null before it exists
    *  (Task 14 fills this in — this task only wires the callback shape). */
   crystalTarget: () => { pos: Vec3; r: number; active: boolean } | null;
@@ -161,9 +169,11 @@ export class PurifierSystem {
   }
 
   /**
-   * Advance every live dart, render it, and resolve goblin/crystal hits
-   * (goblins first, then the crystal — only when `crystalTarget()` is
-   * non-null and `.active`). Also ages/removes sparkle bursts.
+   * Advance every live dart, render it, and resolve hits in priority order:
+   * goblins first (purified), then critters (spec §5 — harmless sparkle,
+   * nothing tagged/tracked/transformed), then the crystal (only when
+   * `crystalTarget()` is non-null and `.active`). Also ages/removes sparkle
+   * bursts.
    */
   update(dt: number): void {
     for (let i = this.live.length - 1; i >= 0; i--) {
@@ -176,6 +186,20 @@ export class PurifierSystem {
       if (hitGoblin !== null) {
         const target = goblins.find((g) => g.id === hitGoblin)!;
         this.opts.onPurifyGoblin(hitGoblin);
+        this.spawnBurst(target.pos);
+        blip(1200, 0.08);
+        this.removeAt(i);
+        continue;
+      }
+
+      // Spec §5: a purifying dart landing on an ordinary critter is a
+      // harmless sparkle — the dart is simply consumed, nothing is tagged,
+      // tracked, or transformed. Tested here so a critter can legitimately
+      // shield the goblins/crystal behind it, exactly like a goblin does.
+      const critters = this.opts.critterTargets();
+      const hitCritter = dartHitTarget(dart.state, critters);
+      if (hitCritter !== null) {
+        const target = critters.find((c) => c.id === hitCritter)!;
         this.spawnBurst(target.pos);
         blip(1200, 0.08);
         this.removeAt(i);

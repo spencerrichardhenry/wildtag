@@ -1,8 +1,10 @@
 import * as THREE from 'three';
 import { CASTLE, ELF, WORLD_SEED } from '../core/constants.ts';
 import { mulberry32 } from '../core/rng.ts';
+import { resolveCollision } from '../player/collision.ts';
 import type { GroundQuery, Vec3 } from '../core/types.ts';
 import { buildElf } from './builders.ts';
+import { castleObstacles } from './layout.ts';
 
 // ---------------------------------------------------------------------------
 // Elves (Cursed Castle Task 12): persistent happy residents that wander/dance
@@ -105,7 +107,7 @@ export class ElfSystem {
    * extras from the top (disposing their mesh). Idempotent.
    */
   setCount(n: number): void {
-    const target = Math.max(0, Math.floor(n));
+    const target = Math.min(ELF.maxCount, Math.max(0, Math.floor(n)));
     while (this.elves.length < target) {
       const index = this.elves.length;
       const home = elfHomePosition(index);
@@ -123,6 +125,7 @@ export class ElfSystem {
    * normal wander FSM (its `home` stays the deterministic spiral slot).
    */
   addAt(pos: Vec3): void {
+    if (this.elves.length >= ELF.maxCount) return; // at cap — no-op (final-review fix)
     const index = this.elves.length;
     const home = elfHomePosition(index);
     this.spawnAt(index, pos, home);
@@ -163,6 +166,19 @@ export class ElfSystem {
           e.yaw += Math.max(-maxTurn, Math.min(maxTurn, d));
         }
       }
+
+      // Wall/tower/keep collision (final-review fix): push the elf's body out
+      // of any obstacle it just wandered into, so it can't ghost through the
+      // curtain wall or keep. `e.pos.y` here is last frame's ground height —
+      // a fine probe for the yTop glide-over check since elves never leave
+      // ground level and it changes negligibly over one step.
+      const resolved = resolveCollision(
+        { x: e.pos.x, y: e.pos.y, z: e.pos.z },
+        ELF.bodyR,
+        castleObstacles(),
+      );
+      e.pos.x = resolved.x;
+      e.pos.z = resolved.z;
 
       e.pos.y = this.ground.heightAt(e.pos.x, e.pos.z);
       e.group.position.set(e.pos.x, e.pos.y, e.pos.z);

@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { CASTLE } from '../src/core/constants.ts';
+import { CASTLE, ELF } from '../src/core/constants.ts';
 import type { GroundQuery, Vec3 } from '../src/core/types.ts';
+import { castleObstacles } from '../src/castle/layout.ts';
 import { elfHomePosition, ElfSystem } from '../src/castle/elves.ts';
 
 // ---------------------------------------------------------------------------
@@ -116,4 +117,58 @@ describe('ElfSystem', () => {
     sys.dispose();
     expect(sys.count).toBe(0);
   });
+
+  // ---------------------------------------------------------------------------
+  // Growth cap (final-review fix): every purified goblin adds an elf with no
+  // upper bound otherwise — ELF.maxCount stops that.
+  // ---------------------------------------------------------------------------
+
+  it('addAt beyond ELF.maxCount does not grow count', () => {
+    const sys = makeSystem();
+    sys.setCount(ELF.maxCount);
+    sys.addAt({ x: CASTLE.center.x, y: 0, z: CASTLE.center.z });
+    expect(sys.count).toBe(ELF.maxCount);
+  });
+
+  it('setCount clamps a request above ELF.maxCount', () => {
+    const sys = makeSystem();
+    sys.setCount(ELF.maxCount + 50);
+    expect(sys.count).toBe(ELF.maxCount);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Wall/tower/keep collision (final-review fix): a wandering elf is pushed out
+// of the real castle obstacle set instead of ghosting through — wander
+// targets can reach ~71 m from centre (home up to ~41 m + wanderR 30 m),
+// well past the 45 m curtain wall.
+// ---------------------------------------------------------------------------
+
+describe('ElfSystem — wall collision', () => {
+  it(
+    'never wanders into a castle wall/tower/keep obstacle',
+    () => {
+      const scene = new THREE.Scene();
+      const sys = new ElfSystem(scene, flatGround);
+      sys.setCount(16);
+      const obstacles = castleObstacles();
+      const steps = Math.round(15 / DT);
+      for (let i = 0; i < steps; i++) {
+        sys.update(DT, ORIGIN);
+        for (const child of scene.children) {
+          if (!(child instanceof THREE.Group)) continue;
+          const pos = child.position;
+          for (const ob of obstacles) {
+            if (ob.yTop !== undefined && pos.y > ob.yTop) continue;
+            const d = Math.hypot(pos.x - ob.x, pos.z - ob.z);
+            // See the matching comment in tests/goblins.test.ts: `resolveCollision`
+            // is a single sequential pass, so adjacent overlapping wall circles
+            // can leave a few mm of residual penetration — expected, not a bug.
+            expect(d).toBeGreaterThanOrEqual(ob.r + ELF.bodyR - 0.05);
+          }
+        }
+      }
+    },
+    20_000,
+  );
 });

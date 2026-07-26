@@ -9,6 +9,7 @@ import {
   bearingToStripX,
   compassTicks,
   ringScreenState,
+  healthBarHideEligible,
   HUD,
   type Projected,
   type ProjectFn,
@@ -265,6 +266,31 @@ describe('HUD tuning', () => {
 // HUD.selectHotbar; the HUD class itself needs `document` and isn't
 // unit-testable in this suite's DOM-free node environment).
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// HP bar hide-eligibility (Cursed Castle spec §4 / final-review fix): the bar
+// stays up at full HP while `dangerZone` is true, and only becomes
+// hide-eligible (subject to the caller's own linger timer) once none of
+// "not full" / dazed / dangerZone hold.
+// ---------------------------------------------------------------------------
+
+describe('healthBarHideEligible', () => {
+  it('is eligible to hide at full HP, not dazed, not in the danger zone', () => {
+    expect(healthBarHideEligible(true, false, false)).toBe(true);
+  });
+
+  it('is NOT eligible while dazed, even at full HP', () => {
+    expect(healthBarHideEligible(true, true, false)).toBe(false);
+  });
+
+  it('is NOT eligible while in the danger zone, even at full HP and not dazed', () => {
+    expect(healthBarHideEligible(true, false, true)).toBe(false);
+  });
+
+  it('is NOT eligible when not full, regardless of dazed/dangerZone', () => {
+    expect(healthBarHideEligible(false, false, false)).toBe(false);
+  });
+});
 
 describe('clampHotbarSlot', () => {
   it('accepts every slot in range, including the new Purify slot 5', () => {
