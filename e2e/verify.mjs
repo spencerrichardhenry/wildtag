@@ -4,8 +4,12 @@
 //
 // A standalone Node script that drives the real game in a headless Chromium
 // (SwiftShader WebGL) and ASSERTS the whole gameplay loop end-to-end: boot,
-// movement, tracking/link, crafting, structures, grapple, save round-trip and
-// a perf smoke. Every phase writes a screenshot to docs/verify/NN-name.png.
+// movement, tracking/link, crafting, structures, grapple, save round-trip,
+// village/bond/barter/farm/mount, quality presets + draw calls, a perf smoke,
+// and (Cursed Castle) the day/night cycle, the castle site + a gargoyle,
+// night goblins landing a hit on the player, and the purify arc (crystal →
+// elves → persists across reload). Every phase writes a screenshot to
+// docs/verify/NN-name.png.
 //
 // Run:
 //   PLAYWRIGHT_DIR=/path/to/playwright/install node e2e/verify.mjs
@@ -286,6 +290,22 @@ function luminanceStdDev(png) {
   }
   const mean = sum / n;
   return Math.sqrt(Math.max(0, sum2 / n - mean * mean));
+}
+
+/** Mean luminance over the same sample lattice as `luminanceStdDev` (Cursed Castle day/night check). */
+function meanLuminance(png) {
+  const { width, height, channels, data } = png;
+  const stride = width * channels;
+  let n = 0, sum = 0;
+  const step = 7; // sample lattice (matches luminanceStdDev)
+  for (let y = 0; y < height; y += step) {
+    for (let x = 0; x < width; x += step) {
+      const i = y * stride + x * channels;
+      const lum = channels >= 3 ? 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2] : data[i];
+      n++; sum += lum;
+    }
+  }
+  return sum / n;
 }
 
 // ---------------------------------------------------------------------------
@@ -980,6 +1000,194 @@ async function checkBiomeTour() {
 }
 
 // ---------------------------------------------------------------------------
+// CURSED CASTLE CHECKS (Task 15)
+// ---------------------------------------------------------------------------
+
+// Castle courtyard centre (src/core/constants.ts CASTLE.center) — fixed by
+// the one-off site pick (Task 8); mirrored here rather than reaching into the
+// module graph since the debug handle doesn't expose castle geometry.
+const CASTLE_CENTER = { x: -424.7, z: -176.6 };
+// A point inside the flattened build pad (padRadius=80) but outside the
+// curtain wall (half=45), on the gate-facing (east) side — safe, flat ground
+// to drop the player onto for a clean approach/vista shot.
+const CASTLE_APPROACH = { x: CASTLE_CENTER.x + 70, z: CASTLE_CENTER.z };
+
+async function checkDayNight() {
+  await check('q. Day/night cycle: night reads much darker than day, setTimeOfDay restores it', async () => {
+    const page = await openPage('?fresh=1');
+    try {
+      await page.evaluate(() => window.__game.setTimeOfDay('day'));
+      await sleep(500);
+      const dayPng = decodePNG(await page.screenshot());
+      assert(dayPng, 'could not decode day screenshot PNG');
+      const dayMean = meanLuminance(dayPng);
+
+      await page.evaluate(() => window.__game.setTimeOfDay('night'));
+      await sleep(1200); // let night sky/fog/lighting settle
+      const nightBuf = await page.screenshot();
+      await shot(page, '22-night.png');
+      const nightPng = decodePNG(nightBuf);
+      assert(nightPng, 'could not decode night screenshot PNG');
+      const nightSd = luminanceStdDev(nightPng);
+      const nightMean = meanLuminance(nightPng);
+      assert(nightSd > 2, `night canvas has no structure (luminance stddev ${nightSd.toFixed(2)} <= 2)`);
+      assert(nightMean < dayMean * 0.6, `night mean (${nightMean.toFixed(1)}) not well below day mean (${dayMean.toFixed(1)})`);
+      console.log(`    day mean=${dayMean.toFixed(1)}, night mean=${nightMean.toFixed(1)} (stddev ${nightSd.toFixed(2)})`);
+
+      await page.evaluate(() => window.__game.setTimeOfDay('day'));
+      await sleep(800);
+      const restoredPng = decodePNG(await page.screenshot());
+      assert(restoredPng, 'could not decode restored-day screenshot PNG');
+      const restoredMean = meanLuminance(restoredPng);
+      assert(restoredMean > nightMean, `day restore (${restoredMean.toFixed(1)}) not brighter than night (${nightMean.toFixed(1)})`);
+      console.log(`    setTimeOfDay('day') restored mean=${restoredMean.toFixed(1)}`);
+
+      assert(page.__errors.length === 0, `console/page errors: ${page.__errors.join(' | ')}`);
+    } finally {
+      await page.close();
+    }
+  });
+}
+
+async function checkCastle() {
+  await check('r. Castle: ?debug=castle framing, no errors, a gargoyle on its perch', async () => {
+    const page = await openPage('?debug=castle&fresh=1');
+    try {
+      const buf = await page.screenshot();
+      await shot(page, '23-castle-day.png');
+      const png = decodePNG(buf);
+      assert(png, 'could not decode castle screenshot PNG');
+      const sd = luminanceStdDev(png);
+      assert(sd > 8, `castle canvas appears blank (luminance stddev ${sd.toFixed(2)} <= 8)`);
+
+      const critters = await page.evaluate(() => window.__game.listCritters());
+      const gargoyle = critters.find(
+        (c) => c.species === 'gargoyle' && Math.hypot(c.pos.x - CASTLE_CENTER.x, c.pos.z - CASTLE_CENTER.z) < 150,
+      );
+      assert(
+        gargoyle,
+        `no gargoyle within 150m of castle center (active species: [${[...new Set(critters.map((c) => c.species))].join(',')}])`,
+      );
+      console.log(
+        `    gargoyle #${gargoyle.id} at (${gargoyle.pos.x.toFixed(1)}, ${gargoyle.pos.y.toFixed(1)}, ${gargoyle.pos.z.toFixed(1)}), state=${gargoyle.state}`,
+      );
+
+      assert(page.__errors.length === 0, `console/page errors: ${page.__errors.join(' | ')}`);
+    } finally {
+      await page.close();
+    }
+  });
+  // A castle-wall grapple assertion was considered (spec §9's "playtest the
+  // whole loop" implies grappling the keep). checkGrapple's ?debug=grapple
+  // scan fires via `raycastTerrain` against the height-field only — castle
+  // walls are mesh obstacles, not terrain, so that scan can never hit one.
+  // `player.debugFireGrapple(anchor)` (the method the debug path calls) takes
+  // an arbitrary world point and isn't picky about the source, but it is not
+  // reachable from `window.__game` (only `state/player.{pos,teleport,
+  // setStamina}` are exposed) and wiring a new debug hook for it is out of
+  // this task's declared file scope (e2e/verify.mjs + FOLLOWUPS.md +
+  // screenshots only). Noted in the task report rather than implemented.
+}
+
+async function checkGoblinsAndHp() {
+  await check('s. Goblins + HP: night spawns a ring, a forced goblin lands a hit, HP drops', async () => {
+    const page = await openPage('?fresh=1');
+    try {
+      await page.evaluate(
+        ([x, z]) => window.__game.player.teleport(x, 250, z),
+        [CASTLE_APPROACH.x, CASTLE_APPROACH.z],
+      );
+      await page.evaluate(() => window.__game.setTimeScale(8));
+      await sleep(1800);
+      await page.evaluate(() => window.__game.setTimeScale(1));
+      await sleep(300);
+
+      await page.evaluate(() => window.__game.setTimeOfDay('night'));
+      const night = await pollState(page, (s) => s.goblinCount > 0, { timeout: 6000 });
+      assert(night.goblinCount > 0, `goblinCount stayed 0 after night fell (${night.goblinCount})`);
+      console.log(`    night fell: goblinCount=${night.goblinCount}`);
+
+      const before = await state(page);
+      assert(before.hp === 100, `hp ${before.hp} != 100 before the debug goblin lands a hit`);
+      await page.evaluate(() => window.__game.spawnGoblin());
+      const hit = await pollState(page, (s) => s.hp < 100, { timeout: 8000 });
+      assert(hit.hp < 100, `hp never dropped below 100 after spawnGoblin() (stayed ${hit.hp})`);
+      console.log(`    debug goblin lunge: hp ${before.hp} -> ${hit.hp}`);
+      await shot(page, '24-goblins-night.png');
+
+      assert(page.__errors.length === 0, `console/page errors: ${page.__errors.join(' | ')}`);
+    } finally {
+      await page.close();
+    }
+  });
+}
+
+async function checkPurifyArc() {
+  await check('t. Purify arc: purifyCrystal → castlePurified, elf city by day, survives reload', async () => {
+    const ctx = await browser.newContext({ viewport: VIEWPORT });
+    const page = await ctx.newPage();
+    const errors = [];
+    page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
+    page.on('console', (m) => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
+    try {
+      await page.goto(BASE + '?fresh=1', { waitUntil: 'load' });
+      await page.waitForFunction(() => window.__game && window.__game.state, { timeout: 20000 });
+      await sleep(600);
+
+      const before = await state(page);
+      assert(before.castlePurified === false, `castlePurified already true before purifyCrystal() (${before.castlePurified})`);
+
+      await page.evaluate(() => window.__game.purifyCrystal());
+      const purified = await pollState(page, (s) => s.castlePurified === true, { timeout: 4000 });
+      assert(purified.castlePurified === true, 'castlePurified never became true after purifyCrystal()');
+      console.log('    castlePurified = true after purifyCrystal()');
+
+      // Populate the elf city directly at its deterministic castle-side homes
+      // (setElves reconciles to N at their spiral home positions) so the day
+      // screenshot actually shows residents, rather than waiting on however
+      // many goblins happened to be alive (here: none) to wander home.
+      await page.evaluate(() => window.__game.setElves(6));
+      const populated = await pollState(page, (s) => s.elfCount === 6, { timeout: 3000 });
+      assert(populated.elfCount === 6, `elfCount ${populated.elfCount} != 6 after setElves(6)`);
+
+      await page.evaluate(() => window.__game.setTimeOfDay('day'));
+      await page.evaluate(
+        ([x, z]) => window.__game.player.teleport(x, 250, z),
+        [CASTLE_APPROACH.x, CASTLE_APPROACH.z],
+      );
+      await page.evaluate(() => window.__game.setTimeScale(8));
+      await sleep(1800);
+      await page.evaluate(() => window.__game.setTimeScale(1));
+      await sleep(300);
+      const landed = await pos(page);
+      await page.evaluate(
+        ([x, y, z]) => window.__game.player.teleport(x, y, z),
+        [CASTLE_APPROACH.x, landed.y + 30, CASTLE_APPROACH.z],
+      );
+      await sleep(500);
+      await shot(page, '25-elf-city.png');
+      console.log(`    elf-city vista shot at (${CASTLE_APPROACH.x}, ${(landed.y + 30).toFixed(0)}, ${CASTLE_APPROACH.z})`);
+
+      await page.evaluate(() => window.__game.save());
+
+      // Reload WITHOUT ?fresh (same context => localStorage persists) —
+      // mirrors checkSaveRoundtrip's reload pattern.
+      await page.goto(BASE, { waitUntil: 'load' });
+      await page.waitForFunction(() => window.__game && window.__game.state, { timeout: 20000 });
+      await sleep(600);
+      const reloaded = await state(page);
+      assert(reloaded.castlePurified === true, `castlePurified not persisted across reload (${reloaded.castlePurified})`);
+      assert(reloaded.elfCount === 6, `elfCount not persisted across reload (${reloaded.elfCount} != 6)`);
+      console.log(`    reloaded: castlePurified=${reloaded.castlePurified}, elfCount=${reloaded.elfCount}`);
+
+      assert(errors.length === 0, `console/page errors: ${errors.join(' | ')}`);
+    } finally {
+      await ctx.close();
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
 let browser;
 async function main() {
   BASE = await startServer();
@@ -1003,6 +1211,10 @@ async function main() {
   await checkDrawCalls();
   await checkQualityPresets();
   await checkBiomeTour();
+  await checkDayNight();
+  await checkCastle();
+  await checkGoblinsAndHp();
+  await checkPurifyArc();
 
   await context.close();
   await browser.close();
