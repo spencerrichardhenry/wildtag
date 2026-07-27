@@ -1013,6 +1013,25 @@ const CASTLE_CENTER = { x: -424.7, z: -176.6 };
 // resized 45→90/80→135, offset scaled from half+25 to half+20 outside).
 const CASTLE_APPROACH = { x: CASTLE_CENTER.x + 110, z: CASTLE_CENTER.z };
 
+// Ward maze world coordinates (Castle Ward Task 1's hand-authored 36x36
+// `src/castle/wardMap.ts`, cellSize=5m, computed once via `wardLayout()` in a
+// throwaway node script and pasted here — verify.mjs stays dependency-free,
+// no ward.ts import). Grid cell (col,row) -> world via `cellToWorld` in
+// ward.ts: x = CASTLE.center.x - 90 + 2.5 + col*5, z = CASTLE.center.z - 90 +
+// 2.5 + row*5 (halfW=halfH=90 for the 36x36x5m grid).
+//
+// Map cell (row 10, col 17): a plain corridor '.' cell on the north-south
+// spine directly above hall 0, 3 cells north of the hall's south entrance.
+const WARD_CORRIDOR = { x: -427.2, z: -214.1 };
+// Map cells (rows 4-6, col 15-19): hall 0 (the northwest great hall), a 3x5
+// `H` region with doorway entrances at (row 3, col 17) and (row 7, col 17).
+// Its centroid (returned as `wardLayout().halls[0].center`) sits inside the
+// hall's own footprint since the region is a solid rectangle.
+const WARD_HALL0_CENTER = { x: -427.2, z: -239.1 };
+// Map cells (rows 4-8, col 4-8): plaza 0 (the northwest plaza), mid cell
+// (row 6, col 6) = 'P'.
+const WARD_PLAZA0_CENTER = { x: -482.2, z: -234.1 };
+
 async function checkDayNight() {
   await check('q. Day/night cycle: night reads much darker than day, setTimeOfDay restores it', async () => {
     const page = await openPage('?fresh=1');
@@ -1062,12 +1081,17 @@ async function checkCastle() {
       assert(sd > 8, `castle canvas appears blank (luminance stddev ${sd.toFixed(2)} <= 8)`);
 
       const critters = await page.evaluate(() => window.__game.listCritters());
+      // GARGOYLE_DETECT_R: perches sit on tower tops/keep corners, at most
+      // CASTLE.half*sqrt(2) (90*sqrt(2) ~= 127.3m) from center — 160 keeps a
+      // safe ~33m margin (Castle Ward Task 2 resized half 45->90, which ate
+      // most of the old 150m literal's slack down to ~23m).
+      const GARGOYLE_DETECT_R = 160; // CASTLE.half*sqrt(2) + margin
       const gargoyle = critters.find(
-        (c) => c.species === 'gargoyle' && Math.hypot(c.pos.x - CASTLE_CENTER.x, c.pos.z - CASTLE_CENTER.z) < 150,
+        (c) => c.species === 'gargoyle' && Math.hypot(c.pos.x - CASTLE_CENTER.x, c.pos.z - CASTLE_CENTER.z) < GARGOYLE_DETECT_R,
       );
       assert(
         gargoyle,
-        `no gargoyle within 150m of castle center (active species: [${[...new Set(critters.map((c) => c.species))].join(',')}])`,
+        `no gargoyle within ${GARGOYLE_DETECT_R}m of castle center (active species: [${[...new Set(critters.map((c) => c.species))].join(',')}])`,
       );
       console.log(
         `    gargoyle #${gargoyle.id} at (${gargoyle.pos.x.toFixed(1)}, ${gargoyle.pos.y.toFixed(1)}, ${gargoyle.pos.z.toFixed(1)}), state=${gargoyle.state}`,
@@ -1188,6 +1212,94 @@ async function checkPurifyArc() {
   });
 }
 
+async function checkWardMaze() {
+  await check('u. Ward maze: corridor teleport, hall entry sets inHall, night torchlight', async () => {
+    const page = await openPage('?fresh=1');
+    try {
+      // Drop into a known ward corridor cell (see WARD_CORRIDOR comment) —
+      // teleport + settle mirrors checkGoblinsAndHp/checkPurifyArc's pattern
+      // rather than a keyboard walk: headless has no pointer lock, so the
+      // camera yaw (and thus 'w' movement direction) can't be steered.
+      await page.evaluate(
+        ([x, z]) => window.__game.player.teleport(x, 150, z),
+        [WARD_CORRIDOR.x, WARD_CORRIDOR.z],
+      );
+      await page.evaluate(() => window.__game.setTimeScale(8));
+      await sleep(1500);
+      await page.evaluate(() => window.__game.setTimeScale(1));
+      await sleep(300);
+
+      const corridorState = await state(page);
+      assert(corridorState.inHall === false, `inHall true while standing in the open corridor (${WARD_CORRIDOR.x}, ${WARD_CORRIDOR.z})`);
+      await shot(page, '26-ward-corridor.png');
+      console.log(`    corridor: inHall=${corridorState.inHall} at (${WARD_CORRIDOR.x}, ${WARD_CORRIDOR.z})`);
+
+      // Night, so the hall's torchlight actually reads in the screenshot.
+      await page.evaluate(() => window.__game.setTimeOfDay('night'));
+      await sleep(500);
+
+      // "Walk into hall 0's doorway": teleported straight to the hall's
+      // centroid (inside its footprint, past the doorway) for the same
+      // no-pointer-lock reason as above; `inHall` is polled rather than
+      // asserted immediately since the ceiling/roof check reads the player's
+      // position on the next sim step (Task 5's `movementCeiling`).
+      await page.evaluate(
+        ([x, z]) => window.__game.player.teleport(x, 150, z),
+        [WARD_HALL0_CENTER.x, WARD_HALL0_CENTER.z],
+      );
+      await page.evaluate(() => window.__game.setTimeScale(8));
+      await sleep(1500);
+      await page.evaluate(() => window.__game.setTimeScale(1));
+      await sleep(300);
+
+      const hallState = await pollState(page, (s) => s.inHall === true, { timeout: 4000 });
+      assert(hallState.inHall === true, `inHall never became true inside hall 0 (${WARD_HALL0_CENTER.x}, ${WARD_HALL0_CENTER.z})`);
+      console.log(`    hall 0 interior: inHall=${hallState.inHall} at night`);
+      await shot(page, '27-hall-interior.png');
+      // Grapple suppression under a hall roof (state().inHall gates
+      // `player.movementCeiling`, Task 5) is NOT separately asserted here:
+      // the only grapple entry point exposed to e2e is `?debug=grapple`'s
+      // own auto-fire-on-load flow (see checkGrapple), which can't be
+      // combined with a mid-run teleport into the hall first, and there is
+      // no pointer-lock faking in this harness to fire RMB directly (see the
+      // file header's NOTE ON HEADLESS INPUT). `inHall` — the flag the
+      // suppression itself is gated on — is asserted above; the suppression
+      // wiring itself is covered by tests/*.test.ts (grapple + hall).
+
+      assert(page.__errors.length === 0, `console/page errors: ${page.__errors.join(' | ')}`);
+    } finally {
+      await page.close();
+    }
+  });
+}
+
+async function checkWardElves() {
+  await check('v. Ward elves: setElves(9), day, elfCount reflects it at a plaza', async () => {
+    const page = await openPage('?fresh=1');
+    try {
+      await page.evaluate(() => window.__game.setTimeOfDay('day'));
+      await page.evaluate(() => window.__game.setElves(9));
+      const populated = await pollState(page, (s) => s.elfCount === 9, { timeout: 3000 });
+      assert(populated.elfCount === 9, `elfCount ${populated.elfCount} != 9 after setElves(9)`);
+
+      await page.evaluate(
+        ([x, z]) => window.__game.player.teleport(x, 150, z),
+        [WARD_PLAZA0_CENTER.x, WARD_PLAZA0_CENTER.z],
+      );
+      await page.evaluate(() => window.__game.setTimeScale(8));
+      await sleep(1500);
+      await page.evaluate(() => window.__game.setTimeScale(1));
+      await sleep(300);
+      await shot(page, '28-elf-plaza.png');
+      console.log(`    elfCount=${populated.elfCount} at plaza 0 (${WARD_PLAZA0_CENTER.x}, ${WARD_PLAZA0_CENTER.z})`);
+
+      assert(page.__errors.length === 0, `console/page errors: ${page.__errors.join(' | ')}`);
+    } finally {
+      await page.close();
+    }
+  });
+}
+
 // ---------------------------------------------------------------------------
 let browser;
 async function main() {
@@ -1216,6 +1328,8 @@ async function main() {
   await checkCastle();
   await checkGoblinsAndHp();
   await checkPurifyArc();
+  await checkWardMaze();
+  await checkWardElves();
 
   await context.close();
   await browser.close();

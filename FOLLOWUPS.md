@@ -48,6 +48,38 @@ Constants sanity-checked (numbers hold up, no change made):
 - Giant-tree frequency (`PROPS.treeTiers`, cumulative `p: 1.0` after `0.95`) =
   5% — matches the brief's target.
 
+## Castle ward fast-follows
+
+Deferred minors noted while building the Castle Ward maze (Tasks 1-7). None
+block ship; listed here so they aren't lost.
+
+- **Near-query Set-dedup allocation churn** (`castle/ward.ts` `queryNear`):
+  every `wardObstaclesNear`/`wardGrappleNear` call allocates a fresh `Set` +
+  output array to dedupe circles that live in multiple hash buckets (a circle
+  whose disc spans a bucket boundary is inserted into every bucket it
+  overlaps). A single-bucket-per-circle scheme (bucket by center only, widen
+  the 3x3 scan by the max circle radius instead) would avoid both the
+  per-call `Set` and the duplicate insertion, at the cost of a slightly wider
+  scan radius.
+- **Junction stride-cap inline constant** (`castle/ward.ts` `parseWard`,
+  `const stride = junctionCount < 40 ? 1 : 2;`): the `40` threshold and the
+  resulting `1`/`2` stride are inline magic numbers rather than named
+  `WARD`/local constants — harmless today (the real 36x36 map's junction
+  count is comfortably on one side of the threshold), but worth naming if the
+  map is ever resized or re-authored.
+- **Goblin patrol overlap at adjacent junctions** (`castle/goblins.ts`
+  zone-homing, `GOBLIN.patrolR` = 8): two goblins homed to adjacent
+  corridor-junction zones can have overlapping patrol circles where junctions
+  sit close together in the hand-authored map, so their patrol loops can
+  visibly cross. Not a bug (goblins don't collide with each other), just a
+  minor "personal space" nit a future pass could stagger.
+- **One-frame lag on hall entry** (carried over from Task 5, still present):
+  `state().inHall` — and the `movementCeiling`/grapple-suppression gate it
+  drives — is computed once per sim step from the player's position that
+  step, so crossing a hall doorway boundary takes effect on the frame after
+  the crossing rather than instantaneously. Imperceptible at frame rate; not
+  worth the complexity of a sub-step boundary check.
+
 ## Deliberately kept
 
 - **Prismhorse tri budget / LOD** (`critters/models.ts`): the 16-legged crystal

@@ -1287,11 +1287,9 @@ export const GOBLIN = {
 /**
  * Elves (Cursed Castle Task 12): happy, persistent castle residents. Purified
  * goblins become elves (wiring lives in the NEXT task — this block only tunes
- * the pure placement math + wander/dance FSM in `src/castle/elves.ts`). Homes
- * sit on a golden-angle spiral around `CASTLE.center` (see `elfHomePosition`),
- * radius growing from 8 m toward `CASTLE.half` so residents settle inside/near
- * the courtyard rather than out at `CASTLE.regionR`. Distances in m, speeds
- * m/s, times s — mirrors the shape of `src/village/npcs.ts`'s local `AI` block.
+ * the pure placement math + wander/dance FSM in `src/castle/elves.ts`).
+ * Distances in m, speeds m/s, times s — mirrors the shape of
+ * `src/village/npcs.ts`'s local `AI` block.
  *
  * Castle Ward Task 6: homes retarget to the 3 ward plazas (round-robin, a
  * per-plaza golden-angle mini-spiral — see `elfHomePosition`) instead of the

@@ -55,7 +55,7 @@ export class CastleSystem {
    * Deliberately NOT inferred from `nightManaged.size` — once Task 12 wires
    * `purifyGoblin`, purifying every remaining night goblin before dawn would
    * empty `nightManaged` while `want` is still true, and a size-based check
-   * would misread that as "haven't spawned yet" and respawn a fresh 8 mid-
+   * would misread that as "haven't spawned yet" and respawn a fresh ring mid-
    * night. This flag only flips back to false on the presence's OWN falling
    * edge (`want` going false), so a fully-purified night stays clear until
    * the next dusk.
