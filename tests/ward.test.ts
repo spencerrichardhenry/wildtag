@@ -69,6 +69,49 @@ function findAllCells(map: readonly string[], ch: string): { row: number; col: n
   return out;
 }
 
+/**
+ * Groups every cell matching `ch` into its own contiguous (4-connected)
+ * region — mirrors the parser's `extractRegions` flood fill, but kept local
+ * to the test so this file independently verifies region-level reachability
+ * rather than trusting the parser's own grouping.
+ */
+function extractSymbolRegions(map: readonly string[], ch: string): { row: number; col: number }[][] {
+  const rows = map.length;
+  const cols = map[0]!.length;
+  const seen = new Set<string>();
+  const regions: { row: number; col: number }[][] = [];
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (map[r]![c] !== ch) continue;
+      const key = `${r},${c}`;
+      if (seen.has(key)) continue;
+      const region: { row: number; col: number }[] = [];
+      const queue: [number, number][] = [[r, c]];
+      seen.add(key);
+      while (queue.length > 0) {
+        const [cr, cc] = queue.shift()!;
+        region.push({ row: cr, col: cc });
+        for (const [dr, dc] of [
+          [1, 0],
+          [-1, 0],
+          [0, 1],
+          [0, -1],
+        ]) {
+          const nr = cr + dr!;
+          const nc = cc + dc!;
+          const nk = `${nr},${nc}`;
+          if (nr >= 0 && nr < rows && nc >= 0 && nc < cols && map[nr]![nc] === ch && !seen.has(nk)) {
+            seen.add(nk);
+            queue.push([nr, nc]);
+          }
+        }
+      }
+      regions.push(region);
+    }
+  }
+  return regions;
+}
+
 describe('ward map validity', () => {
   it('is 36×36 with only legal symbols', () => {
     expect(WARD_MAP).toHaveLength(WARD.rows);
@@ -101,14 +144,36 @@ describe('connectivity (BFS over open cells: . P H K G)', () => {
     expect(keepCells.some((k) => reached.has(`${k.row},${k.col}`))).toBe(true);
   });
 
-  it('gate reaches every plaza and every hall', () => {
+  it('gate reaches EVERY plaza region and EVERY hall region (not just some cell somewhere)', () => {
+    // Flattening all P (or H) cells across every region and asserting `.some`
+    // reachable is a trap: it passes as soon as ONE of the 3 plazas (or 2
+    // halls) is connected, even if the other regions are sealed boxes. Group
+    // cells into their own contiguous regions first, then require every
+    // single region to have at least one reached cell.
     const gateCell = findCell(WARD_MAP, (ch) => ch === 'G');
     const reached = bfsReachable(WARD_MAP, gateCell);
     for (const sym of ['P', 'H'] as const) {
-      const cells = findAllCells(WARD_MAP, sym);
-      expect(cells.length).toBeGreaterThan(0);
-      expect(cells.some((c) => reached.has(`${c.row},${c.col}`))).toBe(true);
+      const regions = extractSymbolRegions(WARD_MAP, sym);
+      expect(regions.length).toBeGreaterThan(0);
+      for (const region of regions) {
+        expect(region.some((c) => reached.has(`${c.row},${c.col}`))).toBe(true);
+      }
     }
+  });
+
+  it('every open cell (. P H K G) is reachable from the gate — a single connected component', () => {
+    // Stronger than the letter of the brief: sealed dead pockets are wasted
+    // map and silently corrupt zone/goblin/elf placement (a "zone" or
+    // "junction" sitting in an unreachable pocket is never actually usable).
+    const gateCell = findCell(WARD_MAP, (ch) => ch === 'G');
+    const reached = bfsReachable(WARD_MAP, gateCell);
+    const unreached: string[] = [];
+    for (let r = 0; r < WARD_MAP.length; r++) {
+      for (let c = 0; c < WARD_MAP[r]!.length; c++) {
+        if (OPEN.has(WARD_MAP[r]![c]!) && !reached.has(`${r},${c}`)) unreached.push(`${r},${c}`);
+      }
+    }
+    expect(unreached).toEqual([]);
   });
 
   it('there are at least 2 edge-disjoint gate→keep routes', () => {
@@ -156,6 +221,22 @@ describe('parser geometry', () => {
       expect(l.zones.some((z) => Math.hypot(z.x - p.center.x, z.z - p.center.z) < 1)).toBe(true);
     }
     expect(l.zones.length).toBeGreaterThanOrEqual(7); // 3 plazas + ≥4 junctions
+  });
+
+  it('every zone lies on a cell reachable from the gate (belt-and-braces on top of the single-component test)', () => {
+    const l = wardLayout();
+    const gateCell = findCell(WARD_MAP, (ch) => ch === 'G');
+    const reached = bfsReachable(WARD_MAP, gateCell);
+    const halfW = (WARD.cols * WARD.cellSize) / 2;
+    const halfH = (WARD.rows * WARD.cellSize) / 2;
+    const worldToCell = (x: number, z: number) => ({
+      row: Math.round((z - (CASTLE.center.z - halfH + WARD.cellSize / 2)) / WARD.cellSize),
+      col: Math.round((x - (CASTLE.center.x - halfW + WARD.cellSize / 2)) / WARD.cellSize),
+    });
+    for (const z of l.zones) {
+      const { row, col } = worldToCell(z.x, z.z);
+      expect(reached.has(`${row},${col}`)).toBe(true);
+    }
   });
 
   it('inHall is true inside a hall cell and false in a corridor', () => {
