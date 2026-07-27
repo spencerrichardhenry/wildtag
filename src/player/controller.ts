@@ -392,6 +392,15 @@ export class PlayerController {
       masked.jumpHeld = false;
       masked.dash = false;
       masked.rocket = false;
+      // daze-eject-spires §1 fix: a still-latched/flying hook must not fight
+      // the stumble walk — the hook's own zip/hang override runs LATER in
+      // this same update() (after the stumble override below), so left alone
+      // it would win every frame and drag the player off the corridor route
+      // entirely (and could yank them clean off the blackout-eject's
+      // teleport-to-gate spot too, since that spot is set via `teleport()`,
+      // not by clearing the hook). Release it outright; the RMB fire guard
+      // right below also checks `stumbleVel` so a mashed RMB can't refire one.
+      this.hook = null;
     }
 
     // --- Swim mode: set from the terrain column under the feet -------------
@@ -416,7 +425,7 @@ export class PlayerController {
 
     if (this.hook && this.state.mode !== 'normal') this.hook = null;
 
-    if (rmbEdge && this.unlocks.has('grapple') && this.state.mode === 'normal') {
+    if (rmbEdge && this.unlocks.has('grapple') && this.state.mode === 'normal' && !this.stumbleVel) {
       const h = this.hook;
       if (underRoof && isGrappleFireAttempt(h)) {
         // Suppressed: no sky in here. Toast at most once per hall stay.
@@ -629,7 +638,14 @@ export class PlayerController {
     return this.state.mode;
   }
 
-  /** Debug teleport. Velocity is zeroed on arrival. */
+  /**
+   * Debug teleport. Velocity is zeroed on arrival. Also releases any active
+   * hook (daze-eject-spires §1 fix): a latched/flying hook still pointing at
+   * wherever the player WAS would otherwise keep pulling — most concretely,
+   * the blackout-drag eject teleports the player to just outside the gate,
+   * and a still-latched distant hook would immediately yank them straight
+   * back off that spot. Correct general teleport semantics regardless.
+   */
   teleport(x: number, y: number, z: number): void {
     this.state = {
       ...this.state,
@@ -638,6 +654,10 @@ export class PlayerController {
       grounded: false,
     };
     this.usedAirJump = false;
+    this.hook = null;
+    this.settle = null;
+    this.hookOccludedFor = 0;
+    this.updateGrappleVisuals(); // hides any stale rope after the jump
     this.syncCamera();
   }
 

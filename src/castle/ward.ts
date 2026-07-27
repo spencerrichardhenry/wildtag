@@ -548,8 +548,52 @@ function cellKey(c: Cell): string {
   return `${c.row},${c.col}`;
 }
 
+function edgeKey(a: Cell, b: Cell): string {
+  const ka = cellKey(a);
+  const kb = cellKey(b);
+  return ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`;
+}
+
+/**
+ * The keep's ONE real door (review fix — Critical: BFS was routing retreat
+ * paths straight through solid keep walls). `castleObstacles()`/
+ * `castleGrappleColliders()` (`layout.ts`) build the keep as a hollow room
+ * whose 4 perimeter walls are solid `Obstacle` circles EXCEPT a gap cut into
+ * the gate-facing wall (`gateWallIndex`, same side as the main gate) — but
+ * the ward map's ASCII grid doesn't encode this at all: the `K` block is just
+ * marked open floor with no per-edge wall data, so a BFS that treats every
+ * `K`/non-`K` cell boundary as walkable "phase-through-wall"s the other 3
+ * (real, solid) faces. A dazed player whose corridor route crossed one of
+ * those phantom doorways would ram a real wall for the rest of the daze
+ * window — exactly the original "jitters in place" bug, relocated to the
+ * keep instead of the curtain wall.
+ *
+ * This castle site's gate (and so the keep entrance) is fixed on the EAST
+ * side — `layout.ts`'s `gateWallIndex` derives that from `CASTLE.center`,
+ * and `wardMap.ts`'s own header comment independently documents "G ...
+ * east edge". The keep footprint is the 4×4 `K` block at grid cells
+ * [16..19]×[16..19] (`wardMap.ts`); its one real door is the 2-cell gap
+ * directly east of it, at rows 17–18 (col 19 ↔ col 20) — found by scanning
+ * `WARD_MAP` for every open (non-`#`) cell orthogonally adjacent to a `K`
+ * cell: only these two sit on the gate-facing (east) face, the other 6
+ * (north face at cols 16/18/19, west face at rows 16/17/19) are phantom
+ * doorways the ASCII grid left un-walled by omission.
+ *
+ * Hardcoded rather than re-derived from `castleLayout()` at runtime (ward.ts
+ * stays a plain grid-BFS over `WARD_MAP`, no per-call geometry math), but
+ * the "keep door matches castleLayout()'s entrance" test in ward.test.ts
+ * cross-checks these literal cells against the real 3D entrance geometry —
+ * so a future change to `CASTLE.center`/the keep's size that actually moves
+ * the door fails loudly instead of silently reopening a phantom wall.
+ */
+const KEEP_DOOR_EDGES: ReadonlySet<string> = new Set([
+  edgeKey({ row: 17, col: 19 }, { row: 17, col: 20 }),
+  edgeKey({ row: 18, col: 19 }, { row: 18, col: 20 }),
+]);
+
 /** Multi-source BFS rooted at every `G` cell, over `WARD_MAP`'s open cells
- *  (`. P H K G`), building the retreat parent map once. */
+ *  (`. P H K G`) — a `K`/non-`K` crossing is only legal via `KEEP_DOOR_EDGES`
+ *  (see its doc) — building the retreat parent map once. */
 function buildRetreatIndex(): RetreatIndex {
   const map = WARD_MAP;
   const gateCells: Cell[] = [];
@@ -566,12 +610,15 @@ function buildRetreatIndex(): RetreatIndex {
   let head = 0;
   while (head < queue.length) {
     const cur = queue[head++]!;
+    const curSym = cellAt(map, cur.row, cur.col)!;
     for (const [dr, dc] of NEIGHBORS) {
       const next = { row: cur.row + dr, col: cur.col + dc };
       const key = cellKey(next);
       if (visited.has(key)) continue;
       const sym = cellAt(map, next.row, next.col);
       if (sym === undefined || !OPEN.has(sym)) continue;
+      const isKeepCrossing = (curSym === 'K') !== (sym === 'K'); // XOR: exactly one side is K
+      if (isKeepCrossing && !KEEP_DOOR_EDGES.has(edgeKey(cur, next))) continue; // solid keep wall
       visited.add(key);
       parent.set(key, cur); // one step closer to a gate cell
       queue.push(next);
