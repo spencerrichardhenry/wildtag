@@ -1161,6 +1161,28 @@ export const CASTLE_COLORS = {
 } as const;
 
 /**
+ * Castle Ward maze (Castle Ward Task 1). Tuning for the hand-authored 36×36
+ * ASCII ward map (`src/castle/wardMap.ts`) and its pure parser
+ * (`src/castle/ward.ts`). `cellSize * cols` / `cellSize * rows` span the full
+ * ±90 m interior of the (Task-2-resized) curtain wall. `wallH`/`wallT` tune
+ * the maze walls (shorter/thinner than the curtain wall so the town reads as
+ * an interior district); `hallH`/`hallRoofRise` tune the 2 roofed great
+ * halls; `hashCell` is the spatial-hash bucket size (m) the near-query
+ * builders (Task 4+) use to avoid scanning the full 36×36 grid every frame.
+ */
+export const WARD = {
+  cellSize: 5,
+  cols: 36,
+  rows: 36,
+  wallH: 5.5,
+  wallT: 1.2,
+  hallH: 7,
+  hallRoofRise: 1.5,
+  /** Spatial-hash bucket size (m) for near-queries. */
+  hashCell: 15,
+} as const;
+
+/**
  * Night goblins (Task 11). Pure FSM lives in `src/castle/goblins.ts`; these are
  * its only tuning knobs. Goblins patrol their spawn point, notice + chase the
  * player, wind up and lunge for melee damage, then recover — never leaving
