@@ -84,6 +84,25 @@ describe('heightAt', () => {
     const b = heightAt(c.x + CASTLE.padRadius + CASTLE.padBlend - 5, c.z);
     expect(Number.isFinite(a) && Number.isFinite(b)).toBe(true);
   });
+
+  it('is untouched by the (Task 2, resized) pad well beyond the blend window, on both axes', () => {
+    // Castle Ward Task 2: padRadius 80→135 — re-assert at the new radii that
+    // the pad doesn't reach past its own blend window and swallow real
+    // terrain. `center ± (padRadius + padBlend + 40)` sits 40 m clear of the
+    // blend's outer edge (padOuter = padRadius + padBlend), so heightAt there
+    // must have relaxed back to raw terrain, not still read as padHeight.
+    const c = CASTLE.center;
+    const beyond = CASTLE.padRadius + CASTLE.padBlend + 40;
+    for (const [dx, dz] of [
+      [beyond, 0],
+      [-beyond, 0],
+      [0, beyond],
+      [0, -beyond],
+    ]) {
+      const h = heightAt(c.x + dx, c.z + dz);
+      expect(Math.abs(h - CASTLE.padHeight)).toBeGreaterThan(0.01);
+    }
+  });
 });
 
 describe('biomeAt', () => {

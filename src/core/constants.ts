@@ -1113,11 +1113,19 @@ export const CASTLE = {
   center: { x: -424.7, z: -176.6 },
   /** heightAt(center) BEFORE the pad existed (site-picker output, rounded to 0.1). */
   padHeight: 101.1,
-  /** heightAt() is flattened to padHeight inside padRadius, blending back over padBlend. */
-  padRadius: 80,
+  /**
+   * heightAt() is flattened to padHeight inside padRadius, blending back over
+   * padBlend (Castle Ward Task 2: 80→135 so the flattened pad still clears
+   * the resized 90 m curtain-wall half-width with headroom for the ward
+   * interior + curtain wall itself before the terrain blend resumes).
+   */
+  padRadius: 135,
   padBlend: 45,
-  /** Footprint half-width of the square curtain wall (m). */
-  half: 45,
+  /**
+   * Footprint half-width of the square curtain wall (m). Castle Ward Task 2:
+   * 45→90 so the ±90 m ward-map interior (Task 1) fits inside the walls.
+   */
+  half: 90,
   wallH: 8,
   wallT: 2.4,
   towerH: 18,
@@ -1141,11 +1149,19 @@ export const CASTLE = {
   gateH: 7,
   /** Gargoyle perch pads: computed from geometry, this many total. */
   perchCount: 6,
-  /** Goblins stay within this radius of center. */
-  regionR: 130,
-  /** Mushroom clusters scattered along the approach. */
+  /**
+   * Goblins stay within this radius of center. Castle Ward Task 2: 130→175 to
+   * keep clearing the resized 90 m curtain wall (half + a comparable margin)
+   * now that the walls moved out from 45 to 90.
+   */
+  regionR: 175,
+  /**
+   * Mushroom clusters scattered along the approach. Castle Ward Task 2:
+   * [90,180]→[140,230] — shifted outward with the enlarged pad (padRadius 135)
+   * so the ring still sits mostly beyond the flattened pad; same 90 m-wide band.
+   */
   approachMushrooms: 10,
-  approachR: [90, 180],
+  approachR: [140, 230],
 } as const;
 
 /**

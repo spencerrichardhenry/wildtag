@@ -202,7 +202,7 @@ export function stepGoblin(g: GoblinState, ctx: GoblinCtx, dt: number): GoblinSt
 /**
  * Deterministic ring spawn positions for night `nightIndex` (0-based, one per
  * spawned night): `count` points at radius [30, 60] around `CASTLE.center` —
- * inside `CASTLE.regionR` (130) and clear of the keep (half-diagonal ~14 m).
+ * inside `CASTLE.regionR` (175) and clear of the keep (half-diagonal ~14 m).
  * Seeded by `mulberry32(WORLD_SEED ^ nightIndex)` so the same night always
  * reproduces the same ring. `y` is a placeholder (the castle pad height,
  * accurate for this radius band); `CastleSystem` resolves the real ground

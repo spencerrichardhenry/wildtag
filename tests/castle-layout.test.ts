@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { CASTLE } from '../src/core/constants.ts';
+import { CASTLE, TERRAIN, VILLAGE } from '../src/core/constants.ts';
 import {
   castleLayout,
   castleObstacles,
   castleGrappleColliders,
   inCastleRegion,
 } from '../src/castle/layout.ts';
+import { villageCenter } from '../src/village/layout.ts';
 
 /**
  * Project `circles` onto wall segment `w`'s line, keeping only those that
@@ -291,5 +292,27 @@ describe('inCastleRegion', () => {
   it('is true at the centre and false past regionR', () => {
     expect(inCastleRegion(CASTLE.center.x, CASTLE.center.z)).toBe(true);
     expect(inCastleRegion(CASTLE.center.x + CASTLE.regionR + 1, CASTLE.center.z)).toBe(false);
+  });
+});
+
+describe('castle site clearance (Castle Ward Task 2 resize sanity)', () => {
+  // The flattened pad's outer edge (where heightAt fully relaxes back to raw
+  // terrain) sits padRadius + padBlend from the castle centre — now 135 + 45
+  // = 180 m, up from the pre-resize 80 + 45 = 125 m. Two circular regions
+  // (the pad disc around the castle, and a village/meadow disc elsewhere)
+  // can't overlap as long as the centre-to-centre distance exceeds the sum
+  // of their radii. The castle site was picked far enough out (Task 8) that
+  // this still holds comfortably after the resize.
+  const padOuter = CASTLE.padRadius + CASTLE.padBlend; // 180
+
+  it('does not reach the spawn meadow at the origin', () => {
+    const d = Math.hypot(CASTLE.center.x, CASTLE.center.z); // ~460 m
+    expect(d).toBeGreaterThan(padOuter + TERRAIN.meadowRadius); // 180 + 200 = 380
+  });
+
+  it('does not reach Haven village', () => {
+    const v = villageCenter();
+    const d = Math.hypot(CASTLE.center.x - v.x, CASTLE.center.z - v.z); // ~484 m
+    expect(d).toBeGreaterThan(padOuter + VILLAGE.radius); // 180 + 55 = 235
   });
 });

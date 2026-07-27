@@ -1007,10 +1007,11 @@ async function checkBiomeTour() {
 // the one-off site pick (Task 8); mirrored here rather than reaching into the
 // module graph since the debug handle doesn't expose castle geometry.
 const CASTLE_CENTER = { x: -424.7, z: -176.6 };
-// A point inside the flattened build pad (padRadius=80) but outside the
-// curtain wall (half=45), on the gate-facing (east) side — safe, flat ground
-// to drop the player onto for a clean approach/vista shot.
-const CASTLE_APPROACH = { x: CASTLE_CENTER.x + 70, z: CASTLE_CENTER.z };
+// A point inside the flattened build pad (padRadius=135) but outside the
+// curtain wall (half=90), on the gate-facing (east) side — safe, flat ground
+// to drop the player onto for a clean approach/vista shot (Castle Ward Task 2:
+// resized 45→90/80→135, offset scaled from half+25 to half+20 outside).
+const CASTLE_APPROACH = { x: CASTLE_CENTER.x + 110, z: CASTLE_CENTER.z };
 
 async function checkDayNight() {
   await check('q. Day/night cycle: night reads much darker than day, setTimeOfDay restores it', async () => {
