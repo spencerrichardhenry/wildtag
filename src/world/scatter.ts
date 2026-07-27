@@ -159,6 +159,22 @@ function placeable(x: number, z: number, y: number): boolean {
   return biomeAt(x, z) !== 'water';
 }
 
+/**
+ * True inside the castle's walled footprint + clearance margin (Task 8
+ * review fix): a Chebyshev square matching the square curtain wall — cheaper
+ * and tighter than a circular "in castle region" check. Applied once, as a
+ * post-filter in `scatterForChunk`, to every placement kind (rocks, mesas,
+ * boulders, trees, grass tufts, harvest nodes, ...) so none spawn inside the
+ * ward and choke its maze corridors. The castle-approach mushrooms are added
+ * AFTER this filter runs and sit on ring r∈[140,230] — well outside
+ * `half + castleClearMargin` (95) — so they are never affected.
+ */
+function inCastleFootprint(x: number, z: number): boolean {
+  const dx = Math.abs(x - CASTLE.center.x);
+  const dz = Math.abs(z - CASTLE.center.z);
+  return Math.max(dx, dz) < CASTLE.half + CASTLE.castleClearMargin;
+}
+
 /** Ground-normal Y below which the approach terrain reads as too steep for a
  *  standing mushroom cluster (mirrors AI's climb-slope gate, a little more
  *  permissive since these are static set dressing, not a walked path). */
@@ -327,11 +343,17 @@ export function scatterForChunk(cx: number, cz: number): PropPlacement[] {
     }
   }
 
+  // Castle exclusion (Task 8 review fix): drop every placement above that
+  // fell inside the walled footprint before adding the approach mushrooms
+  // below, so this single filter is the choke point for ALL prop kinds
+  // (including grass tufts) and can never touch the mushrooms themselves.
+  const cleared = out.filter((p) => !inCastleFootprint(p.x, p.z));
+
   // Cursed Castle approach: mushroom clusters seeded along the ring around
   // CASTLE.center (independent of the sub-cell lattice — see the function doc).
-  out.push(...approachMushroomsForChunk(cx, cz));
+  cleared.push(...approachMushroomsForChunk(cx, cz));
 
-  return out;
+  return cleared;
 }
 
 /** Approx. mesh top (m above base) per grappleable/collidable kind, × instance

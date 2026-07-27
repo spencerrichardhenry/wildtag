@@ -1162,6 +1162,16 @@ export const CASTLE = {
    */
   approachMushrooms: 10,
   approachR: [140, 230],
+  /**
+   * Scatter clearance margin beyond `half` (Task 8 review fix): prop scatter
+   * (rocks/mesas/boulders/trees/grass tufts/harvest nodes) is excluded from
+   * the Chebyshev square `max(|x-center.x|,|z-center.z|) < half + margin` —
+   * a review probe found 62 obstacle props (mesas up to r≈4.6 m) spawned on
+   * open ward cells, choking maze corridors. `approachR[0]` (140) is well
+   * outside `half + castleClearMargin` (95), so the approach mushrooms are
+   * unaffected by construction.
+   */
+  castleClearMargin: 5,
 } as const;
 
 /**

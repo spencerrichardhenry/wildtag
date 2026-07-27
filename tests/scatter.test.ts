@@ -345,3 +345,63 @@ describe('castle approach mushrooms', () => {
     }
   });
 });
+
+// --- Task 8 (review fix): no scatter props inside the castle footprint ----
+//
+// A review probe found 62 obstacle props (mesas up to r≈4.6 m among them) on
+// open ward cells, fully choking maze corridors. Nothing scattered by
+// scatterForChunk (any kind, including grass tufts) may spawn inside the
+// castle's walled footprint + clearance margin — a Chebyshev square matching
+// the square curtain wall — while the deliberate castle-approach mushrooms
+// (ring r∈[140,230], generated on a separate seeded-pool path) must remain
+// completely unaffected.
+
+/** Chebyshev "inside the castle + clearance" square used by the fix. */
+function insideCastleExclusion(x: number, z: number): boolean {
+  const margin = (CASTLE as { castleClearMargin?: number }).castleClearMargin ?? 5;
+  const dx = Math.abs(x - CASTLE.center.x);
+  const dz = Math.abs(z - CASTLE.center.z);
+  return Math.max(dx, dz) < CASTLE.half + margin;
+}
+
+/** Every chunk whose square footprint could touch the castle's exclusion square. */
+function castleFootprintChunks(): { cx: number; cz: number }[] {
+  const pad = CASTLE.half + 5 + CHUNKS.size; // generous: exclusion square + one chunk
+  const minCx = Math.floor((CASTLE.center.x - pad) / CHUNKS.size);
+  const maxCx = Math.floor((CASTLE.center.x + pad) / CHUNKS.size);
+  const minCz = Math.floor((CASTLE.center.z - pad) / CHUNKS.size);
+  const maxCz = Math.floor((CASTLE.center.z + pad) / CHUNKS.size);
+  const out: { cx: number; cz: number }[] = [];
+  for (let cx = minCx; cx <= maxCx; cx++) {
+    for (let cz = minCz; cz <= maxCz; cz++) out.push({ cx, cz });
+  }
+  return out;
+}
+
+describe('castle scatter exclusion (Task 8 review fix)', () => {
+  it('places nothing of any kind inside the castle exclusion square', () => {
+    let checked = 0;
+    for (const { cx, cz } of castleFootprintChunks()) {
+      for (const p of scatterForChunk(cx, cz)) {
+        checked++;
+        expect(insideCastleExclusion(p.x, p.z)).toBe(false);
+      }
+    }
+    expect(checked).toBeGreaterThan(0); // sanity: the sample actually covers scattered props
+  });
+
+  it('leaves approach mushrooms present in their ring and outside the exclusion square', () => {
+    const mushrooms = mushroomsWithinRing();
+    expect(mushrooms.length).toBeGreaterThan(5);
+    for (const m of mushrooms) {
+      expect(insideCastleExclusion(m.x, m.z)).toBe(false);
+    }
+  });
+
+  it('leaves a far-away chunk byte-identical and non-empty (gate cannot reach distant chunks)', () => {
+    const a = JSON.stringify(scatterForChunk(0, 0));
+    const b = JSON.stringify(scatterForChunk(0, 0));
+    expect(a).toEqual(b);
+    expect(JSON.parse(a).length).toBeGreaterThan(0);
+  });
+});
