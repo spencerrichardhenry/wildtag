@@ -1172,8 +1172,26 @@ export const CASTLE = {
  * limestone, ivy, banners, lamp-lit gate/keep).
  */
 export const CASTLE_COLORS = {
-  cursed: { stone: 0x4a4652, stoneDark: 0x37343f, roof: 0x2b2833, ember: 0xb4432a, crystal: 0x6e2bb0 },
+  cursed: {
+    stone: 0x4a4652,
+    stoneDark: 0x37343f,
+    roof: 0x2b2833,
+    ember: 0xb4432a,
+    crystal: 0x6e2bb0,
+    /** Tattered banner cloth (Castle Ward Task 4 plaza dressing) — a drab,
+     *  desaturated cousin of `purified.banner` for the cursed dressing. */
+    banner: 0x5a3742,
+  },
   purified: { stone: 0xcfc6b4, stoneDark: 0xa89e8a, roof: 0x7fb0d8, ivy: 0x4a8f52, banner: 0xd8608a, lamp: 0xffd9a0 },
+} as const;
+
+/**
+ * Castle Ward dressing-independent colors (Castle Ward Task 4): fire reads the
+ * same regardless of cursed/purified stonework, so the hall torch flame gets
+ * its own small palette instead of living under either dressing.
+ */
+export const WARD_COLORS = {
+  torchFlame: 0xffb347,
 } as const;
 
 /**

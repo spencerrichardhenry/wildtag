@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { CASTLE, CASTLE_COLORS, CRYSTAL } from '../core/constants.ts';
+import { CASTLE, CASTLE_COLORS, CRYSTAL, WARD, WARD_COLORS } from '../core/constants.ts';
 import { makeSurfaceMaterial, ROUGHNESS } from '../core/materials.ts';
 import { castleLayout, type CastleLayout } from './layout.ts';
+import { wardLayout, nonRingRuns, extendedWallSpan, type WardLayout, type WallRun } from './ward.ts';
 
 // ---------------------------------------------------------------------------
 // Procedural cursed/purified castle meshes (Task 9). Follows the village
@@ -43,8 +44,8 @@ function cylinder(rTop: number, rBottom: number, h: number, color: number): THRE
   return new THREE.Mesh(new THREE.CylinderGeometry(rTop, rBottom, h, 12), mat(color));
 }
 
-function cone(r: number, h: number, color: number): THREE.Mesh {
-  const mesh = new THREE.Mesh(new THREE.ConeGeometry(r, h, 12), mat(color));
+function cone(r: number, h: number, color: number, opts: MatOpts = {}): THREE.Mesh {
+  const mesh = new THREE.Mesh(new THREE.ConeGeometry(r, h, 12), mat(color, opts));
   return mesh;
 }
 
@@ -427,11 +428,263 @@ function mergeCastle(built: THREE.Group): THREE.Group {
   return root;
 }
 
+// ---------------------------------------------------------------------------
+// Castle Ward (Castle Ward Task 4): maze walls, plaza dressing (banner
+// poles), and two torchlit roofed halls, both dressings. Consumes
+// `wardLayout()` (Task 1) plus `nonRingRuns`/`extendedWallSpan` (the Task 3
+// collision-mesh binding, `ward.ts`) so every meshed wall run sits on
+// EXACTLY the same span its collider does — diverging here would reopen the
+// walk-through-wall / invisible-wall bugs Task 3 closed.
+//
+// Hall walls are ordinary `#` wall runs (Task 1's hand map draws each hall's
+// perimeter as plain wall cells with 2 doorway gaps) and are meshed at the
+// SAME `WARD.wallH` as the rest of the maze, so ward collision stays one
+// uniform band (`padHeight + wallH`) everywhere. The spec's "walls to
+// hallH" is realised visually instead by a shallow pyramid ROOF sitting on
+// top of the wallH walls (apex at `hallH + hallRoofRise` above the wall
+// top) rather than literally raising the hall's own walls — a taller wall
+// would raise its collider too, opening a glide-height band a player would
+// visually clip through with no matching collider. The roofline still reads
+// taller (~7–8.6 m) than the maze around it.
+// ---------------------------------------------------------------------------
+
+/** Crenellations only on runs at least this many cells long (triangle-count guard). */
+const WARD_TOOTH_MIN_CELLS = 4;
+/** Roof overhang (m) beyond the hall walls' outer face. */
+const HALL_ROOF_OVERHANG = 0.6;
+
 /**
- * Build the entire castle (curtain wall, 4 towers, keep, gatehouse) as one
- * group and add it to `scene`. `purified` picks the dressing (colors + trim);
- * geometry is otherwise identical. Call `removeCastle` first if swapping an
- * already-built dressing for another.
+ * One maze/hall wall run: a straight box over the run's EXTENDED span
+ * (`extendedWallSpan` — matches the collision circles exactly), or — for an
+ * isolated single-cell pillar (a lone `#` with no wall neighbor) — a small
+ * square post matching its single collision circle's diameter, NOT a full
+ * 5 m block.
+ */
+function buildWardWallRun(root: THREE.Group, run: WallRun, colors: Colors, baseY: number): void {
+  const span = extendedWallSpan(run);
+
+  if (span.isPillar) {
+    const post = box(WARD.wallT * 2, WARD.wallH, WARD.wallT * 2, colors.stone);
+    post.position.set(span.x1, baseY + WARD.wallH / 2, span.z1);
+    root.add(post);
+    return;
+  }
+
+  const dx = span.x2 - span.x1;
+  const dz = span.z2 - span.z1;
+  const len = Math.hypot(dx, dz);
+  const ux = dx / len;
+  const uz = dz / len;
+  const angle = Math.atan2(dx, dz);
+  const midx = (span.x1 + span.x2) / 2;
+  const midz = (span.z1 + span.z2) / 2;
+
+  const wall = box(WARD.wallT, WARD.wallH, len, colors.stone);
+  wall.position.set(midx, baseY + WARD.wallH / 2, midz);
+  wall.rotation.y = angle;
+  root.add(wall);
+
+  // A run's RAW (unextended) length is (cellCount - 1) * cellSize, since its
+  // x1/z1..x2/z2 endpoints are the first/last member CELL CENTERS.
+  const rawLen = Math.hypot(run.x2 - run.x1, run.z2 - run.z1);
+  const cellCount = Math.round(rawLen / WARD.cellSize) + 1;
+  if (cellCount >= WARD_TOOTH_MIN_CELLS) {
+    addCrenellations(root, span.x1, span.z1, angle, ux, uz, 0, len, baseY + WARD.wallH, WARD.wallT, colors.stoneDark);
+  }
+}
+
+/** Every non-ring ward wall run — maze corridors AND hall perimeters alike
+ *  (the outer ring is the curtain wall's own job; see `nonRingRuns`). */
+function buildWardWalls(root: THREE.Group, colors: Colors, baseY: number): void {
+  for (const run of nonRingRuns()) buildWardWallRun(root, run, colors, baseY);
+}
+
+/** Cell-bound rectangle of a region's cells (world coords, extended to each cell's outer edge). */
+function cellBounds(cells: { x: number; z: number }[]): { minX: number; maxX: number; minZ: number; maxZ: number } {
+  const half = WARD.cellSize / 2;
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minZ = Infinity;
+  let maxZ = -Infinity;
+  for (const c of cells) {
+    minX = Math.min(minX, c.x - half);
+    maxX = Math.max(maxX, c.x + half);
+    minZ = Math.min(minZ, c.z - half);
+    maxZ = Math.max(maxZ, c.z + half);
+  }
+  return { minX, maxX, minZ, maxZ };
+}
+
+/** 4 banner poles at a plaza's cell-bound corners; purified adds up to 2 lamps. */
+function buildPlaza(
+  root: THREE.Group,
+  plaza: WardLayout['plazas'][number],
+  colors: Colors,
+  purified: boolean,
+  baseY: number,
+): void {
+  const b = cellBounds(plaza.cells);
+  const corners: [number, number][] = [
+    [b.minX, b.minZ],
+    [b.minX, b.maxZ],
+    [b.maxX, b.minZ],
+    [b.maxX, b.maxZ],
+  ];
+  const poleH = 3.4;
+  const bannerH = 1.4;
+
+  for (const [x, z] of corners) {
+    const pole = cylinder(0.12, 0.16, poleH, colors.stoneDark);
+    pole.position.set(x, baseY + poleH / 2, z);
+    root.add(pole);
+
+    // Banner faces toward the plaza's center so it reads while walking in.
+    const angle = Math.atan2(plaza.center.x - x, plaza.center.z - z);
+    const banner = box(0.9, bannerH, 0.05, colors.banner);
+    banner.position.set(x, baseY + poleH - bannerH / 2 - 0.15, z);
+    banner.rotation.y = angle;
+    root.add(banner);
+  }
+
+  if (purified) {
+    // <= 2 warm lamps per plaza (village-lamp style, matching addPurifiedLights).
+    const lampColor = CASTLE_COLORS.purified.lamp;
+    for (const [x, z] of [corners[0]!, corners[3]!]) {
+      const light = new THREE.PointLight(lampColor, 8, 16, 1.8);
+      light.position.set(x, baseY + poleH + 0.3, z);
+      root.add(light);
+    }
+  }
+}
+
+/** Two opposite-wall torch positions inset into a hall's interior rectangle,
+ *  picked along whichever axis is longer so they sit on genuinely opposite walls. */
+function hallTorchPositions(b: { minX: number; maxX: number; minZ: number; maxZ: number }): [number, number][] {
+  const inset = 0.5;
+  const dx = b.maxX - b.minX;
+  const dz = b.maxZ - b.minZ;
+  const cx = (b.minX + b.maxX) / 2;
+  const cz = (b.minZ + b.maxZ) / 2;
+  return dx >= dz
+    ? [
+        [b.minX + inset, cz],
+        [b.maxX - inset, cz],
+      ]
+    : [
+        [cx, b.minZ + inset],
+        [cx, b.maxZ - inset],
+      ];
+}
+
+/**
+ * Shallow pyramid roof over a hall's footprint + overhang, apex
+ * `WARD.hallRoofRise` above the wall top. Each of the 4 side faces is built
+ * in BOTH winding orders so the roof renders correctly seen from outside
+ * (above) and inside (below) without needing the merged static material
+ * itself to be double-sided (`mergeCastle` buckets everything non-emissive
+ * into one shared material).
+ */
+function buildHallRoof(
+  root: THREE.Group,
+  b: { minX: number; maxX: number; minZ: number; maxZ: number },
+  colors: Colors,
+  baseY: number,
+): void {
+  const wallOuterOffset = WARD.cellSize / 2 + WARD.wallT / 2;
+  const pad = wallOuterOffset + HALL_ROOF_OVERHANG;
+  const minX = b.minX - pad;
+  const maxX = b.maxX + pad;
+  const minZ = b.minZ - pad;
+  const maxZ = b.maxZ + pad;
+  const cx = (minX + maxX) / 2;
+  const cz = (minZ + maxZ) / 2;
+  const baseYWorld = baseY + WARD.wallH;
+  const apexY = WARD.hallRoofRise;
+
+  const corners: [number, number][] = [
+    [minX - cx, minZ - cz],
+    [maxX - cx, minZ - cz],
+    [maxX - cx, maxZ - cz],
+    [minX - cx, maxZ - cz],
+  ];
+
+  const positions: number[] = [];
+  const uvs: number[] = [];
+  const pushSideFace = (p: [number, number], q: [number, number]) => {
+    // Both winding orders of the same base-edge -> apex triangle.
+    positions.push(p[0], 0, p[1], q[0], 0, q[1], 0, apexY, 0);
+    positions.push(0, apexY, 0, q[0], 0, q[1], p[0], 0, p[1]);
+    for (let i = 0; i < 6; i++) uvs.push(0, 0);
+  };
+  for (let i = 0; i < 4; i++) pushSideFace(corners[i]!, corners[(i + 1) % 4]!);
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
+  geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(uvs), 2));
+  geo.computeVertexNormals();
+  geo.computeBoundingSphere();
+  const mesh = new THREE.Mesh(geo, mat(colors.roof));
+  mesh.position.set(cx, baseYWorld, cz);
+  root.add(mesh);
+}
+
+/**
+ * 2 torch sconces (bracket + emissive flame) inside a hall on opposite
+ * walls, plus exactly 1 warm PointLight (0xffd9a0) for the whole hall
+ * interior — same fixed torchlight color in both dressings.
+ */
+function buildHallTorches(
+  root: THREE.Group,
+  b: { minX: number; maxX: number; minZ: number; maxZ: number },
+  colors: Colors,
+  baseY: number,
+): void {
+  const wallY = baseY + WARD.wallH * 0.55;
+  for (const [x, z] of hallTorchPositions(b)) {
+    const bracket = box(0.3, 0.35, 0.3, colors.stoneDark);
+    bracket.position.set(x, wallY, z);
+    root.add(bracket);
+
+    const flame = cone(0.16, 0.42, WARD_COLORS.torchFlame, {
+      emissive: WARD_COLORS.torchFlame,
+      emissiveIntensity: 1.6,
+    });
+    flame.position.set(x, wallY + 0.35, z);
+    root.add(flame);
+  }
+
+  const cx = (b.minX + b.maxX) / 2;
+  const cz = (b.minZ + b.maxZ) / 2;
+  // Intensity tuned up from the brief's illustrative "~1.2" (Visual
+  // verification, screenshot inspection): this scene's ACES tone-mapping +
+  // exposure pipeline needs roughly the same intensity scale as the existing
+  // purified gate/keep lamps (8, see `addPurifiedLights`) for a point light to
+  // read as visible at all — 1.2 rendered indistinguishable from unlit.
+  const light = new THREE.PointLight(CASTLE_COLORS.purified.lamp, 7, 16, 1.8);
+  light.position.set(cx, baseY + WARD.wallH * 0.7, cz);
+  root.add(light);
+}
+
+/** Build the whole ward (maze walls, plazas, torchlit halls) into `root`. */
+function buildWard(root: THREE.Group, purified: boolean): void {
+  const colors: Colors = purified ? CASTLE_COLORS.purified : CASTLE_COLORS.cursed;
+  const baseY = CASTLE.padHeight;
+  const layout = wardLayout();
+
+  buildWardWalls(root, colors, baseY);
+  for (const plaza of layout.plazas) buildPlaza(root, plaza, colors, purified, baseY);
+  for (const hall of layout.halls) {
+    const b = cellBounds(hall.cells);
+    buildHallRoof(root, b, colors, baseY);
+    buildHallTorches(root, b, colors, baseY);
+  }
+}
+
+/**
+ * Build the entire castle (curtain wall, 4 towers, keep, gatehouse, ward
+ * maze) as one group and add it to `scene`. `purified` picks the dressing
+ * (colors + trim); geometry is otherwise identical. Call `removeCastle`
+ * first if swapping an already-built dressing for another.
  */
 export function buildCastle(scene: THREE.Scene, purified: boolean): THREE.Group {
   const layout = castleLayout();
@@ -445,6 +698,7 @@ export function buildCastle(scene: THREE.Scene, purified: boolean): THREE.Group 
   buildKeep(built, layout, colors, purified, baseY);
   buildGatehouse(built, gateWall, layout.gate, colors, baseY);
   if (purified) addPurifiedLights(built, layout, baseY);
+  buildWard(built, purified);
 
   const merged = mergeCastle(built);
   scene.add(merged);

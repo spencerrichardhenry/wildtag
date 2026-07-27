@@ -325,7 +325,7 @@ export function inHall(x: number, z: number): boolean {
 // emission here so the curtain-wall line isn't double-collided.
 // ---------------------------------------------------------------------------
 
-type WallRun = WardLayout['wallRuns'][number];
+export type WallRun = WardLayout['wallRuns'][number];
 type Circle = { x: number; z: number; r: number };
 
 const RING_EPS = 1e-6;
@@ -346,30 +346,58 @@ function isRingRun(run: WallRun): boolean {
   return onRingX || onRingZ;
 }
 
-/** Non-ring wall runs — the only ones that emit ward collision circles. */
-function nonRingRuns(): WallRun[] {
+/**
+ * Non-ring wall runs — the only ones that emit ward collision circles.
+ * Exported (Castle Ward Task 4) so `builders.ts` meshes exactly the same set
+ * of runs the collision layer collides — the curtain wall already owns the
+ * outer ring, so meshing it again here would double it up.
+ */
+export function nonRingRuns(): WallRun[] {
   return wardLayout().wallRuns.filter((run) => !isRingRun(run));
+}
+
+/**
+ * A wall run's mesh-ready span: endpoints extended `WARD.cellSize / 2` beyond
+ * each raw endpoint along the run's own direction (the END-EXTENSION
+ * CONVENTION above), or — for a zero-length (isolated pillar) run — the raw
+ * cell center with `isPillar: true` and no direction to extend along.
+ * Exported so `builders.ts`'s mesh builder uses this EXACT same span as the
+ * collision circles below, corner-for-corner.
+ */
+export function extendedWallSpan(run: WallRun): { x1: number; z1: number; x2: number; z2: number; isPillar: boolean } {
+  const dx = run.x2 - run.x1;
+  const dz = run.z2 - run.z1;
+  const len = Math.hypot(dx, dz);
+  if (len < 1e-9) return { x1: run.x1, z1: run.z1, x2: run.x2, z2: run.z2, isPillar: true };
+  const ux = dx / len;
+  const uz = dz / len;
+  const half = WARD.cellSize / 2;
+  return {
+    x1: run.x1 - ux * half,
+    z1: run.z1 - uz * half,
+    x2: run.x2 + ux * half,
+    z2: run.z2 + uz * half,
+    isPillar: false,
+  };
 }
 
 /**
  * Circle positions of radius `r` solidly covering one wall run, extended
  * `WARD.cellSize / 2` beyond each endpoint (the END-EXTENSION CONVENTION
  * documented above). Degenerates to a single centered circle for a
- * zero-length (isolated pillar) run.
+ * zero-length (isolated pillar) run. Built on top of `extendedWallSpan` so
+ * the collision circles and Task 4's meshes can never drift apart.
  */
 function runCircles(run: WallRun, r: number): Circle[] {
-  const dx = run.x2 - run.x1;
-  const dz = run.z2 - run.z1;
-  const len = Math.hypot(dx, dz);
-  if (len < 1e-9) return [{ x: run.x1, z: run.z1, r }];
+  const span = extendedWallSpan(run);
+  if (span.isPillar) return [{ x: span.x1, z: span.z1, r }];
 
+  const dx = span.x2 - span.x1;
+  const dz = span.z2 - span.z1;
+  const len = Math.hypot(dx, dz);
   const ux = dx / len;
   const uz = dz / len;
-  const half = WARD.cellSize / 2;
-  const ex1 = run.x1 - ux * half;
-  const ez1 = run.z1 - uz * half;
-  const extendedLen = len + WARD.cellSize;
-  return coverSegment(extendedLen, r).map((off) => ({ x: ex1 + ux * off, z: ez1 + uz * off, r }));
+  return coverSegment(len, r).map((off) => ({ x: span.x1 + ux * off, z: span.z1 + uz * off, r }));
 }
 
 let _wardObstacles: Obstacle[] | null = null;
