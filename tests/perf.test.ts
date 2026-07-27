@@ -65,7 +65,9 @@ function benchChunk(verts: number): number {
   return perChunk;
 }
 
-describe('perf: chunk-build benchmark', () => {
+// Wall-clock benchmarks are intentionally local-only: shared CI runner speed
+// is not stable enough to provide a meaningful regression signal.
+describe.skipIf(Boolean(process.env.CI))('perf: chunk-build benchmark', () => {
   it('samples a FAR (2 m) chunk grid under the per-chunk time budget', () => {
     const perChunk = benchChunk(CHUNKS.verts);
     const budget = CHUNK_BUDGET_MS * TOLERANCE;
