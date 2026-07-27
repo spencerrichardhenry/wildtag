@@ -305,3 +305,14 @@ export function elfHomePosition(index: number): Vec3;
 - Spec coverage: §1→Task 1, §2→Tasks 2+4, §3→Task 3, §4→Task 5, §5→Task 6, §6→Task 2 (+snapToGround pre-existing), §7→per-task tests + Task 7. Out-of-scope list respected (no pathfinding, no minimap, no roof-standing).
 - Type consistency: `WardLayout`/`wardLayout()`/`inHall`/`wardObstaclesNear`/`wardGrappleNear`/`goblinSpawnPoints(nightIndex, count, zones)`/`elfHomePosition(index)` used identically across tasks.
 - The map itself is authored in Task 1 against executable tests (BFS connectivity, no articulation point, doorway counts) — the tests are the spec for the content.
+
+---
+
+### Task 8 (added from Task 4 review): scatter exclusion inside the castle
+
+Scatter props (rocks/boulders/mesas/trees + harvest nodes other than the intended approach mushrooms) spawn with no awareness of the castle footprint — mesas up to r≈4.6 m sit inside ward corridors, choking them.
+
+**Files:** Modify `src/world/scatter.ts` (exclusion in scatterForChunk/placeable), `tests/scatter.test.ts`.
+**Semantics:** No scatter placements (any kind except the deliberate castle-approach mushrooms, which live outside the walls by construction r∈[140,230]) within the castle's walled footprint: exclude when `max(|x−center.x|, |z−center.z|) < CASTLE.half + 5` (Chebyshev square with margin, matching the walls; cheaper and tighter than inCastleRegion's circle). Grass tufts may stay or go — exclude them too for a clean paved-town read.
+**Tests:** No placements inside the square across all covering chunks; approach mushrooms still present in their ring; determinism unchanged elsewhere (a far-away chunk's placements byte-identical before/after — snapshot two sample chunks pre-change in the test file as fixtures if practical, else assert structural invariants).
+**Steps:** failing tests → implement → full gates → commit.
