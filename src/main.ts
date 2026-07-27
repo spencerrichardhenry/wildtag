@@ -55,7 +55,7 @@ import { buildVillage, villageObstacles } from './village/buildings.ts';
 import { buildCastle } from './castle/builders.ts';
 import { castleLayout, castleObstacles, castleGrappleColliders, inCastleRegion } from './castle/layout.ts';
 import { CastleSystem } from './castle/system.ts';
-import { wardObstaclesNear, wardGrappleNear } from './castle/ward.ts';
+import { wardObstaclesNear, wardGrappleNear, inHall } from './castle/ward.ts';
 import { ElfSystem } from './castle/elves.ts';
 import { PurifierSystem } from './castle/purifier.ts';
 import { NpcManager, NPCS, npcAnchors } from './village/npcs.ts';
@@ -303,6 +303,12 @@ function bootGame(): void {
   // hook can latch to props, not just bare terrain.
   player.grappleColliders = (x, z) =>
     props.getGrappleColliders(x, z).concat(castleGrapple).concat(wardGrappleNear(x, z));
+  // Castle Ward Task 5: "No sky in here!" — no grapple/glider while the
+  // player stands under a roofed hall. The predicate is a generic seam on
+  // the controller (movementCeiling); this is the one place that ties it to
+  // the castle module, keeping player/ code free of castle imports.
+  player.movementCeiling = (x, z) => inHall(x, z);
+  player.onCeilingBlocked = () => toast('No sky in here!');
 
   // Inventory accumulating harvested resources + the crafting tree's currency
   // (RP), consumables (darts/charms) and held deployable kits.
@@ -1508,6 +1514,8 @@ function bootGame(): void {
     castlePurified: () => castlePurified,
     // Debug: run the full crystal-purify sequence (Cursed Castle Task 14 e2e).
     purifyCrystal: () => castleSys.purifyCastle(),
+    // Castle Ward Task 5 e2e: is the player currently under a roofed hall.
+    inHall: () => inHall(player.pos.x, player.pos.z),
   });
 
   // Verification aid (Haven V4): expose deterministic village anchors + a couple

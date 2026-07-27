@@ -54,6 +54,19 @@ export function landedDuringStep(prev: MoveState, next: MoveState): boolean {
   );
 }
 
+/**
+ * True iff an RMB press against this hook state would actually attempt to
+ * FIRE a fresh hook — idle (no hook out) or re-firing from a hang (the
+ * climb-chaining loop). Cancelling an in-flight hook and releasing while
+ * zipping are not fire attempts and are never suppressed by the roofed-hall
+ * ceiling (Castle Ward Task 5) — only new fires are. Pure — unit-tested in
+ * tests/controller.test.ts.
+ */
+export function isGrappleFireAttempt(hook: HookState | null): boolean {
+  if (!hook) return true;
+  return hook.phase === 'latched' && hook.hang;
+}
+
 export class PlayerController {
   readonly unlocks = new Set<string>();
 
@@ -116,6 +129,25 @@ export class PlayerController {
   private prevRmb = false;
   /** Scratch camera look-direction (allocation-free). */
   private readonly _look = new THREE.Vector3();
+
+  // --- Roofed-hall ceiling (Castle Ward Task 5) ----------------------------
+  /**
+   * Injected world query: true when (x, z) sits under a roofed hall — "No
+   * sky in here!" Defaults to always-false so headless/unit use and any
+   * scene without the castle module wired never suppresses anything. Kept
+   * generic (not a castle import) so this module stays free of castle deps;
+   * `main.ts` injects `(x, z) => inHall(x, z)`.
+   */
+  movementCeiling: (x: number, z: number) => boolean = () => false;
+  /**
+   * Optional: called at most once per hall stay when a grapple FIRE attempt
+   * (see `isGrappleFireAttempt`) is suppressed by `movementCeiling`. Surfaced
+   * as a callback rather than importing the toast UI directly — `main.ts`
+   * wires it to `toast('No sky in here!')`.
+   */
+  onCeilingBlocked?: () => void;
+  /** Guards `onCeilingBlocked` to one fire per hall stay; reset once `movementCeiling` goes false. */
+  private toastedThisHall = false;
 
   constructor(
     camera: THREE.PerspectiveCamera,
@@ -327,6 +359,18 @@ export class PlayerController {
     if (!this.unlocks.has('glider')) masked.jumpHeld = false;
     if (!this.unlocks.has('rocket')) masked.rocket = false;
 
+    // --- Roofed-hall ceiling (Castle Ward Task 5): "No sky in here!" -------
+    // While the player's feet are under a hall roof, glide is forced off
+    // every step (not just gated at deploy) — gliding INTO a hall doorway
+    // mid-air stops immediately, it doesn't just fail to (re)start. Masking
+    // jumpHeld itself (rather than a separate flag) is enough: the pure core
+    // only glides while `input.jumpHeld` reads true (movement.ts). A NEW
+    // grapple fire is suppressed below (RMB section); an already-latched
+    // hook, an in-flight hook, or an active zip keep going untouched.
+    const underRoof = this.movementCeiling(this.state.pos.x, this.state.pos.z);
+    if (underRoof) masked.jumpHeld = false;
+    else this.toastedThisHall = false;
+
     // --- Dazed stumble (Cursed Castle Task 11): while active, WASD/jump/dash/
     // rocket are all suppressed — the pure core sees zero intent — and the
     // post-step override below forces a straight walk along `stumbleVel`
@@ -366,7 +410,13 @@ export class PlayerController {
 
     if (rmbEdge && this.unlocks.has('grapple') && this.state.mode === 'normal') {
       const h = this.hook;
-      if (!h) this.fireNewHook();
+      if (underRoof && isGrappleFireAttempt(h)) {
+        // Suppressed: no sky in here. Toast at most once per hall stay.
+        if (!this.toastedThisHall) {
+          this.toastedThisHall = true;
+          this.onCeilingBlocked?.();
+        }
+      } else if (!h) this.fireNewHook();
       else if (h.phase === 'flying') this.hook = null; // cancel a hook in flight
       else if (h.hang) this.fireNewHook(); // re-fire from a hang (climb)
       else this.hook = null; // plain release while zipping (keep momentum)

@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { MOVE } from '../src/core/constants.ts';
 import type { GroundQuery, MoveInput, MoveState } from '../src/core/types.ts';
 import { initialMoveState, stepMovement } from '../src/player/movement.ts';
-import { landedDuringStep } from '../src/player/controller.ts';
+import { landedDuringStep, isGrappleFireAttempt } from '../src/player/controller.ts';
+import type { HookState } from '../src/player/grapple.ts';
 
 // The controller resets its boots double-jump charge on landing. "Landing" must
 // include the buffered-jump case, where the core's landing block immediately
@@ -87,5 +88,47 @@ describe('landedDuringStep', () => {
     const prev = { ...fallingState(), airDashUsed: true };
     const next = { ...prev, airDashUsed: false };
     expect(landedDuringStep(prev, next)).toBe(true);
+  });
+});
+
+// Castle Ward Task 5: "No sky in here!" — a roofed hall suppresses NEW
+// grapple fires only. `isGrappleFireAttempt` is the pure predicate the
+// controller's RMB handler consults; the RMB gate itself lives in non-pure
+// controller code wired to real input/hook state and is covered by the
+// e2e behavioral verification instead.
+describe('isGrappleFireAttempt', () => {
+  const flying: HookState = {
+    phase: 'flying',
+    pos: { x: 0, y: 0, z: 0 },
+    vel: { x: 0, y: 0, z: 0 },
+    anchor: null,
+    anchorDrone: null,
+    length: 0,
+    hang: false,
+    flightTime: 0,
+  };
+  const zipping: HookState = {
+    ...flying,
+    phase: 'latched',
+    anchor: { x: 1, y: 1, z: 1 },
+    length: 5,
+    hang: false,
+  };
+  const hanging: HookState = { ...zipping, hang: true };
+
+  it('is a fire attempt when idle (no hook)', () => {
+    expect(isGrappleFireAttempt(null)).toBe(true);
+  });
+
+  it('is a fire attempt when re-firing from a hang (climb chaining)', () => {
+    expect(isGrappleFireAttempt(hanging)).toBe(true);
+  });
+
+  it('is NOT a fire attempt while a hook is flying (RMB there cancels, not fires)', () => {
+    expect(isGrappleFireAttempt(flying)).toBe(false);
+  });
+
+  it('is NOT a fire attempt while zipping, not hanging (RMB there is a plain release)', () => {
+    expect(isGrappleFireAttempt(zipping)).toBe(false);
   });
 });

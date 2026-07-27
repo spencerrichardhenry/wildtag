@@ -77,6 +77,8 @@ export interface DebugDeps {
   setElves(n: number): void;
   /** True once the castle's dark crystal has been purified (Cursed Castle Task 14). */
   castlePurified(): boolean;
+  /** True while the player stands under a roofed hall (Castle Ward Task 5 — state().inHall / verification). */
+  inHall(): boolean;
   /**
    * Debug-only: run the full crystal-purify sequence immediately, regardless
    * of dart position (Cursed Castle Task 14 e2e verification —
@@ -161,6 +163,7 @@ export function buildDebugHandle(deps: DebugDeps): GameDebugHandle {
         goblinCount: deps.goblinCount(),
         elfCount: deps.elfCount(),
         castlePurified: deps.castlePurified(),
+        inHall: deps.inHall(),
       };
     },
 
