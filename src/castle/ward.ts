@@ -508,3 +508,132 @@ export function wardGrappleNear(x: number, z: number): GrappleCollider[] {
   if (!_grappleHash) _grappleHash = buildHash(wardGrappleColliders());
   return queryNear(_grappleHash, x, z);
 }
+
+// ---------------------------------------------------------------------------
+// Maze-aware daze-ejection retreat path (daze-eject-spires design spec §1).
+// The old dazed stumble walked radially away from CASTLE.center — built for
+// the pre-ward open courtyard — so inside the maze the ward walls + post-step
+// pushout cancelled the motion and the player jittered in place. `retreatPath`
+// instead BFS's a real corridor route from the player's cell to the gate.
+//
+// The BFS runs ONCE, rooted at the (2-cell) gate, over every open cell — this
+// gives shortest paths from the gate to ALL reachable cells in one pass, so a
+// per-call `retreatPath` query is just an O(path length) walk of a memoised
+// parent map (each non-gate cell's parent is its neighbor one step closer to
+// the gate) rather than a fresh BFS every knockout.
+// ---------------------------------------------------------------------------
+
+type Cell = { row: number; col: number };
+
+/** Inverse of `cellToWorld`: nearest grid cell for a world (x, z). May land
+ *  outside [0, cols)×[0, rows) for a position well beyond the ward map. */
+function worldToCell(x: number, z: number): Cell {
+  const halfW = (WARD.cols * WARD.cellSize) / 2;
+  const halfH = (WARD.rows * WARD.cellSize) / 2;
+  return {
+    col: Math.round((x - (CASTLE.center.x - halfW + WARD.cellSize / 2)) / WARD.cellSize),
+    row: Math.round((z - (CASTLE.center.z - halfH + WARD.cellSize / 2)) / WARD.cellSize),
+  };
+}
+
+interface RetreatIndex {
+  /** cellKey → the neighboring cell one step closer to the gate. Gate cells
+   *  themselves have no entry (they're the BFS roots). */
+  parent: Map<string, Cell>;
+  /** cellKeys of every gate cell (the map's gate is a 2-cell span). */
+  gateKeys: Set<string>;
+}
+
+function cellKey(c: Cell): string {
+  return `${c.row},${c.col}`;
+}
+
+/** Multi-source BFS rooted at every `G` cell, over `WARD_MAP`'s open cells
+ *  (`. P H K G`), building the retreat parent map once. */
+function buildRetreatIndex(): RetreatIndex {
+  const map = WARD_MAP;
+  const gateCells: Cell[] = [];
+  for (let r = 0; r < map.length; r++) {
+    for (let c = 0; c < map[r]!.length; c++) {
+      if (map[r]![c] === 'G') gateCells.push({ row: r, col: c });
+    }
+  }
+
+  const gateKeys = new Set(gateCells.map(cellKey));
+  const parent = new Map<string, Cell>();
+  const visited = new Set<string>(gateKeys);
+  const queue: Cell[] = [...gateCells];
+  let head = 0;
+  while (head < queue.length) {
+    const cur = queue[head++]!;
+    for (const [dr, dc] of NEIGHBORS) {
+      const next = { row: cur.row + dr, col: cur.col + dc };
+      const key = cellKey(next);
+      if (visited.has(key)) continue;
+      const sym = cellAt(map, next.row, next.col);
+      if (sym === undefined || !OPEN.has(sym)) continue;
+      visited.add(key);
+      parent.set(key, cur); // one step closer to a gate cell
+      queue.push(next);
+    }
+  }
+
+  return { parent, gateKeys };
+}
+
+let _retreatIndex: RetreatIndex | null = null;
+
+/** Memoised `buildRetreatIndex()` result — built once, reused by every call. */
+function retreatIndex(): RetreatIndex {
+  if (!_retreatIndex) _retreatIndex = buildRetreatIndex();
+  return _retreatIndex;
+}
+
+/**
+ * Pure corridor path (world-coord cell-center waypoints) from the ward cell
+ * at (x, z) to just outside the gate, walking the memoised BFS parent chain
+ * gate-ward. Returns `[]` when (x, z) is outside the map/on a wall, or
+ * already at the gate — the caller (main.ts's dazed stumble) falls back to
+ * the old radial retreat in that case (used outside the castle region, where
+ * there's no maze to navigate).
+ *
+ * The returned path always ends with the gate cell followed by one extra
+ * waypoint `WARD.cellSize` (~1 corridor width) beyond it, outward along the
+ * gate's outward-facing axis (+x — the ward map's gate sits on the east wall,
+ * see `wardMap.ts`), so following the path all the way through visibly clears
+ * the curtain-wall line instead of stopping dead on top of it.
+ */
+export function retreatPath(x: number, z: number): Point2[] {
+  const start = worldToCell(x, z);
+  const sym = cellAt(WARD_MAP, start.row, start.col);
+  if (sym === undefined || !OPEN.has(sym)) return [];
+
+  const { parent, gateKeys } = retreatIndex();
+  const startKey = cellKey(start);
+  if (gateKeys.has(startKey)) return []; // already at the gate
+
+  const cells: Cell[] = [start];
+  let curKey = startKey;
+  while (!gateKeys.has(curKey)) {
+    const p = parent.get(curKey);
+    if (!p) return []; // unreachable (shouldn't happen — every open cell connects to the gate)
+    cells.push(p);
+    curKey = cellKey(p);
+  }
+
+  const waypoints = cells.map((c) => cellToWorld(c.col, c.row));
+  waypoints.push(gateOutsidePoint());
+  return waypoints;
+}
+
+/**
+ * World point ~8 m (`WARD.cellSize * 1.6`) outside the gate, along its
+ * outward-facing axis (+x — the ward map's gate sits on the east wall, see
+ * `wardMap.ts`). Shared by `retreatPath`'s final waypoint and main.ts's
+ * blackout-drag eject teleport (design spec §1), so both land on exactly the
+ * same spot just clear of the curtain wall.
+ */
+export function gateOutsidePoint(): Point2 {
+  const gate = wardLayout().gate;
+  return { x: gate.x + WARD.cellSize * 1.6, z: gate.z };
+}

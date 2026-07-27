@@ -173,9 +173,21 @@ export const HEALTH = {
   max: 100,
   regenDelayS: 4,
   regenPerS: 12,
-  dazedS: 3,
-  /** m the dazed stumble carries the player away from the castle. */
-  dazedRetreat: 16,
+  /**
+   * Post-death daze window (s). daze-eject-spires design spec §1: 3→4 so the
+   * maze-aware corridor stumble (`stumbleSpeed` below, over `retreatPath`'s
+   * BFS route in `ward.ts`) has a realistic shot at reaching the gate from a
+   * deep ward cell before the window ends and the blackout-drag eject fires.
+   */
+  dazedS: 4,
+  /**
+   * m/s the dazed stumble carries the player: along `retreatPath`'s corridor
+   * waypoints toward the gate while inside the castle ward, or radially away
+   * from `CASTLE.center` outside it (no maze to navigate there — the old
+   * pre-ward retreat). Replaces the old `dazedRetreat` distance constant,
+   * which only made sense against the pre-ward open courtyard.
+   */
+  stumbleSpeed: 7,
   /** HP bar auto-hides this long after reaching full (s). */
   barLingerS: 2,
 } as const;

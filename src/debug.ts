@@ -61,6 +61,14 @@ export interface DebugDeps {
   quality(): unknown;
   /** Player HP (Cursed Castle Task 11 — state().hp / verification). */
   hp(): number;
+  /**
+   * Debug-only: apply `dmg` HP of damage directly (daze-eject-spires §1 e2e
+   * verification — no damage-debug handle existed before this task, so a
+   * headless script had no way to trigger a knockout without waiting for a
+   * live goblin hit). Routes through the same `applyHit` goblins use, so it
+   * respects the dazed-invulnerability rule identically.
+   */
+  hurt(dmg: number): void;
   /** Live goblin count (Cursed Castle Task 11). */
   goblinCount(): number;
   /**
@@ -138,6 +146,8 @@ export interface GameDebugHandle {
   setElves(n: number): void;
   /** Debug-only: run the full crystal-purify sequence (Cursed Castle Task 14 e2e). */
   purifyCrystal(): void;
+  /** Debug-only: apply `dmg` HP of damage directly (daze-eject-spires §1 e2e). */
+  hurt(dmg: number): void;
 }
 
 /** Build the `window.__game` debug handle from the live systems main.ts owns. */
@@ -344,6 +354,11 @@ export function buildDebugHandle(deps: DebugDeps): GameDebugHandle {
     /** Debug-only: run the full crystal-purify sequence (Cursed Castle Task 14 e2e). */
     purifyCrystal(): void {
       deps.purifyCrystal();
+    },
+
+    /** Debug-only: apply `dmg` HP of damage directly (daze-eject-spires §1 e2e). */
+    hurt(dmg: number): void {
+      deps.hurt(dmg);
     },
   };
 }

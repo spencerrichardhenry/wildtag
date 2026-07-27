@@ -65,6 +65,15 @@ export interface HudFrame {
    * ambush is a live possibility regardless of current HP.
    */
   dangerZone: boolean;
+  /**
+   * True during the blackout-drag phase of a maze daze ejection (design spec
+   * daze-eject-spires §1): the daze window ended while the player was still
+   * inside the castle's walled footprint, so main.ts's tiny eject state
+   * machine blacks the screen, teleports them just outside the gate, then
+   * clears this. Independent of `dazed` — the HP/daze window is already over
+   * by the time this goes true, this is purely the drag-out cutscene.
+   */
+  dazeBlack: boolean;
 }
 
 const RES_COLOR: Record<string, string> = {
@@ -153,6 +162,9 @@ export class HUD {
   private lastDarkness = -1;
   private readonly dazeVeil: HTMLDivElement;
   private lastDazeVeil = false;
+  /** Blackout-drag overlay (daze-eject-spires §1) — see `HudFrame.dazeBlack`. */
+  private readonly blackoutVeil: HTMLDivElement;
+  private lastBlackout = false;
   /** One-shot full-screen white flash overlay (Cursed Castle Task 14 — the
    *  crystal-purify moment). Separate from `dazeVeil`: that one is a
    *  continuous, state-driven vignette (`frame.dazed`); this is a fire-and-
@@ -301,6 +313,14 @@ export class HUD {
     this.dazeVeil = el('div', 'wt-daze-veil');
     this.root.appendChild(this.dazeVeil);
 
+    // --- Blackout-drag veil (daze-eject-spires Task 1) — a full-black overlay
+    // painted OVER the daze veil while main.ts's eject state machine drags the
+    // player out through the gate. State-driven like the daze veil (not a
+    // one-shot keyframe like the purify flash), so it holds solid black for
+    // however long the eject phase lasts.
+    this.blackoutVeil = el('div', 'wt-daze-black');
+    this.root.appendChild(this.blackoutVeil);
+
     // --- Purify flash (Cursed Castle Task 14) — a one-shot white flash for
     // the crystal-purify moment. Added last of all, so it paints over even
     // the daze veil.
@@ -343,6 +363,7 @@ export class HUD {
     this.paintStamina(frame.stamina, frame.exhausted);
     this.paintHealth(frame.hp, frame.dazed, frame.dangerZone);
     this.paintDazeVeil(frame.dazed);
+    this.paintBlackout(frame.dazeBlack);
     this.paintResources(frame.inventory);
     this.paintHotbar(frame);
     this.paintCompass(frame);
@@ -498,6 +519,18 @@ export class HUD {
     if (dazed === this.lastDazeVeil) return;
     this.lastDazeVeil = dazed;
     this.dazeVeil.classList.toggle('wt-visible', dazed);
+  }
+
+  /**
+   * Blackout-drag veil (daze-eject-spires §1) — painted over the daze veil
+   * while `frame.dazeBlack` is true. A plain opacity fade (CSS transition,
+   * 0.4s — see the STYLE block) in both directions: fades in when the eject
+   * starts, fades back out when main.ts clears it ~0.8s later.
+   */
+  private paintBlackout(active: boolean): void {
+    if (active === this.lastBlackout) return;
+    this.lastBlackout = active;
+    this.blackoutVeil.classList.toggle('wt-visible', active);
   }
 
   // -------------------------------------------------------------------------
@@ -999,6 +1032,18 @@ const STYLE = `
   pointer-events: none;
 }
 .wt-daze-veil.wt-visible { opacity: 1; }
+
+/* Blackout-drag veil (daze-eject-spires Task 1) ----------------------------- */
+.wt-daze-black {
+  position: fixed;
+  inset: 0;
+  background: #000;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  z-index: 8;
+  pointer-events: none;
+}
+.wt-daze-black.wt-visible { opacity: 1; }
 
 /* Purify flash (Cursed Castle Task 14) -------------------------------------
    One-shot: wt-purify-flash-active starts the animation, which ends at

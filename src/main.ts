@@ -53,9 +53,16 @@ import { ShadowRig, planShadows } from './world/lighting.ts';
 import { buildPostPipeline, type PostPipeline } from './world/post.ts';
 import { buildVillage, villageObstacles } from './village/buildings.ts';
 import { buildCastle } from './castle/builders.ts';
-import { castleLayout, castleObstacles, castleGrappleColliders, inCastleRegion } from './castle/layout.ts';
+import { castleLayout, castleObstacles, castleGrappleColliders, inCastleRegion, type Point2 } from './castle/layout.ts';
 import { CastleSystem } from './castle/system.ts';
-import { wardObstaclesNear, wardGrappleNear, inHall, inHallBelowRoof } from './castle/ward.ts';
+import {
+  wardObstaclesNear,
+  wardGrappleNear,
+  inHall,
+  inHallBelowRoof,
+  retreatPath,
+  gateOutsidePoint,
+} from './castle/ward.ts';
 import { ElfSystem } from './castle/elves.ts';
 import { PurifierSystem } from './castle/purifier.ts';
 import { NpcManager, NPCS, npcAnchors } from './village/npcs.ts';
@@ -364,6 +371,23 @@ function bootGame(): void {
   // Player HP (Cursed Castle Task 6): pure state stepped each frame. No
   // damage sources exist yet — goblins (Task 11) will call `applyHit`.
   let health = createHealth();
+
+  // --- Maze-aware daze ejection (daze-eject-spires design spec §1) ---------
+  // A tiny 3-state machine: 'stumbling' (isDazed(health) true — the corridor
+  // walk below) → 'blackout' (daze just ended, still inside the walls — the
+  // screen blacks out and drags the player through the gate) → 'none' (normal
+  // control). `wasDazed` detects the daze rising/falling edges each frame.
+  let wasDazed = false;
+  /** Current corridor route (world waypoints) toward the gate; recomputed on
+   *  every fresh daze (rising edge). Empty outside the castle region / when
+   *  no path exists — the radial-retreat fallback is used instead. */
+  let stumbleWaypoints: Point2[] = [];
+  let stumbleWaypointIdx = 0;
+  type EjectPhase = 'none' | 'blackout';
+  let ejectPhase: EjectPhase = 'none';
+  /** Seconds into the current blackout phase (teleport at 0.4s, clears at 0.8s). */
+  let ejectTimer = 0;
+  let ejectTeleported = false;
 
   /** Replace a roster entry's status (immutably, so the screen re-reads it). */
   function setEntryStatus(id: number, status: RosterEntry['status']): void {
@@ -1075,19 +1099,90 @@ function bootGame(): void {
         .concat(villageObs)
         .concat(castleObs)
         .concat(wardObstaclesNear(prev.x, prev.z));
-      // Dazed retreat (Cursed Castle Task 11): normal input is suppressed and
-      // the controller instead carries the player straight away from the
-      // castle centre, covering HEALTH.dazedRetreat metres over the daze
-      // window (HEALTH.dazedS) — see PlayerController.setStumble's doc for why.
-      if (isDazed(health)) {
-        const dx = prev.x - CASTLE.center.x;
-        const dz = prev.z - CASTLE.center.z;
-        const len = Math.hypot(dx, dz) || 1;
-        const speed = HEALTH.dazedRetreat / HEALTH.dazedS;
-        player.setStumble({ x: (dx / len) * speed, y: 0, z: (dz / len) * speed });
+      // Maze-aware daze ejection (daze-eject-spires design spec §1) — replaces
+      // the old radial-only stumble: inside the ward maze, walking straight
+      // away from CASTLE.center just ran the player into a wall, which
+      // resolveCollision then pushed straight back out — net motion ~0, so
+      // the player jittered in place for the whole daze window. See the
+      // `wasDazed`/`stumbleWaypoints`/`ejectPhase` field docs above for the
+      // 3-state (stumbling → blackout → none) shape of what follows.
+      const dazedNow = isDazed(health);
+
+      // Falling edge: the daze window just ended THIS frame (stepHealth
+      // already refilled HP). If the player is still inside the castle's
+      // walled footprint, don't hand control back yet — run the
+      // blackout-drag eject instead of leaving them stranded mid-maze.
+      if (wasDazed && !dazedNow && ejectPhase === 'none') {
+        const insideWalls =
+          Math.max(Math.abs(prev.x - CASTLE.center.x), Math.abs(prev.z - CASTLE.center.z)) < CASTLE.half;
+        if (insideWalls) {
+          ejectPhase = 'blackout';
+          ejectTimer = 0;
+          ejectTeleported = false;
+        }
+      }
+
+      if (ejectPhase === 'blackout') {
+        ejectTimer += dt;
+        // Teleport once the veil has had time to reach full black (~0.4s),
+        // so the actual pop happens while the screen can't show it.
+        if (!ejectTeleported && ejectTimer >= 0.4) {
+          ejectTeleported = true;
+          const out = gateOutsidePoint();
+          player.teleport(out.x, heightAt(out.x, out.z) + 0.5, out.z);
+        }
+        // Clears ~0.8s in total — the veil starts fading back out from here.
+        if (ejectTimer >= 0.8) ejectPhase = 'none';
+      }
+
+      if (dazedNow && !wasDazed) {
+        // Rising edge: a fresh daze just started — (re)plan the corridor
+        // walk. Empty outside the castle region (no maze to navigate there —
+        // the radial-retreat fallback below applies) or if no BFS path exists
+        // (shouldn't happen; ward.test.ts enforces full connectivity).
+        stumbleWaypoints = inCastleRegion(prev.x, prev.z) ? retreatPath(prev.x, prev.z) : [];
+        stumbleWaypointIdx = 0;
+      }
+
+      if (dazedNow) {
+        if (stumbleWaypoints.length > 0) {
+          // Steer toward the current waypoint at HEALTH.stumbleSpeed,
+          // advancing to the next one once within 1 m of it.
+          let target = stumbleWaypoints[stumbleWaypointIdx]!;
+          let dx = target.x - prev.x;
+          let dz = target.z - prev.z;
+          while (Math.hypot(dx, dz) < 1 && stumbleWaypointIdx < stumbleWaypoints.length - 1) {
+            stumbleWaypointIdx++;
+            target = stumbleWaypoints[stumbleWaypointIdx]!;
+            dx = target.x - prev.x;
+            dz = target.z - prev.z;
+          }
+          const len = Math.hypot(dx, dz) || 1;
+          player.setStumble({
+            x: (dx / len) * HEALTH.stumbleSpeed,
+            y: 0,
+            z: (dz / len) * HEALTH.stumbleSpeed,
+          });
+        } else {
+          // Outside the castle region (or no path found): the old radial
+          // retreat away from the castle centre — no maze to navigate there.
+          const dx = prev.x - CASTLE.center.x;
+          const dz = prev.z - CASTLE.center.z;
+          const len = Math.hypot(dx, dz) || 1;
+          player.setStumble({
+            x: (dx / len) * HEALTH.stumbleSpeed,
+            y: 0,
+            z: (dz / len) * HEALTH.stumbleSpeed,
+          });
+        }
+      } else if (ejectPhase === 'blackout') {
+        // Daze already over but the blackout-drag is still running: hold
+        // still (the player can't see anything anyway) until it clears.
+        player.setStumble({ x: 0, y: 0, z: 0 });
       } else {
         player.setStumble(null);
       }
+      wasDazed = dazedNow;
       player.update(dt);
       // Prismhorse mount: pin/animate the actor under the camera while riding,
       // or loosely trail the player while idle (also handles hold-Space dismount).
@@ -1281,6 +1376,7 @@ function bootGame(): void {
       exhausted: player.exhausted,
       hp: health.hp,
       dazed: isDazed(health),
+      dazeBlack: ejectPhase === 'blackout',
       inventory,
       unlocks: player.unlocks,
       critters: critters.list(),
@@ -1506,6 +1602,12 @@ function bootGame(): void {
     }),
     quality: () => ({ id: currentQuality(), flags: qualityFlags() }),
     hp: () => health.hp,
+    // Debug-only: direct damage (daze-eject-spires §1 e2e verification) —
+    // routes through the same applyHit goblins use, so dazed invulnerability
+    // still applies identically.
+    hurt: (dmg: number) => {
+      health = applyHit(health, dmg);
+    },
     goblinCount: () => castleSys.goblinCount(),
     // Castle Ward Task 6 e2e verification: raw goblin (x, y, z) positions.
     goblinPositions: () => castleSys.goblinTargets().map((t) => t.pos),

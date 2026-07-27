@@ -8,8 +8,10 @@ import {
   cellToWorld,
   wardObstaclesNear,
   wardGrappleNear,
+  retreatPath,
+  gateOutsidePoint,
 } from '../src/castle/ward.ts';
-import { WARD, CASTLE } from '../src/core/constants.ts';
+import { WARD, CASTLE, HEALTH } from '../src/core/constants.ts';
 import { resolveCollision } from '../src/player/collision.ts';
 
 const LEGEND = new Set(['#', '.', 'P', 'H', 'K', 'G', 'T']);
@@ -396,5 +398,110 @@ describe('ward wall collision (Castle Ward Task 3)', () => {
     for (const o of near) {
       expect(Math.hypot(o.x - gate.x, o.z - gate.z)).toBeGreaterThanOrEqual(2);
     }
+  });
+});
+
+describe('retreatPath (daze-eject-spires design spec §1: maze-aware daze ejection)', () => {
+  // Row 1, col 1 is a '.' corridor cell deep in the NW of the map, about as
+  // far from the gate (row 17/18, col 35, east edge) as the maze gets.
+  const deepCell = { row: 1, col: 1 };
+  const deepWorld = cellToWorld(deepCell.col, deepCell.row);
+
+  it('is deterministic and memoised (same result every call)', () => {
+    const a = retreatPath(deepWorld.x, deepWorld.z);
+    const b = retreatPath(deepWorld.x, deepWorld.z);
+    expect(a.length).toBeGreaterThan(0);
+    expect(a).toEqual(b);
+  });
+
+  it('from a deep corridor cell, returns a non-empty path ending outside the wall line', () => {
+    const path = retreatPath(deepWorld.x, deepWorld.z);
+    expect(path.length).toBeGreaterThan(1);
+    const last = path[path.length - 1]!;
+    // Outside the curtain wall's Chebyshev square (CASTLE.half).
+    expect(Math.max(Math.abs(last.x - CASTLE.center.x), Math.abs(last.z - CASTLE.center.z))).toBeGreaterThan(
+      CASTLE.half,
+    );
+    expect(last).toEqual(gateOutsidePoint());
+  });
+
+  it('every consecutive pair of cell waypoints (all but the final outside-gate leg) are adjacent open cells', () => {
+    const path = retreatPath(deepWorld.x, deepWorld.z);
+    // The last waypoint is the outside-gate point, not a cell center — check
+    // adjacency over every OTHER consecutive pair (cell-to-cell hops).
+    for (let i = 0; i < path.length - 2; i++) {
+      const a = path[i]!;
+      const b = path[i + 1]!;
+      const dist = Math.hypot(b.x - a.x, b.z - a.z);
+      expect(dist).toBeCloseTo(WARD.cellSize);
+    }
+  });
+
+  it('starting already at the gate returns []', () => {
+    const gate = wardLayout().gate;
+    expect(retreatPath(gate.x, gate.z)).toEqual([]);
+  });
+
+  it('a position outside the map/walls returns []', () => {
+    // Well beyond the ±90 m ward interior.
+    expect(retreatPath(CASTLE.center.x + 500, CASTLE.center.z + 500)).toEqual([]);
+    // On a wall cell (row 0, col 10 is part of the outer `#` ring).
+    const wallPoint = cellToWorld(10, 0);
+    expect(retreatPath(wallPoint.x, wallPoint.z)).toEqual([]);
+  });
+
+  it('gateOutsidePoint sits ~8m outside the gate along its outward (+x) axis', () => {
+    const gate = wardLayout().gate;
+    const out = gateOutsidePoint();
+    expect(out.z).toBeCloseTo(gate.z);
+    expect(out.x - gate.x).toBeCloseTo(WARD.cellSize * 1.6);
+  });
+});
+
+describe('daze stumble kinematics (regression: maze-aware retreat actually makes progress)', () => {
+  // Row 1, col 1 — the same deep NW corridor cell as above.
+  const startCell = { row: 1, col: 1 };
+
+  it('steering along retreatPath waypoints at HEALTH.stumbleSpeed, with wardObstaclesNear collision resolved every step, ends meaningfully closer to the gate with no step pinned', () => {
+    const start = cellToWorld(startCell.col, startCell.row);
+    const path = retreatPath(start.x, start.z);
+    expect(path.length).toBeGreaterThan(2);
+
+    const gate = wardLayout().gate;
+    const startDistToGate = Math.hypot(start.x - gate.x, start.z - gate.z);
+
+    let pos = { x: start.x, z: start.z };
+    let waypointIdx = 0;
+    const dt = 1 / 60;
+    const steps = Math.round(4 / dt); // 4 s daze window
+    let totalDisplacement = 0;
+
+    for (let i = 0; i < steps; i++) {
+      let target = path[waypointIdx]!;
+      let dx = target.x - pos.x;
+      let dz = target.z - pos.z;
+      while (Math.hypot(dx, dz) < 1 && waypointIdx < path.length - 1) {
+        waypointIdx++;
+        target = path[waypointIdx]!;
+        dx = target.x - pos.x;
+        dz = target.z - pos.z;
+      }
+      const len = Math.hypot(dx, dz) || 1;
+      const vx = (dx / len) * HEALTH.stumbleSpeed;
+      const vz = (dz / len) * HEALTH.stumbleSpeed;
+      const next = { x: pos.x + vx * dt, y: CASTLE.padHeight + 1, z: pos.z + vz * dt };
+      const resolved = resolveCollision(next, 0.4, wardObstaclesNear(next.x, next.z));
+      totalDisplacement += Math.hypot(resolved.x - pos.x, resolved.z - pos.z);
+      pos = { x: resolved.x, z: resolved.z };
+    }
+
+    // Waypoint index advanced several steps along the route (not stuck at 0).
+    expect(waypointIdx).toBeGreaterThanOrEqual(4);
+    // Net motion isn't a stalled jitter — averages well above a stroll.
+    const avgPerSecond = totalDisplacement / 4;
+    expect(avgPerSecond).toBeGreaterThan(3);
+    // Actually closer to the gate than the start, not just churning in place.
+    const endDistToGate = Math.hypot(pos.x - gate.x, pos.z - gate.z);
+    expect(endDistToGate).toBeLessThan(startDistToGate - 10);
   });
 });
