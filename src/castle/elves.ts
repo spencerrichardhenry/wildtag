@@ -1,11 +1,11 @@
 import * as THREE from 'three';
-import { CASTLE, ELF, WORLD_SEED } from '../core/constants.ts';
+import { CASTLE, ELF, WARD, WORLD_SEED } from '../core/constants.ts';
 import { mulberry32 } from '../core/rng.ts';
 import { resolveCollision } from '../player/collision.ts';
 import type { GroundQuery, Vec3 } from '../core/types.ts';
 import { buildElf } from './builders.ts';
 import { castleObstacles } from './layout.ts';
-import { wardObstaclesNear } from './ward.ts';
+import { wardLayout, wardObstaclesNear } from './ward.ts';
 
 // ---------------------------------------------------------------------------
 // Elves (Cursed Castle Task 12): persistent happy residents that wander/dance
@@ -27,40 +27,41 @@ import { wardObstaclesNear } from './ward.ts';
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
 
 /**
- * Innermost spiral radius (m): the keep is a SQUARE footprint of half-extent
- * `CASTLE.keepHalf`, so its farthest extent from centre (a corner) is
- * `keepHalf * √2` — a radius at or below that can still land inside the keep
- * depending on angle. `+3` clears every angle with a small margin, so no elf
- * home ever spawns embedded in (or wedged against) the keep's solid mesh/
- * collider.
+ * Per-plaza mini-spiral radius band (m) — Castle Ward Task 6: elf homes now
+ * settle inside the 3 ward plazas instead of an open spiral around
+ * `CASTLE.center`. Each plaza is a 5×5-cell (`WARD.cellSize`=5 m) region, so
+ * a radius up to `2 * WARD.cellSize` (10 m) from the plaza centroid stays
+ * comfortably inside its cell footprint (half-extent 12.5 m) without
+ * crowding the plaza's own walls.
  */
-const HOME_RADIUS_MIN = CASTLE.keepHalf * Math.SQRT2 + 3;
-
-/** Radius is clamped a few metres shy of the curtain wall itself. */
-const HOME_RADIUS_MAX = CASTLE.half - 4;
+const PLAZA_SPIRAL_MIN_R = 2;
+const PLAZA_SPIRAL_MAX_R = 2 * WARD.cellSize;
+/** Local index at which the mini-spiral reaches `PLAZA_SPIRAL_MAX_R` — the
+ *  highest per-plaza local index across `ELF.maxCount` (28) round-robinned
+ *  3-ways (`Math.floor((ELF.maxCount - 1) / 3)`). */
+const PLAZA_SPIRAL_MAX_LOCAL = Math.floor((ELF.maxCount - 1) / 3);
+const PLAZA_SPIRAL_GROWTH = (PLAZA_SPIRAL_MAX_R - PLAZA_SPIRAL_MIN_R) / PLAZA_SPIRAL_MAX_LOCAL;
 
 /**
- * Spiral radius growth (m) per index, chosen so the radius reaches
- * `HOME_RADIUS_MAX` around index 24 — homes settle inside/near the courtyard
- * (never out at `CASTLE.regionR`, which is for goblins).
- */
-const HOME_RADIUS_GROWTH = (HOME_RADIUS_MAX - HOME_RADIUS_MIN) / 24;
-
-/**
- * Deterministic home position for elf `index`: a golden-angle spiral around
- * `CASTLE.center`, radius growing from just past the keep's footprint up
- * toward (but staying inside) `CASTLE.half`. Pure — no `three` import, safe
- * to unit-test directly. `y` is the flattened pad-height placeholder (mirrors
+ * Deterministic home position for elf `index`: round-robins across the 3 ward
+ * plazas (`plaza = wardLayout().plazas[index % 3]`), then places the elf on a
+ * golden-angle mini-spiral around THAT plaza's centroid — the spiral's local
+ * index (`Math.floor(index / 3)`) is this elf's rank within its own plaza, so
+ * plaza-mates fan out instead of stacking. Pure — no `three` import, safe to
+ * unit-test directly. `y` is the flattened pad-height placeholder (mirrors
  * `goblinSpawnPoints`); `ElfSystem` resolves the real ground height via
  * `GroundQuery.heightAt` when it actually places a mesh there.
  */
 export function elfHomePosition(index: number): Vec3 {
-  const angle = index * GOLDEN_ANGLE;
-  const r = Math.min(HOME_RADIUS_MIN + index * HOME_RADIUS_GROWTH, HOME_RADIUS_MAX);
+  const plazas = wardLayout().plazas;
+  const plaza = plazas[index % plazas.length]!;
+  const local = Math.floor(index / plazas.length);
+  const angle = local * GOLDEN_ANGLE;
+  const r = Math.min(PLAZA_SPIRAL_MIN_R + local * PLAZA_SPIRAL_GROWTH, PLAZA_SPIRAL_MAX_R);
   return {
-    x: CASTLE.center.x + Math.cos(angle) * r,
+    x: plaza.center.x + Math.cos(angle) * r,
     y: CASTLE.padHeight,
-    z: CASTLE.center.z + Math.sin(angle) * r,
+    z: plaza.center.z + Math.sin(angle) * r,
   };
 }
 

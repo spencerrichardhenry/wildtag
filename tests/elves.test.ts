@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { CASTLE, ELF } from '../src/core/constants.ts';
+import { CASTLE, ELF, WARD } from '../src/core/constants.ts';
 import type { GroundQuery, Vec3 } from '../src/core/types.ts';
 import { castleObstacles } from '../src/castle/layout.ts';
+import { wardLayout } from '../src/castle/ward.ts';
 import { elfHomePosition, ElfSystem } from '../src/castle/elves.ts';
 
 // ---------------------------------------------------------------------------
@@ -26,18 +27,27 @@ describe('elfHomePosition', () => {
     expect(elfHomePosition(17)).toEqual(elfHomePosition(17));
   });
 
-  it('stays within CASTLE.regionR (well inside — near the courtyard, not out at the region radius)', () => {
-    for (let i = 0; i < 40; i++) {
+  it('each home falls within its round-robin plaza\'s cell bounds (Castle Ward Task 6)', () => {
+    const plazas = wardLayout().plazas;
+    const half = WARD.cellSize / 2;
+    for (let i = 0; i < ELF.maxCount; i++) {
       const p = elfHomePosition(i);
-      const d = Math.hypot(p.x - CASTLE.center.x, p.z - CASTLE.center.z);
-      expect(d).toBeLessThanOrEqual(CASTLE.regionR);
-      // Homes settle in/near the courtyard, never out to the goblin region.
-      expect(d).toBeLessThan(CASTLE.half);
+      const plaza = plazas[i % plazas.length]!;
+      const xs = plaza.cells.map((c) => c.x);
+      const zs = plaza.cells.map((c) => c.z);
+      const minX = Math.min(...xs) - half;
+      const maxX = Math.max(...xs) + half;
+      const minZ = Math.min(...zs) - half;
+      const maxZ = Math.max(...zs) + half;
+      expect(p.x).toBeGreaterThanOrEqual(minX);
+      expect(p.x).toBeLessThanOrEqual(maxX);
+      expect(p.z).toBeGreaterThanOrEqual(minZ);
+      expect(p.z).toBeLessThanOrEqual(maxZ);
     }
   });
 
-  it('never lands inside the keep footprint (square, half-extent CASTLE.keepHalf)', () => {
-    for (let i = 0; i < 40; i++) {
+  it('never lands inside the keep footprint (square, half-extent CASTLE.keepHalf) — trivially true now plazas replace the open spiral', () => {
+    for (let i = 0; i < ELF.maxCount; i++) {
       const p = elfHomePosition(i);
       const dx = Math.abs(p.x - CASTLE.center.x);
       const dz = Math.abs(p.z - CASTLE.center.z);
@@ -45,8 +55,8 @@ describe('elfHomePosition', () => {
     }
   });
 
-  it('indices 0-19 are pairwise more than 2 m apart', () => {
-    const pts = Array.from({ length: 20 }, (_, i) => elfHomePosition(i));
+  it('indices 0-27 (ELF.maxCount) are pairwise more than 2 m apart', () => {
+    const pts = Array.from({ length: ELF.maxCount }, (_, i) => elfHomePosition(i));
     for (let i = 0; i < pts.length; i++) {
       for (let j = i + 1; j < pts.length; j++) {
         const a = pts[i]!;
@@ -139,9 +149,12 @@ describe('ElfSystem', () => {
 
 // ---------------------------------------------------------------------------
 // Wall/tower/keep collision (final-review fix): a wandering elf is pushed out
-// of the real castle obstacle set instead of ghosting through — wander
-// targets can reach ~71 m from centre (home up to ~41 m + wanderR 30 m),
-// well past the 45 m curtain wall.
+// of the real castle obstacle set instead of ghosting through. Castle Ward
+// Task 6: homes now sit inside the ward plazas (well inside the 90 m curtain
+// wall) with a much tighter wanderR (9 m, was 30), but `ElfSystem.update`
+// still runs every step through BOTH `castleObstacles()` (this test's set —
+// curtain wall/towers/keep) and `wardObstaclesNear` (the maze walls), so
+// clipping either is still structurally impossible.
 // ---------------------------------------------------------------------------
 
 describe('ElfSystem — wall collision', () => {

@@ -13,7 +13,7 @@ import {
   type GoblinState,
 } from './goblins.ts';
 import { castleLayout, castleObstacles } from './layout.ts';
-import { wardObstaclesNear } from './ward.ts';
+import { wardLayout, wardObstaclesNear } from './ward.ts';
 import { purifySequenceSteps } from './state.ts';
 
 // ---------------------------------------------------------------------------
@@ -295,7 +295,7 @@ export class CastleSystem {
   }
 
   private spawnNight(): void {
-    const points = goblinSpawnPoints(this.nightIndex, GOBLIN.count);
+    const points = goblinSpawnPoints(this.nightIndex, GOBLIN.count, wardLayout().zones);
     for (const p of points) {
       const home = { x: p.x, y: this.ground.heightAt(p.x, p.z), z: p.z };
       this.nightManaged.add(this.spawnGoblinAt(home));

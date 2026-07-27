@@ -3,7 +3,8 @@ import type { DayPhase } from '../core/daylight.ts';
 import { resolveCollision, type Obstacle } from '../player/collision.ts';
 import { mulberry32 } from '../core/rng.ts';
 import type { GroundQuery, Vec3 } from '../core/types.ts';
-import { inCastleRegion } from './layout.ts';
+import { inCastleRegion, type Point2 } from './layout.ts';
+import { wardObstaclesNear } from './ward.ts';
 
 // ---------------------------------------------------------------------------
 // Night goblin AI — a pure, deterministic per-goblin state machine (Cursed
@@ -200,25 +201,41 @@ export function stepGoblin(g: GoblinState, ctx: GoblinCtx, dt: number): GoblinSt
 }
 
 /**
- * Deterministic ring spawn positions for night `nightIndex` (0-based, one per
- * spawned night): `count` points at radius [30, 60] around `CASTLE.center` —
- * inside `CASTLE.regionR` (175) and clear of the keep (half-diagonal ~14 m).
- * Seeded by `mulberry32(WORLD_SEED ^ nightIndex)` so the same night always
- * reproduces the same ring. `y` is a placeholder (the castle pad height,
- * accurate for this radius band); `CastleSystem` resolves the real ground
- * height via `GroundQuery.heightAt` when it actually spawns a goblin there.
+ * Deterministic zone-based spawn positions for night `nightIndex` (0-based,
+ * one per spawned night): `zones` (ward plaza centers + corridor junctions,
+ * `wardLayout().zones` in production) are shuffled by
+ * `mulberry32(WORLD_SEED ^ nightIndex)` — a fresh shuffle per night, so each
+ * night's assignment order differs — then walked round-robin, one goblin per
+ * shuffled zone, wrapping back to the start of the shuffled list once every
+ * zone has a goblin (`zones` repeat if `count > zones.length`). Each spawn
+ * jitters ±2 m off its zone center, then any jitter that lands inside a ward
+ * wall's collision circle is pushed back out via `resolveCollision` against
+ * `wardObstaclesNear` — so a goblin never spawns embedded in a wall adjacent
+ * to a junction. `y` is a placeholder (the castle pad height, accurate
+ * everywhere inside the ward — see `CASTLE.padRadius`); `CastleSystem`
+ * resolves the real ground height via `GroundQuery.heightAt` when it actually
+ * spawns a goblin there.
  */
-export function goblinSpawnPoints(nightIndex: number, count: number): Vec3[] {
+export function goblinSpawnPoints(nightIndex: number, count: number, zones: readonly Point2[]): Vec3[] {
   const rand = mulberry32((WORLD_SEED ^ nightIndex) >>> 0);
+
+  // Fisher-Yates shuffle, seeded by this night's rand — a fresh order every
+  // night, deterministic for a given nightIndex.
+  const shuffled = zones.slice();
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    const tmp = shuffled[i]!;
+    shuffled[i] = shuffled[j]!;
+    shuffled[j] = tmp;
+  }
+
   const out: Vec3[] = [];
   for (let i = 0; i < count; i++) {
-    const ang = rand() * Math.PI * 2;
-    const r = 30 + rand() * 30; // [30, 60]
-    out.push({
-      x: CASTLE.center.x + Math.sin(ang) * r,
-      y: CASTLE.padHeight,
-      z: CASTLE.center.z + Math.cos(ang) * r,
-    });
+    const zone = shuffled[i % shuffled.length]!;
+    const jx = zone.x + (rand() * 2 - 1) * 2;
+    const jz = zone.z + (rand() * 2 - 1) * 2;
+    const resolved = resolveCollision({ x: jx, y: CASTLE.padHeight, z: jz }, GOBLIN.bodyR, wardObstaclesNear(jx, jz));
+    out.push({ x: resolved.x, y: CASTLE.padHeight, z: resolved.z });
   }
   return out;
 }

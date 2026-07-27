@@ -1499,6 +1499,8 @@ function bootGame(): void {
     quality: () => ({ id: currentQuality(), flags: qualityFlags() }),
     hp: () => health.hp,
     goblinCount: () => castleSys.goblinCount(),
+    // Castle Ward Task 6 e2e verification: raw goblin (x, y, z) positions.
+    goblinPositions: () => castleSys.goblinTargets().map((t) => t.pos),
     // Debug: spawn one goblin 6 m ahead of the player, regardless of phase
     // (Cursed Castle Task 11 e2e verification).
     spawnGoblin: () => {

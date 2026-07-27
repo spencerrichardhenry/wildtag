@@ -1,9 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import { CASTLE, GOBLIN, MOVE } from '../src/core/constants.ts';
 import type { GroundQuery, Vec3 } from '../src/core/types.ts';
-import { inCastleRegion, castleObstacles } from '../src/castle/layout.ts';
+import { inCastleRegion, castleObstacles, type Point2 } from '../src/castle/layout.ts';
+import { wardLayout } from '../src/castle/ward.ts';
 import type { Obstacle } from '../src/player/collision.ts';
 import { makeGoblin, stepGoblin, goblinSpawnPoints, type GoblinState } from '../src/castle/goblins.ts';
+
+// A plain, pure zones fixture (NOT wardLayout().zones) for tests about the
+// spawn-assignment mechanics themselves (determinism, round-robin, region
+// containment) — keeps them independent of the real ward map's shape. Points
+// sit in the old ring's [30, 60] m band around CASTLE.center so downstream
+// assertions (inCastleRegion, chase-into-a-real-obstacle) behave the same as
+// before the zone-based rework.
+const ZONES_FIXTURE: Point2[] = Array.from({ length: 12 }, (_, i) => {
+  const ang = (i / 12) * Math.PI * 2;
+  const r = 30 + (i % 3) * 10; // 30, 40, 50 repeating — inside [30, 60]
+  return { x: CASTLE.center.x + Math.sin(ang) * r, z: CASTLE.center.z + Math.cos(ang) * r };
+});
 
 // ---------------------------------------------------------------------------
 // Pure FSM tests (Cursed Castle Task 11). Flat ground + a seeded rand so every
@@ -158,9 +171,35 @@ describe('goblins FSM', () => {
   });
 
   it('spawn points are deterministic per night and inside the region', () => {
-    expect(goblinSpawnPoints(3, 8)).toEqual(goblinSpawnPoints(3, 8));
-    for (const p of goblinSpawnPoints(1, 8)) {
+    expect(goblinSpawnPoints(3, 8, ZONES_FIXTURE)).toEqual(goblinSpawnPoints(3, 8, ZONES_FIXTURE));
+    for (const p of goblinSpawnPoints(1, 8, ZONES_FIXTURE)) {
       expect(inCastleRegion(p.x, p.z)).toBe(true);
+    }
+  });
+
+  it('zones repeat round-robin once count exceeds zones.length, without throwing', () => {
+    const points = goblinSpawnPoints(2, ZONES_FIXTURE.length * 2 + 3, ZONES_FIXTURE);
+    expect(points.length).toBe(ZONES_FIXTURE.length * 2 + 3);
+    for (const p of points) {
+      expect(inCastleRegion(p.x, p.z)).toBe(true);
+    }
+  });
+
+  it('different nightIndex values produce a different zone assignment order', () => {
+    const a = goblinSpawnPoints(1, ZONES_FIXTURE.length, ZONES_FIXTURE);
+    const b = goblinSpawnPoints(2, ZONES_FIXTURE.length, ZONES_FIXTURE);
+    expect(a).not.toEqual(b);
+  });
+
+  it('every spawn point lands within 3 m of some real ward zone, inside the castle region', () => {
+    const zones = wardLayout().zones;
+    expect(zones.length).toBeGreaterThan(0);
+    const points = goblinSpawnPoints(5, GOBLIN.count, zones);
+    expect(points.length).toBe(GOBLIN.count);
+    for (const p of points) {
+      expect(inCastleRegion(p.x, p.z)).toBe(true);
+      const nearestD = Math.min(...zones.map((z) => Math.hypot(p.x - z.x, p.z - z.z)));
+      expect(nearestD).toBeLessThanOrEqual(3);
     }
   });
 });
@@ -225,7 +264,7 @@ describe('goblins FSM — wall collision', () => {
 
   it('a ring-spawned goblin baited straight at the player never lands inside any real castle obstacle', () => {
     const obstacles = castleObstacles();
-    const points = goblinSpawnPoints(9, GOBLIN.count);
+    const points = goblinSpawnPoints(9, GOBLIN.count, ZONES_FIXTURE);
     const rand = seededRand(11);
     for (const home3 of points) {
       const home: Vec3 = { ...home3, y: 0 };

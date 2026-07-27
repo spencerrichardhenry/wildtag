@@ -64,6 +64,12 @@ export interface DebugDeps {
   /** Live goblin count (Cursed Castle Task 11). */
   goblinCount(): number;
   /**
+   * Live goblin (x, y, z) positions (Castle Ward Task 6 e2e verification —
+   * `state().goblinPositions`), so a headless script can confirm goblins are
+   * distributed across ward zones rather than clumped in one ring.
+   */
+  goblinPositions(): Vec3[];
+  /**
    * Debug-only: force-spawn one goblin near the player regardless of the
    * current phase (Cursed Castle Task 11 e2e verification). Returns its id.
    */
@@ -161,6 +167,7 @@ export function buildDebugHandle(deps: DebugDeps): GameDebugHandle {
         quality: currentQuality(),
         hp: deps.hp(),
         goblinCount: deps.goblinCount(),
+        goblinPositions: deps.goblinPositions(),
         elfCount: deps.elfCount(),
         castlePurified: deps.castlePurified(),
         inHall: deps.inHall(),

@@ -1221,14 +1221,20 @@ export const WARD = {
  * its only tuning knobs. Goblins patrol their spawn point, notice + chase the
  * player, wind up and lunge for melee damage, then recover — never leaving
  * `CASTLE.regionR` of the castle. Distances in m, speeds m/s, times s.
+ *
+ * Castle Ward Task 6: goblins now home to ward zones (plaza centers + corridor
+ * junctions, `wardLayout().zones`) instead of an open ring around the castle
+ * centre — `count` 8→12 (a maze full of corridors easily absorbs more) and
+ * `patrolR` 25→8 (a junction/plaza-scale patrol loop; the old 25 m radius
+ * would patrol straight through several ward walls).
  */
 export const GOBLIN = {
   /** Concurrent goblins spawned each dusk (skipped once the castle is purified). */
-  count: 8,
+  count: 12,
   /** Ground speed while patrolling a loop around its spawn point (home). */
   patrolSpeed: 1.8,
-  /** Patrol wander radius around home (m). */
-  patrolR: 25,
+  /** Patrol wander radius around home (m) — sized to a ward zone (plaza/junction), not the open ring. */
+  patrolR: 8,
   /** Distance (m) within which a patrolling goblin notices the player. */
   noticeR: 20,
   /** Seconds a goblin freezes, facing the player, before giving chase. */
@@ -1276,12 +1282,19 @@ export const GOBLIN = {
  * radius growing from 8 m toward `CASTLE.half` so residents settle inside/near
  * the courtyard rather than out at `CASTLE.regionR`. Distances in m, speeds
  * m/s, times s — mirrors the shape of `src/village/npcs.ts`'s local `AI` block.
+ *
+ * Castle Ward Task 6: homes retarget to the 3 ward plazas (round-robin, a
+ * per-plaza golden-angle mini-spiral — see `elfHomePosition`) instead of the
+ * old open spiral around `CASTLE.center`. `wanderR` 30→9: at the old 30 m an
+ * elf wandering from a plaza home would walk straight out into the maze
+ * corridors; 9 m keeps a wander mostly inside its ~25×25 m plaza with just a
+ * charming spill into the nearest corridor mouth.
  */
 export const ELF = {
   /** Ground speed while wandering toward a target (m/s). */
   walkSpeed: 1.4,
   /** Wander target radius around home (m). */
-  wanderR: 30,
+  wanderR: 9,
   /** Chance a pause rolls into a spin+bob "dance" instead of standing still. */
   danceChance: 0.35,
   /** Dance bob period (s) — one full up/down cycle. */
