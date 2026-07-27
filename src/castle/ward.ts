@@ -293,6 +293,21 @@ export function inHall(x: number, z: number): boolean {
   return false;
 }
 
+/**
+ * True when (x, z) sits under a roofed hall AND `y` is at or below the
+ * hall's roof line (`CASTLE.padHeight + WARD.wallH`) — Castle Ward
+ * final-review Fix 2. `inHall` alone is 2D and has no notion of height, so
+ * wiring `PlayerController.movementCeiling` to it directly suppressed glide
+ * for a player passing HIGH ABOVE a hall's roof too (there's no collider up
+ * there to actually stop them), cutting their glide and dropping them
+ * through the roof mid-air. Gated here so only a player at or below roof
+ * height loses glide/grapple under a hall — exactly the "no sky in here"
+ * case the feature is meant to cover.
+ */
+export function inHallBelowRoof(x: number, z: number, y: number): boolean {
+  return inHall(x, z) && y < CASTLE.padHeight + WARD.wallH;
+}
+
 // ---------------------------------------------------------------------------
 // Ward wall collision (Castle Ward Task 3): collision circles packed along
 // every non-ring wall run, bucketed into a memoised spatial hash so player /

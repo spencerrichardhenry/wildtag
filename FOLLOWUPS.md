@@ -79,6 +79,34 @@ block ship; listed here so they aren't lost.
   step, so crossing a hall doorway boundary takes effect on the frame after
   the crossing rather than instantaneously. Imperceptible at frame rate; not
   worth the complexity of a sub-step boundary check.
+- **Roof grapple clip-throughs** (`castle/layout.ts` / `castle/ward.ts` /
+  `player/grapple.ts`): a fired hook can latch through a hall's collider-less
+  roof and settle on the floor or the far wall inside, since nothing in the
+  grapple's raycast/latch path treats the roof plane as solid — cosmetic (the
+  rope renders through the roof mesh), not a movement exploit on its own.
+  Candidate fixes: a roof-specific grapple blocker cylinder/plane over each
+  hall footprint, or an `inHall(anchor)` check in the latch-validation path
+  that rejects an anchor whose line back to the player crosses a roof.
+- **Ward ring-exclusion leaks for runs that END on the ring** (`castle/ward.ts`
+  `isRingRun`): a wall run is excluded from ward-collision emission only when
+  EVERY cell of the run lies on the outer ring; a run that starts inside the
+  maze and ends ON the ring line (rather than lying flush along it) still
+  emits its own circles there, doubling up with the curtain wall's existing
+  collision on that shared line. Harmless in practice — a doubled collider
+  just makes an already-solid line more solid — but worth tightening if the
+  hand-authored map is ever re-edited near the boundary.
+- **Plaza banner poles have no collision** (`castle/builders.ts` plaza
+  dressing): the decorative banner poles placed around each plaza are visual
+  only — a player, goblin, or elf walks straight through one. Minor, since
+  they're thin and off to the side of the open plaza cells, but noted in case
+  a future pass wants every placed prop to carry at least a thin collider.
+- **Wild critters don't collide with ward walls** (`critters/manager.ts` /
+  `castle/ward.ts`): only goblins (`castle/goblins.ts`) and elves
+  (`castle/elves.ts`) run their step positions through
+  `castleObstacles()`/`wardObstaclesNear()`; ordinary wild critters that wander
+  into the ward's footprint (e.g. during a chase or just by roaming) can
+  ghost through maze walls. Not currently reachable in normal play (critters
+  don't spawn inside the walled ward), so deferred rather than fixed blind.
 
 ## Deliberately kept
 

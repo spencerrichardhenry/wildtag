@@ -132,13 +132,18 @@ export class PlayerController {
 
   // --- Roofed-hall ceiling (Castle Ward Task 5) ----------------------------
   /**
-   * Injected world query: true when (x, z) sits under a roofed hall — "No
-   * sky in here!" Defaults to always-false so headless/unit use and any
-   * scene without the castle module wired never suppresses anything. Kept
-   * generic (not a castle import) so this module stays free of castle deps;
-   * `main.ts` injects `(x, z) => inHall(x, z)`.
+   * Injected world query: true when (x, z, y) sits under a roofed hall AT OR
+   * BELOW its roof height — "No sky in here!" The `y` param (final-review
+   * Fix 2) lets the predicate distinguish a player standing/gliding UNDER a
+   * hall's roof (suppress) from one gliding well ABOVE it while merely
+   * crossing the hall's 2D footprint (don't suppress — there's no collider
+   * up there to stop them, so cutting glide there just drops the player
+   * through the roof mid-air). Defaults to always-false so headless/unit use
+   * and any scene without the castle module wired never suppresses anything.
+   * Kept generic (not a castle import) so this module stays free of castle
+   * deps; `main.ts` injects `inHallBelowRoof` directly.
    */
-  movementCeiling: (x: number, z: number) => boolean = () => false;
+  movementCeiling: (x: number, z: number, y: number) => boolean = () => false;
   /**
    * Optional: called at most once per hall stay when a grapple FIRE attempt
    * (see `isGrappleFireAttempt`) is suppressed by `movementCeiling`. Surfaced
@@ -367,7 +372,10 @@ export class PlayerController {
     // only glides while `input.jumpHeld` reads true (movement.ts). A NEW
     // grapple fire is suppressed below (RMB section); an already-latched
     // hook, an in-flight hook, or an active zip keep going untouched.
-    const underRoof = this.movementCeiling(this.state.pos.x, this.state.pos.z);
+    // The current `y` is threaded through too (final-review Fix 2) so a
+    // player gliding well above the roof while crossing a hall's footprint
+    // isn't caught by this — only someone at or below roof height is.
+    const underRoof = this.movementCeiling(this.state.pos.x, this.state.pos.z, this.state.pos.y);
     if (underRoof) masked.jumpHeld = false;
     else this.toastedThisHall = false;
 

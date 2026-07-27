@@ -4,6 +4,7 @@ import {
   parseWard,
   wardLayout,
   inHall,
+  inHallBelowRoof,
   cellToWorld,
   wardObstaclesNear,
   wardGrappleNear,
@@ -251,6 +252,38 @@ describe('parser geometry', () => {
     const hall = wardLayout().halls[0]!;
     expect(inHall(hall.center.x, hall.center.z)).toBe(true);
     expect(inHall(wardLayout().gate.x, wardLayout().gate.z)).toBe(false);
+  });
+
+  // Castle Ward final-review Fix 2: gliding OVER a hall roof used to still
+  // trip the 2D `inHall` ceiling check and cut the glide mid-air (there's no
+  // collider up there, so losing lift just dropped the player through the
+  // roof). `inHallBelowRoof` adds the missing height gate — this is the
+  // pure part of the fix; the full behavioral check (glide actually persists
+  // while crossing above a hall, in the real headless build) is a separate
+  // e2e/manual spot-check noted in the fix report.
+  describe('inHallBelowRoof (final-review Fix 2: height-gated hall ceiling)', () => {
+    it('suppresses (true) at a hall cell, at ground level (y = 102, below roof)', () => {
+      const hall = wardLayout().halls[0]!;
+      expect(inHallBelowRoof(hall.center.x, hall.center.z, 102)).toBe(true);
+    });
+
+    it('does NOT suppress (false) at the same (x, z), gliding above the roof (y = 110)', () => {
+      const hall = wardLayout().halls[0]!;
+      expect(inHallBelowRoof(hall.center.x, hall.center.z, 110)).toBe(false);
+    });
+
+    it('is false outside any hall footprint regardless of height', () => {
+      const gate = wardLayout().gate;
+      expect(inHallBelowRoof(gate.x, gate.z, 102)).toBe(false);
+      expect(inHallBelowRoof(gate.x, gate.z, 110)).toBe(false);
+    });
+
+    it('the roof-height threshold is exactly CASTLE.padHeight + WARD.wallH', () => {
+      const hall = wardLayout().halls[0]!;
+      const roofY = CASTLE.padHeight + WARD.wallH;
+      expect(inHallBelowRoof(hall.center.x, hall.center.z, roofY - 0.01)).toBe(true);
+      expect(inHallBelowRoof(hall.center.x, hall.center.z, roofY + 0.01)).toBe(false);
+    });
   });
 
   it('wardLayout is memoised', () => {

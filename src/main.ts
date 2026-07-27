@@ -55,7 +55,7 @@ import { buildVillage, villageObstacles } from './village/buildings.ts';
 import { buildCastle } from './castle/builders.ts';
 import { castleLayout, castleObstacles, castleGrappleColliders, inCastleRegion } from './castle/layout.ts';
 import { CastleSystem } from './castle/system.ts';
-import { wardObstaclesNear, wardGrappleNear, inHall } from './castle/ward.ts';
+import { wardObstaclesNear, wardGrappleNear, inHall, inHallBelowRoof } from './castle/ward.ts';
 import { ElfSystem } from './castle/elves.ts';
 import { PurifierSystem } from './castle/purifier.ts';
 import { NpcManager, NPCS, npcAnchors } from './village/npcs.ts';
@@ -307,7 +307,15 @@ function bootGame(): void {
   // player stands under a roofed hall. The predicate is a generic seam on
   // the controller (movementCeiling); this is the one place that ties it to
   // the castle module, keeping player/ code free of castle imports.
-  player.movementCeiling = (x, z) => inHall(x, z);
+  //
+  // Final-review Fix 2: `inHall` alone is a 2D (x, z) footprint test with no
+  // notion of height, so a player GLIDING ABOVE the roof (hall wall tops sit
+  // at `CASTLE.padHeight + WARD.wallH`) who crossed a hall's footprint used
+  // to have their glide cut and fall through the (collider-less) roof
+  // mid-air, same as if they were standing on the ground inside it.
+  // `inHallBelowRoof` (pure, in ward.ts) adds the height gate; the controller
+  // now threads the player's current y into the seam alongside x/z.
+  player.movementCeiling = inHallBelowRoof;
   player.onCeilingBlocked = () => toast('No sky in here!');
 
   // Inventory accumulating harvested resources + the crafting tree's currency
