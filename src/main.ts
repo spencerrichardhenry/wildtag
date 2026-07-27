@@ -55,6 +55,7 @@ import { buildVillage, villageObstacles } from './village/buildings.ts';
 import { buildCastle } from './castle/builders.ts';
 import { castleLayout, castleObstacles, castleGrappleColliders, inCastleRegion } from './castle/layout.ts';
 import { CastleSystem } from './castle/system.ts';
+import { wardObstaclesNear, wardGrappleNear } from './castle/ward.ts';
 import { ElfSystem } from './castle/elves.ts';
 import { PurifierSystem } from './castle/purifier.ts';
 import { NpcManager, NPCS, npcAnchors } from './village/npcs.ts';
@@ -300,7 +301,8 @@ function bootGame(): void {
   const player = new PlayerController(camera, input, ground, spawn, scene, anchors);
   // Feed the grapple hook the nearby grappleable tree/rock cylinders so a fired
   // hook can latch to props, not just bare terrain.
-  player.grappleColliders = (x, z) => props.getGrappleColliders(x, z).concat(castleGrapple);
+  player.grappleColliders = (x, z) =>
+    props.getGrappleColliders(x, z).concat(castleGrapple).concat(wardGrappleNear(x, z));
 
   // Inventory accumulating harvested resources + the crafting tree's currency
   // (RP), consumables (darts/charms) and held deployable kits.
@@ -1054,7 +1056,11 @@ function bootGame(): void {
       // Feed the controller trees/rocks near the player before it integrates,
       // plus the static village building/lamp collision circles.
       const prev = player.pos;
-      player.obstacles = props.getObstacles(prev.x, prev.z).concat(villageObs).concat(castleObs);
+      player.obstacles = props
+        .getObstacles(prev.x, prev.z)
+        .concat(villageObs)
+        .concat(castleObs)
+        .concat(wardObstaclesNear(prev.x, prev.z));
       // Dazed retreat (Cursed Castle Task 11): normal input is suppressed and
       // the controller instead carries the player straight away from the
       // castle centre, covering HEALTH.dazedRetreat metres over the daze

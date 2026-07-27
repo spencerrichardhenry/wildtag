@@ -166,8 +166,11 @@ export function castleLayout(): CastleLayout {
  * centre at `r`, last at `segLen - r`, spacing between neighbours <= 2r so
  * adjacent circles always touch or overlap. Degenerates to a single centred
  * circle when the run is too short to fit two.
+ *
+ * Exported (Castle Ward Task 3) so `src/castle/ward.ts` packs the ward
+ * maze's wall runs with this exact same packer instead of duplicating it.
  */
-function coverSegment(segLen: number, r: number): number[] {
+export function coverSegment(segLen: number, r: number): number[] {
   if (segLen <= 0) return [];
   if (segLen <= 2 * r) return [segLen / 2];
   const n = Math.ceil((segLen - 2 * r) / (2 * r)) + 1;

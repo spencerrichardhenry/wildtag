@@ -1,5 +1,8 @@
 import { CASTLE, WARD } from '../core/constants.ts';
+import { coverSegment } from './layout.ts';
 import type { Point2 } from './layout.ts';
+import type { Obstacle } from '../player/collision.ts';
+import type { GrappleCollider } from '../player/grapple.ts';
 import { WARD_MAP } from './wardMap.ts';
 
 // ---------------------------------------------------------------------------
@@ -288,4 +291,177 @@ export function inHall(x: number, z: number): boolean {
     }
   }
   return false;
+}
+
+// ---------------------------------------------------------------------------
+// Ward wall collision (Castle Ward Task 3): collision circles packed along
+// every non-ring wall run, bucketed into a memoised spatial hash so player /
+// goblin / elf steps only ever scan a handful of nearby circles instead of
+// the whole maze.
+//
+// END-EXTENSION CONVENTION — binding for Task 4's mesh builder too: a wall
+// run's `{x1,z1}` → `{x2,z2}` are the CELL CENTERS of its first/last member
+// cell (see `mergeWallRuns` above). For the physical wall to actually reach
+// the cell's outer edge — so two perpendicular runs meet flush at a shared
+// corner instead of leaving a diagonal gap — every run is extended by
+// `WARD.cellSize / 2` beyond EACH endpoint, along its own direction, before
+// circles are packed over it with `coverSegment` (exported from
+// `layout.ts` — reused verbatim, not duplicated). Task 4 MUST mesh over this
+// same extended span (raw endpoint ± cellSize/2 along the run's direction),
+// not the raw run endpoints, or its meshes will show gaps at every corner
+// the collision circles don't have.
+//
+// A zero-length run (`x1 === x2 && z1 === z2`) is an isolated single-cell
+// pillar — a `#` cell with no adjacent wall cell in any of the 4 directions
+// (the ward map deliberately drops a few lone pillars into open
+// intersections). It has no direction to extend along and no corner to
+// meet, so it degenerates to a single circle centered on the cell.
+//
+// Ring exclusion: the outer `#` ring (map row/col 0 and 35) sits on the same
+// world line as the curtain wall (`CASTLE.half` = 90 m — see the Task 2
+// review's seam note), which already has its own colliders
+// (`castleObstacles`/`castleGrappleColliders`, layout.ts). A run is "ring"
+// when ALL its cells lie on that boundary; such runs are excluded from
+// emission here so the curtain-wall line isn't double-collided.
+// ---------------------------------------------------------------------------
+
+type WallRun = WardLayout['wallRuns'][number];
+type Circle = { x: number; z: number; r: number };
+
+const RING_EPS = 1e-6;
+// World-space corners of the outer ring (grid col/row 0 and cols-1/rows-1),
+// used to test whether a run's constant x (vertical run) or z (horizontal
+// run) sits on the boundary line — see the ring-exclusion note above.
+const _ringCorner0 = cellToWorld(0, 0);
+const _ringCornerMax = cellToWorld(WARD.cols - 1, WARD.rows - 1);
+
+/** True when every cell of `run` lies on the outer ring (row/col 0 or 35). */
+function isRingRun(run: WallRun): boolean {
+  const onRingX =
+    Math.abs(run.x1 - run.x2) < RING_EPS &&
+    (Math.abs(run.x1 - _ringCorner0.x) < RING_EPS || Math.abs(run.x1 - _ringCornerMax.x) < RING_EPS);
+  const onRingZ =
+    Math.abs(run.z1 - run.z2) < RING_EPS &&
+    (Math.abs(run.z1 - _ringCorner0.z) < RING_EPS || Math.abs(run.z1 - _ringCornerMax.z) < RING_EPS);
+  return onRingX || onRingZ;
+}
+
+/** Non-ring wall runs — the only ones that emit ward collision circles. */
+function nonRingRuns(): WallRun[] {
+  return wardLayout().wallRuns.filter((run) => !isRingRun(run));
+}
+
+/**
+ * Circle positions of radius `r` solidly covering one wall run, extended
+ * `WARD.cellSize / 2` beyond each endpoint (the END-EXTENSION CONVENTION
+ * documented above). Degenerates to a single centered circle for a
+ * zero-length (isolated pillar) run.
+ */
+function runCircles(run: WallRun, r: number): Circle[] {
+  const dx = run.x2 - run.x1;
+  const dz = run.z2 - run.z1;
+  const len = Math.hypot(dx, dz);
+  if (len < 1e-9) return [{ x: run.x1, z: run.z1, r }];
+
+  const ux = dx / len;
+  const uz = dz / len;
+  const half = WARD.cellSize / 2;
+  const ex1 = run.x1 - ux * half;
+  const ez1 = run.z1 - uz * half;
+  const extendedLen = len + WARD.cellSize;
+  return coverSegment(extendedLen, r).map((off) => ({ x: ex1 + ux * off, z: ez1 + uz * off, r }));
+}
+
+let _wardObstacles: Obstacle[] | null = null;
+
+/** Memoised ward-wall obstacle circles (`r = WARD.wallT`), ring runs excluded. */
+function wardObstacles(): Obstacle[] {
+  if (_wardObstacles) return _wardObstacles;
+  const yTop = CASTLE.padHeight + WARD.wallH;
+  const out: Obstacle[] = [];
+  for (const run of nonRingRuns()) {
+    for (const c of runCircles(run, WARD.wallT)) out.push({ x: c.x, z: c.z, r: c.r, yTop });
+  }
+  _wardObstacles = out;
+  return out;
+}
+
+let _wardGrapple: GrappleCollider[] | null = null;
+
+/** Memoised ward-wall grapple cylinders (`r = WARD.wallT * 1.5`), ring runs excluded. */
+function wardGrappleColliders(): GrappleCollider[] {
+  if (_wardGrapple) return _wardGrapple;
+  const yBase = CASTLE.padHeight;
+  const yTop = CASTLE.padHeight + WARD.wallH;
+  const out: GrappleCollider[] = [];
+  for (const run of nonRingRuns()) {
+    for (const c of runCircles(run, WARD.wallT * 1.5)) out.push({ x: c.x, z: c.z, r: c.r, yBase, yTop });
+  }
+  _wardGrapple = out;
+  return out;
+}
+
+/**
+ * Spatial hash bucketing (memoised, built once): every circle is inserted
+ * into EVERY bucket its disc (center ± r) overlaps, so a near-query centered
+ * anywhere along a shared bucket boundary still sees a circle that straddles
+ * it. A circle can therefore live in several buckets' arrays;
+ * `queryNear` gathers the 9-bucket neighborhood and dedupes by object
+ * identity so a caller never receives the same circle twice.
+ */
+function buildHash<T extends Circle>(items: T[]): Map<string, T[]> {
+  const map = new Map<string, T[]>();
+  for (const item of items) {
+    const minBX = Math.floor((item.x - item.r) / WARD.hashCell);
+    const maxBX = Math.floor((item.x + item.r) / WARD.hashCell);
+    const minBZ = Math.floor((item.z - item.r) / WARD.hashCell);
+    const maxBZ = Math.floor((item.z + item.r) / WARD.hashCell);
+    for (let bx = minBX; bx <= maxBX; bx++) {
+      for (let bz = minBZ; bz <= maxBZ; bz++) {
+        const key = `${bx},${bz}`;
+        let bucket = map.get(key);
+        if (!bucket) {
+          bucket = [];
+          map.set(key, bucket);
+        }
+        bucket.push(item);
+      }
+    }
+  }
+  return map;
+}
+
+/** 9-bucket (3×3) neighborhood around (x, z), deduped by identity. */
+function queryNear<T>(map: Map<string, T[]>, x: number, z: number): T[] {
+  const bx = Math.floor(x / WARD.hashCell);
+  const bz = Math.floor(z / WARD.hashCell);
+  const seen = new Set<T>();
+  const out: T[] = [];
+  for (let dx = -1; dx <= 1; dx++) {
+    for (let dz = -1; dz <= 1; dz++) {
+      const bucket = map.get(`${bx + dx},${bz + dz}`);
+      if (!bucket) continue;
+      for (const item of bucket) {
+        if (seen.has(item)) continue;
+        seen.add(item);
+        out.push(item);
+      }
+    }
+  }
+  return out;
+}
+
+let _obstacleHash: Map<string, Obstacle[]> | null = null;
+let _grappleHash: Map<string, GrappleCollider[]> | null = null;
+
+/** Ward-wall obstacle circles in the 3×3 hash-bucket neighborhood of (x, z). */
+export function wardObstaclesNear(x: number, z: number): Obstacle[] {
+  if (!_obstacleHash) _obstacleHash = buildHash(wardObstacles());
+  return queryNear(_obstacleHash, x, z);
+}
+
+/** Ward-wall grapple cylinders in the 3×3 hash-bucket neighborhood of (x, z). */
+export function wardGrappleNear(x: number, z: number): GrappleCollider[] {
+  if (!_grappleHash) _grappleHash = buildHash(wardGrappleColliders());
+  return queryNear(_grappleHash, x, z);
 }

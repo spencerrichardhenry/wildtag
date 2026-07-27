@@ -13,6 +13,7 @@ import {
   type GoblinState,
 } from './goblins.ts';
 import { castleLayout, castleObstacles } from './layout.ts';
+import { wardObstaclesNear } from './ward.ts';
 import { purifySequenceSteps } from './state.ts';
 
 // ---------------------------------------------------------------------------
@@ -117,7 +118,16 @@ export class CastleSystem {
     for (let i = 0; i < this.goblins.length; i++) {
       const g = this.goblins[i]!;
       const rand = this.rngs.get(g.id)!;
-      const step = stepGoblin(g, { playerPos, ground: this.ground, rand, obstacles: castleObstacles() }, dt);
+      const step = stepGoblin(
+        g,
+        {
+          playerPos,
+          ground: this.ground,
+          rand,
+          obstacles: castleObstacles().concat(wardObstaclesNear(g.pos.x, g.pos.z)),
+        },
+        dt,
+      );
       this.goblins[i] = step.g;
       if (step.hitPlayer) this.opts.onPlayerHit(GOBLIN.damage, step.g.pos);
       this.syncMesh(step.g);

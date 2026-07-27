@@ -1,7 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import { WARD_MAP } from '../src/castle/wardMap.ts';
-import { parseWard, wardLayout, inHall, cellToWorld } from '../src/castle/ward.ts';
+import {
+  parseWard,
+  wardLayout,
+  inHall,
+  cellToWorld,
+  wardObstaclesNear,
+  wardGrappleNear,
+} from '../src/castle/ward.ts';
 import { WARD, CASTLE } from '../src/core/constants.ts';
+import { resolveCollision } from '../src/player/collision.ts';
 
 const LEGEND = new Set(['#', '.', 'P', 'H', 'K', 'G', 'T']);
 
@@ -247,5 +255,113 @@ describe('parser geometry', () => {
 
   it('wardLayout is memoised', () => {
     expect(wardLayout()).toBe(wardLayout());
+  });
+});
+
+describe('ward wall collision (Castle Ward Task 3)', () => {
+  /** A genuinely interior (non-ring) multi-cell run: the outer ring's runs
+   *  span most of the 36-cell grid (>= 165 m), so a length cap well below
+   *  that reliably picks a real maze wall instead of the boundary. */
+  function interiorRun(): { x1: number; z1: number; x2: number; z2: number } {
+    const run = wardLayout().wallRuns.find((r) => {
+      const isMulti = r.x1 !== r.x2 || r.z1 !== r.z2;
+      if (!isMulti) return false;
+      const len = Math.hypot(r.x2 - r.x1, r.z2 - r.z1);
+      return len > 4 && len < 50;
+    });
+    if (!run) throw new Error('no interior multi-cell wall run found');
+    return run;
+  }
+
+  it('near-query returns every circle within 10 m and nothing beyond 3 buckets', () => {
+    const l = wardLayout();
+    const run = l.wallRuns.find((r) => r.x1 !== r.x2 || r.z1 !== r.z2)!;
+    const near = wardObstaclesNear(run.x1, run.z1);
+    expect(near.length).toBeGreaterThan(0);
+    for (const o of near) {
+      expect(Math.hypot(o.x - run.x1, o.z - run.z1)).toBeLessThan(WARD.hashCell * 2.2);
+    }
+
+    // Exhaustive containment: every circle any nearby query point can see
+    // within 10 m of (run.x1, run.z1) must also show up in `near` — sampled
+    // via 8 neighbor points 10 m out (still inside the queried 3x3-bucket
+    // neighborhood), so a circle the original query missed but a neighbor
+    // catches would be exposed here.
+    const offsets = [-10, 0, 10];
+    const seenElsewhere = new Map<string, { x: number; z: number }>();
+    for (const dx of offsets) {
+      for (const dz of offsets) {
+        if (dx === 0 && dz === 0) continue;
+        for (const o of wardObstaclesNear(run.x1 + dx, run.z1 + dz)) {
+          if (Math.hypot(o.x - run.x1, o.z - run.z1) < 10) {
+            seenElsewhere.set(`${o.x.toFixed(3)},${o.z.toFixed(3)}`, o);
+          }
+        }
+      }
+    }
+    const nearKeys = new Set(near.map((o) => `${o.x.toFixed(3)},${o.z.toFixed(3)}`));
+    for (const key of seenElsewhere.keys()) expect(nearKeys.has(key)).toBe(true);
+  });
+
+  it('ward wall circles carry yTop = padHeight + wallH', () => {
+    const gate = wardLayout().gate;
+    const maze = interiorRun();
+    const any = wardObstaclesNear(gate.x, gate.z).concat(wardObstaclesNear(maze.x1, maze.z1));
+    expect(any.length).toBeGreaterThan(0);
+    for (const o of any) expect(o.yTop).toBeCloseTo(CASTLE.padHeight + WARD.wallH);
+  });
+
+  it('ward grapple cylinders carry r = wallT * 1.5 and the same yBase/yTop band', () => {
+    const maze = interiorRun();
+    const near = wardGrappleNear(maze.x1, maze.z1);
+    expect(near.length).toBeGreaterThan(0);
+    for (const c of near) {
+      expect(c.r).toBeCloseTo(WARD.wallT * 1.5);
+      expect(c.yBase).toBeCloseTo(CASTLE.padHeight);
+      expect(c.yTop).toBeCloseTo(CASTLE.padHeight + WARD.wallH);
+    }
+  });
+
+  it('a walker cannot cross a ward wall', () => {
+    const run = interiorRun();
+    const isHoriz = run.z1 === run.z2;
+    const midx = (run.x1 + run.x2) / 2;
+    const midz = (run.z1 + run.z2) / 2;
+    const normal = isHoriz ? { x: 0, z: 1 } : { x: 1, z: 0 };
+    const signedSide = (p: { x: number; z: number }) =>
+      Math.sign(normal.x * (p.x - midx) + normal.z * (p.z - midz));
+
+    // Start a couple metres off the wall centerline, then step 0.05 m at a
+    // time straight toward (and, if unblocked, through) the wall for 200
+    // steps, resolving collision against the ward near-query each step.
+    let pos = { x: midx + normal.x * 3, y: CASTLE.padHeight + 1, z: midz + normal.z * 3 };
+    const startSide = signedSide(pos);
+    expect(startSide).not.toBe(0);
+    for (let i = 0; i < 200; i++) {
+      const next = { x: pos.x - normal.x * 0.05, y: pos.y, z: pos.z - normal.z * 0.05 };
+      pos = resolveCollision(next, 0.4, wardObstaclesNear(next.x, next.z));
+    }
+    expect(signedSide(pos)).toBe(startSide);
+  });
+
+  it('outer ring emits no ward circles (curtain wall owns it)', () => {
+    // Query several ring-row/col cell centers (row 0, row 35, col 0) — none
+    // should have a ward circle within half a cell of it; the curtain wall
+    // (castleObstacles/castleGrappleColliders) already covers that line.
+    const ringPoints = [cellToWorld(10, 0), cellToWorld(20, 35), cellToWorld(0, 15)];
+    for (const p of ringPoints) {
+      const near = wardObstaclesNear(p.x, p.z);
+      for (const o of near) {
+        expect(Math.hypot(o.x - p.x, o.z - p.z)).toBeGreaterThanOrEqual(WARD.cellSize / 2);
+      }
+    }
+  });
+
+  it('the gate is walkable — no ward circle within 2 m of the gate center', () => {
+    const gate = wardLayout().gate;
+    const near = wardObstaclesNear(gate.x, gate.z);
+    for (const o of near) {
+      expect(Math.hypot(o.x - gate.x, o.z - gate.z)).toBeGreaterThanOrEqual(2);
+    }
   });
 });

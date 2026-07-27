@@ -5,6 +5,7 @@ import { resolveCollision } from '../player/collision.ts';
 import type { GroundQuery, Vec3 } from '../core/types.ts';
 import { buildElf } from './builders.ts';
 import { castleObstacles } from './layout.ts';
+import { wardObstaclesNear } from './ward.ts';
 
 // ---------------------------------------------------------------------------
 // Elves (Cursed Castle Task 12): persistent happy residents that wander/dance
@@ -175,7 +176,7 @@ export class ElfSystem {
       const resolved = resolveCollision(
         { x: e.pos.x, y: e.pos.y, z: e.pos.z },
         ELF.bodyR,
-        castleObstacles(),
+        castleObstacles().concat(wardObstaclesNear(e.pos.x, e.pos.z)),
       );
       e.pos.x = resolved.x;
       e.pos.z = resolved.z;
