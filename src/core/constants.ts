@@ -1281,8 +1281,8 @@ export const GOBLIN = {
   hitRadius: 0.9,
   /** Vulnerable recovery freeze after a lunge (s). */
   recoverS: 1.2,
-  /** HP damage dealt on a landed lunge. */
-  damage: 25,
+  /** HP damage dealt on a landed lunge — five hits to daze a full-health player. */
+  damage: 20,
   /** Knockback impulse (m/s) applied to the player on a landed lunge. */
   knockback: 7.5,
   /** Chase gives up (returns to patrol) beyond this distance from the goblin (m). */

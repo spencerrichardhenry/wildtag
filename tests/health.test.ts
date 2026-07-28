@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createHealth, applyHit, stepHealth, isDazed } from '../src/player/health.ts';
-import { HEALTH } from '../src/core/constants.ts';
+import { GOBLIN, HEALTH } from '../src/core/constants.ts';
 
 describe('health', () => {
   it('starts full and undazed', () => {
@@ -34,5 +34,15 @@ describe('health', () => {
     const before = h;
     h = applyHit(h, 25);
     expect(h).toEqual(before);
+  });
+  it('takes five landed goblin lunges to daze a full-health player', () => {
+    let h = createHealth();
+    for (let i = 0; i < 4; i++) h = applyHit(h, GOBLIN.damage);
+    expect(h.hp).toBe(HEALTH.max - GOBLIN.damage * 4);
+    expect(isDazed(h)).toBe(false);
+
+    h = applyHit(h, GOBLIN.damage);
+    expect(h.hp).toBe(0);
+    expect(isDazed(h)).toBe(true);
   });
 });
