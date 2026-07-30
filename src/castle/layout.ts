@@ -1,4 +1,4 @@
-import { CASTLE } from '../core/constants.ts';
+import { CASTLE, SPIRES } from '../core/constants.ts';
 import type { Vec3 } from '../core/types.ts';
 import type { Obstacle } from '../player/collision.ts';
 import type { GrappleCollider } from '../player/grapple.ts';
@@ -286,4 +286,53 @@ export function castleGrappleColliders(): GrappleCollider[] {
 /** True when (x, z) lies within the castle's goblin-region radius. */
 export function inCastleRegion(x: number, z: number): boolean {
   return Math.hypot(x - CASTLE.center.x, z - CASTLE.center.z) <= CASTLE.regionR;
+}
+
+// ---------------------------------------------------------------------------
+// Gargoyle-hunting spires (daze-eject-spires design spec §2): 5 authored
+// pinnacles from `SPIRES` (constants.ts) — same memoised-circle-array
+// convention as `castleObstacles`/`castleGrappleColliders` above, just a flat
+// map over `SPIRES.list` instead of derived wall/tower geometry. Kept in this
+// module (rather than ward.ts) so every consumer that already imports the
+// castle's collision circles from here picks these up alongside them.
+// ---------------------------------------------------------------------------
+
+let _spireObstacles: Obstacle[] | null = null;
+
+/**
+ * Memoised spire obstacle circles: one per `SPIRES.list` entry, radius
+ * `SPIRES.obstacleR`, full height (`yTop` = padHeight + that spire's `h`) so
+ * a glide/grapple over the top clears it exactly like a tower.
+ */
+export function spireObstacles(): Obstacle[] {
+  if (_spireObstacles) return _spireObstacles;
+  const yBase = CASTLE.padHeight;
+  _spireObstacles = SPIRES.list.map((s) => ({
+    x: CASTLE.center.x + s.dx,
+    z: CASTLE.center.z + s.dz,
+    r: SPIRES.obstacleR,
+    yTop: yBase + s.h,
+  }));
+  return _spireObstacles;
+}
+
+let _spireGrapple: GrappleCollider[] | null = null;
+
+/**
+ * Memoised spire grapple cylinders: one per `SPIRES.list` entry, radius
+ * `SPIRES.grappleR`, spanning the pinnacle's full height (`yBase` = padHeight,
+ * `yTop` = padHeight + that spire's `h`) so a chain-climb can latch anywhere
+ * along the shaft up to its tip.
+ */
+export function spireGrappleColliders(): GrappleCollider[] {
+  if (_spireGrapple) return _spireGrapple;
+  const yBase = CASTLE.padHeight;
+  _spireGrapple = SPIRES.list.map((s) => ({
+    x: CASTLE.center.x + s.dx,
+    z: CASTLE.center.z + s.dz,
+    r: SPIRES.grappleR,
+    yBase,
+    yTop: yBase + s.h,
+  }));
+  return _spireGrapple;
 }

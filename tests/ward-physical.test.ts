@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { castleLayout, castleObstacles } from '../src/castle/layout.ts';
+import { castleLayout, castleObstacles, spireObstacles } from '../src/castle/layout.ts';
 import { wardObstaclesNear, wardLayout, cellToWorld } from '../src/castle/ward.ts';
 import { CASTLE } from '../src/core/constants.ts';
 
@@ -26,22 +26,34 @@ import { CASTLE } from '../src/core/constants.ts';
 // bug: every plaza/hall center, the crystal, AND a representative cell from
 // the alcove wardMap.ts's fix (opening (13,10)) reconnected must all still
 // show up in the SAME single collision-level reachable set computed below.
+//
+// Gargoyle-hunting spires (daze-eject-spires design spec §2) add 5 more
+// obstacle circles (`spireObstacles()`) into this exact BFS's `blocked()` —
+// they're authored on plaza-corner/dead-end-alcove cells specifically so
+// they never sit astride a corridor, and this is the honest regression check
+// for that claim: the whole reachable set (gate to crystal/plazas/halls/
+// pocket) must still hold with every spire obstacle folded in.
 // ---------------------------------------------------------------------------
 
 const PLAYER_R = 0.35; // matches INPUT.playerRadius's ballpark; conservative
 const STEP = 0.5; // metres per BFS grid cell
 
 describe('ward physical connectivity (collision-circle BFS, Castle Ward Fix 1)', () => {
-  it('the keep interior (crystal), every plaza/hall center, and the former orphaned pocket are all reachable on foot from the gate', () => {
+  it('the keep interior (crystal), every plaza/hall center, and the former orphaned pocket are all reachable on foot from the gate, with the gargoyle-hunting spires obstacles in the set', () => {
     const l = castleLayout();
     const wl = wardLayout();
     // Obstacle sets are each memoised internally (`castleObstacles`,
-    // `wardObstaclesNear`'s spatial hash) — fetch the castle set once here so
-    // the BFS's per-cell `blocked()` check only redoes the cheap near-query.
+    // `wardObstaclesNear`'s spatial hash, `spireObstacles`) — fetch the
+    // fixed-size sets once here so the BFS's per-cell `blocked()` check only
+    // redoes the cheap near-query for the ward's spatial hash.
     const castleObs = castleObstacles();
+    const spireObs = spireObstacles();
 
     function blocked(x: number, z: number): boolean {
       for (const o of castleObs) {
+        if (Math.hypot(x - o.x, z - o.z) < o.r + PLAYER_R) return true;
+      }
+      for (const o of spireObs) {
         if (Math.hypot(x - o.x, z - o.z) < o.r + PLAYER_R) return true;
       }
       for (const o of wardObstaclesNear(x, z)) {

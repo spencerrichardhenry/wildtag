@@ -53,7 +53,15 @@ import { ShadowRig, planShadows } from './world/lighting.ts';
 import { buildPostPipeline, type PostPipeline } from './world/post.ts';
 import { buildVillage, villageObstacles } from './village/buildings.ts';
 import { buildCastle } from './castle/builders.ts';
-import { castleLayout, castleObstacles, castleGrappleColliders, inCastleRegion, type Point2 } from './castle/layout.ts';
+import {
+  castleLayout,
+  castleObstacles,
+  castleGrappleColliders,
+  spireObstacles,
+  spireGrappleColliders,
+  inCastleRegion,
+  type Point2,
+} from './castle/layout.ts';
 import { CastleSystem } from './castle/system.ts';
 import {
   wardObstaclesNear,
@@ -280,6 +288,12 @@ function bootGame(): void {
   // the save has been loaded (its dressing depends on `loaded.castlePurified`).
   const castleObs = castleObstacles();
   const castleGrapple = castleGrappleColliders();
+  // Gargoyle-hunting spires (daze-eject-spires design spec §2): same pure,
+  // memoised-circle convention as the castle geometry above — wired in
+  // alongside it regardless of dressing (the spires themselves are built
+  // inside `buildCastle`, so they're always present once the castle mesh is).
+  const spireObs = spireObstacles();
+  const spireGrapple = spireGrappleColliders();
 
   function resize(): void {
     const width = window.innerWidth;
@@ -309,7 +323,11 @@ function bootGame(): void {
   // Feed the grapple hook the nearby grappleable tree/rock cylinders so a fired
   // hook can latch to props, not just bare terrain.
   player.grappleColliders = (x, z) =>
-    props.getGrappleColliders(x, z).concat(castleGrapple).concat(wardGrappleNear(x, z));
+    props
+      .getGrappleColliders(x, z)
+      .concat(castleGrapple)
+      .concat(wardGrappleNear(x, z))
+      .concat(spireGrapple);
   // Castle Ward Task 5: "No sky in here!" — no grapple/glider while the
   // player stands under a roofed hall. The predicate is a generic seam on
   // the controller (movementCeiling); this is the one place that ties it to
@@ -1098,7 +1116,8 @@ function bootGame(): void {
         .getObstacles(prev.x, prev.z)
         .concat(villageObs)
         .concat(castleObs)
-        .concat(wardObstaclesNear(prev.x, prev.z));
+        .concat(wardObstaclesNear(prev.x, prev.z))
+        .concat(spireObs);
       // Maze-aware daze ejection (daze-eject-spires design spec §1) — replaces
       // the old radial-only stumble: inside the ward maze, walking straight
       // away from CASTLE.center just ran the player into a wall, which

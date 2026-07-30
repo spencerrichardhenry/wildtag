@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { CASTLE, CASTLE_COLORS, CRYSTAL, WARD, WARD_COLORS } from '../core/constants.ts';
+import { CASTLE, CASTLE_COLORS, CRYSTAL, SPIRES, WARD, WARD_COLORS, WORLD_SEED } from '../core/constants.ts';
 import { makeSurfaceMaterial, ROUGHNESS } from '../core/materials.ts';
+import { mulberry32 } from '../core/rng.ts';
 import { castleLayout, type CastleLayout } from './layout.ts';
 import { wardLayout, nonRingRuns, extendedWallSpan, type WardLayout, type WallRun } from './ward.ts';
 
@@ -680,11 +681,99 @@ function buildWard(root: THREE.Group, purified: boolean): void {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Gargoyle-hunting spires (daze-eject-spires design spec §2): 5 slender
+// pinnacles from the `SPIRES` constant (constants.ts), built here so they
+// fold into the same `mergeCastle` pass as everything else. Each is 3-4
+// tapered stacked cones (the crag-spire silhouette from `src/world/props.ts`'s
+// `buildMesa` — adapted freehand here, not imported: that helper returns a
+// raw scatter-prop BufferGeometry, not a merge-ready Lambert Mesh in this
+// file's convention) narrowing to a sharp tip cone, nudged by a per-spire
+// seeded rng (lateral jitter + a slight overall lean) so the 5 don't read as
+// identical stamped copies. Cursed dressing gets a glowing ember band near
+// the top (the tower/keep ember-slit convention); purified gets a small
+// banner flag instead (the tower banner convention).
+// ---------------------------------------------------------------------------
+
+/** Fraction of a spire's total height spent on its tapered body segments —
+ *  the remainder is the sharp tip cone, so body + tip always sum to exactly
+ *  `h` (the same height `spireObstacles`/`spireGrappleColliders` collide to). */
+const SPIRE_BODY_FRACTION = 0.85;
+
+/** One gargoyle-hunting spire: tapered stacked cones + a sharp tip + dressing. */
+function buildSpire(
+  root: THREE.Group,
+  spire: { x: number; z: number; h: number },
+  colors: Colors,
+  purified: boolean,
+  baseY: number,
+  rng: () => number,
+): void {
+  const segCount = rng() < 0.5 ? 3 : 4;
+  const bodyH = spire.h * SPIRE_BODY_FRACTION;
+  const segH = bodyH / segCount;
+  const tipH = spire.h - bodyH;
+  // A slight overall lean, applied incrementally per segment (radians-ish
+  // metres of drift per segment index) — subtle enough to read as a weathered
+  // lean, not a toppled tower.
+  const leanX = (rng() - 0.5) * 0.5;
+  const leanZ = (rng() - 0.5) * 0.5;
+
+  let y = baseY;
+  let r: number = SPIRES.baseR;
+  for (let i = 0; i < segCount; i++) {
+    const nextR = r * (0.62 + rng() * 0.08); // ~35-45% taper per segment
+    const jitterX = (rng() - 0.5) * 0.35;
+    const jitterZ = (rng() - 0.5) * 0.35;
+    const seg = cylinder(nextR, r, segH, colors.stone);
+    seg.position.set(spire.x + leanX * i + jitterX, y + segH / 2, spire.z + leanZ * i + jitterZ);
+    root.add(seg);
+    y += segH;
+    r = nextR;
+  }
+
+  const tip = cone(Math.max(0.3, r * 0.9), tipH, colors.stoneDark);
+  tip.position.set(spire.x + leanX * segCount, y + tipH / 2, spire.z + leanZ * segCount);
+  root.add(tip);
+
+  if (!purified) {
+    const c = colors as typeof CASTLE_COLORS.cursed;
+    const slit = box(0.35, 1.2, 0.35, colors.stoneDark, { emissive: c.ember, emissiveIntensity: 1.4 });
+    slit.position.set(spire.x, baseY + spire.h * 0.72, spire.z);
+    root.add(slit);
+  } else {
+    const bannerColor = (colors as typeof CASTLE_COLORS.purified).banner;
+    const banner = box(1.0, 1.8, 0.06, bannerColor);
+    const outAng = rng() * Math.PI * 2;
+    banner.position.set(
+      spire.x + Math.sin(outAng) * (SPIRES.baseR * 0.4 + 0.2),
+      baseY + spire.h * 0.78,
+      spire.z + Math.cos(outAng) * (SPIRES.baseR * 0.4 + 0.2),
+    );
+    banner.rotation.y = outAng;
+    root.add(banner);
+  }
+}
+
+/** All 5 gargoyle-hunting spires (`SPIRES.list`), each with its own seeded rng
+ *  (`WORLD_SEED` ^ a spire salt ^ index) so the jitter/lean is deterministic
+ *  and stable across sessions. */
+function buildSpires(root: THREE.Group, purified: boolean): void {
+  const colors: Colors = purified ? CASTLE_COLORS.purified : CASTLE_COLORS.cursed;
+  const baseY = CASTLE.padHeight;
+  SPIRES.list.forEach((s, i) => {
+    const rng = mulberry32((WORLD_SEED ^ 0x59125 ^ i) >>> 0);
+    const spire = { x: CASTLE.center.x + s.dx, z: CASTLE.center.z + s.dz, h: s.h };
+    buildSpire(root, spire, colors, purified, baseY, rng);
+  });
+}
+
 /**
  * Build the entire castle (curtain wall, 4 towers, keep, gatehouse, ward
- * maze) as one group and add it to `scene`. `purified` picks the dressing
- * (colors + trim); geometry is otherwise identical. Call `removeCastle`
- * first if swapping an already-built dressing for another.
+ * maze, gargoyle-hunting spires) as one group and add it to `scene`.
+ * `purified` picks the dressing (colors + trim); geometry is otherwise
+ * identical. Call `removeCastle` first if swapping an already-built dressing
+ * for another.
  */
 export function buildCastle(scene: THREE.Scene, purified: boolean): THREE.Group {
   const layout = castleLayout();
@@ -699,6 +788,7 @@ export function buildCastle(scene: THREE.Scene, purified: boolean): THREE.Group 
   buildGatehouse(built, gateWall, layout.gate, colors, baseY);
   if (purified) addPurifiedLights(built, layout, baseY);
   buildWard(built, purified);
+  buildSpires(built, purified);
 
   const merged = mergeCastle(built);
   scene.add(merged);

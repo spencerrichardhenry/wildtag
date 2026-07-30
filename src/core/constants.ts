@@ -1239,6 +1239,52 @@ export const WARD = {
 } as const;
 
 /**
+ * Gargoyle-hunting spires (daze-eject-spires design spec §2): 5 slender,
+ * grapple-climbable stone pinnacles, all taller than the existing gargoyle
+ * perches (`CASTLE.towerH` 18, `CASTLE.keepH` 20) so a kid with tracker darts
+ * actually has a vantage point above them. Authored positions ({dx, dz}
+ * relative to `CASTLE.center`, {h} total height above `CASTLE.padHeight`) —
+ * one at an open corner cell of each of the 3 ward plazas (`wardLayout().plazas`,
+ * NW / S-center / SE — see `wardMap.ts`'s header comment), plus 2 in open
+ * dead-end alcove cells just inside the curtain wall near the NE and SW
+ * corner towers. Every cell below was picked BY HAND from `wardMap.ts`'s
+ * 36×36 grid (`dx = 5*(col-17.5)`, `dz = 5*(row-17.5)` — the same
+ * `cellToWorld` mapping `src/castle/ward.ts` uses):
+ *
+ *   1. NW plaza corner       — cell (row 4,  col 4):  a corner of the 5×5 P
+ *      block itself (rows 4-8, cols 4-8), 14.14 m from the plaza centroid —
+ *      outside `ELF`'s 10 m max spiral radius, so it never crowds an elf home.
+ *   2. S-center plaza corner — cell (row 27, col 15): same 5×5-block-corner
+ *      pattern (rows 27-31, cols 15-19).
+ *   3. SE plaza corner       — cell (row 31, col 31): same pattern (rows
+ *      27-31, cols 27-31).
+ *   4. NE alcove             — cell (row 1,  col 33): the sole open neighbor
+ *      of a 1-cell dead-end pocket a few metres inside the NE corner tower —
+ *      nothing ever needs to pass THROUGH it, so its obstacle circle can
+ *      never seal a through-corridor (physical-BFS-tested).
+ *   5. SW alcove             — cell (row 33, col 1): the SW corner's mirror
+ *      of the same dead-end pattern.
+ *
+ * Heights 22-26 m (all > towerH/keepH, test-enforced). `baseR` is the
+ * pinnacle's ground-level radius (builders.ts tapers up from it); `obstacleR`
+ * is deliberately much smaller (blocks walking without ever reaching into a
+ * corridor); `grappleR` is a touch fatter than `obstacleR`, matching the
+ * tower/wall convention of a slightly larger grapple-climb radius.
+ */
+export const SPIRES = {
+  baseR: 2,
+  obstacleR: 1.6,
+  grappleR: 2.2,
+  list: [
+    { dx: -67.5, dz: -67.5, h: 22 }, // 1. NW plaza corner
+    { dx: -12.5, dz: 47.5, h: 23.5 }, // 2. S-center plaza corner
+    { dx: 67.5, dz: 67.5, h: 25 }, // 3. SE plaza corner
+    { dx: 77.5, dz: -82.5, h: 26 }, // 4. NE alcove (near NE corner tower)
+    { dx: -82.5, dz: 77.5, h: 24 }, // 5. SW alcove (near SW corner tower)
+  ],
+} as const;
+
+/**
  * Night goblins (Task 11). Pure FSM lives in `src/castle/goblins.ts`; these are
  * its only tuning knobs. Goblins patrol their spawn point, notice + chase the
  * player, wind up and lunge for melee damage, then recover — never leaving
