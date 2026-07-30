@@ -572,6 +572,37 @@ describe('no phantom keep crossings (every open cell\'s retreatPath)', () => {
     expect(checkedPaths).toBeGreaterThan(100);
     expect(checkedKeepCrossings).toBeGreaterThan(0);
   });
+
+  // Positive counterpart to the crossing check above, and the regression
+  // guard for the orphaned-pocket bug this test round found and fixed: an
+  // 11-cell alcove (rows 13–17, cols 11–16) whose only non-K exit was the
+  // keep's solid west wall went completely unreachable once that phantom
+  // crossing was correctly closed (`retreatPath` returned `[]` there). Fixed
+  // in wardMap.ts by opening (13, 10) into the west corridor. No exemption is
+  // needed for K (keep-interior) cells: the keep-door-only-crossing BFS
+  // starts at the gate and reaches every K cell through the two real door
+  // edges, then spreads K→K freely (same-symbol moves are never a "keep
+  // crossing"), so every K cell gets a real path via the door — decided and
+  // confirmed empirically below rather than assumed.
+  it('every open, non-gate cell has a non-empty retreatPath (no orphaned pockets, keep interior included via the real door)', () => {
+    let checked = 0;
+    let checkedKeepInterior = 0;
+    for (let r = 0; r < WARD_MAP.length; r++) {
+      for (let c = 0; c < WARD_MAP[r]!.length; c++) {
+        const sym = WARD_MAP[r]![c]!;
+        if (!OPEN.has(sym) || sym === 'G') continue; // gate cells are the BFS root; retreatPath([]) there is correct, tested separately
+        checked++;
+        if (sym === 'K') checkedKeepInterior++;
+        const world = cellToWorld(c, r);
+        const path = retreatPath(world.x, world.z);
+        expect(path.length).toBeGreaterThan(0);
+      }
+    }
+    // Sanity: exercised a substantial number of cells, including some inside
+    // the keep, so this can't vacuously pass over an empty/tiny sample.
+    expect(checked).toBeGreaterThan(600);
+    expect(checkedKeepInterior).toBeGreaterThan(0);
+  });
 });
 
 describe('daze stumble kinematics (regression: maze-aware retreat actually makes progress)', () => {
@@ -664,48 +695,38 @@ describe('daze stumble kinematics (regression: maze-aware retreat actually makes
     return { pathLen: path.length, waypointIdx, avgPerSecond: totalDisplacement / 4 };
   }
 
-  // KNOWN BUG (found by this test, production code intentionally left
-  // unchanged — see the fix report / daze-tests-report.md): cell (17, 15) is
-  // the exact cell the task brief names as "the cell class that previously
+  // FIXED (was a real shipped bug, caught by this exact test): cell (17, 15)
+  // is the cell the task brief names as "the cell class that previously
   // routed through the keep's solid west wall" — it's orthogonally adjacent
   // to the K block at (17, 16), which is NOT a door edge (the only door edges
   // are the east-face crossings at rows 17–18, cols 19↔20 — see
-  // KEEP_DOOR_EDGE_CELLS). Before the keep-door-only-crossing fix
-  // (39ed221), the BFS treated that (17,15)↔(17,16) crossing as legal and
-  // presumably routed straight through the keep's solid west wall. The fix
-  // correctly rejects that crossing now — but (17, 15) sits in an 11-cell
-  // dead-end alcove (rows 13–17, cols 11–16) whose ONLY other connection to
-  // the rest of the maze was that same illegal crossing. With it closed, the
-  // whole alcove — including (17, 15) — is completely unreachable from the
-  // gate: `retreatPath` returns `[]` here. A dazed player standing anywhere in
-  // that alcove today gets no maze-aware retreat path at all and silently
-  // falls back to main.ts's pre-ward radial retreat — precisely the
-  // "jitters in place inside the maze" behavior this whole feature exists to
-  // replace. `it.fails` documents this: the assertion below is EXPECTED to
-  // fail while the bug exists (keeping `npm test` green while flagging the
-  // regression); it will start failing this expectation-of-failure (and so
-  // needs its `.fails` removed) once the alcove gets a real second exit
-  // (either a wardMap.ts corridor edit or an additional legitimate keep door).
-  it.fails(
-    'from cell (17, 15) — adjacent to the keep\'s solid west wall — resolving against wardObstaclesNear + castleObstacles() makes real progress over 4s',
-    () => {
-      const castleAndKeepObstacles = castleObstacles();
-      const result = simulateStumble({ row: 17, col: 15 }, (x, z) =>
-        wardObstaclesNear(x, z).concat(castleAndKeepObstacles),
-      );
-      expect(result.pathLen).toBeGreaterThan(2);
-      expect(result.waypointIdx).toBeGreaterThanOrEqual(4);
-      expect(result.avgPerSecond).toBeGreaterThan(3);
-    },
-  );
+  // KEEP_DOOR_EDGE_CELLS). Before the keep-door-only-crossing fix (39ed221),
+  // the BFS treated that (17,15)↔(17,16) crossing as legal, presumably
+  // routing straight through the keep's solid west wall. That fix correctly
+  // rejected the crossing — but (17, 15) sits in an 11-cell dead-end alcove
+  // (rows 13–17, cols 11–16) whose ONLY other connection to the rest of the
+  // maze WAS that same illegal crossing, so closing it orphaned the whole
+  // alcove (`retreatPath` returned `[]` there — a dazed player got no
+  // maze-aware retreat path at all and silently fell back to main.ts's
+  // pre-ward radial retreat, reintroducing the exact "jitters in place inside
+  // the maze" bug this feature exists to eliminate). Fixed in wardMap.ts by
+  // opening (13, 10) — a single wall cell connecting the alcove straight to
+  // the west corridor without touching any K cell. This test now asserts the
+  // originally-intended behavior directly (no `.fails`).
+  it('from cell (17, 15) — adjacent to the keep\'s solid west wall, in the once-orphaned alcove — resolving against wardObstaclesNear + castleObstacles() makes real progress over 4s', () => {
+    const castleAndKeepObstacles = castleObstacles();
+    const result = simulateStumble({ row: 17, col: 15 }, (x, z) =>
+      wardObstaclesNear(x, z).concat(castleAndKeepObstacles),
+    );
+    expect(result.pathLen).toBeGreaterThan(2);
+    expect(result.waypointIdx).toBeGreaterThanOrEqual(4);
+    expect(result.avgPerSecond).toBeGreaterThan(3);
+  });
 
   // The same cell CLASS (orthogonally adjacent to a non-door K face — here
-  // the keep's west face again, one row south of the orphaned alcove above)
-  // that IS reachable, delivering the "collision-complete" regression
-  // coverage task 3 actually calls for: kinematics resolved against
-  // wardObstaclesNear(...) concatenated with castleObstacles() (the keep's
-  // real 3D perimeter walls) still make real progress toward the gate.
-  it('from cell (19, 15) — same keep-west-wall-adjacent cell class, but reachable — resolving against wardObstaclesNear + castleObstacles() makes real progress over 4s', () => {
+  // the keep's west face again, one row south) as an independent second data
+  // point for the "collision-complete" regression coverage task 3 calls for.
+  it('from cell (19, 15) — same keep-west-wall-adjacent cell class — resolving against wardObstaclesNear + castleObstacles() makes real progress over 4s', () => {
     const castleAndKeepObstacles = castleObstacles();
     const result = simulateStumble({ row: 19, col: 15 }, (x, z) =>
       wardObstaclesNear(x, z).concat(castleAndKeepObstacles),

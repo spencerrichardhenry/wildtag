@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { castleLayout, castleObstacles } from '../src/castle/layout.ts';
-import { wardObstaclesNear, wardLayout } from '../src/castle/ward.ts';
+import { wardObstaclesNear, wardLayout, cellToWorld } from '../src/castle/ward.ts';
 import { CASTLE } from '../src/core/constants.ts';
 
 // ---------------------------------------------------------------------------
@@ -16,14 +16,25 @@ import { CASTLE } from '../src/core/constants.ts';
 // the keep-wall collision rim). This test BFS's over the real collision
 // circles, at the real player body radius, so a regression here means an
 // actual gameplay dead end, not just a map-authoring slip.
+//
+// Orphaned-pocket follow-up (daze-eject-spires test round): the map-symbol
+// BFS treats every K cell as open in every direction, so IT would have missed
+// an alcove whose only non-K exit was sealed by a real 3D keep wall (the
+// tile-map abstraction has no notion of "this K/non-K crossing has no door").
+// This physical BFS doesn't have that blind spot — a real keep wall really is
+// `blocked()` here — so it doubles as the regression guard for that class of
+// bug: every plaza/hall center, the crystal, AND a representative cell from
+// the alcove wardMap.ts's fix (opening (13,10)) reconnected must all still
+// show up in the SAME single collision-level reachable set computed below.
 // ---------------------------------------------------------------------------
 
 const PLAYER_R = 0.35; // matches INPUT.playerRadius's ballpark; conservative
 const STEP = 0.5; // metres per BFS grid cell
 
 describe('ward physical connectivity (collision-circle BFS, Castle Ward Fix 1)', () => {
-  it('the keep interior (crystal position) is reachable on foot from the gate', () => {
+  it('the keep interior (crystal), every plaza/hall center, and the former orphaned pocket are all reachable on foot from the gate', () => {
     const l = castleLayout();
+    const wl = wardLayout();
     // Obstacle sets are each memoised internally (`castleObstacles`,
     // `wardObstaclesNear`'s spatial hash) — fetch the castle set once here so
     // the BFS's per-cell `blocked()` check only redoes the cheap near-query.
@@ -53,7 +64,7 @@ describe('ward physical connectivity (collision-circle BFS, Castle Ward Fix 1)',
     const toXZ = (i: number, j: number): [number, number] => [cx - half + i * STEP, cz - half + j * STEP];
 
     // Start just outside the gate (world position from the ward parser).
-    const start = wardLayout().gate;
+    const start = wl.gate;
     const [si, sj] = toIJ(start.x, start.z);
     expect(blocked(start.x, start.z)).toBe(false);
 
@@ -61,12 +72,8 @@ describe('ward physical connectivity (collision-circle BFS, Castle Ward Fix 1)',
     const queue: [number, number][] = [[si, sj]];
     seen[idx(si, sj)] = 1;
 
-    const [ci, cj] = toIJ(l.crystalPos.x, l.crystalPos.z);
-    let reachedCrystal = false;
-
     while (queue.length > 0) {
       const [i, j] = queue.pop()!;
-      if (Math.abs(i - ci) <= 1 && Math.abs(j - cj) <= 1) reachedCrystal = true;
       for (const [di, dj] of [
         [1, 0],
         [-1, 0],
@@ -84,6 +91,38 @@ describe('ward physical connectivity (collision-circle BFS, Castle Ward Fix 1)',
       }
     }
 
-    expect(reachedCrystal).toBe(true);
+    /** True when a 3×3 block of grid cells around (x, z) was visited by the
+     *  BFS above — a small tolerance so a target that lands exactly on a
+     *  grid-line rounding boundary still reads as reached. */
+    function reached(x: number, z: number): boolean {
+      const [ti, tj] = toIJ(x, z);
+      for (let di = -1; di <= 1; di++) {
+        for (let dj = -1; dj <= 1; dj++) {
+          const ni = ti + di;
+          const nj = tj + dj;
+          if (ni < 0 || nj < 0 || ni > N || nj > N) continue;
+          if (seen[idx(ni, nj)]) return true;
+        }
+      }
+      return false;
+    }
+
+    expect(reached(l.crystalPos.x, l.crystalPos.z)).toBe(true);
+
+    for (const p of wl.plazas) {
+      expect(reached(p.center.x, p.center.z)).toBe(true);
+    }
+    for (const h of wl.halls) {
+      expect(reached(h.center.x, h.center.z)).toBe(true);
+    }
+
+    // Representative cell from the alcove wardMap.ts's fix reconnected
+    // (rows 13-17 / cols 11-16 — see WARD_MAP's (13,10) opening comment and
+    // the "no phantom keep crossings" / orphaned-pocket tests in
+    // ward.test.ts). Physically reachable now that it has a real, non-keep
+    // doorway out — this is the guard against the tile-map-only BFS's blind
+    // spot (it can't tell a sealed real wall from an open tile-map boundary).
+    const pocketCell = cellToWorld(15, 17); // (row 17, col 15)
+    expect(reached(pocketCell.x, pocketCell.z)).toBe(true);
   });
 });
