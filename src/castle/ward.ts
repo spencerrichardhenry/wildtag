@@ -586,10 +586,24 @@ function edgeKey(a: Cell, b: Cell): string {
  * so a future change to `CASTLE.center`/the keep's size that actually moves
  * the door fails loudly instead of silently reopening a phantom wall.
  */
-const KEEP_DOOR_EDGES: ReadonlySet<string> = new Set([
-  edgeKey({ row: 17, col: 19 }, { row: 17, col: 20 }),
-  edgeKey({ row: 18, col: 19 }, { row: 18, col: 20 }),
-]);
+/**
+ * Test-only export: the raw cell pairs backing `KEEP_DOOR_EDGES` below — the
+ * single source of truth both for the runtime `Set` and for
+ * tests/ward.test.ts, which cross-checks these literal cells against
+ * `castleLayout()`'s real 3D keep-entrance geometry (so a future change to
+ * `CASTLE.center`/`CASTLE.keepHalf`/`CASTLE.keepEntranceW` that actually moves
+ * the door fails loudly instead of silently reopening a phantom wall) and
+ * against every open cell's `retreatPath` to confirm no OTHER K/non-K
+ * crossing sneaks through. Not used by any non-test runtime code.
+ */
+export const KEEP_DOOR_EDGE_CELLS: readonly (readonly [Cell, Cell])[] = [
+  [{ row: 17, col: 19 }, { row: 17, col: 20 }],
+  [{ row: 18, col: 19 }, { row: 18, col: 20 }],
+];
+
+const KEEP_DOOR_EDGES: ReadonlySet<string> = new Set(
+  KEEP_DOOR_EDGE_CELLS.map(([a, b]) => edgeKey(a, b)),
+);
 
 /** Multi-source BFS rooted at every `G` cell, over `WARD_MAP`'s open cells
  *  (`. P H K G`) — a `K`/non-`K` crossing is only legal via `KEEP_DOOR_EDGES`

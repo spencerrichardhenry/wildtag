@@ -10,7 +10,9 @@ import {
   wardGrappleNear,
   retreatPath,
   gateOutsidePoint,
+  KEEP_DOOR_EDGE_CELLS,
 } from '../src/castle/ward.ts';
+import { castleLayout, castleObstacles } from '../src/castle/layout.ts';
 import { WARD, CASTLE, HEALTH } from '../src/core/constants.ts';
 import { resolveCollision } from '../src/player/collision.ts';
 
@@ -458,6 +460,120 @@ describe('retreatPath (daze-eject-spires design spec §1: maze-aware daze ejecti
   });
 });
 
+describe('KEEP_DOOR_EDGES cross-check (guards the hardcoded door edges in ward.ts)', () => {
+  // KEEP_DOOR_EDGE_CELLS is ward.ts's own single source of truth for the two
+  // legal K/non-K crossings (test-only export, see its doc there) — this test
+  // cross-checks those literal cells against castleLayout()'s independently
+  // computed 3D keep-entrance geometry, so a future change to CASTLE.center /
+  // CASTLE.keepHalf / CASTLE.keepEntranceW that actually moves the door fails
+  // loudly here instead of silently reopening a phantom wall in the BFS.
+  it('both door edges cross the SAME wall face, and that face is the keep\'s real east wall', () => {
+    const crossingXs = KEEP_DOOR_EDGE_CELLS.map(([inside, outside]) => {
+      const a = cellToWorld(inside.col, inside.row);
+      const b = cellToWorld(outside.col, outside.row);
+      // The wall face a door edge crosses is the midpoint between the two
+      // cell centers it connects.
+      return { x: (a.x + b.x) / 2, z: (a.z + b.z) / 2, insideZ: a.z };
+    });
+
+    expect(crossingXs).toHaveLength(2);
+    expect(crossingXs[0]!.x).toBeCloseTo(crossingXs[1]!.x);
+
+    // castleLayout()'s keep is a square of half-width CASTLE.keepHalf around
+    // CASTLE.center — its east wall line sits at center.x + keepHalf.
+    expect(crossingXs[0]!.x).toBeCloseTo(CASTLE.center.x + CASTLE.keepHalf);
+
+    // The real 3D entrance (castleLayout().keep.entrance) is cut into that
+    // same east-facing wall, so its x also sits on this line.
+    const layout = castleLayout();
+    const entrance = layout.keep.entrance;
+    expect(entrance.x).toBeCloseTo(crossingXs[0]!.x);
+
+    // The entrance is narrower (CASTLE.keepEntranceW) than the 2-cell (10 m)
+    // door span the grid resolves to, but its z center must sit BETWEEN the
+    // two door-edge rows — i.e. the grid's door genuinely straddles the real
+    // 3D opening rather than sitting entirely to one side of it.
+    const insideZs = crossingXs.map((c) => c.insideZ).sort((a, b) => a - b);
+    expect(insideZs[0]!).toBeLessThanOrEqual(entrance.z);
+    expect(insideZs[1]!).toBeGreaterThanOrEqual(entrance.z);
+
+    // And the entrance's own span (z ± w/2) must fit inside the two door rows'
+    // span (with the grid's cellSize/2 margin each side) — the physical
+    // opening can't poke out past the cells the BFS treats as its door.
+    const entranceHalfW = entrance.w / 2;
+    expect(entrance.z - entranceHalfW).toBeGreaterThanOrEqual(insideZs[0]! - WARD.cellSize / 2);
+    expect(entrance.z + entranceHalfW).toBeLessThanOrEqual(insideZs[1]! + WARD.cellSize / 2);
+  });
+
+  it('each door edge cell pair is orthogonally adjacent (a real single-step crossing)', () => {
+    for (const [a, b] of KEEP_DOOR_EDGE_CELLS) {
+      const dist = Math.abs(a.row - b.row) + Math.abs(a.col - b.col);
+      expect(dist).toBe(1);
+    }
+  });
+
+  it('the "inside" cell of each pair really is K and the "outside" cell really is open non-K', () => {
+    for (const [inside, outside] of KEEP_DOOR_EDGE_CELLS) {
+      expect(WARD_MAP[inside.row]![inside.col]).toBe('K');
+      expect(WARD_MAP[outside.row]![outside.col]).not.toBe('K');
+      expect(OPEN.has(WARD_MAP[outside.row]![outside.col]!)).toBe(true);
+    }
+  });
+});
+
+describe('no phantom keep crossings (every open cell\'s retreatPath)', () => {
+  // Re-derive world→cell (mirrors ward.ts's private worldToCell / the other
+  // local copy above) so this test independently verifies retreatPath's
+  // waypoint chain without importing any internal ward.ts seam beyond the
+  // door-edge literals it already cross-checks above.
+  const halfW = (WARD.cols * WARD.cellSize) / 2;
+  const halfH = (WARD.rows * WARD.cellSize) / 2;
+  const worldToCellLocal = (x: number, z: number): { row: number; col: number } => ({
+    row: Math.round((z - (CASTLE.center.z - halfH + WARD.cellSize / 2)) / WARD.cellSize),
+    col: Math.round((x - (CASTLE.center.x - halfW + WARD.cellSize / 2)) / WARD.cellSize),
+  });
+  const pairKey = (a: { row: number; col: number }, b: { row: number; col: number }): string => {
+    const ka = `${a.row},${a.col}`;
+    const kb = `${b.row},${b.col}`;
+    return ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`;
+  };
+  const doorEdgeKeys = new Set(KEEP_DOOR_EDGE_CELLS.map(([a, b]) => pairKey(a, b)));
+
+  it('for every open cell, no consecutive retreatPath waypoint pair crosses a K/non-K boundary except via the two door edges', () => {
+    let checkedPaths = 0;
+    let checkedKeepCrossings = 0;
+    for (let r = 0; r < WARD_MAP.length; r++) {
+      for (let c = 0; c < WARD_MAP[r]!.length; c++) {
+        const sym = WARD_MAP[r]![c]!;
+        if (!OPEN.has(sym)) continue;
+        const world = cellToWorld(c, r);
+        const path = retreatPath(world.x, world.z);
+        if (path.length === 0) continue; // gate cell (or, in principle, unreachable)
+        checkedPaths++;
+
+        // Every waypoint except the last (the synthetic outside-gate leg) is a
+        // real cell center — walk consecutive pairs among those.
+        const cellWaypoints = path.slice(0, path.length - 1);
+        for (let i = 0; i < cellWaypoints.length - 1; i++) {
+          const a = worldToCellLocal(cellWaypoints[i]!.x, cellWaypoints[i]!.z);
+          const b = worldToCellLocal(cellWaypoints[i + 1]!.x, cellWaypoints[i + 1]!.z);
+          const symA = WARD_MAP[a.row]![a.col]!;
+          const symB = WARD_MAP[b.row]![b.col]!;
+          const isKeepCrossing = (symA === 'K') !== (symB === 'K');
+          if (!isKeepCrossing) continue;
+          checkedKeepCrossings++;
+          expect(doorEdgeKeys.has(pairKey(a, b))).toBe(true);
+        }
+      }
+    }
+    // Sanity: the loop actually exercised a substantial number of paths (and
+    // at least a few of them genuinely cross into/out of the keep), so a
+    // vacuous "no crossings found at all" pass can't hide a broken test.
+    expect(checkedPaths).toBeGreaterThan(100);
+    expect(checkedKeepCrossings).toBeGreaterThan(0);
+  });
+});
+
 describe('daze stumble kinematics (regression: maze-aware retreat actually makes progress)', () => {
   // Row 1, col 1 — the same deep NW corridor cell as above.
   const startCell = { row: 1, col: 1 };
@@ -503,5 +619,99 @@ describe('daze stumble kinematics (regression: maze-aware retreat actually makes
     // Actually closer to the gate than the start, not just churning in place.
     const endDistToGate = Math.hypot(pos.x - gate.x, pos.z - gate.z);
     expect(endDistToGate).toBeLessThan(startDistToGate - 10);
+  });
+
+  // Collision-complete regression: the ward map only ever sees the K block as
+  // open floor (its BFS gating cares solely about the two door edges above),
+  // but the keep's REAL 3D collision geometry — its 4 solid perimeter walls —
+  // comes from castleObstacles()/castleGrappleColliders() (layout.ts), which
+  // wardObstaclesNear() knows nothing about. A retreat route that the BFS
+  // considers legal could still run a dazed player face-first into that real
+  // wall if kinematics were only ever resolved against wardObstaclesNear.
+  function simulateStumble(
+    startCell: { row: number; col: number },
+    obstaclesFor: (x: number, z: number) => { x: number; z: number; r: number; yTop: number }[],
+  ): { pathLen: number; waypointIdx: number; avgPerSecond: number } {
+    const start = cellToWorld(startCell.col, startCell.row);
+    const path = retreatPath(start.x, start.z);
+    if (path.length === 0) return { pathLen: 0, waypointIdx: 0, avgPerSecond: 0 };
+
+    let pos = { x: start.x, z: start.z };
+    let waypointIdx = 0;
+    const dt = 1 / 60;
+    const steps = Math.round(4 / dt); // 4 s daze window
+    let totalDisplacement = 0;
+
+    for (let i = 0; i < steps; i++) {
+      let target = path[waypointIdx]!;
+      let dx = target.x - pos.x;
+      let dz = target.z - pos.z;
+      while (Math.hypot(dx, dz) < 1 && waypointIdx < path.length - 1) {
+        waypointIdx++;
+        target = path[waypointIdx]!;
+        dx = target.x - pos.x;
+        dz = target.z - pos.z;
+      }
+      const len = Math.hypot(dx, dz) || 1;
+      const vx = (dx / len) * HEALTH.stumbleSpeed;
+      const vz = (dz / len) * HEALTH.stumbleSpeed;
+      const next = { x: pos.x + vx * dt, y: CASTLE.padHeight + 1, z: pos.z + vz * dt };
+      const resolved = resolveCollision(next, 0.4, obstaclesFor(next.x, next.z));
+      totalDisplacement += Math.hypot(resolved.x - pos.x, resolved.z - pos.z);
+      pos = { x: resolved.x, z: resolved.z };
+    }
+
+    return { pathLen: path.length, waypointIdx, avgPerSecond: totalDisplacement / 4 };
+  }
+
+  // KNOWN BUG (found by this test, production code intentionally left
+  // unchanged — see the fix report / daze-tests-report.md): cell (17, 15) is
+  // the exact cell the task brief names as "the cell class that previously
+  // routed through the keep's solid west wall" — it's orthogonally adjacent
+  // to the K block at (17, 16), which is NOT a door edge (the only door edges
+  // are the east-face crossings at rows 17–18, cols 19↔20 — see
+  // KEEP_DOOR_EDGE_CELLS). Before the keep-door-only-crossing fix
+  // (39ed221), the BFS treated that (17,15)↔(17,16) crossing as legal and
+  // presumably routed straight through the keep's solid west wall. The fix
+  // correctly rejects that crossing now — but (17, 15) sits in an 11-cell
+  // dead-end alcove (rows 13–17, cols 11–16) whose ONLY other connection to
+  // the rest of the maze was that same illegal crossing. With it closed, the
+  // whole alcove — including (17, 15) — is completely unreachable from the
+  // gate: `retreatPath` returns `[]` here. A dazed player standing anywhere in
+  // that alcove today gets no maze-aware retreat path at all and silently
+  // falls back to main.ts's pre-ward radial retreat — precisely the
+  // "jitters in place inside the maze" behavior this whole feature exists to
+  // replace. `it.fails` documents this: the assertion below is EXPECTED to
+  // fail while the bug exists (keeping `npm test` green while flagging the
+  // regression); it will start failing this expectation-of-failure (and so
+  // needs its `.fails` removed) once the alcove gets a real second exit
+  // (either a wardMap.ts corridor edit or an additional legitimate keep door).
+  it.fails(
+    'from cell (17, 15) — adjacent to the keep\'s solid west wall — resolving against wardObstaclesNear + castleObstacles() makes real progress over 4s',
+    () => {
+      const castleAndKeepObstacles = castleObstacles();
+      const result = simulateStumble({ row: 17, col: 15 }, (x, z) =>
+        wardObstaclesNear(x, z).concat(castleAndKeepObstacles),
+      );
+      expect(result.pathLen).toBeGreaterThan(2);
+      expect(result.waypointIdx).toBeGreaterThanOrEqual(4);
+      expect(result.avgPerSecond).toBeGreaterThan(3);
+    },
+  );
+
+  // The same cell CLASS (orthogonally adjacent to a non-door K face — here
+  // the keep's west face again, one row south of the orphaned alcove above)
+  // that IS reachable, delivering the "collision-complete" regression
+  // coverage task 3 actually calls for: kinematics resolved against
+  // wardObstaclesNear(...) concatenated with castleObstacles() (the keep's
+  // real 3D perimeter walls) still make real progress toward the gate.
+  it('from cell (19, 15) — same keep-west-wall-adjacent cell class, but reachable — resolving against wardObstaclesNear + castleObstacles() makes real progress over 4s', () => {
+    const castleAndKeepObstacles = castleObstacles();
+    const result = simulateStumble({ row: 19, col: 15 }, (x, z) =>
+      wardObstaclesNear(x, z).concat(castleAndKeepObstacles),
+    );
+    expect(result.pathLen).toBeGreaterThan(2);
+    expect(result.waypointIdx).toBeGreaterThanOrEqual(4);
+    expect(result.avgPerSecond).toBeGreaterThan(3);
   });
 });
