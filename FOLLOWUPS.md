@@ -187,3 +187,4 @@ block ship; listed here so they aren't lost.
 - V4 barter request persists concretely so reloads never swap it (`save.barter[].request`).
 - Pen rendering capped at 8 models per pen with a `+N` marker (`village/pens.ts`).
 - Static farm plot tiles recolour from live unlocks (`farm/visuals.ts`).
+- Spires: the 26 m NE spire visually near-ties the corner tower's decorative roof apex (~26.4 m); gargoyle-perch clearance (18 m) is what matters and holds. Bump to ~28 m if the silhouette should unambiguously win.
