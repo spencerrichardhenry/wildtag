@@ -50,7 +50,13 @@ describe('SPIRES authoring', () => {
     }
   });
 
-  it('the 3 plaza-corner spires (indices 0-2) sit clear of every elf home by at least 1 m', () => {
+  it('the 3 plaza-corner spires (indices 0-2) sit clear of every elf home by at least obstacleR + ELF.bodyR (the real no-overlap distance, ~4m actual)', () => {
+    // Review round (daze-eject-spires): elves are now pushed out of
+    // `spireObstacles()` too (elves.ts's resolveCollision), so the bound that
+    // actually matters is the sum of the two bodies' radii, not an arbitrary
+    // 1m — a home any closer than this would sit INSIDE the spire's obstacle
+    // circle and the elf would never be able to stand at its own home.
+    const minClearance = SPIRES.obstacleR + ELF.bodyR; // 1.6 + 0.5 = 2.1
     const plazaSpires = SPIRES.list.slice(0, 3);
     for (const s of plazaSpires) {
       const x = CASTLE.center.x + s.dx;
@@ -58,7 +64,7 @@ describe('SPIRES authoring', () => {
       for (let i = 0; i < ELF.maxCount; i++) {
         const home = elfHomePosition(i);
         const d = Math.hypot(x - home.x, z - home.z);
-        expect(d).toBeGreaterThanOrEqual(1);
+        expect(d).toBeGreaterThanOrEqual(minClearance);
       }
     }
   });

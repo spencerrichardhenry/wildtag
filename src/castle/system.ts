@@ -12,7 +12,7 @@ import {
   stepGoblin,
   type GoblinState,
 } from './goblins.ts';
-import { castleLayout, castleObstacles } from './layout.ts';
+import { castleLayout, castleObstacles, spireObstacles } from './layout.ts';
 import { wardLayout, wardObstaclesNear } from './ward.ts';
 import { purifySequenceSteps } from './state.ts';
 
@@ -124,7 +124,12 @@ export class CastleSystem {
           playerPos,
           ground: this.ground,
           rand,
-          obstacles: castleObstacles().concat(wardObstaclesNear(g.pos.x, g.pos.z)),
+          // Spire added daze-eject-spires review round: chase (unlike the
+          // short-clamped patrol loop) can carry a goblin across the whole
+          // ward, including through a spire's footprint, without this.
+          obstacles: castleObstacles()
+            .concat(wardObstaclesNear(g.pos.x, g.pos.z))
+            .concat(spireObstacles()),
         },
         dt,
       );

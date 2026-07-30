@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CASTLE, GOBLIN, MOVE } from '../src/core/constants.ts';
 import type { GroundQuery, Vec3 } from '../src/core/types.ts';
-import { inCastleRegion, castleObstacles, type Point2 } from '../src/castle/layout.ts';
+import { inCastleRegion, castleObstacles, spireObstacles, type Point2 } from '../src/castle/layout.ts';
 import { wardLayout } from '../src/castle/ward.ts';
 import type { Obstacle } from '../src/player/collision.ts';
 import { makeGoblin, stepGoblin, goblinSpawnPoints, type GoblinState } from '../src/castle/goblins.ts';
@@ -264,8 +264,12 @@ describe('goblins FSM — wall collision', () => {
 
   // This exhaustive synchronous simulation is a local regression test; shared
   // CI runners vary enough in CPU speed to make its wall-clock timeout flaky.
-  it.skipIf(Boolean(process.env.CI))('a ring-spawned goblin baited straight at the player never lands inside any real castle obstacle', () => {
-    const obstacles = castleObstacles();
+  it.skipIf(Boolean(process.env.CI))('a ring-spawned goblin baited straight at the player never lands inside any real castle obstacle (incl. spires)', () => {
+    // Spire added daze-eject-spires review round: `CastleSystem.update`
+    // (system.ts) feeds a chasing goblin `castleObstacles().concat(...).concat(
+    // spireObstacles())` — folded into this fixture so a chase-path regression
+    // through a spire's footprint is caught the same way a wall/tower one is.
+    const obstacles = castleObstacles().concat(spireObstacles());
     const points = goblinSpawnPoints(9, GOBLIN.count, ZONES_FIXTURE);
     const rand = seededRand(11);
     for (const home3 of points) {

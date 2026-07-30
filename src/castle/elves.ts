@@ -4,7 +4,7 @@ import { mulberry32 } from '../core/rng.ts';
 import { resolveCollision } from '../player/collision.ts';
 import type { GroundQuery, Vec3 } from '../core/types.ts';
 import { buildElf } from './builders.ts';
-import { castleObstacles } from './layout.ts';
+import { castleObstacles, spireObstacles } from './layout.ts';
 import { wardLayout, wardObstaclesNear } from './ward.ts';
 
 // ---------------------------------------------------------------------------
@@ -169,15 +169,19 @@ export class ElfSystem {
         }
       }
 
-      // Wall/tower/keep collision (final-review fix): push the elf's body out
-      // of any obstacle it just wandered into, so it can't ghost through the
-      // curtain wall or keep. `e.pos.y` here is last frame's ground height —
-      // a fine probe for the yTop glide-over check since elves never leave
-      // ground level and it changes negligibly over one step.
+      // Wall/tower/keep/spire collision (final-review fix; spire added
+      // daze-eject-spires review round — plaza-corner spires sit ~14.1m from
+      // their plaza centroid, well inside an elf's ~10m home spiral +
+      // ELF.wanderR (9), so without this an elf could wander straight through
+      // one). Push the elf's body out of any obstacle it just wandered into,
+      // so it can't ghost through the curtain wall, keep, or a spire.
+      // `e.pos.y` here is last frame's ground height — a fine probe for the
+      // yTop glide-over check since elves never leave ground level and it
+      // changes negligibly over one step.
       const resolved = resolveCollision(
         { x: e.pos.x, y: e.pos.y, z: e.pos.z },
         ELF.bodyR,
-        castleObstacles().concat(wardObstaclesNear(e.pos.x, e.pos.z)),
+        castleObstacles().concat(wardObstaclesNear(e.pos.x, e.pos.z)).concat(spireObstacles()),
       );
       e.pos.x = resolved.x;
       e.pos.z = resolved.z;

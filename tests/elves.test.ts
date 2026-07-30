@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { CASTLE, ELF, WARD } from '../src/core/constants.ts';
 import type { GroundQuery, Vec3 } from '../src/core/types.ts';
-import { castleObstacles } from '../src/castle/layout.ts';
+import { castleObstacles, spireObstacles } from '../src/castle/layout.ts';
 import { wardLayout } from '../src/castle/ward.ts';
 import { elfHomePosition, ElfSystem } from '../src/castle/elves.ts';
 
@@ -148,25 +148,28 @@ describe('ElfSystem', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Wall/tower/keep collision (final-review fix): a wandering elf is pushed out
-// of the real castle obstacle set instead of ghosting through. Castle Ward
-// Task 6: homes now sit inside the ward plazas (well inside the 90 m curtain
-// wall) with a much tighter wanderR (9 m, was 30), but `ElfSystem.update`
-// still runs every step through BOTH `castleObstacles()` (this test's set —
-// curtain wall/towers/keep) and `wardObstaclesNear` (the maze walls), so
-// clipping either is still structurally impossible.
+// Wall/tower/keep/spire collision (final-review fix; spire added
+// daze-eject-spires review round): a wandering elf is pushed out of the real
+// castle obstacle set instead of ghosting through. Castle Ward Task 6: homes
+// now sit inside the ward plazas (well inside the 90 m curtain wall) with a
+// much tighter wanderR (9 m, was 30), but `ElfSystem.update` still runs every
+// step through `castleObstacles()` (this test's set — curtain wall/towers/
+// keep), `wardObstaclesNear` (the maze walls) AND `spireObstacles()` (the 3
+// plaza-corner spires sit ~14.1m from their plaza centroid — inside a
+// spiral-home + wanderR reach), so clipping any of them is structurally
+// impossible.
 // ---------------------------------------------------------------------------
 
 describe('ElfSystem — wall collision', () => {
   // This exhaustive synchronous simulation is a local regression test; shared
   // CI runners vary enough in CPU speed to make its wall-clock timeout flaky.
   it.skipIf(Boolean(process.env.CI))(
-    'never wanders into a castle wall/tower/keep obstacle',
+    'never wanders into a castle wall/tower/keep/spire obstacle',
     () => {
       const scene = new THREE.Scene();
       const sys = new ElfSystem(scene, flatGround);
       sys.setCount(16);
-      const obstacles = castleObstacles();
+      const obstacles = castleObstacles().concat(spireObstacles());
       const steps = Math.round(15 / DT);
       for (let i = 0; i < steps; i++) {
         sys.update(DT, ORIGIN);
