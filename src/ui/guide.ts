@@ -24,6 +24,8 @@ const FLAVOR: Record<string, string> = {
   emberpup: 'Warm to the touch and impossible to corner; zigzags on principle.',
   lumenstag: 'The living lantern of the deep wood. Few ever see it. Fewer link it.',
   gargoyle: 'Stone by day, wings by night — it only stirs once you dare tag it.',
+  timberchomp: 'Never met a tree it did not want to gnaw down and haul home.',
+  pebbleshrew: 'Digs first, looks later — a small plated nose forever in the rubble.',
 };
 
 /** Human-readable flee-style labels. */

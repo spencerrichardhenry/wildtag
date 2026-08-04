@@ -338,12 +338,12 @@ async function checkBoot() {
       assert(st.linkedSpeciesCount === 0, `linkedSpeciesCount ${st.linkedSpeciesCount} != 0`);
       console.log(`    state: stamina=${st.stamina} darts=${st.inventory.darts} rp=${st.inventory.rp} active=${st.activeCritters}`);
 
-      // 13 species (Haven added 4, Cursed Castle added the gargoyle) —
-      // assert via the Field Guide denominator
+      // 15 species (Haven added 4, Cursed Castle added the gargoyle, Task 1
+      // added timberchomp + pebbleshrew) — assert via the Field Guide denominator
       await page.keyboard.press('Tab');
       await sleep(400);
       const guideH1 = await page.evaluate(() => document.querySelector('.wt-panel h1')?.textContent ?? '');
-      assert(/\/13\b/.test(guideH1), `Field Guide does not show /13 species ("${guideH1}")`);
+      assert(/\/15\b/.test(guideH1), `Field Guide does not show /15 species ("${guideH1}")`);
       console.log(`    guide: "${guideH1.trim()}"`);
       await page.keyboard.press('Tab');
       await sleep(200);
@@ -452,13 +452,13 @@ async function checkTracking() {
       assert(toast, 'no "Linked" toast appeared');
       await shot(page, '04-linked-toast.png');
 
-      // Field Guide shows 1/13 (Cursed Castle raised the roster to 13 species)
+      // Field Guide shows 1/15 (Task 1 raised the roster to 15 species)
       await page.keyboard.press('Tab');
       const guide18 = await page.waitForFunction(
-        () => /\b1\/13\b/.test(document.querySelector('.wt-panel h1')?.textContent || ''),
+        () => /\b1\/15\b/.test(document.querySelector('.wt-panel h1')?.textContent || ''),
         { timeout: 3000 },
       ).then(() => true).catch(() => false);
-      assert(guide18, 'Field Guide did not show 1/13');
+      assert(guide18, 'Field Guide did not show 1/15');
       const guideH1 = await page.evaluate(() => document.querySelector('.wt-panel h1')?.textContent ?? '');
       console.log(`    guide: "${guideH1.trim()}"`);
       await page.keyboard.press('Tab');
