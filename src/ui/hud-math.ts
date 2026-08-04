@@ -1,5 +1,6 @@
 import type { SpeciesDef, Vec3 } from '../core/types.ts';
 import type { CritterView } from '../critters/manager.ts';
+import type { ItemId } from '../craft/hotbar.ts';
 
 // ---------------------------------------------------------------------------
 // Pure HUD geometry (Task 11). No three, no DOM — every three.js dependency is
@@ -18,8 +19,6 @@ export const HUD = {
   compassTickStepDeg: 15,
   /** Critter head offset above its feet position, as a factor of species size. */
   ringHeadFactor: 1.2,
-  /** Number of selectable hotbar slots (Cursed Castle Task 13 added Purify). */
-  hotbarSlots: 5,
 } as const;
 
 /** A projected point in normalised device coordinates ([-1, 1], +y up). */
@@ -39,13 +38,23 @@ export function clamp(v: number, lo: number, hi: number): number {
 }
 
 /**
- * Validate a requested hotbar slot: `slot` is accepted (returned as-is) when
- * it falls within [1, max]; otherwise `null` (the request is ignored).
- * Extracted from `HUD.selectHotbar` so the clamp is unit-testable without DOM
- * (mirrors `EdgeLatch`'s extraction from `Input`).
+ * Short display label for a hotbar/inventory item — the pure lookup behind
+ * both the HUD hotbar strip and the inventory screen's item grid (Inventory+
+ * Building Task 3), so the two surfaces never drift out of sync on naming.
+ * `null` (an empty slot) is the empty string.
  */
-export function clampHotbarSlot(slot: number, max: number = HUD.hotbarSlots): number | null {
-  return slot >= 1 && slot <= max ? slot : null;
+const ITEM_LABELS: Record<ItemId, string> = {
+  darts: 'Darts',
+  purifiers: 'Purify',
+  charms: 'Charm',
+  'kit:zipline': 'Zipline',
+  'kit:drone': 'Drone',
+  wall: 'Wall',
+  ramp: 'Ramp',
+};
+
+export function hotbarItemLabel(item: ItemId | null): string {
+  return item === null ? '' : ITEM_LABELS[item];
 }
 
 /** Wrap `deg` into (-180, 180]. */

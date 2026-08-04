@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { EdgeLatch, actionForCode } from '../src/player/input.ts';
+import { EdgeLatch, actionForCode, hotbarStepForWheel } from '../src/player/input.ts';
 
 // EdgeLatch is the DOM-free one-shot movement-edge core of Input: keydown
 // latches, state() consumes, ScreenManager clears on screen open/close so a
@@ -60,6 +60,10 @@ describe('actionForCode', () => {
     expect(actionForCode('Digit5')).toEqual({ type: 'hotbar', slot: 5 });
   });
 
+  it('maps Digit6 to hotbar slot 6 (Inventory+Building Task 3 — the 6th slot)', () => {
+    expect(actionForCode('Digit6')).toEqual({ type: 'hotbar', slot: 6 });
+  });
+
   it('maps the remaining UI keys', () => {
     expect(actionForCode('KeyF')).toEqual({ type: 'interact' });
     expect(actionForCode('Tab')).toEqual({ type: 'tab' });
@@ -73,5 +77,22 @@ describe('actionForCode', () => {
     expect(actionForCode('KeyW')).toBeNull();
     expect(actionForCode('ShiftLeft')).toBeNull();
     expect(actionForCode('Space')).toBeNull();
+  });
+});
+
+// hotbarStepForWheel is the DOM-free sign mapping behind Input's `wheel`
+// listener (Inventory+Building Task 3): scroll direction → hotbar step.
+
+describe('hotbarStepForWheel', () => {
+  it('steps forward (+1) on a positive deltaY (scroll down/away)', () => {
+    expect(hotbarStepForWheel(100)).toBe(1);
+  });
+
+  it('steps backward (-1) on a negative deltaY (scroll up/toward)', () => {
+    expect(hotbarStepForWheel(-100)).toBe(-1);
+  });
+
+  it('treats a zero delta as a forward step (never a no-op)', () => {
+    expect(hotbarStepForWheel(0)).toBe(1);
   });
 });

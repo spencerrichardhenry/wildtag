@@ -10,7 +10,15 @@ import { Input } from './player/input.ts';
 import { PlayerController } from './player/controller.ts';
 import { createHealth, applyHit, isDazed, stepHealth } from './player/health.ts';
 import { createInventory, addResource } from './craft/inventory.ts';
-import { ScreenManager, createCraftScreen, createHelpScreen } from './ui/screens.ts';
+import {
+  createHotbar,
+  migrateLegacy as migrateLegacyHotbar,
+  select as selectHotbar,
+  selectStep as selectStepHotbar,
+  type HotbarState,
+  type ItemId,
+} from './craft/hotbar.ts';
+import { ScreenManager, createCraftScreen, createHelpScreen, createInventoryScreen } from './ui/screens.ts';
 import { createGuideScreen } from './ui/guide.ts';
 import { createRosterScreen, setRosterActions } from './ui/roster.ts';
 import { HUD } from './ui/hud.ts';
@@ -430,9 +438,11 @@ function bootGame(): void {
   screens.register(createCraftScreen(inventory, player.unlocks, screens));
   // Field Guide (Tab): the 8-species silhouette grid (Task 10).
   screens.register(createGuideScreen(critters, screens));
-  // Pause / Help overlay (Esc): keybind reference + Resume (Task 11) + the
-  // Fidelity-2 quality selector.
-  screens.register(createHelpScreen(screens, { current: currentQuality, apply: applyQuality }));
+  // Pause / Help overlay: keybind reference + Resume + Reset Save. No longer
+  // Esc's direct target (Inventory+Building Task 3 — see the inventory
+  // screen registration below) — reached via its "Controls" button, or the
+  // `?screen=help` dev hook.
+  screens.register(createHelpScreen(screens));
   // Village dialog (F near an NPC): flavour + request placeholder (Task V3).
   screens.register(createDialogScreen(screens));
   // Roster (KeyB, Haven V2): bonded critters + Release. `getRoster` reads the
@@ -589,6 +599,61 @@ function bootGame(): void {
     Object.assign(inventory, applyStartingLoadout(createInventory(), null));
   }
 
+  // -------------------------------------------------------------------------
+  // Hotbar (Inventory+Building Task 3): main.ts owns the live 6-slot
+  // `HotbarState`. A save with a `hotbar` block (Task 2's decode already
+  // shape-guarded every slot string against `ItemId` and clamped `selected`)
+  // loads it straight; a save predating the hotbar (`loaded` truthy, `hotbar`
+  // absent) migrates the old fixed slots via `migrateLegacy()`; no save at
+  // all (fresh start / corrupt-apply fallback, `loaded` now null either way)
+  // gets the fresh-start default loadout.
+  // -------------------------------------------------------------------------
+  let hotbar: HotbarState = loaded?.hotbar
+    ? { slots: loaded.hotbar.slots as (ItemId | null)[], selected: loaded.hotbar.selected }
+    : loaded
+      ? migrateLegacyHotbar()
+      : createHotbar();
+
+  /**
+   * Placement-ghost sync: entering a placeable (kit) slot auto-enters its
+   * ghost; selecting anything else — another item, an empty slot, or a
+   * craftable-but-unbuilt wall/ramp (Task 5 stub) — cancels any active one.
+   * Tracks the last-synced ITEM rather than the selected slot INDEX so
+   * assigning a different item into the currently-selected slot (from the
+   * inventory screen, with no selection-index change) still re-syncs.
+   * Primed to the boot-time selection below so loading a save with a kit
+   * slot already selected never auto-opens a ghost with no player input.
+   */
+  let hotbarSyncedItem: ItemId | null = hotbar.slots[hotbar.selected] ?? null;
+  function syncHotbarPlacement(): void {
+    const item = hotbar.slots[hotbar.selected] ?? null;
+    if (item === hotbarSyncedItem) return;
+    hotbarSyncedItem = item;
+    if (item === 'kit:zipline') placement.toggle('zipline');
+    else if (item === 'kit:drone') placement.toggle('drone');
+    else if (placement.active) placement.cancel();
+  }
+
+  /** Replace the live hotbar (main.ts's own mutations AND the inventory
+   *  screen's assign/clear clicks funnel through here) and re-sync placement. */
+  function setHotbar(next: HotbarState): void {
+    hotbar = next;
+    syncHotbarPlacement();
+  }
+
+  // Inventory screen (Escape, when nothing else is open): item grid + hotbar
+  // assignment + the quality selector (relocated from the old pause/help
+  // overlay — see createHelpScreen's docs above).
+  screens.register(
+    createInventoryScreen({
+      inventory,
+      getHotbar: () => hotbar,
+      setHotbar,
+      manager: screens,
+      quality: { current: currentQuality, apply: applyQuality },
+    }),
+  );
+
   // Cursed Castle (Task 9): the dressing follows the save (absent → cursed,
   // the lived-in default). Task 14 makes this live-mutable: one purifying
   // dart on the keep's crystal flips it permanently (`CastleSystem.purifyCastle`
@@ -663,6 +728,48 @@ function bootGame(): void {
     onPurifyCrystal: () => castleSys.purifyCastle(),
   });
 
+  /**
+   * LMB dispatch on the selected hotbar item (Inventory+Building Task 3),
+   * replacing the old fixed slot-5-is-Purify / slot-3-4-toggle behavior:
+   *  - 'darts' / 'purifiers': throw (their own `tryThrow` already no-ops —
+   *    and returns false — at zero count, which shakes the slot).
+   *  - 'kit:zipline' / 'kit:drone': confirms the already-active placement
+   *    ghost (selecting the slot auto-entered it — `syncHotbarPlacement`
+   *    above); if it somehow isn't active (e.g. the kit ran out right as the
+   *    slot was selected), shakes instead.
+   *  - 'charms': NOT an LMB-usable item — charms are spent by the F-interact
+   *    bond flow (`tryBondInteract` below), never thrown. The slot shows the
+   *    live count for information, but LMB always shakes here.
+   *  - 'wall' / 'ramp': Task 5 wires BuildSystem here (`buildSystem?.confirm()`
+   *    once it exists) — until then this is a true no-op, deliberately NOT a
+   *    shake (there's nothing "empty-handed" about an unbuilt feature).
+   *  - empty slot: shakes.
+   */
+  function fireSelectedItem(): void {
+    const item = hotbar.slots[hotbar.selected] ?? null;
+    switch (item) {
+      case 'darts':
+        if (!darts.tryThrow()) hudUi.shake();
+        return;
+      case 'purifiers':
+        if (!purifier.tryThrow()) hudUi.shake();
+        return;
+      case 'kit:zipline':
+      case 'kit:drone':
+        if (placement.active) placement.confirm();
+        else hudUi.shake();
+        return;
+      case 'wall':
+      case 'ramp':
+        // Task 5 wires BuildSystem here — keep compiling until then.
+        return;
+      case 'charms':
+      case null:
+        hudUi.shake();
+        return;
+    }
+  }
+
   // Cursed Castle (Task 10): a gargoyle perched on each tower top + keep
   // corner. Fixed slots (negative ids), not part of the procedural per-cell
   // spawn table — see CritterManager.addFixedSlots.
@@ -728,6 +835,8 @@ function bootGame(): void {
       // Mount (Haven V6): only surfaced when a mount is active, so pre-mount
       // saves round-trip to exactly their old shape.
       ...(mounts.saveState() ? { mount: mounts.saveState()! } : {}),
+      // Hotbar (Inventory+Building Task 3): the live 6-slot loadout + selection.
+      hotbar: { slots: hotbar.slots, selected: hotbar.selected },
     };
   }
 
@@ -1280,10 +1389,12 @@ function bootGame(): void {
       }
       if (action.type === 'escape') {
         // Esc priority: cancel an in-progress placement, then close an open
-        // screen, otherwise open the pause/help overlay.
+        // screen, otherwise open the inventory screen (Inventory+Building
+        // Task 3 — Esc's new default target; the old pause/help overlay is
+        // now reached from inside it via the "Controls" button instead).
         if (placement.active) placement.cancel();
         else if (screens.isOpen()) screens.handleEscape();
-        else screens.open('help');
+        else screens.open('inventory');
         continue;
       }
       if (action.type === 'mount') {
@@ -1294,23 +1405,28 @@ function bootGame(): void {
       if (paused) continue; // gameplay actions (interact/hotbar/lmb/rmb) freeze while a screen is open
       // While mounted: dart-throw and structure placement are masked (F still
       // talks/collects; the grapple is already gated off in the controller).
-      if (player.mounted && (action.type === 'hotbar' || action.type === 'lmb')) {
-        if (action.type === 'hotbar') hudUi.selectHotbar(action.slot);
+      // Hotbar selection still moves the HUD highlight (via the plain
+      // select/selectStep ops, bypassing `setHotbar`) so the strip doesn't
+      // look frozen, but never auto-enters/cancels a placement ghost while
+      // riding — `syncHotbarPlacement` only runs through `setHotbar`.
+      if (
+        player.mounted &&
+        (action.type === 'hotbar' || action.type === 'hotbarStep' || action.type === 'lmb')
+      ) {
+        if (action.type === 'hotbar') hotbar = selectHotbar(hotbar, action.slot - 1);
+        else if (action.type === 'hotbarStep') hotbar = selectStepHotbar(hotbar, action.dir);
         continue;
       }
-      // Hotbar: HUD highlight for every slot; 3/4 also toggle placement mode.
-      // Slot 2 (grapple) isn't a selectable tool — it lives on RMB — so
-      // selecting it explains the controls instead of silently doing nothing.
+      // Hotbar select (Digit1-6 / scroll wheel): selection-change side
+      // effects (entering/cancelling a kit's placement ghost) run through
+      // `setHotbar` → `syncHotbarPlacement`. Grapple is no longer a hotbar
+      // slot at all — it's permanently equipped, fired on RMB.
       if (action.type === 'hotbar') {
-        hudUi.selectHotbar(action.slot);
-        if (action.slot === 2) {
-          toast(
-            player.unlocks.has('grapple')
-              ? 'Grapple: tap RMB to fire · auto-zips on latch · Space jumps off'
-              : 'Grapple Hook not crafted yet — open Crafting (C)',
-          );
-        } else if (action.slot === 3) placement.toggle('zipline');
-        else if (action.slot === 4) placement.toggle('drone');
+        setHotbar(selectHotbar(hotbar, action.slot - 1));
+        continue;
+      }
+      if (action.type === 'hotbarStep') {
+        setHotbar(selectStepHotbar(hotbar, action.dir));
         continue;
       }
       if (action.type === 'interact') {
@@ -1344,13 +1460,10 @@ function bootGame(): void {
         if (placement.active) {
           placement.confirm(); // LMB confirms a placement
         } else if (player.mode !== 'zipline') {
-          // LMB fires the selected hotbar tool (the grapple now lives
-          // entirely on RMB — no reel binding); suppressed only while riding
-          // a zipline. Slot 5 (Purify) throws a purifying dart; every other
-          // slot throws a tracker dart (slot 1's own tool, and the default
-          // for slots without a dedicated LMB action).
-          if (hudUi.selected === 5) purifier.tryThrow();
-          else darts.tryThrow();
+          // LMB fires the selected hotbar item (see `fireSelectedItem` above)
+          // — the grapple now lives entirely on RMB (no reel binding);
+          // suppressed only while riding a zipline.
+          fireSelectedItem();
         }
       }
     }
@@ -1409,6 +1522,8 @@ function bootGame(): void {
       // region at night even at full HP — a live ambush threat, not just a
       // damage readout. Purified castle = no danger = no bar.
       dangerZone: inCastleRegion(p.x, p.z) && daylightSample.darkness > 0.5 && !castlePurified,
+      hotbarSlots: hotbar.slots,
+      selectedSlot: hotbar.selected,
     });
   }
 
@@ -1588,6 +1703,7 @@ function bootGame(): void {
     ziplines,
     drones,
     isPlacing: () => placement.active,
+    hotbar: () => hotbar,
     isGrappling: () => player.isGrappling(),
     getTimeScale: () => timeScale,
     setTimeScale: (f: number) => {

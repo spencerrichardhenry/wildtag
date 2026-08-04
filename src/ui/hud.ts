@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { Vec3 } from '../core/types.ts';
 import type { Inventory } from '../craft/inventory.ts';
+import { itemCount, NUM_SLOTS, type ItemId } from '../craft/hotbar.ts';
 import type { CritterView } from '../critters/manager.ts';
 import { speciesById } from '../critters/species.ts';
 import { HEALTH, MOVE, SCATTER } from '../core/constants.ts';
@@ -8,13 +9,13 @@ import { toast } from './toasts.ts';
 import {
   HUD as HUDT,
   CARDINALS as CARDINAL_LABEL,
-  clampHotbarSlot,
   compassTicks,
   facingBearingDeg,
   worldBearingDeg,
   bearingToStripX,
   ringScreenState,
   healthBarHideEligible,
+  hotbarItemLabel,
   type ProjectFn,
 } from './hud-math.ts';
 
@@ -74,6 +75,10 @@ export interface HudFrame {
    * by the time this goes true, this is purely the drag-out cutscene.
    */
   dazeBlack: boolean;
+  /** The 6-slot hotbar loadout (Inventory+Building Task 3), owned by main.ts. */
+  hotbarSlots: readonly (ItemId | null)[];
+  /** Currently-selected hotbar slot, 0..NUM_SLOTS-1. */
+  selectedSlot: number;
 }
 
 const RES_COLOR: Record<string, string> = {
@@ -145,10 +150,13 @@ export class HUD {
   private readonly resEls = new Map<string, { dot: HTMLElement; count: HTMLElement; last: number }>();
   private readonly slots: {
     root: HTMLDivElement;
+    nameEl: HTMLSpanElement;
     badge: HTMLDivElement;
-    key: string;
-    name: string;
   }[] = [];
+  /** Last-painted selected slot index (0-based) — `shake()` reads this to
+   *  know which slot's DOM node to flash, without main.ts having to pass it
+   *  in separately. */
+  private lastSelectedSlot = 0;
   private readonly compassTrack: HTMLDivElement;
   /** Persistent tick nodes keyed by bearing (deg) — repositioned, never rebuilt. */
   private readonly tickEls = new Map<number, HTMLDivElement>();
@@ -173,7 +181,6 @@ export class HUD {
    *  forget animation triggered once by `flash()`, not painted from a frame. */
   private readonly purifyFlash: HTMLDivElement;
 
-  private _selected = 1;
   private crosshairOverride: string | null = null;
   private lastCrosshair = '';
   private staminaFullSince: number | null = null;
@@ -285,27 +292,22 @@ export class HUD {
     this.health.appendChild(this.healthFill);
     this.root.appendChild(this.health);
 
-    // --- Hotbar (bottom-centre) --------------------------------------------
+    // --- Hotbar (bottom-centre) — 6 assignable slots (Inventory+Building
+    // Task 3): each renders whatever ItemId main.ts's HotbarState has
+    // assigned (or empty), painted fresh every frame by `paintHotbar` off
+    // `frame.hotbarSlots`/`frame.selectedSlot`. No fixed per-slot identity
+    // (darts/grapple/...) any more — grapple left the hotbar entirely (it's
+    // permanently equipped) and every other slot is now player-assignable.
     const hotbar = el('div', 'wt-hotbar');
-    const defs = [
-      { key: '1', name: 'Darts' },
-      { key: '2', name: 'Grapple' },
-      { key: '3', name: 'Zipline' },
-      { key: '4', name: 'Drone' },
-      { key: '5', name: 'Purify' },
-    ];
-    for (const d of defs) {
+    for (let i = 0; i < NUM_SLOTS; i++) {
       const slot = el('div', 'wt-slot');
       const keyEl = el('span', 'wt-slot-key');
-      keyEl.textContent = d.key;
+      keyEl.textContent = String(i + 1);
       const nameEl = el('span', 'wt-slot-name');
-      nameEl.textContent = d.name;
-      const lock = el('span', 'wt-slot-lock');
-      lock.textContent = '🔒';
       const badge = el('div', 'wt-slot-badge');
-      slot.append(keyEl, nameEl, lock, badge);
+      slot.append(keyEl, nameEl, badge);
       hotbar.appendChild(slot);
-      this.slots.push({ root: slot, badge, key: d.key, name: d.name });
+      this.slots.push({ root: slot, nameEl, badge });
     }
     this.root.appendChild(hotbar);
 
@@ -332,16 +334,19 @@ export class HUD {
     this.host.appendChild(this.root);
   }
 
-  /** Active hotbar slot (1–5). Forwarded from the input hotbar action. */
-  selectHotbar(slot: number): void {
-    const s = clampHotbarSlot(slot);
-    if (s !== null) this._selected = s;
-  }
-
-  /** The currently-selected hotbar slot (1–5) — main.ts's LMB dispatch reads
-   *  this to route the fire action to darts (slot 1) vs. purifier (slot 5). */
-  get selected(): number {
-    return this._selected;
+  /**
+   * Brief shake on the currently-selected slot (Inventory+Building Task 3) —
+   * feedback for an LMB press that had nothing to do (empty slot, zero-count
+   * item, or an item with no LMB action). Re-triggerable like `flash()`:
+   * forces a reflow before re-adding the class so a rapid repeat press always
+   * restarts the shake from the top.
+   */
+  shake(): void {
+    const slot = this.slots[this.lastSelectedSlot];
+    if (!slot) return;
+    slot.root.classList.remove('wt-slot-shake');
+    void slot.root.offsetWidth; // force reflow so re-adding restarts the animation
+    slot.root.classList.add('wt-slot-shake');
   }
 
   /**
@@ -576,35 +581,24 @@ export class HUD {
   }
 
   // -------------------------------------------------------------------------
-  // Hotbar — locked styling + active highlight + dart badge.
+  // Hotbar — 6 assignable slots (Inventory+Building Task 3). Each slot paints
+  // whatever ItemId main.ts's HotbarState has assigned there (or nothing);
+  // there's no more per-slot fixed identity or padlock concept — kits/charms
+  // just show their live count like darts/purify always did, and dim exactly
+  // when they'd no-op on LMB (empty slot or a zero-count item).
   // -------------------------------------------------------------------------
   private paintHotbar(frame: HudFrame): void {
     const inv = frame.inventory;
-    // Slot 1 (darts) and slot 5 (purify) are never *locked* — both are
-    // consumable recipes (craft.ts never adds a consumable's id to
-    // `unlocks`, only `kind: 'unlock'` recipes land there), so with zero ammo
-    // they dim and show a "0" badge instead of the padlock, which is reserved
-    // for genuinely locked slots (uncrafted unlock / no kits).
-    const locked = [
-      false, // 1 Darts — ammo state, not a lock
-      !frame.unlocks.has('grapple'), // 2 Grapple
-      inv.kits.zipline <= 0, // 3 Zipline
-      inv.kits.drone <= 0, // 4 Drone
-      false, // 5 Purify — ammo state, not a lock (same as Darts)
-    ];
-    const dimmed = [inv.darts <= 0, locked[1]!, locked[2]!, locked[3]!, inv.purifiers <= 0];
+    this.lastSelectedSlot = frame.selectedSlot;
     for (let i = 0; i < this.slots.length; i++) {
       const slot = this.slots[i]!;
-      slot.root.classList.toggle('wt-slot-locked', locked[i]!);
-      slot.root.classList.toggle('wt-slot-dim', dimmed[i]!);
-      slot.root.classList.toggle('wt-slot-active', this._selected === i + 1);
-      // Darts/Purify always show their live count (including 0); deployables
-      // show their kit count once they have any.
-      let badge = '';
-      if (i === 0) badge = String(inv.darts);
-      else if (i === 2 && inv.kits.zipline > 0) badge = String(inv.kits.zipline);
-      else if (i === 3 && inv.kits.drone > 0) badge = String(inv.kits.drone);
-      else if (i === 4) badge = String(inv.purifiers);
+      const item = frame.hotbarSlots[i] ?? null;
+      const count = item ? itemCount(inv, item) : 0;
+      const label = hotbarItemLabel(item);
+      if (slot.nameEl.textContent !== label) slot.nameEl.textContent = label;
+      slot.root.classList.toggle('wt-slot-dim', item === null || count <= 0);
+      slot.root.classList.toggle('wt-slot-active', frame.selectedSlot === i);
+      const badge = item ? String(count) : '';
       if (slot.badge.textContent !== badge) slot.badge.textContent = badge;
     }
   }
@@ -1101,11 +1095,9 @@ const STYLE = `
   color: #9fb0b8;
 }
 .wt-slot-name { font-size: 11px; color: #dbe6ea; }
-.wt-slot-lock { display: none; font-size: 14px; }
-/* dim = unusable right now (out of ammo OR locked); lock icon = locked only */
+/* dim = unusable right now (empty slot or a zero-count item) */
 .wt-slot-dim { opacity: 0.42; }
 .wt-slot-dim .wt-slot-name { color: #8a9aa2; }
-.wt-slot-locked .wt-slot-lock { display: block; }
 .wt-slot-active {
   border-color: #a8e6bc;
   box-shadow: 0 0 0 1px #a8e6bc, 0 0 10px rgba(120, 220, 160, 0.4);
@@ -1125,6 +1117,16 @@ const STYLE = `
   border-radius: 8px;
 }
 .wt-slot-badge:empty { display: none; }
+/* Empty-or-zero-count LMB feedback (Inventory+Building Task 3): a brief
+   horizontal shake on the selected slot, re-triggerable via HUD.shake(). */
+@keyframes wt-slot-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-4px); }
+  40% { transform: translateX(4px); }
+  60% { transform: translateX(-3px); }
+  80% { transform: translateX(3px); }
+}
+.wt-slot-shake { animation: wt-slot-shake 0.28s ease; }
 
 /* Tracking rings ---------------------------------------------------------- */
 .wt-rings { position: fixed; inset: 0; z-index: 4; }

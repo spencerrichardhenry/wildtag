@@ -1,6 +1,7 @@
 import type { GroundQuery, Vec3 } from './core/types.ts';
 import type { Inventory } from './craft/inventory.ts';
 import { RECIPES } from './craft/recipes.ts';
+import type { HotbarState } from './craft/hotbar.ts';
 import type { PlayerController } from './player/controller.ts';
 import type { Input } from './player/input.ts';
 import type { CritterManager, CritterView } from './critters/manager.ts';
@@ -27,8 +28,10 @@ export interface DebugDeps {
   critters: CritterManager;
   ziplines: ZiplineSystem;
   drones: DroneSystem;
-  /** True while a structure placement ghost is active (hotbar 3/4). */
+  /** True while a structure placement ghost is active (a kit slot selected). */
   isPlacing(): boolean;
+  /** Live hotbar state (Inventory+Building Task 3 — state().selectedSlot / hotbarSlots). */
+  hotbar(): HotbarState;
   /** True while a grapple rope is attached (Task 15 verification observes this). */
   isGrappling(): boolean;
   getTimeScale(): number;
@@ -181,6 +184,10 @@ export function buildDebugHandle(deps: DebugDeps): GameDebugHandle {
         elfCount: deps.elfCount(),
         castlePurified: deps.castlePurified(),
         inHall: deps.inHall(),
+        // Inventory+Building Task 3 e2e verification (scroll-select, kit ghost
+        // enter/cancel): the live hotbar loadout + current selection.
+        selectedSlot: deps.hotbar().selected,
+        hotbarSlots: deps.hotbar().slots,
       };
     },
 

@@ -12,7 +12,10 @@ import type { Inventory } from './inventory.ts';
  * off the hotbar entirely. */
 export type ItemId = 'darts' | 'purifiers' | 'charms' | 'kit:zipline' | 'kit:drone' | 'wall' | 'ramp';
 
-const ITEM_IDS: readonly ItemId[] = [
+/** Every assignable `ItemId`, in canonical order — used by the inventory
+ * screen (Task 3) to enumerate the owned-items picker without duplicating
+ * this list. */
+export const ITEM_IDS: readonly ItemId[] = [
   'darts',
   'purifiers',
   'charms',

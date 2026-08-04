@@ -1,5 +1,14 @@
 import type { Inventory } from '../craft/inventory.ts';
 import { canCraft, craft, RECIPES } from '../craft/recipes.ts';
+import {
+  assign as assignHotbar,
+  itemCount,
+  ITEM_IDS,
+  NUM_SLOTS,
+  type HotbarState,
+  type ItemId,
+} from '../craft/hotbar.ts';
+import { hotbarItemLabel } from './hud-math.ts';
 import type { Recipe, RecipeId, ResourceKind } from '../core/types.ts';
 import { clearSave } from '../core/save.ts';
 import { QUALITY_IDS, type QualityId } from '../core/quality.ts';
@@ -375,12 +384,13 @@ const KEYBINDS: [string, string][] = [
   ['R', 'Rocket  (when crafted)'],
   ['RMB', 'Fire Grapple — auto-zips on latch  (when crafted)'],
   ['F', 'Harvest / Interact'],
-  ['LMB', 'Throw tracker dart (or purifying dart on slot 5)'],
-  ['1 – 5', 'Hotbar'],
+  ['LMB', 'Use the selected hotbar item (throw / confirm placement)'],
+  ['1 – 6', 'Hotbar select'],
+  ['Wheel', 'Hotbar select'],
   ['C', 'Crafting'],
   ['B', 'Roster'],
   ['Tab', 'Field Guide'],
-  ['Esc', 'Pause / Close'],
+  ['Esc', 'Inventory / Close'],
 ];
 
 let helpStylesInjected = false;
@@ -450,13 +460,51 @@ function injectHelpStyles(): void {
 }
 
 /**
- * Build the ScreenDef for the pause / help overlay (Esc). "Reset Save" is a
+ * Quality preset row (Fidelity-2 P1): three preset buttons, active one
+ * highlighted. Applying persists the choice; main.ts toasts "reload to
+ * apply" for the reload-required flags (shadows/post/LOD). Shared by the
+ * inventory screen (Inventory+Building Task 3 relocated it here from the
+ * pause/help overlay — see `createInventoryScreen`) — a plain DOM-append
+ * helper rather than its own ScreenDef since it's a fragment of a screen, not
+ * a screen itself.
+ */
+function renderQualitySelector(panel: HTMLElement, quality: QualityControl, manager: ScreenManager): void {
+  const active = quality.current();
+  const qwrap = document.createElement('div');
+  qwrap.className = 'wt-quality';
+  const qlabel = document.createElement('div');
+  qlabel.className = 'wt-quality-label';
+  qlabel.textContent = 'Quality';
+  qwrap.appendChild(qlabel);
+  const qbtns = document.createElement('div');
+  qbtns.className = 'wt-quality-btns';
+  for (const id of QUALITY_IDS) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = `wt-quality-btn${id === active ? ' wt-quality-active' : ''}`;
+    b.dataset.quality = id;
+    b.textContent = id;
+    b.addEventListener('click', () => {
+      quality.apply(id);
+      manager.refresh(); // re-render to move the active highlight
+    });
+    qbtns.appendChild(b);
+  }
+  qwrap.appendChild(qbtns);
+  panel.appendChild(qwrap);
+}
+
+/**
+ * Build the ScreenDef for the pause / help overlay. "Reset Save" is a
  * double-confirm: the first click arms it ("Really? Click again", reverting
  * after 3 s if untouched); the second click clears the save and reloads.
  * Confirm state is scoped to this call (one instance per ScreenManager), so
- * it survives the `refresh()` re-render the arm/disarm triggers.
+ * it survives the `refresh()` re-render the arm/disarm triggers. No longer
+ * Esc's direct target (Inventory+Building Task 3: Esc with nothing open now
+ * opens the Inventory screen instead) — reached via the inventory screen's
+ * "Controls" button, or the `?screen=help` dev hook.
  */
-export function createHelpScreen(manager: ScreenManager, quality?: QualityControl): ScreenDef {
+export function createHelpScreen(manager: ScreenManager): ScreenDef {
   let confirmingReset = false;
   let resetTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -496,35 +544,6 @@ export function createHelpScreen(manager: ScreenManager, quality?: QualityContro
         grid.append(k, d);
       }
       panel.appendChild(grid);
-
-      // Quality selector (Fidelity-2 P1): three preset buttons, active one
-      // highlighted. Applying persists the choice; main.ts toasts "reload to
-      // apply" for the reload-required flags (shadows/post/LOD).
-      if (quality) {
-        const active = quality.current();
-        const qwrap = document.createElement('div');
-        qwrap.className = 'wt-quality';
-        const qlabel = document.createElement('div');
-        qlabel.className = 'wt-quality-label';
-        qlabel.textContent = 'Quality';
-        qwrap.appendChild(qlabel);
-        const qbtns = document.createElement('div');
-        qbtns.className = 'wt-quality-btns';
-        for (const id of QUALITY_IDS) {
-          const b = document.createElement('button');
-          b.type = 'button';
-          b.className = `wt-quality-btn${id === active ? ' wt-quality-active' : ''}`;
-          b.dataset.quality = id;
-          b.textContent = id;
-          b.addEventListener('click', () => {
-            quality.apply(id);
-            manager.refresh(); // re-render to move the active highlight
-          });
-          qbtns.appendChild(b);
-        }
-        qwrap.appendChild(qbtns);
-        panel.appendChild(qwrap);
-      }
 
       const actions = document.createElement('div');
       actions.className = 'wt-help-actions';
@@ -614,6 +633,354 @@ export function createCraftScreen(
         }
         panel.appendChild(grid);
       }
+
+      root.appendChild(panel);
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Inventory screen (Inventory+Building Task 3). Esc's new default target
+// (opened when no screen is open; Esc while it's open still just closes it,
+// same as every other screen). Three sections in one panel:
+//   1. Item grid — the 7 ItemIds, shown once owned (count > 0) or already
+//      assigned to a slot. Click a card to "arm" it (highlighted), then click
+//      a hotbar slot below to assign it there.
+//   2. Resources row — read-only counts for every ResourceKind + RP.
+//   3. Hotbar strip — the live 6 slots. Click an armed slot to assign the
+//      armed item there (overwriting/moving as `assign()` dictates); click a
+//      FILLED slot with nothing armed to clear it. No drag-and-drop needed.
+// The quality selector (relocated from the old pause/help overlay) sits in a
+// compact row at the bottom; a "Controls" button reaches the keybind
+// reference + Reset Save, since Esc no longer opens that screen directly.
+// ---------------------------------------------------------------------------
+
+const ITEM_COLOR: Record<ItemId, string> = {
+  darts: '#66e0ff',
+  purifiers: '#8ef0c0',
+  charms: '#d98cff',
+  'kit:zipline': '#f0c058',
+  'kit:drone': '#7fb2f0',
+  wall: '#8f8f92',
+  ramp: '#c9a06a',
+};
+
+const RESOURCE_COLOR: Record<ResourceKind, string> = {
+  fiber: '#8bd18a',
+  resin: '#e0a85c',
+  shard: '#8ecbe0',
+  spark: '#f0e06a',
+  mushroom: '#9c5bd0',
+  wood: '#8a5a35',
+  stone: '#8f8f92',
+};
+
+let inventoryStylesInjected = false;
+
+function injectInventoryStyles(): void {
+  if (inventoryStylesInjected) return;
+  inventoryStylesInjected = true;
+  const style = document.createElement('style');
+  style.textContent = `
+    .wt-inv-section-label {
+      margin: 18px 0 8px;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: #9fb0b8;
+    }
+    .wt-inv-section-label:first-of-type { margin-top: 4px; }
+    .wt-inv-empty {
+      color: #9fb0b8;
+      font-size: 13px;
+      margin: 4px 0;
+    }
+    .wt-inv-items {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .wt-inv-card {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border: 1px solid rgba(200, 220, 230, 0.18);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.03);
+      padding: 8px 12px;
+      cursor: pointer;
+      font: inherit;
+      font-size: 13px;
+      color: #eef2f4;
+    }
+    .wt-inv-card:hover { background: rgba(255, 255, 255, 0.07); }
+    .wt-inv-card.wt-inv-armed {
+      border-color: #a8e6bc;
+      box-shadow: 0 0 0 1px #a8e6bc;
+      background: rgba(120, 200, 150, 0.16);
+    }
+    .wt-inv-dot {
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+      box-shadow: 0 0 2px rgba(0, 0, 0, 0.6);
+      flex: none;
+    }
+    .wt-inv-card-count {
+      font-weight: bold;
+      color: #9fd8b8;
+    }
+    .wt-inv-res-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px 16px;
+    }
+    .wt-inv-res {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      color: #cfe0d6;
+    }
+    .wt-inv-hotbar {
+      display: flex;
+      gap: 8px;
+    }
+    .wt-inv-slot {
+      width: 78px;
+      height: 62px;
+      border: 1px solid rgba(200, 220, 230, 0.28);
+      border-radius: 7px;
+      background: rgba(14, 18, 22, 0.62);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 2px;
+      cursor: pointer;
+      font: inherit;
+      color: #dbe6ea;
+      position: relative;
+    }
+    .wt-inv-slot:hover { background: rgba(255, 255, 255, 0.06); }
+    .wt-inv-slot-key {
+      position: absolute;
+      left: 5px;
+      top: 3px;
+      font-size: 10px;
+      color: #9fb0b8;
+    }
+    .wt-inv-slot-name { font-size: 11px; }
+    .wt-inv-slot-count { font-size: 11px; color: #9fd8b8; }
+    .wt-inv-slot-empty { font-size: 11px; color: #66707a; }
+    .wt-inv-slot.wt-inv-slot-selected {
+      border-color: #a8e6bc;
+      box-shadow: 0 0 0 1px #a8e6bc, 0 0 10px rgba(120, 220, 160, 0.4);
+    }
+    .wt-inv-controls-btn {
+      float: right;
+      margin-left: 8px;
+      font: inherit;
+      font-size: 13px;
+      padding: 4px 10px;
+      border-radius: 6px;
+      border: 1px solid rgba(200, 220, 230, 0.3);
+      background: transparent;
+      color: #eef2f4;
+      cursor: pointer;
+    }
+    .wt-inv-controls-btn:hover { background: rgba(200, 220, 230, 0.12); }
+  `;
+  document.head.appendChild(style);
+}
+
+export interface InventoryScreenDeps {
+  inventory: Inventory;
+  /** Read the live hotbar (main.ts owns the `let hotbar` state). */
+  getHotbar(): HotbarState;
+  /** Replace the live hotbar with a new (pure-derived) state and sync any
+   *  selection-driven side effects (main.ts's placement-ghost enter/cancel). */
+  setHotbar(next: HotbarState): void;
+  manager: ScreenManager;
+  quality?: QualityControl;
+}
+
+const RESOURCE_KINDS: readonly ResourceKind[] = [
+  'fiber',
+  'resin',
+  'shard',
+  'spark',
+  'mushroom',
+  'wood',
+  'stone',
+];
+
+/** Build the ScreenDef for the inventory screen (Esc, when nothing else is open). */
+export function createInventoryScreen(deps: InventoryScreenDeps): ScreenDef {
+  const { inventory, getHotbar, setHotbar, manager, quality } = deps;
+  // "Armed" item: the last-clicked item-grid card, staged to be assigned into
+  // whichever hotbar slot is clicked next. Scoped to this call (one instance
+  // per ScreenManager) so it survives the refresh() re-render each click
+  // triggers. `expectRefresh` distinguishes "we just called manager.refresh()
+  // ourselves" (keep `armed`) from a fresh `open()` render (Esc/scrim-close
+  // never runs our code, so this is the only hook point to reset a stale arm
+  // before the screen is shown again).
+  let armed: ItemId | null = null;
+  let expectRefresh = false;
+  function refresh(): void {
+    expectRefresh = true;
+    manager.refresh();
+  }
+
+  return {
+    id: 'inventory',
+    render(root: HTMLElement) {
+      if (!expectRefresh) armed = null;
+      expectRefresh = false;
+      injectInventoryStyles();
+      injectHelpStyles(); // shares .wt-quality* styles with the old help screen
+      const panel = document.createElement('div');
+      panel.className = 'wt-panel';
+      panel.addEventListener('click', (e) => e.stopPropagation());
+
+      const closeBtn = document.createElement('button');
+      closeBtn.className = 'wt-close';
+      closeBtn.type = 'button';
+      closeBtn.textContent = 'Close (Esc)';
+      closeBtn.addEventListener('click', () => {
+        armed = null;
+        manager.close();
+      });
+      panel.appendChild(closeBtn);
+
+      const controlsBtn = document.createElement('button');
+      controlsBtn.className = 'wt-inv-controls-btn';
+      controlsBtn.type = 'button';
+      controlsBtn.textContent = 'Controls';
+      controlsBtn.addEventListener('click', () => manager.open('help'));
+      panel.appendChild(controlsBtn);
+
+      const h1 = document.createElement('h1');
+      h1.textContent = 'Inventory';
+      panel.appendChild(h1);
+
+      const hotbar = getHotbar();
+
+      // --- Items -------------------------------------------------------------
+      const itemsLabel = document.createElement('div');
+      itemsLabel.className = 'wt-inv-section-label';
+      itemsLabel.textContent = 'Items';
+      panel.appendChild(itemsLabel);
+
+      const owned = ITEM_IDS.filter(
+        (item) => itemCount(inventory, item) > 0 || hotbar.slots.includes(item),
+      );
+      if (owned.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'wt-inv-empty';
+        empty.textContent = 'Nothing craftable yet — check the Crafting menu (C).';
+        panel.appendChild(empty);
+      } else {
+        const itemsGrid = document.createElement('div');
+        itemsGrid.className = 'wt-inv-items';
+        for (const item of owned) {
+          const card = document.createElement('button');
+          card.type = 'button';
+          card.className = `wt-inv-card${item === armed ? ' wt-inv-armed' : ''}`;
+          const dot = document.createElement('span');
+          dot.className = 'wt-inv-dot';
+          dot.style.background = ITEM_COLOR[item];
+          const name = document.createElement('span');
+          name.textContent = hotbarItemLabel(item);
+          const count = document.createElement('span');
+          count.className = 'wt-inv-card-count';
+          count.textContent = String(itemCount(inventory, item));
+          card.append(dot, name, count);
+          card.addEventListener('click', () => {
+            armed = armed === item ? null : item; // clicking the armed card again disarms it
+            refresh();
+          });
+          itemsGrid.appendChild(card);
+        }
+        panel.appendChild(itemsGrid);
+      }
+
+      // --- Resources (read-only) ---------------------------------------------
+      const resLabel = document.createElement('div');
+      resLabel.className = 'wt-inv-section-label';
+      resLabel.textContent = 'Resources';
+      panel.appendChild(resLabel);
+
+      const resRow = document.createElement('div');
+      resRow.className = 'wt-inv-res-row';
+      for (const kind of RESOURCE_KINDS) {
+        const item = document.createElement('div');
+        item.className = 'wt-inv-res';
+        const dot = document.createElement('span');
+        dot.className = 'wt-inv-dot';
+        dot.style.background = RESOURCE_COLOR[kind];
+        const label = document.createElement('span');
+        label.textContent = `${RESOURCE_LABEL[kind]} ${inventory[kind]}`;
+        item.append(dot, label);
+        resRow.appendChild(item);
+      }
+      const rp = document.createElement('div');
+      rp.className = 'wt-inv-res';
+      const rpDot = document.createElement('span');
+      rpDot.className = 'wt-inv-dot';
+      rpDot.style.background = '#9fd8b8';
+      const rpLabel = document.createElement('span');
+      rpLabel.textContent = `RP ${inventory.rp}`;
+      rp.append(rpDot, rpLabel);
+      resRow.appendChild(rp);
+      panel.appendChild(resRow);
+
+      // --- Hotbar --------------------------------------------------------------
+      const hotbarLabel = document.createElement('div');
+      hotbarLabel.className = 'wt-inv-section-label';
+      hotbarLabel.textContent = 'Hotbar';
+      panel.appendChild(hotbarLabel);
+
+      const hotbarRow = document.createElement('div');
+      hotbarRow.className = 'wt-inv-hotbar';
+      for (let i = 0; i < NUM_SLOTS; i++) {
+        const item = hotbar.slots[i] ?? null;
+        const slot = document.createElement('button');
+        slot.type = 'button';
+        slot.className = `wt-inv-slot${hotbar.selected === i ? ' wt-inv-slot-selected' : ''}`;
+        const key = document.createElement('span');
+        key.className = 'wt-inv-slot-key';
+        key.textContent = String(i + 1);
+        slot.appendChild(key);
+        if (item) {
+          const name = document.createElement('span');
+          name.className = 'wt-inv-slot-name';
+          name.textContent = hotbarItemLabel(item);
+          const count = document.createElement('span');
+          count.className = 'wt-inv-slot-count';
+          count.textContent = String(itemCount(inventory, item));
+          slot.append(name, count);
+        } else {
+          const empty = document.createElement('span');
+          empty.className = 'wt-inv-slot-empty';
+          empty.textContent = 'Empty';
+          slot.appendChild(empty);
+        }
+        slot.addEventListener('click', () => {
+          if (armed) {
+            setHotbar(assignHotbar(getHotbar(), i, armed));
+            armed = null;
+          } else if (item) {
+            setHotbar(assignHotbar(getHotbar(), i, null));
+          }
+          refresh();
+        });
+        hotbarRow.appendChild(slot);
+      }
+      panel.appendChild(hotbarRow);
+
+      // --- Quality (relocated from the old pause/help overlay) -----------------
+      if (quality) renderQualitySelector(panel, quality, manager);
 
       root.appendChild(panel);
     },

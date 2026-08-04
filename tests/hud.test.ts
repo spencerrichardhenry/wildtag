@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   clamp,
-  clampHotbarSlot,
   wrap180,
   mod360,
   facingBearingDeg,
@@ -10,6 +9,7 @@ import {
   compassTicks,
   ringScreenState,
   healthBarHideEligible,
+  hotbarItemLabel,
   HUD,
   type Projected,
   type ProjectFn,
@@ -262,12 +262,6 @@ describe('HUD tuning', () => {
 });
 
 // ---------------------------------------------------------------------------
-// hotbar slot clamp (Cursed Castle Task 13 — the DOM-free seam behind
-// HUD.selectHotbar; the HUD class itself needs `document` and isn't
-// unit-testable in this suite's DOM-free node environment).
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
 // HP bar hide-eligibility (Cursed Castle spec §4 / final-review fix): the bar
 // stays up at full HP while `dangerZone` is true, and only becomes
 // hide-eligible (subject to the caller's own linger timer) once none of
@@ -292,19 +286,23 @@ describe('healthBarHideEligible', () => {
   });
 });
 
-describe('clampHotbarSlot', () => {
-  it('accepts every slot in range, including the new Purify slot 5', () => {
-    expect(clampHotbarSlot(1)).toBe(1);
-    expect(clampHotbarSlot(4)).toBe(4);
-    expect(clampHotbarSlot(5)).toBe(5);
+// ---------------------------------------------------------------------------
+// hotbarItemLabel (Inventory+Building Task 3) — the pure item→label lookup
+// shared by the HUD hotbar strip and the inventory screen's item grid.
+// ---------------------------------------------------------------------------
+
+describe('hotbarItemLabel', () => {
+  it('labels every ItemId', () => {
+    expect(hotbarItemLabel('darts')).toBe('Darts');
+    expect(hotbarItemLabel('purifiers')).toBe('Purify');
+    expect(hotbarItemLabel('charms')).toBe('Charm');
+    expect(hotbarItemLabel('kit:zipline')).toBe('Zipline');
+    expect(hotbarItemLabel('kit:drone')).toBe('Drone');
+    expect(hotbarItemLabel('wall')).toBe('Wall');
+    expect(hotbarItemLabel('ramp')).toBe('Ramp');
   });
 
-  it('ignores a request past the last slot', () => {
-    expect(clampHotbarSlot(6)).toBeNull();
-  });
-
-  it('ignores a request below slot 1', () => {
-    expect(clampHotbarSlot(0)).toBeNull();
-    expect(clampHotbarSlot(-1)).toBeNull();
+  it('labels an empty slot as the empty string', () => {
+    expect(hotbarItemLabel(null)).toBe('');
   });
 });

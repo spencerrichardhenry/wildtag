@@ -20,6 +20,7 @@ import type { MoveInput } from '../core/types.ts';
 export type Action =
   | { type: 'interact' }
   | { type: 'hotbar'; slot: number }
+  | { type: 'hotbarStep'; dir: 1 | -1 }
   | { type: 'tab' }
   | { type: 'toggleC' }
   | { type: 'roster' }
@@ -29,7 +30,7 @@ export type Action =
   | { type: 'rmb' };
 
 /**
- * Pure key-code → queued-UI-action mapping (Digit1–5 hotbar, F/Tab/C/B/V/Esc),
+ * Pure key-code → queued-UI-action mapping (Digit1–6 hotbar, F/Tab/C/B/V/Esc),
  * extracted from `Input.onKeyDown` so this mapping is unit-testable without
  * DOM (same spirit as `EdgeLatch` below). Movement keys, modifiers and the
  * one-shot edge keys (Space/KeyQ/KeyR, owned by `EdgeLatch`) return null —
@@ -50,6 +51,8 @@ export function actionForCode(code: string): Action | null {
       return { type: 'hotbar', slot: 4 };
     case 'Digit5':
       return { type: 'hotbar', slot: 5 };
+    case 'Digit6':
+      return { type: 'hotbar', slot: 6 };
     case 'Tab':
       return { type: 'tab' };
     case 'KeyC':
@@ -63,6 +66,19 @@ export function actionForCode(code: string): Action | null {
     default:
       return null;
   }
+}
+
+/**
+ * Pure wheel-delta → hotbar step direction, extracted from the `wheel`
+ * listener so the sign mapping is unit-testable without a real `WheelEvent`
+ * (same spirit as `actionForCode`). Scrolling down/away from the player
+ * (`deltaY > 0`, the common trackpad/mouse-wheel convention) steps the
+ * selection FORWARD (+1); scrolling up steps it back (-1). A zero delta (some
+ * synthetic events) falls back to +1 rather than returning null — every wheel
+ * tick should move the selection one way or the other, never no-op.
+ */
+export function hotbarStepForWheel(deltaY: number): 1 | -1 {
+  return deltaY < 0 ? -1 : 1;
 }
 
 /**
@@ -126,6 +142,7 @@ export class Input {
     this.canvas = canvas;
     canvas.addEventListener('click', this.onClick);
     canvas.addEventListener('contextmenu', this.onContextMenu);
+    canvas.addEventListener('wheel', this.onWheel, { passive: true });
     document.addEventListener('mousemove', this.onMouseMove);
     document.addEventListener('mousedown', this.onMouseDown);
     document.addEventListener('mouseup', this.onMouseUp);
@@ -137,6 +154,7 @@ export class Input {
   dispose(): void {
     this.canvas.removeEventListener('click', this.onClick);
     this.canvas.removeEventListener('contextmenu', this.onContextMenu);
+    this.canvas.removeEventListener('wheel', this.onWheel);
     document.removeEventListener('mousemove', this.onMouseMove);
     document.removeEventListener('mousedown', this.onMouseDown);
     document.removeEventListener('mouseup', this.onMouseUp);
@@ -172,6 +190,15 @@ export class Input {
   private readonly onMouseUp = (e: MouseEvent): void => {
     if (e.button === 0) this.lmbDown = false;
     if (e.button === 2) this.rmbDown = false;
+  };
+
+  /** Scroll-wheel hotbar stepping — only while pointer-locked (mirrors the
+   *  mouse-button handlers), so scrolling a page behind the canvas never
+   *  fires game actions. Passive: the game never needs to block page scroll
+   *  for this event (there's no scrollable page under a locked pointer). */
+  private readonly onWheel = (e: WheelEvent): void => {
+    if (!this.locked) return;
+    this.actions.push({ type: 'hotbarStep', dir: hotbarStepForWheel(e.deltaY) });
   };
 
   private readonly onMouseMove = (e: MouseEvent): void => {
