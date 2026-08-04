@@ -315,6 +315,45 @@ export const STRUCTURES = {
 } as const;
 
 /**
+ * Building system (Task 4): craftable wall/ramp pieces the player places
+ * freeform or snap-stacked. Piece geometry + placement/validity math live in
+ * the pure `src/structures/buildmath.ts` (`buildTopAt`/`resolveSnap`/
+ * `placementValid`/`pieceAtRay`/`pieceObstacles`/`pieceGrapple`); this block
+ * is only the tuning knobs, per the project convention.
+ *
+ * Yaw convention: `BuildPiece.yaw` is stored in RADIANS, matching every
+ * other yaw in the codebase (`CritterState.yaw`, `MoveInput.yaw`,
+ * `player/movement.ts`'s yaw=0-faces-−Z convention). `yawStepDeg` below is
+ * the one DEGREES-flavoured constant here — it's converted to radians at
+ * the `resolveSnap` freeform-fallback boundary, whose own `camYawDeg` input
+ * param is likewise degrees (matching how the camera/HUD yaw is tracked
+ * elsewhere). No other angle in this module is ever in degrees.
+ */
+export const BUILD = {
+  /** Wall panel: width × height × thickness (m). */
+  wall: { w: 2, h: 2, t: 0.4 },
+  /**
+   * Ramp wedge: width × horizontal run × vertical rise (m). `rise` equals
+   * `wall.h` on purpose — a ramp's high end (see `resolveSnap`'s
+   * `'rampfoot'` candidate) lands exactly flush with a wall's top, so
+   * walking up a ramp against a wall reaches the top of that wall.
+   */
+  ramp: { w: 2, run: 2, rise: 2 },
+  /** Hard cap (m) on a placed piece's top height above the terrain beneath it. */
+  maxStackH: 8,
+  /** Hard cap on concurrently-placed pieces (toast when full). */
+  maxPieces: 200,
+  /** Snap radius (m): aim within this of a snap candidate's anchor point snaps to it. */
+  snapR: 1.0,
+  /** Freeform-placement yaw snap step (DEGREES — see the yaw-convention note above). */
+  yawStepDeg: 15,
+  /** Max aim distance (m) to pick a placed piece for pickup. */
+  pickupRange: 6,
+  /** Hold-F duration (s) at an aimed piece to pick it back up into inventory. */
+  pickupHoldS: 0.5,
+} as const;
+
+/**
  * First-person input + camera tuning. Mouse look and camera placement are
  * owned by the player input/controller layer (not the pure movement core).
  */
