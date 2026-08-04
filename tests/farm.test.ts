@@ -124,6 +124,26 @@ describe('tick — production', () => {
     f = tick(f, [entry(1, 'mirefin')], speciesById, FARM.producePeriod);
     expect(f.plots[0]!.hopper).toEqual({});
   });
+
+  // --- Inventory + Building Task 1: the two farm-only-material producers ----
+
+  it('an assigned timberchomp banks wood at producePeriod', () => {
+    let f = assign(createFarm(0), 0, 1); // timberchomp: wood x2
+    const roster = [entry(1, 'timberchomp')];
+    f = tick(f, roster, speciesById, FARM.producePeriod - 0.01);
+    expect(f.plots[0]!.hopper.wood ?? 0).toBe(0); // not yet
+    f = tick(f, roster, speciesById, 0.02);
+    expect(f.plots[0]!.hopper.wood).toBe(2);
+  });
+
+  it('an assigned pebbleshrew banks stone at producePeriod', () => {
+    let f = assign(createFarm(0), 0, 1); // pebbleshrew: stone x2
+    const roster = [entry(1, 'pebbleshrew')];
+    f = tick(f, roster, speciesById, FARM.producePeriod - 0.01);
+    expect(f.plots[0]!.hopper.stone ?? 0).toBe(0); // not yet
+    f = tick(f, roster, speciesById, 0.02);
+    expect(f.plots[0]!.hopper.stone).toBe(2);
+  });
 });
 
 describe('tick — speed auras', () => {
@@ -263,6 +283,14 @@ describe('collect', () => {
     expect(g.plots[0]!.hopper).toEqual({});
   });
 
+  it('collects wood from a timberchomp plot', () => {
+    let f = assign(createFarm(0), 0, 1);
+    f = tick(f, [entry(1, 'timberchomp')], speciesById, FARM.producePeriod);
+    const { farm: g, gained } = collect(f, 0);
+    expect(gained).toEqual([{ resource: 'wood', n: 2 }]);
+    expect(g.plots[0]!.hopper).toEqual({});
+  });
+
   it('an empty hopper yields nothing and the same farm', () => {
     const f = createFarm(0);
     const { farm: g, gained } = collect(f, 0);
@@ -304,6 +332,17 @@ describe('save round-trip', () => {
     const decoded = decodeSave(encodeSave(baseSave(f)));
     expect(decoded).not.toBeNull();
     expect(decoded!.farm).toEqual(f);
+  });
+
+  it('round-trips a wood/stone hopper (Task 1: farm-only materials)', () => {
+    let f = assign(createFarm(1), 0, 7);
+    f = assign(f, 1, 8);
+    f = tick(f, [entry(7, 'timberchomp'), entry(8, 'pebbleshrew')], speciesById, FARM.producePeriod);
+    const decoded = decodeSave(encodeSave(baseSave(f)));
+    expect(decoded).not.toBeNull();
+    expect(decoded!.farm).toEqual(f);
+    expect(decoded!.farm!.plots[0]!.hopper.wood).toBe(2);
+    expect(decoded!.farm!.plots[1]!.hopper.stone).toBe(2);
   });
 
   it('a save without a farm field decodes with farm undefined (lossless)', () => {

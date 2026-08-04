@@ -3,7 +3,18 @@
 
 export type Vec3 = { x: number; y: number; z: number };
 export type Biome = 'meadow' | 'forest' | 'wetland' | 'crags' | 'highlands' | 'water';
-export type ResourceKind = 'fiber' | 'resin' | 'shard' | 'spark' | 'mushroom';
+export type ResourceKind =
+  | 'fiber'
+  | 'resin'
+  | 'shard'
+  | 'spark'
+  | 'mushroom'
+  // Inventory + Building (Task 1): farm-only materials — produced exclusively
+  // by the timberchomp (wood) and pebbleshrew (stone) farm plots, never
+  // scattered/harvested in the world (see world/scatter.ts's PropKind, which
+  // deliberately has no 'wood'/'stone' member).
+  | 'wood'
+  | 'stone';
 
 // ---------------------------------------------------------------------------
 // Crafting tree (Task 7). Recipe ids/tiers/RP gates are exact per the design

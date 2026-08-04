@@ -1,5 +1,6 @@
-// The game's cast: 13 procedural blocky critters (8 phase-1 + 4 Haven whimsy +
-// 1 Cursed Castle gargoyle, the sole `biomes: []` fixed-slot-only species).
+// The game's cast: 15 procedural blocky critters (8 phase-1 + 4 Haven whimsy +
+// 1 Cursed Castle gargoyle, the sole `biomes: []` fixed-slot-only species + 2
+// Inventory+Building farm-only-material producers: timberchomp/pebbleshrew).
 // This module is pure *content*
 // (data only) — the tracking params (trackRadius R / trackTime T, awareness,
 // fleeStyle) are binding per the design spec §4 and the Task 8 brief and are
@@ -280,6 +281,50 @@ export const SPECIES: SpeciesDef[] = [
     rideable: false,
     ringHeight: 1.1,
     farmRole: { kind: 'aura', auraPct: 20 },
+  },
+
+  // --- Inventory + Building (Task 1) -----------------------------------------
+  {
+    // Plump beaver-like forest/wetland dam-builder. Skittish; escapes by
+    // swimming (fleeStyle 'swim' generically biases its flee toward water in
+    // ai.ts, same path the mirefin uses). Farm role: wood.
+    id: 'timberchomp',
+    bold: false,
+    name: 'Timberchomp',
+    biomes: ['forest', 'wetland'],
+    size: 0.7,
+    walkSpeed: 2.4,
+    fleeSpeed: 7,
+    awareness: 12,
+    fleeStyle: 'swim',
+    trackRadius: 12,
+    trackTime: 12,
+    rarity: 0.4,
+    rewardSparks: 2,
+    rewardRP: 15,
+    rideable: false,
+    farmRole: { kind: 'produce', resource: 'wood', amount: 2 },
+  },
+  {
+    // Compact sandy sand-shrew-like digger of the crags/highlands, with a
+    // plated back ridge and stubby claws. Skittish zigzag flee. Farm role:
+    // stone.
+    id: 'pebbleshrew',
+    bold: false,
+    name: 'Pebbleshrew',
+    biomes: ['crags', 'highlands'],
+    size: 0.5,
+    walkSpeed: 2.3,
+    fleeSpeed: 8.5,
+    awareness: 13,
+    fleeStyle: 'zigzag',
+    trackRadius: 11,
+    trackTime: 12,
+    rarity: 0.35,
+    rewardSparks: 2,
+    rewardRP: 15,
+    rideable: false,
+    farmRole: { kind: 'produce', resource: 'stone', amount: 2 },
   },
 ];
 

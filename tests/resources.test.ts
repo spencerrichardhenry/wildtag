@@ -8,6 +8,8 @@ import {
 } from '../src/world/resources.ts';
 import { SCATTER } from '../src/core/constants.ts';
 import { createInventory, addResource, spend } from '../src/craft/inventory.ts';
+import { scatterForChunk } from '../src/world/scatter.ts';
+import { RESOURCE_KINDS } from '../src/world/props.ts';
 
 function fiberNode(id: number): NodeState {
   return makeNode(id, 'fiber', 10, 0, 20);
@@ -92,6 +94,8 @@ describe('inventory', () => {
       shard: 0,
       spark: 0,
       mushroom: 0,
+      wood: 0,
+      stone: 0,
       rp: 0,
       darts: 0,
       charms: 0,
@@ -117,5 +121,46 @@ describe('inventory', () => {
     expect(inv.mushroom).toBe(3);
     expect(spend(inv, { mushroom: 2 })!.mushroom).toBe(1);
     expect(spend(inv, { mushroom: 9 })).toBeNull();
+  });
+
+  // --- Inventory + Building Task 1: farm-only wood/stone ---------------------
+
+  it('inventory tracks wood (timberchomp produce)', () => {
+    const inv = createInventory();
+    expect(inv.wood).toBe(0);
+    addResource(inv, 'wood', 4);
+    expect(inv.wood).toBe(4);
+    expect(spend(inv, { wood: 3 })!.wood).toBe(1);
+    expect(spend(inv, { wood: 99 })).toBeNull();
+  });
+
+  it('inventory tracks stone (pebbleshrew produce)', () => {
+    const inv = createInventory();
+    expect(inv.stone).toBe(0);
+    addResource(inv, 'stone', 5);
+    expect(inv.stone).toBe(5);
+    expect(spend(inv, { stone: 2 })!.stone).toBe(3);
+    expect(spend(inv, { stone: 99 })).toBeNull();
+  });
+});
+
+describe('farm-only resources never scatter (Task 1)', () => {
+  it('scatterForChunk never emits a wood or stone prop over a wide chunk sample', () => {
+    for (let cx = -20; cx <= 20; cx += 2) {
+      for (let cz = -20; cz <= 20; cz += 2) {
+        for (const p of scatterForChunk(cx, cz)) {
+          expect(p.kind).not.toBe('wood');
+          expect(p.kind).not.toBe('stone');
+        }
+      }
+    }
+  });
+
+  it("props' RESOURCE_KINDS (scattered/harvestable node kinds) excludes wood and stone", () => {
+    expect(RESOURCE_KINDS.has('wood' as never)).toBe(false);
+    expect(RESOURCE_KINDS.has('stone' as never)).toBe(false);
+    // Sanity: the set is non-empty and still contains the real harvestables.
+    expect(RESOURCE_KINDS.has('fiber')).toBe(true);
+    expect(RESOURCE_KINDS.has('mushroom')).toBe(true);
   });
 });

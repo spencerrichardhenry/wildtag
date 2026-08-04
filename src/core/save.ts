@@ -251,7 +251,11 @@ function parseFarm(v: unknown): FarmState | undefined {
     if (!Number.isFinite(p.progress)) return undefined;
     if (!p.hopper || typeof p.hopper !== 'object') return undefined;
     const hopper: FarmState['plots'][number]['hopper'] = {};
-    for (const k of ['fiber', 'resin', 'shard', 'spark'] as const) {
+    // 'wood'/'stone' (Task 1): the timberchomp/pebbleshrew produce roles bank
+    // straight into a plot hopper like any other producer, so they need the
+    // same shape guard as fiber/resin/shard/spark. 'mushroom' stays absent —
+    // it's forage-only and never a farm-role resource.
+    for (const k of ['fiber', 'resin', 'shard', 'spark', 'wood', 'stone'] as const) {
       const n = (p.hopper as Record<string, unknown>)[k];
       if (n === undefined) continue;
       if (typeof n !== 'number' || !Number.isFinite(n) || n < 0) return undefined;
@@ -307,6 +311,13 @@ export function decodeSave(json: string): SaveV3 | null {
     // rejects.
     if (inv.purifiers !== undefined && !isCount(inv.purifiers)) return null;
     const purifiers = isCount(inv.purifiers) ? (inv.purifiers as number) : 0;
+    // `wood`/`stone` mirror `mushroom` (Inventory+Building Task 1): forward-
+    // compat for pre-Task-1 saves (missing → defaults to 0), but a present
+    // tampered/negative value rejects.
+    if (inv.wood !== undefined && !isCount(inv.wood)) return null;
+    const wood = isCount(inv.wood) ? (inv.wood as number) : 0;
+    if (inv.stone !== undefined && !isCount(inv.stone)) return null;
+    const stone = isCount(inv.stone) ? (inv.stone as number) : 0;
     const kits: Inventory['kits'] = { zipline: 0, beacon: 0, drone: 0 };
     if (inv.kits !== undefined && inv.kits !== null) {
       if (typeof inv.kits !== 'object') return null;
@@ -325,6 +336,8 @@ export function decodeSave(json: string): SaveV3 | null {
       rp: inv.rp as number,
       darts: inv.darts as number,
       mushroom,
+      wood,
+      stone,
       charms,
       purifiers,
       kits,

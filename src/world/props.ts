@@ -564,7 +564,10 @@ function sharedMat(bucket: string): THREE.Material {
   return m;
 }
 
-const RESOURCE_KINDS = new Set<PropKind>(['fiber', 'resin', 'shard', 'spark', 'mushroom']);
+// Exported so tests can assert wood/stone (Task 1's farm-only materials —
+// never scattered/harvested in the world) are never treated as a scattered
+// resource node kind.
+export const RESOURCE_KINDS = new Set<PropKind>(['fiber', 'resin', 'shard', 'spark', 'mushroom']);
 
 interface NodeEntry {
   node: NodeState;

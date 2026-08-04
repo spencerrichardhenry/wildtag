@@ -1276,6 +1276,166 @@ function buildGloomgobbler(rng: () => number): { group: THREE.Group; parts: Crit
   return { group: g, parts: { legs, head, body } };
 }
 
+/**
+ * Timberchomp — a plump beaver-like forest/wetland dam-builder (Inventory +
+ * Building Task 1, produces wood). A bottom-heavy dam-brown egg body, a round
+ * big-cheeked head with buck teeth and small round ears, stubby legs, and the
+ * signature broad flat paddle tail (a squashed capsule) trailing behind.
+ */
+function buildTimberchomp(rng: () => number): { group: THREE.Group; parts: CritterParts } {
+  const g = new THREE.Group();
+  const coat = jitterColor(0x6e4a2a, rng, 0.04);
+  const coatDark = jitterColor(0x4a3018, rng, 0.04);
+  const cream = jitterColor(0xd9b98a, rng, 0.04);
+  const toothC = 0xf4ecd4;
+
+  // Body: plump bottom-heavy egg — the dam-builder's rounded belly.
+  const body = new THREE.Group();
+  body.position.y = 0.32;
+  const torso = egg(0.32, 0.58, coat, {}, 0.34, 11);
+  body.add(torso);
+  const belly = sphere(0.2, cream, {}, 7, 5);
+  belly.scale.set(0.85, 0.9, 0.6);
+  belly.position.set(0, 0.02, 0.2);
+  body.add(belly);
+  g.add(body);
+
+  // Head: round cheeks, close-set eyes, button nose, tiny smile, buck teeth,
+  // small round ears.
+  const head = new THREE.Group();
+  head.position.set(0, 0.6, 0.24);
+  const skull = sphere(0.23, coat, {}, 9, 7);
+  skull.scale.set(1, 0.94, 0.92);
+  head.add(skull);
+  const muzzle = sphere(0.13, cream, {}, 6, 4);
+  muzzle.scale.set(0.95, 0.8, 1.05);
+  muzzle.position.set(0, -0.07, 0.19);
+  head.add(muzzle);
+  for (const e of eyePair(0.115, 0.06, 0.2, 0.09, { irisR: 0.68 }, 0.1)) head.add(e);
+  const nose = blob(0.04, 0x2a1c14);
+  nose.position.set(0, -0.02, 0.31);
+  head.add(nose);
+  const mouth = smile(0.035, 0.009);
+  mouth.position.set(0, -0.15, 0.27);
+  head.add(mouth);
+  // Buck teeth — the one place a little box is on-brief (tooth accent).
+  for (const sx of [-1, 1]) {
+    const tooth = box(0.032, 0.075, 0.02, toothC);
+    tooth.position.set(sx * 0.038, -0.12, 0.29);
+    head.add(tooth);
+  }
+  // Small round ears (flattened discs, never pointed).
+  for (const sx of [-1, 1]) {
+    const ear = sphere(0.075, coat, {}, 5, 4);
+    ear.scale.set(1, 1, 0.5);
+    ear.position.set(sx * 0.19, 0.16, -0.02);
+    head.add(ear);
+  }
+  g.add(head);
+
+  // Stubby legs.
+  const legs: THREE.Object3D[] = [];
+  for (const [sx, sz] of QUAD) {
+    const l = legGroup(sx * 0.17, 0.16, sz * 0.16, 0.075, 0.09, 0.16, coatDark);
+    legs.push(l);
+    g.add(l);
+  }
+
+  // The signature broad flat tail — a squashed capsule laid on its side: local
+  // X (radius) shrinks to near-flat (world-Y after the Z rotation), local Y
+  // (length) becomes the world-X broadness, local Z stays the paddle's depth.
+  const tail = new THREE.Group();
+  tail.position.set(0, 0.16, -0.34);
+  const paddle = capsule(0.24, 0.2, coatDark, {}, 2, 7);
+  paddle.scale.set(0.34, 1, 1.15);
+  paddle.rotation.z = Math.PI / 2;
+  paddle.rotation.x = 0.08;
+  tail.add(paddle);
+  g.add(tail);
+
+  const wRoll = rng();
+  if (wRoll < 0.35) {
+    // A gnaw-notch scuff on the tail edge for some individuals.
+    const notch = blob(0.05, coatDark);
+    notch.position.set(0.3, 0.16, -0.4);
+    g.add(notch);
+  }
+
+  return { group: g, parts: { legs, head, body, tail } };
+}
+
+/**
+ * Pebbleshrew — a compact sandy sand-shrew-like digger of the crags/highlands
+ * (Inventory + Building Task 1, produces stone). Small egg body with a ridge
+ * of stacked plates down the back, stubby digging claws, and tiny eyes.
+ */
+function buildPebbleshrew(rng: () => number): { group: THREE.Group; parts: CritterParts } {
+  const g = new THREE.Group();
+  const sandy = jitterColor(0xc9a876, rng, 0.04);
+  const sandyDark = jitterColor(0x8f7248, rng, 0.04);
+  const clawC = jitterColor(0x5a4530, rng, 0.03);
+
+  // Body: small bottom-heavy sandy egg.
+  const body = new THREE.Group();
+  body.position.y = 0.2;
+  const torso = egg(0.24, 0.4, sandy, {}, 0.3, 12);
+  body.add(torso);
+  // Ridge of stacked plates down the back — 4 small nub cones sitting close
+  // to the shell surface, shrinking toward the tail, kept RIDGED (flat) like
+  // the craghorn's horns. (Each plate is a small accent, not a body-scale
+  // spike: height caps well under the torso radius.)
+  const plateSpots: ReadonlyArray<readonly [number, number, number]> = [
+    [0.075, 0.35, 0.13],
+    [0.065, 0.33, 0.03],
+    [0.055, 0.3, -0.06],
+    [0.042, 0.26, -0.14],
+  ];
+  for (const [ph, py, pz] of plateSpots) {
+    const plate = cone(ph * 0.55, ph, sandyDark, 6, { flat: true });
+    plate.position.set(0, py, pz);
+    body.add(plate);
+  }
+  g.add(body);
+
+  // Head: small skull, tiny close eyes, tiny nose — no smile, this one reads
+  // alert/twitchy rather than cute-goofy.
+  const head = new THREE.Group();
+  head.position.set(0, 0.34, 0.18);
+  const skull = sphere(0.14, sandy, {}, 8, 6);
+  skull.scale.set(1, 0.92, 1);
+  head.add(skull);
+  for (const e of eyePair(0.075, 0.02, 0.11, 0.045, { irisR: 0.62 }, 0.14)) head.add(e);
+  const nose = blob(0.026, sandyDark);
+  nose.position.set(0, -0.05, 0.2);
+  head.add(nose);
+  // Tiny round ears.
+  for (const sx of [-1, 1]) {
+    const ear = sphere(0.045, sandy, {}, 5, 4);
+    ear.scale.set(1, 1, 0.5);
+    ear.position.set(sx * 0.12, 0.1, -0.02);
+    head.add(ear);
+  }
+  g.add(head);
+
+  // Stubby legs with digging-claw feet.
+  const legs: THREE.Object3D[] = [];
+  for (const [sx, sz] of QUAD) {
+    const l = legGroup(sx * 0.13, 0.12, sz * 0.14, 0.05, 0.062, 0.12, sandyDark, 0, clawC);
+    legs.push(l);
+    g.add(l);
+  }
+
+  const wRoll = rng();
+  if (wRoll < 0.3) {
+    // A weathered chipped back plate on some individuals.
+    const chip = blob(0.035, sandyDark);
+    chip.position.set(0.16, 0.42, -0.02);
+    g.add(chip);
+  }
+
+  return { group: g, parts: { legs, head, body } };
+}
+
 // --- draw-call baking ---------------------------------------------------------
 // Builders author critters as dozens of tiny primitive meshes (clear authoring,
 // per-part cached materials). Rendering them that way costs a draw call per
@@ -1537,6 +1697,8 @@ const BUILDERS: Record<string, (rng: () => number) => { group: THREE.Group; part
   snickerdoodle: buildSnickerdoodle,
   gloomgobbler: buildGloomgobbler,
   gargoyle: buildGargoyle,
+  timberchomp: buildTimberchomp,
+  pebbleshrew: buildPebbleshrew,
 };
 
 /**

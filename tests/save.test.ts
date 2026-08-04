@@ -304,6 +304,60 @@ describe('encodeSave / decodeSave', () => {
     expect(decodeSave(JSON.stringify(nan))).toBeNull();
   });
 
+  // --- Inventory + Building Task 1: wood/stone (farm-only, inventory) --------
+
+  it('wood count round-trips', () => {
+    const state = sampleSave();
+    state.inventory.wood = 9;
+    expect(decodeSave(encodeSave(state))?.inventory.wood).toBe(9);
+  });
+
+  it('pre-Task-1 save without a wood field loads with wood 0', () => {
+    const state = sampleSave();
+    const { wood, ...invNoWood } = state.inventory;
+    void wood;
+    const raw = { ...state, inventory: invNoWood };
+    const decoded = decodeSave(JSON.stringify(raw));
+    expect(decoded).not.toBeNull();
+    expect(decoded?.inventory.wood).toBe(0);
+    expect(decoded?.inventory.fiber).toBe(state.inventory.fiber);
+  });
+
+  it('rejects a negative / non-finite wood count', () => {
+    const negative = sampleSave();
+    negative.inventory.wood = -3;
+    expect(decodeSave(JSON.stringify(negative))).toBeNull();
+
+    const nan = { ...sampleSave(), inventory: { ...sampleSave().inventory, wood: 'lots' } };
+    expect(decodeSave(JSON.stringify(nan))).toBeNull();
+  });
+
+  it('stone count round-trips', () => {
+    const state = sampleSave();
+    state.inventory.stone = 6;
+    expect(decodeSave(encodeSave(state))?.inventory.stone).toBe(6);
+  });
+
+  it('pre-Task-1 save without a stone field loads with stone 0', () => {
+    const state = sampleSave();
+    const { stone, ...invNoStone } = state.inventory;
+    void stone;
+    const raw = { ...state, inventory: invNoStone };
+    const decoded = decodeSave(JSON.stringify(raw));
+    expect(decoded).not.toBeNull();
+    expect(decoded?.inventory.stone).toBe(0);
+    expect(decoded?.inventory.fiber).toBe(state.inventory.fiber);
+  });
+
+  it('rejects a negative / non-finite stone count', () => {
+    const negative = sampleSave();
+    negative.inventory.stone = -3;
+    expect(decodeSave(JSON.stringify(negative))).toBeNull();
+
+    const nan = { ...sampleSave(), inventory: { ...sampleSave().inventory, stone: 'lots' } };
+    expect(decodeSave(JSON.stringify(nan))).toBeNull();
+  });
+
   // --- Cursed Castle: purifiers (inventory) -----------------------------------
 
   it('purifiers count round-trips', () => {

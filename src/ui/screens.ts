@@ -279,6 +279,8 @@ const RESOURCE_LABEL: Record<ResourceKind, string> = {
   shard: 'Shard',
   spark: 'Spark',
   mushroom: 'Mushroom',
+  wood: 'Wood',
+  stone: 'Stone',
 };
 
 function applyCraft(inventory: Inventory, unlocks: Set<string>, recipeId: RecipeId): void {

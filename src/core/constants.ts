@@ -1442,6 +1442,11 @@ export const FARM = {
     // Mushrooms aren't farmable (forage-only) but ResourceKind is exhaustive
     // here — reuse the mushroom cap colour so this compiles meaningfully.
     mushroom: 0x9c5bd0,
+    // Task 1: farm-only materials, produced by timberchomp (wood) / pebbleshrew
+    // (stone) plots — real hopper-cube colours (not exhaustive filler like
+    // mushroom's).
+    wood: 0x8a5a35,
+    stone: 0x8f8f92,
   },
 } as const;
 

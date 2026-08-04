@@ -18,11 +18,13 @@ const TABLE = [
   { id: 'snickerdoodle', bold: false, rideable: false, awareness: 12, fleeStyle: 'zigzag', trackRadius: 10, trackTime: 8, rewardRP: 9, rewardSparks: 1, farmRole: { kind: 'produce', resource: 'fiber', amount: 1, special: 'adjacencyDouble' } },
   { id: 'gloomgobbler', bold: false, rideable: false, awareness: 15, fleeStyle: 'sprint', trackRadius: 12, trackTime: 14, rewardRP: 17, rewardSparks: 3, farmRole: { kind: 'produce', resource: 'resin', amount: 3 } },
   { id: 'gargoyle', bold: true, rideable: false, awareness: 14, fleeStyle: 'perch', trackRadius: 14, trackTime: 16, rewardRP: 24, rewardSparks: 3, farmRole: { kind: 'aura', auraPct: 20 } },
+  { id: 'timberchomp', bold: false, rideable: false, awareness: 12, fleeStyle: 'swim', trackRadius: 12, trackTime: 12, rewardRP: 15, rewardSparks: 2, farmRole: { kind: 'produce', resource: 'wood', amount: 2 } },
+  { id: 'pebbleshrew', bold: false, rideable: false, awareness: 13, fleeStyle: 'zigzag', trackRadius: 11, trackTime: 12, rewardRP: 15, rewardSparks: 2, farmRole: { kind: 'produce', resource: 'stone', amount: 2 } },
 ] as const;
 
 describe('SPECIES roster', () => {
-  it('has exactly 13 species', () => {
-    expect(SPECIES).toHaveLength(13);
+  it('has exactly 15 species', () => {
+    expect(SPECIES).toHaveLength(15);
   });
 
   it('has unique ids', () => {

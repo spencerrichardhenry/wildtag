@@ -16,6 +16,10 @@ export interface Inventory {
   spark: number;
   /** Foraged glow mushrooms (Cursed Castle) — later spent on purifying darts. */
   mushroom: number;
+  /** Farm-only material (Inventory+Building Task 1): timberchomp produce. */
+  wood: number;
+  /** Farm-only material (Inventory+Building Task 1): pebbleshrew produce. */
+  stone: number;
   /** Research points (gates crafting tiers — never spent). */
   rp: number;
   /** Tracker darts on hand (Task 10). */
@@ -36,6 +40,8 @@ export function createInventory(): Inventory {
     shard: 0,
     spark: 0,
     mushroom: 0,
+    wood: 0,
+    stone: 0,
     rp: 0,
     darts: 0,
     charms: 0,

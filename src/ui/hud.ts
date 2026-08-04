@@ -82,6 +82,8 @@ const RES_COLOR: Record<string, string> = {
   shard: hex(SCATTER.colors.shard),
   spark: hex(SCATTER.colors.spark),
   mushroom: '#9c5bd0', // glow-mushroom cap colour
+  wood: '#8a5a35', // timberchomp produce — dam-brown
+  stone: '#8f8f92', // pebbleshrew produce — flint grey
   dart: '#66e0ff',
   charm: '#d98cff', // Bond Charm — distinct violet
   purifier: '#8ef0c0', // Purifying Dart — pale minty green
@@ -213,7 +215,7 @@ export class HUD {
 
     // --- Resource strip (top-left) -----------------------------------------
     const res = el('div', 'wt-resources');
-    for (const kind of ['fiber', 'resin', 'shard', 'spark', 'mushroom', 'dart', 'charm', 'purifier', 'rp'] as const) {
+    for (const kind of ['fiber', 'resin', 'shard', 'spark', 'mushroom', 'wood', 'stone', 'dart', 'charm', 'purifier', 'rp'] as const) {
       const item = el('div', 'wt-res');
       const dot = el('span', 'wt-res-dot');
       if (kind === 'rp') dot.classList.add('wt-res-rp');
@@ -557,6 +559,8 @@ export class HUD {
       shard: inv.shard,
       spark: inv.spark,
       mushroom: inv.mushroom,
+      wood: inv.wood,
+      stone: inv.stone,
       dart: inv.darts,
       charm: inv.charms,
       purifier: inv.purifiers,
