@@ -568,6 +568,65 @@ describe('encodeSave / decodeSave', () => {
     expect('castlePurified' in s!).toBe(false);
     expect(s!.inventory).toEqual(sampleSave().inventory);
   });
+
+  // --- Inventory + Building Task 2: hotbar persistence ------------------------
+
+  it('round-trips a present hotbar exactly', () => {
+    const state = sampleSave({
+      hotbar: { slots: ['darts', 'kit:zipline', null, 'charms', null, 'wall'], selected: 3 },
+    });
+    const decoded = decodeSave(encodeSave(state));
+    expect(decoded?.hotbar).toEqual({
+      slots: ['darts', 'kit:zipline', null, 'charms', null, 'wall'],
+      selected: 3,
+    });
+  });
+
+  it('decodes a save without a hotbar key to exactly its old shape (no phantom key)', () => {
+    const state = sampleSave(); // no hotbar field — a legacy (pre-Task-2) save
+    const decoded = decodeSave(encodeSave(state));
+    expect(decoded).not.toBeNull();
+    expect(decoded).toEqual(state);
+    expect(decoded && 'hotbar' in decoded).toBe(false);
+  });
+
+  it('nulls out an unrecognized item string in a slot rather than rejecting the save', () => {
+    const raw = {
+      ...sampleSave(),
+      hotbar: { slots: ['darts', 'nonsense-item', null, null, null, null], selected: 0 },
+    };
+    const decoded = decodeSave(JSON.stringify(raw));
+    expect(decoded).not.toBeNull();
+    expect(decoded?.hotbar?.slots).toEqual(['darts', null, null, null, null, null]);
+  });
+
+  it('clamps an out-of-range selected index to 0..5', () => {
+    const high = { ...sampleSave(), hotbar: { slots: [null, null, null, null, null, null], selected: 99 } };
+    expect(decodeSave(JSON.stringify(high))?.hotbar?.selected).toBe(5);
+
+    const low = { ...sampleSave(), hotbar: { slots: [null, null, null, null, null, null], selected: -7 } };
+    expect(decodeSave(JSON.stringify(low))?.hotbar?.selected).toBe(0);
+  });
+
+  it('drops (rather than rejects) a structurally malformed hotbar block, keeping the rest of the save', () => {
+    const raw = { ...sampleSave(), hotbar: { selected: 0 } }; // missing slots array
+    const s = decodeSave(JSON.stringify(raw));
+    expect(s).not.toBeNull();
+    expect('hotbar' in s!).toBe(false);
+    expect(s!.inventory).toEqual(sampleSave().inventory);
+
+    const raw2 = { ...sampleSave(), hotbar: 'not an object' };
+    const s2 = decodeSave(JSON.stringify(raw2));
+    expect(s2).not.toBeNull();
+    expect('hotbar' in s2!).toBe(false);
+  });
+
+  it('treats hotbar: null as absent rather than rejecting', () => {
+    const raw = { ...sampleSave(), hotbar: null };
+    const decoded = decodeSave(JSON.stringify(raw));
+    expect(decoded).not.toBeNull();
+    expect(decoded?.hotbar).toBeUndefined();
+  });
 });
 
 // ---------------------------------------------------------------------------

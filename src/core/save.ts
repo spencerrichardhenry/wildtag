@@ -1,6 +1,7 @@
 import type { Vec3 } from './types.ts';
 import { PLAYER_START } from './constants.ts';
 import type { Inventory } from '../craft/inventory.ts';
+import { isItemId } from '../craft/hotbar.ts';
 import type { StructuresSave } from '../structures/placement.ts';
 import type { RosterEntry } from '../critters/roster.ts';
 import type { FarmState } from '../farm/farm.ts';
@@ -103,6 +104,20 @@ export interface SaveV3 {
    * migrate losslessly.
    */
   castlePurified?: boolean;
+  /**
+   * Inventory+Building Task 2: the 6-slot hotbar assignment + selection.
+   * Optional + shape-guarded so pre-Task-2 saves round-trip to exactly their
+   * old shape (no phantom key) — the CALLER (Task 3) distinguishes "absent"
+   * (a legacy save predating the hotbar → `migrateLegacy()`) from a decoded
+   * `null` (there is no such state) and from a fresh boot (no save at all →
+   * `createHotbar()`); this module only ever decodes what was actually
+   * persisted. Slot strings are validated against the `ItemId` union
+   * (unknown/tampered → `null`, not a whole-save rejection) and `selected` is
+   * clamped 0..5; a structurally malformed block (missing `slots`, wrong
+   * types) is dropped like the Cursed Castle v3 fields rather than rejecting
+   * the whole save.
+   */
+  hotbar?: { slots: (string | null)[]; selected: number };
 }
 
 /** Persisted active-mount state (Haven V6). */
@@ -272,6 +287,32 @@ function parseFarm(v: unknown): FarmState | undefined {
   return out;
 }
 
+const HOTBAR_SLOT_COUNT = 6;
+
+/**
+ * Shape guard/normalizer for the optional hotbar block (Inventory+Building
+ * Task 2). Lenient at the slot level — matching how the hotbar model itself
+ * treats bad input as recoverable, not fatal: an unrecognized/tampered item
+ * string in a slot becomes `null` rather than rejecting the save, and an
+ * out-of-range `selected` is clamped 0..5 rather than rejected. Only a
+ * structurally unsound block (not an object, `slots` not an array, `selected`
+ * not finite) returns `undefined`, which drops the whole field (the save
+ * itself still decodes — mirrors the daylightT/elves/castlePurified
+ * treatment) rather than rejecting the save outright.
+ */
+function parseHotbar(v: unknown): { slots: (string | null)[]; selected: number } | undefined {
+  if (!v || typeof v !== 'object') return undefined;
+  const h = v as Record<string, unknown>;
+  if (!Array.isArray(h.slots) || !Number.isFinite(h.selected)) return undefined;
+  const slots: (string | null)[] = [];
+  for (let i = 0; i < HOTBAR_SLOT_COUNT; i++) {
+    const s = h.slots[i];
+    slots.push(isItemId(s) ? s : null);
+  }
+  const selected = Math.min(Math.max(Math.trunc(h.selected as number), 0), HOTBAR_SLOT_COUNT - 1);
+  return { slots, selected };
+}
+
 /**
  * Parse + validate a save JSON string. Returns `null` (never throws) for
  * garbage input, a missing/wrong `v` (version guard), or any structurally
@@ -411,6 +452,12 @@ export function decodeSave(json: string): SaveV3 | null {
     if (typeof o.castlePurified === 'boolean') {
       castlePurified = o.castlePurified;
     }
+    // Hotbar (Inventory+Building Task 2): optional, shape-guarded. `null`
+    // means "no hotbar" and is treated the same as absent (mirrors `mount`).
+    let hotbar: { slots: (string | null)[]; selected: number } | undefined;
+    if (o.hotbar !== undefined && o.hotbar !== null) {
+      hotbar = parseHotbar(o.hotbar);
+    }
     // Sanitize structure elements: drop malformed entries, keep valid siblings
     // (and the rest of the save) so a partly-corrupt save never crashes boot.
     const sanitized: Record<string, unknown> = {
@@ -446,6 +493,8 @@ export function decodeSave(json: string): SaveV3 | null {
     if (elves !== undefined) sanitized.elves = elves;
     delete sanitized.castlePurified;
     if (castlePurified !== undefined) sanitized.castlePurified = castlePurified;
+    delete sanitized.hotbar;
+    if (hotbar !== undefined) sanitized.hotbar = hotbar;
     return sanitized as unknown as SaveV3;
   } catch {
     return null;
