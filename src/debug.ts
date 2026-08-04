@@ -32,6 +32,19 @@ export interface DebugDeps {
   isPlacing(): boolean;
   /** Live hotbar state (Inventory+Building Task 3 — state().selectedSlot / hotbarSlots). */
   hotbar(): HotbarState;
+  /** Live placed-piece count (Inventory+Building Task 5 — state().placedPieces). */
+  placedPieces(): number;
+  /** True while a wall/ramp build ghost is active (Inventory+Building Task 5
+   *  e2e verification — mirrors `isPlacing()`/`structures.placing`). */
+  isBuilding(): boolean;
+  /**
+   * Debug-only: place a wall/ramp directly at (x, y, z, yaw), routing through
+   * the SAME `placementValid` path `BuildSystem.confirm()` uses (overlap/
+   * height-cap/piece-cap all still apply) but bypassing the inventory spend —
+   * an e2e convenience so a headless script can build a stack without first
+   * crafting/selecting through the hotbar. Returns success.
+   */
+  placePiece(kind: string, x: number, y: number, z: number, yaw: number): boolean;
   /** True while a grapple rope is attached (Task 15 verification observes this). */
   isGrappling(): boolean;
   getTimeScale(): number;
@@ -133,6 +146,12 @@ export interface GameDebugHandle {
   assignFarm(entryId: number): boolean;
   summonMount(): void;
   ride(): boolean;
+  /**
+   * Debug-only: place a wall/ramp directly, routing through the same
+   * validity path as a real confirm (Inventory+Building Task 5 e2e).
+   * Returns success.
+   */
+  placePiece(kind: string, x: number, y: number, z: number, yaw: number): boolean;
   setTimeScale(f: number): void;
   /**
    * Jump the day/night clock to a named phase's START, or to an absolute
@@ -188,6 +207,10 @@ export function buildDebugHandle(deps: DebugDeps): GameDebugHandle {
         // enter/cancel): the live hotbar loadout + current selection.
         selectedSlot: deps.hotbar().selected,
         hotbarSlots: deps.hotbar().slots,
+        // Inventory+Building Task 5 e2e verification: live placed-piece count
+        // + whether a build ghost is currently active.
+        placedPieces: deps.placedPieces(),
+        building: deps.isBuilding(),
       };
     },
 
@@ -309,6 +332,11 @@ export function buildDebugHandle(deps: DebugDeps): GameDebugHandle {
     /** Instantly ride the active mount (Haven V6 e2e). Returns success. */
     ride(): boolean {
       return deps.ride();
+    },
+
+    /** Debug-only: place a wall/ramp directly (Inventory+Building Task 5 e2e). */
+    placePiece(kind: string, x: number, y: number, z: number, yaw: number): boolean {
+      return deps.placePiece(kind, x, y, z, yaw);
     },
 
     /** Multiply the fixed-step accumulator's dt feed (clamped 0.1..16). */

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { CAMERA, CASTLE, ENV, GOBLIN, HEALTH, MAX_FRAME_DT, MOUNT, SIM_DT, STRUCTURES } from './core/constants.ts';
+import { BUILD, CAMERA, CASTLE, ENV, GOBLIN, HEALTH, MAX_FRAME_DT, MOUNT, SIM_DT, STRUCTURES } from './core/constants.ts';
 import { setupEnvironment, setupDaylight, updateWater } from './world/environment.ts';
 import { daylightAt } from './core/daylight.ts';
 import { ChunkManager } from './world/chunks.ts';
@@ -36,6 +36,7 @@ import { AnchorRegistry } from './structures/anchors.ts';
 import { ZiplineSystem } from './structures/ziplines.ts';
 import { DroneSystem } from './structures/drones.ts';
 import { PlacementSystem, serializeStructures, deserializeStructures } from './structures/placement.ts';
+import { BuildSystem } from './structures/build.ts';
 import { raycastTerrain } from './player/grapple.ts';
 import {
   applyStartingLoadout,
@@ -319,8 +320,48 @@ function bootGame(): void {
   // at ground height. No abilities are unlocked initially — walk / sprint / jump
   // / dash are available from spawn; glider / rocket / boots / grapple are not.
   // -------------------------------------------------------------------------
-  const ground: GroundQuery = { heightAt, normalAt: groundNormalAt };
+
+  // Inventory accumulating harvested resources + the crafting tree's currency
+  // (RP), consumables (darts/charms) and held deployable kits. Constructed
+  // early (moved up from below BuildSystem's original slot) because
+  // BuildSystem needs it before the composed `ground` further down.
+  const inventory = createInventory();
+
+  // Raw terrain-only ground (heightAt/normalAt = natural terrain, no placed
+  // pieces) — BuildSystem's own reference for its height-cap check (measured
+  // above natural terrain, not above whatever's already stacked there) and
+  // for its ghost/debug-place validity. The COMPOSED `ground` every other
+  // consumer gets is defined just below, once `build` exists to close over.
+  const rawGround: GroundQuery = { heightAt, normalAt: groundNormalAt };
   const spawn = { x: 0, y: heightAt(0, 0), z: 0 };
+
+  // Buildable walls/ramps (Inventory+Building Task 5): ghost placement, pickup,
+  // the live piece list + its physics near-queries, and persistence. Built
+  // before the composed `ground` below since that query reads `build.topAt`.
+  const build = new BuildSystem(scene, rawGround, inventory);
+
+  // Composed ground truth (design spec §3 / Task 5 brief): effectiveGroundAt =
+  // max(terrain, build tops). Every consumer that means "the floor" (player,
+  // darts/purifier ground-hit, mounts, castle goblins/elves, snapToGround-on-
+  // load, kit placement aiming) gets THIS query; consumers that mean "the
+  // terrain" (chunk meshing/scatter/water/village/castle layout/daylight, and
+  // CritterManager's own private ground for wild critters) keep raw
+  // heightAt/groundNormalAt, untouched. Normal stays terrain-based even when a
+  // build top wins — nothing in the movement core currently reads
+  // GroundQuery.normalAt (grep-verified: only two construction sites exist,
+  // no consumer), so this branch is inert today but future-proofs the seam
+  // per the brief's literal directive: flat-normal-when-on-a-build-top would
+  // otherwise be the right call once something (slope-slide) does read it, so
+  // a player standing on a wall over steep terrain doesn't misread as a steep
+  // slope underfoot.
+  const ground: GroundQuery = {
+    heightAt: (x, z) => {
+      const t = heightAt(x, z);
+      const b = build.topAt(x, z);
+      return b > t ? b : t;
+    },
+    normalAt: (x, z) => (build.topAt(x, z) > heightAt(x, z) ? { x: 0, y: 1, z: 0 } : groundNormalAt(x, z)),
+  };
 
   // Grapple anchor registry — drones (Task 13) register tracked spheres here;
   // the controller raycasts it alongside the terrain when a grapple is fired.
@@ -335,7 +376,8 @@ function bootGame(): void {
       .getGrappleColliders(x, z)
       .concat(castleGrapple)
       .concat(wardGrappleNear(x, z))
-      .concat(spireGrapple);
+      .concat(spireGrapple)
+      .concat(build.grappleNear(x, z));
   // Castle Ward Task 5: "No sky in here!" — no grapple/glider while the
   // player stands under a roofed hall. The predicate is a generic seam on
   // the controller (movementCeiling); this is the one place that ties it to
@@ -350,10 +392,6 @@ function bootGame(): void {
   // now threads the player's current y into the seam alongside x/z.
   player.movementCeiling = inHallBelowRoof;
   player.onCeilingBlocked = () => toast('No sky in here!');
-
-  // Inventory accumulating harvested resources + the crafting tree's currency
-  // (RP), consumables (darts/charms) and held deployable kits.
-  const inventory = createInventory();
 
   // Bonded roster (Haven V2): critters captured out of the wild with a Bond
   // Charm. Reassigned (not mutated) on each bond so the roster screen's
@@ -397,6 +435,12 @@ function bootGame(): void {
   // Player HP (Cursed Castle Task 6): pure state stepped each frame. No
   // damage sources exist yet — goblins (Task 11) will call `applyHit`.
   let health = createHealth();
+
+  // Build-piece pickup (Inventory+Building Task 5): tracks interact's rising
+  // edge so `build.beginPickup` locks in the aim exactly once per press,
+  // mirroring the zipline mount/recall hold pattern (`input.interactHeld`
+  // read every frame, not through the edge-action queue).
+  let buildInteractHeldPrev = false;
 
   // --- Maze-aware daze ejection (daze-eject-spires design spec §1) ---------
   // A tiny 3-state machine: 'stumbling' (isDazed(health) true — the corridor
@@ -558,11 +602,16 @@ function bootGame(): void {
       farm = loaded.farm ? setDeeds(loaded.farm, getDeedCount()) : createFarm(getDeedCount());
       lastDeeds = getDeedCount();
       deserializeStructures(loaded.structures, ziplines, drones);
+      // Build pieces (Inventory+Building Task 5): deserialize BEFORE the
+      // snapToGround call below, which uses the COMPOSED `ground.heightAt` —
+      // so a player who saved standing atop their own fort snaps back onto
+      // the fort's top, not the bare terrain beneath it.
+      build.deserialize(loaded.builds ?? []);
       // Cursed Castle: snap the restored position back onto the live terrain if
       // it's reshaped underneath an old save (e.g. the world grandeur rescale)
       // — otherwise the player could resurrect buried in or floating far above
       // the new ground.
-      const restoredPos = snapToGround(loaded.player.pos, heightAt(loaded.player.pos.x, loaded.player.pos.z));
+      const restoredPos = snapToGround(loaded.player.pos, ground.heightAt(loaded.player.pos.x, loaded.player.pos.z));
       player.teleport(restoredPos.x, restoredPos.y, restoredPos.z);
       input.yaw = loaded.player.yaw;
       hudUi.setHintFlags(loaded.hints);
@@ -587,6 +636,7 @@ function bootGame(): void {
       critters.importRegistry({});
       ziplines.deserialize([]);
       drones.deserialize([]);
+      build.deserialize([]);
       player.teleport(spawn.x, spawn.y, spawn.z);
       input.yaw = 0;
       hudUi.setHintFlags([]);
@@ -615,9 +665,9 @@ function bootGame(): void {
       : createHotbar();
 
   /**
-   * Placement-ghost sync: entering a placeable (kit) slot auto-enters its
-   * ghost; selecting anything else — another item, an empty slot, or a
-   * craftable-but-unbuilt wall/ramp (Task 5 stub) — cancels any active one.
+   * Placement-ghost sync: entering a placeable slot (kit OR wall/ramp) auto-
+   * enters its ghost; selecting anything else — another item, an empty slot —
+   * cancels whichever ghost (PlacementSystem's or BuildSystem's) is active.
    * Tracks the last-synced ITEM rather than the selected slot INDEX so
    * assigning a different item into the currently-selected slot (from the
    * inventory screen, with no selection-index change) still re-syncs.
@@ -629,9 +679,26 @@ function bootGame(): void {
     const item = hotbar.slots[hotbar.selected] ?? null;
     if (item === hotbarSyncedItem) return;
     hotbarSyncedItem = item;
-    if (item === 'kit:zipline') placement.toggle('zipline');
-    else if (item === 'kit:drone') placement.toggle('drone');
-    else if (placement.active) placement.cancel();
+    // Switching straight between two ghosts of the SAME system (zipline<->
+    // drone, or wall<->ramp) is handled internally by that system's own
+    // enter/toggle (a single "entered" toast, no separate "cancelled" one) —
+    // only the OTHER system needs an explicit cancel first.
+    if (item === 'kit:zipline') {
+      if (build.active) build.cancel();
+      placement.toggle('zipline');
+    } else if (item === 'kit:drone') {
+      if (build.active) build.cancel();
+      placement.toggle('drone');
+    } else if (item === 'wall') {
+      if (placement.active) placement.cancel();
+      build.enter('wall');
+    } else if (item === 'ramp') {
+      if (placement.active) placement.cancel();
+      build.enter('ramp');
+    } else {
+      if (placement.active) placement.cancel();
+      if (build.active) build.cancel();
+    }
   }
 
   /** Replace the live hotbar (main.ts's own mutations AND the inventory
@@ -678,7 +745,10 @@ function bootGame(): void {
   // restored from the save (defaults to 0 elves) and grows via `elves.addAt`
   // (single goblin purify) or the Task 14 castle-wide purify burst. Built
   // BEFORE `castleSys` below, which closes over it (`opts.addElf`).
-  const elves = new ElfSystem(scene, ground);
+  // Build pieces block/collide goblins+elves the same way ward/spire geometry
+  // does (Inventory+Building Task 5) — injected as a plain callback (like
+  // `ground` itself) so neither module gains a `structures/build.ts` import.
+  const elves = new ElfSystem(scene, ground, (x, z) => build.obstaclesNear(x, z));
   elves.setCount(loaded?.elves ?? 0);
 
   // Cursed Castle (Task 11): night goblins — spawn at dusk, chase/lunge, deal
@@ -699,6 +769,7 @@ function bootGame(): void {
     },
     addElf: (pos) => elves.addAt(pos),
     flashPurify: () => hudUi.flash(),
+    buildObstacles: (x, z) => build.obstaclesNear(x, z),
   });
 
   // Cursed Castle (Task 13): purifying darts — hotbar slot 5's fire path.
@@ -740,9 +811,9 @@ function bootGame(): void {
    *  - 'charms': NOT an LMB-usable item — charms are spent by the F-interact
    *    bond flow (`tryBondInteract` below), never thrown. The slot shows the
    *    live count for information, but LMB always shakes here.
-   *  - 'wall' / 'ramp': Task 5 wires BuildSystem here (`buildSystem?.confirm()`
-   *    once it exists) — until then this is a true no-op, deliberately NOT a
-   *    shake (there's nothing "empty-handed" about an unbuilt feature).
+   *  - 'wall' / 'ramp': confirms the already-active BuildSystem ghost
+   *    (`syncHotbarPlacement` auto-entered it) — same "shake if somehow not
+   *    active" fallback as the kit slots.
    *  - empty slot: shakes.
    */
   function fireSelectedItem(): void {
@@ -761,7 +832,8 @@ function bootGame(): void {
         return;
       case 'wall':
       case 'ramp':
-        // Task 5 wires BuildSystem here — keep compiling until then.
+        if (build.active) build.confirm();
+        else hudUi.shake();
         return;
       case 'charms':
       case null:
@@ -796,6 +868,8 @@ function bootGame(): void {
     inventory.rp = 999;
     inventory.darts = 999;
     inventory.charms = 999;
+    inventory.walls = 50;
+    inventory.ramps = 50;
     inventory.kits.zipline = 9;
     inventory.kits.drone = 9;
     for (const u of ['grapple', 'boots', 'glider', 'rocket']) player.unlocks.add(u);
@@ -810,6 +884,7 @@ function bootGame(): void {
       unlocks: [...player.unlocks],
       critterPersist: critters.exportRegistry(),
       structures: serializeStructures(ziplines, drones),
+      builds: build.serialize(),
       player: { pos: player.pos, yaw: input.yaw },
       hints: hudUi.getHintFlags(),
       roster: roster.map((e) => ({ ...e, status: { ...e.status } })),
@@ -870,6 +945,8 @@ function bootGame(): void {
     camera.getWorldDirection(_look);
     return { x: _look.x, y: _look.y, z: _look.z };
   }
+  // Reusable scratch for the build-ghost aim raycast (Inventory+Building Task 5).
+  const _buildDir = new THREE.Vector3();
 
   // -------------------------------------------------------------------------
   // Bonding (Haven V2). One Bond Charm captures a Linked critter into the
@@ -1156,6 +1233,7 @@ function bootGame(): void {
     const dist = Math.hypot(ap.x - p.x, ap.y - p.y, ap.z - p.z);
     if (dist <= MOUNT.mountRange) {
       if (placement.active) placement.cancel(); // no placement ghost mid-ride
+      if (build.active) build.cancel();
       mounts.startRide(player);
       toast(`Riding ${nick}!`);
     } else if (canSummon(getRewards())) {
@@ -1186,6 +1264,7 @@ function bootGame(): void {
       activateMount(entry.id);
     }
     if (placement.active) placement.cancel(); // no placement ghost mid-ride
+    if (build.active) build.cancel();
     return mounts.startRide(player);
   }
 
@@ -1226,7 +1305,8 @@ function bootGame(): void {
         .concat(villageObs)
         .concat(castleObs)
         .concat(wardObstaclesNear(prev.x, prev.z))
-        .concat(spireObs);
+        .concat(spireObs)
+        .concat(build.obstaclesNear(prev.x, prev.z));
       // Maze-aware daze ejection (daze-eject-spires design spec §1) — replaces
       // the old radial-only stumble: inside the ward maze, walking straight
       // away from CASTLE.center just ran the player into a wall, which
@@ -1323,6 +1403,29 @@ function bootGame(): void {
     if (!paused && !debugFrozen) {
       drones.updateRecall(dt, player.pos, input);
       if (placement.active) placement.update(dt);
+
+      // Build ghost (Inventory+Building Task 5): main.ts owns the one
+      // raycast — against the COMPOSED ground, so a freeform aim can land
+      // directly on an existing piece's top — and hands the resolved point +
+      // camera yaw (degrees) to BuildSystem, which stays camera-free.
+      if (build.active) {
+        camera.getWorldDirection(_buildDir);
+        const aim = raycastTerrain(
+          { x: camera.position.x, y: camera.position.y, z: camera.position.z },
+          { x: _buildDir.x, y: _buildDir.y, z: _buildDir.z },
+          ground.heightAt,
+          BUILD.placeRange,
+        );
+        build.update(dt, aim, (input.yaw * 180) / Math.PI);
+      }
+
+      // Build pickup (hold F on an aimed piece): reads the held state every
+      // frame (not the edge-action queue) so the hold can be timed.
+      const heldF = input.interactHeld;
+      if (heldF && !buildInteractHeldPrev) build.beginPickup(camera.position, cameraLook());
+      if (heldF) build.tickPickup(dt);
+      else build.cancelPickup();
+      buildInteractHeldPrev = heldF;
     }
 
     const p = player.pos;
@@ -1393,6 +1496,7 @@ function bootGame(): void {
         // Task 3 — Esc's new default target; the old pause/help overlay is
         // now reached from inside it via the "Controls" button instead).
         if (placement.active) placement.cancel();
+        else if (build.active) build.cancel();
         else if (screens.isOpen()) screens.handleEscape();
         else screens.open('inventory');
         continue;
@@ -1449,9 +1553,14 @@ function bootGame(): void {
           }
           continue;
         }
-        // F near a post (mount/recall) or under a drone (recall) is owned by the
+        // F near a post (mount/recall) or under a drone (recall), or aiming at
+        // a placed piece (hold-F reclaim owns that press), is owned by the
         // structure systems — don't also harvest there.
-        if (!ziplines.nearMount(player.pos) && !drones.nearRecall(player.pos)) {
+        if (
+          !ziplines.nearMount(player.pos) &&
+          !drones.nearRecall(player.pos) &&
+          !build.aimedPiece(camera.position, cameraLook())
+        ) {
           const gained = props.harvestAt(camera.position, cameraLook(), worldTime);
           if (gained) addResource(inventory, gained, 1);
         }
@@ -1459,6 +1568,8 @@ function bootGame(): void {
       if (action.type === 'lmb') {
         if (placement.active) {
           placement.confirm(); // LMB confirms a placement
+        } else if (build.active) {
+          build.confirm(); // LMB confirms a build ghost
         } else if (player.mode !== 'zipline') {
           // LMB fires the selected hotbar item (see `fireSelectedItem` above)
           // — the grapple now lives entirely on RMB (no reel binding);
@@ -1499,6 +1610,9 @@ function bootGame(): void {
     npcs.updateLabels(camera);
     const p = player.pos;
     const aimed = props.findHarvestable(camera.position, cameraLook(), worldTime);
+    // Build pickup prompt (Inventory+Building Task 5): aiming at a placed
+    // piece within pickup range, regardless of whether F is currently held.
+    const aimedPieceForPrompt = build.aimedPiece(camera.position, cameraLook());
     // Latched-rope crosshair state (amber) so an attach is always legible.
     hudUi.setCrosshairMode(player.isGrappling() ? 'grapple' : 'auto');
     hudUi.update({
@@ -1513,6 +1627,9 @@ function bootGame(): void {
       unlocks: player.unlocks,
       critters: critters.list(),
       harvestPrompt: aimed ? aimed.kind : null,
+      buildPickup: aimedPieceForPrompt
+        ? { kind: aimedPieceForPrompt.kind, progress: build.pickupProgress() }
+        : null,
       spawn,
       locked: input.locked,
       screenOpen: screens.isOpen(),
@@ -1704,6 +1821,10 @@ function bootGame(): void {
     drones,
     isPlacing: () => placement.active,
     hotbar: () => hotbar,
+    placedPieces: () => build.pieces().length,
+    isBuilding: () => build.active,
+    placePiece: (kind: string, x: number, y: number, z: number, yaw: number) =>
+      build.debugPlace(kind, x, y, z, yaw),
     isGrappling: () => player.isGrappling(),
     getTimeScale: () => timeScale,
     setTimeScale: (f: number) => {

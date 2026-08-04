@@ -54,6 +54,28 @@ export const RECIPES: Recipe[] = [
     cost: { fiber: 6, resin: 8, shard: 2 },
     kind: 'unlock',
   },
+  {
+    // Inventory + Building Task 5: wall panels, crafted in batches from
+    // farm-only wood/stone (design spec §3).
+    id: 'wall',
+    name: 'Wall Block',
+    tier: 1,
+    rpRequired: 25,
+    cost: { wood: 2, stone: 3 },
+    kind: 'consumable',
+    batch: 4,
+    grants: 'walls',
+  },
+  {
+    id: 'ramp',
+    name: 'Ramp',
+    tier: 1,
+    rpRequired: 25,
+    cost: { wood: 3, stone: 1 },
+    kind: 'consumable',
+    batch: 2,
+    grants: 'ramps',
+  },
   // --- Tier 2 (75 RP) --------------------------------------------------------
   {
     // Cursed Castle: glow mushrooms (Task 1) become ammo that cleanses

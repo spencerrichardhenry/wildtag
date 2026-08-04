@@ -50,6 +50,18 @@ export interface HudFrame {
   critters: CritterView[];
   /** Harvestable kind currently under the aim (e.g. "fiber"), or null. */
   harvestPrompt: string | null;
+  /**
+   * Build-piece pickup prompt (Inventory+Building Task 5): aiming at a placed
+   * wall/ramp within pickup range, with the live hold-F progress [0, 1] (0
+   * while not yet holding). A PARALLEL channel to `harvestPrompt` rather than
+   * reusing its string shape directly — a piece pickup is a HOLD-to-complete
+   * action ("Hold F — Reclaim Wall 40%"), not an instant harvest ("F —
+   * Harvest Fiber"), so it needs its own wording + a live percentage; it
+   * still reuses `harvestPrompt`'s green crosshair dot (`paintCrosshair`
+   * below) since visually it's the same "something interactive is aimed at"
+   * cue.
+   */
+  buildPickup: { kind: 'wall' | 'ramp'; progress: number } | null;
   spawn: Vec3;
   /** True while the pointer is locked (drives first-run hints). */
   locked: boolean;
@@ -442,7 +454,8 @@ export class HUD {
   private paintCrosshair(frame: HudFrame): void {
     let mode = this.crosshairOverride;
     if (!mode) {
-      if (frame.harvestPrompt) mode = 'harvest';
+      if (frame.buildPickup) mode = 'harvest';
+      else if (frame.harvestPrompt) mode = 'harvest';
       else if (frame.inventory.darts > 0) mode = 'dart';
       else mode = 'default';
     }
@@ -450,9 +463,11 @@ export class HUD {
       this.crosshair.className = `wt-crosshair wt-cross-${mode}`;
       this.lastCrosshair = mode;
     }
-    const label = frame.harvestPrompt
-      ? `F — Harvest ${cap(frame.harvestPrompt)}`
-      : '';
+    const label = frame.buildPickup
+      ? `Hold F — Reclaim ${cap(frame.buildPickup.kind)} ${Math.round(frame.buildPickup.progress * 100)}%`
+      : frame.harvestPrompt
+        ? `F — Harvest ${cap(frame.harvestPrompt)}`
+        : '';
     if (this.harvestLabel.textContent !== label) this.harvestLabel.textContent = label;
   }
 

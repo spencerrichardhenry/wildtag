@@ -28,6 +28,10 @@ export interface Inventory {
   charms: number;
   /** Purifying Darts on hand (Cursed Castle) — Task 12 spends them on fire. */
   purifiers: number;
+  /** Wall panels on hand (Inventory+Building Task 5) — BuildSystem places/reclaims them. */
+  walls: number;
+  /** Ramp wedges on hand (Inventory+Building Task 5) — BuildSystem places/reclaims them. */
+  ramps: number;
   /** Held-but-not-yet-placed deployable structure counts (Task 13 consumes). */
   kits: Record<DeployableId, number>;
 }
@@ -46,6 +50,8 @@ export function createInventory(): Inventory {
     darts: 0,
     charms: 0,
     purifiers: 0,
+    walls: 0,
+    ramps: 0,
     kits: { zipline: 0, beacon: 0, drone: 0 },
   };
 }

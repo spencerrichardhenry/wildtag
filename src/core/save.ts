@@ -118,6 +118,24 @@ export interface SaveV3 {
    * the whole save.
    */
   hotbar?: { slots: (string | null)[]; selected: number };
+  /**
+   * Inventory+Building Task 5: placed wall/ramp pieces — compact `{k, x, y,
+   * z, yaw}` entries (`k`: 'w' wall / 'r' ramp). Optional + shape-guarded
+   * (absent → BuildSystem starts empty) so pre-Task-5 saves migrate
+   * losslessly; malformed entries are dropped like the structures/roster
+   * element guards, and the whole array is truncated to `BUILD.maxPieces` on
+   * load (BuildSystem.deserialize) in case a save was hand-edited past the cap.
+   */
+  builds?: BuildPersistEntry[];
+}
+
+/** A persisted placed piece (Inventory+Building Task 5). */
+export interface BuildPersistEntry {
+  k: 'w' | 'r';
+  x: number;
+  y: number;
+  z: number;
+  yaw: number;
 }
 
 /** Persisted active-mount state (Haven V6). */
@@ -287,6 +305,21 @@ function parseFarm(v: unknown): FarmState | undefined {
   return out;
 }
 
+/**
+ * Element guard/normalizer for a persisted placed piece (Inventory+Building
+ * Task 5) — mirrors `parseBarterEntry`: returns a clean entry, or null to
+ * drop a malformed one while valid siblings survive.
+ */
+function parseBuildEntry(b: unknown): BuildPersistEntry | null {
+  if (!b || typeof b !== 'object') return null;
+  const e = b as Record<string, unknown>;
+  if (e.k !== 'w' && e.k !== 'r') return null;
+  if (!Number.isFinite(e.x) || !Number.isFinite(e.y) || !Number.isFinite(e.z) || !Number.isFinite(e.yaw)) {
+    return null;
+  }
+  return { k: e.k, x: e.x as number, y: e.y as number, z: e.z as number, yaw: e.yaw as number };
+}
+
 const HOTBAR_SLOT_COUNT = 6;
 
 /**
@@ -359,6 +392,13 @@ export function decodeSave(json: string): SaveV3 | null {
     const wood = isCount(inv.wood) ? (inv.wood as number) : 0;
     if (inv.stone !== undefined && !isCount(inv.stone)) return null;
     const stone = isCount(inv.stone) ? (inv.stone as number) : 0;
+    // `walls`/`ramps` mirror `purifiers` (Inventory+Building Task 5): forward-
+    // compat for pre-Task-5 saves (missing → defaults to 0), but a present
+    // tampered/negative value rejects.
+    if (inv.walls !== undefined && !isCount(inv.walls)) return null;
+    const walls = isCount(inv.walls) ? (inv.walls as number) : 0;
+    if (inv.ramps !== undefined && !isCount(inv.ramps)) return null;
+    const ramps = isCount(inv.ramps) ? (inv.ramps as number) : 0;
     const kits: Inventory['kits'] = { zipline: 0, beacon: 0, drone: 0 };
     if (inv.kits !== undefined && inv.kits !== null) {
       if (typeof inv.kits !== 'object') return null;
@@ -381,6 +421,8 @@ export function decodeSave(json: string): SaveV3 | null {
       stone,
       charms,
       purifiers,
+      walls,
+      ramps,
       kits,
     };
     if (!Array.isArray(o.unlocks) || !o.unlocks.every((u) => typeof u === 'string')) return null;
@@ -416,6 +458,13 @@ export function decodeSave(json: string): SaveV3 | null {
     if (o.rewards !== undefined && o.rewards !== null) {
       if (!Array.isArray(o.rewards) || !o.rewards.every((r) => typeof r === 'string')) return null;
       rewards = o.rewards as string[];
+    }
+    // Builds (Inventory+Building Task 5): optional, default []. A present
+    // non-array rejects; malformed elements are dropped, valid siblings survive.
+    let builds: BuildPersistEntry[] = [];
+    if (o.builds !== undefined && o.builds !== null) {
+      if (!Array.isArray(o.builds)) return null;
+      builds = o.builds.map(parseBuildEntry).filter((e): e is BuildPersistEntry => e !== null);
     }
     // Farm (Haven V5): optional, shape-guarded, dropped if malformed.
     const farm = parseFarm(o.farm);
@@ -477,6 +526,7 @@ export function decodeSave(json: string): SaveV3 | null {
     if (o.barter !== undefined && o.barter !== null) sanitized.barter = barter;
     if (o.pens !== undefined && o.pens !== null) sanitized.pens = pens;
     if (o.rewards !== undefined && o.rewards !== null) sanitized.rewards = rewards;
+    if (o.builds !== undefined && o.builds !== null) sanitized.builds = builds;
     // A `mount: null` was written as "no active mount" — strip it (absent),
     // never surface a null (the spread above would otherwise carry it through).
     delete sanitized.mount;

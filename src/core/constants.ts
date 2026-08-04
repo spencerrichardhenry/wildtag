@@ -351,6 +351,28 @@ export const BUILD = {
   pickupRange: 6,
   /** Hold-F duration (s) at an aimed piece to pick it back up into inventory. */
   pickupHoldS: 0.5,
+  /** Max terrain-aim distance (m) for placing a piece (Task 5) — shorter than
+   *  STRUCTURES.placeRange (30): walls/ramps are placed close-in, hand-built. */
+  placeRange: 12,
+  /**
+   * Spatial-hash bucket size (m) for `BuildSystem`'s obstacle/grapple/topAt
+   * near-queries (Task 5) — mirrors `WARD.hashCell`'s 3×3-neighborhood
+   * convention. Rebuilt on every place/pickup (pieces are dynamic, unlike the
+   * static ward/castle geometry that convention was built for).
+   */
+  hashCell: 16,
+  /**
+   * Clearance (m) subtracted from a WALL obstacle's `yTop` before it reaches
+   * player/goblin/elf collision (Task 5, `BuildSystem.obstaclesNear`).
+   * `resolveCollision`'s glide-over gate is `pos.y > yTop` (strict), and a
+   * standing player's `pos.y` is set to EXACTLY the wall's own top by the
+   * ground-resolve snap — without this clearance the strict inequality never
+   * triggers and the wall's own side-collision circles keep shoving a
+   * standing player off their own platform. Small relative to `wall.h` (2 m)
+   * so walking into the wall's SIDE — which happens near ground level, far
+   * below `yTop - standClearance` regardless — is unaffected.
+   */
+  standClearance: 0.1,
 } as const;
 
 /**

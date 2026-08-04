@@ -33,7 +33,11 @@ export type RecipeId =
   | 'zipline'
   | 'beacon'
   | 'rocket'
-  | 'drone';
+  | 'drone'
+  // Inventory + Building (Task 5): wall/ramp panels, crafted in batches from
+  // wood/stone like every other consumable recipe.
+  | 'wall'
+  | 'ramp';
 
 /** Placeable structures that accumulate as held "kits" until Task 13 spends them. */
 export type DeployableId = 'zipline' | 'beacon' | 'drone';
@@ -56,7 +60,7 @@ export interface Recipe {
    * Haven V2 so the Bond Charm recipe can stock `charms` through the same
    * path; Cursed Castle adds `purifiers` for the Purifying Dart.
    */
-  grants?: 'darts' | 'charms' | 'purifiers';
+  grants?: 'darts' | 'charms' | 'purifiers' | 'walls' | 'ramps';
 }
 
 export interface MoveInput {

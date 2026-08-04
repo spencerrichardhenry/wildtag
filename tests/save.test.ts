@@ -358,6 +358,86 @@ describe('encodeSave / decodeSave', () => {
     expect(decodeSave(JSON.stringify(nan))).toBeNull();
   });
 
+  // --- Inventory + Building Task 5: walls/ramps counters + builds -----------
+
+  it('walls/ramps counts round-trip', () => {
+    const state = sampleSave();
+    state.inventory.walls = 4;
+    state.inventory.ramps = 2;
+    const decoded = decodeSave(encodeSave(state));
+    expect(decoded?.inventory.walls).toBe(4);
+    expect(decoded?.inventory.ramps).toBe(2);
+  });
+
+  it('pre-Task-5 save without walls/ramps fields loads with both 0', () => {
+    const state = sampleSave();
+    const { walls, ramps, ...invNoWallsRamps } = state.inventory;
+    void walls;
+    void ramps;
+    const raw = { ...state, inventory: invNoWallsRamps };
+    const decoded = decodeSave(JSON.stringify(raw));
+    expect(decoded).not.toBeNull();
+    expect(decoded?.inventory.walls).toBe(0);
+    expect(decoded?.inventory.ramps).toBe(0);
+    expect(decoded?.inventory.fiber).toBe(state.inventory.fiber);
+  });
+
+  it('rejects a negative / non-finite walls or ramps count', () => {
+    const negWalls = sampleSave();
+    negWalls.inventory.walls = -1;
+    expect(decodeSave(JSON.stringify(negWalls))).toBeNull();
+
+    const negRamps = sampleSave();
+    negRamps.inventory.ramps = -1;
+    expect(decodeSave(JSON.stringify(negRamps))).toBeNull();
+
+    const nan = { ...sampleSave(), inventory: { ...sampleSave().inventory, walls: 'lots' } };
+    expect(decodeSave(JSON.stringify(nan))).toBeNull();
+  });
+
+  it('round-trips placed pieces (builds)', () => {
+    const state = sampleSave({
+      builds: [
+        { k: 'w', x: 1, y: 2, z: 3, yaw: 0 },
+        { k: 'r', x: -4, y: 0, z: 8, yaw: 1.57 },
+      ],
+    });
+    const decoded = decodeSave(encodeSave(state));
+    expect(decoded?.builds).toEqual(state.builds);
+  });
+
+  it('decodes a save without a builds key to exactly its old shape (no phantom key)', () => {
+    const state = sampleSave(); // no builds field — a legacy (pre-Task-5) save
+    const decoded = decodeSave(encodeSave(state));
+    expect(decoded).not.toBeNull();
+    expect(decoded).toEqual(state);
+    expect(decoded && 'builds' in decoded).toBe(false);
+  });
+
+  it('drops a malformed build element while its valid sibling survives', () => {
+    const state = sampleSave();
+    const good = { k: 'w', x: 1, y: 2, z: 3, yaw: 0 };
+    const raw = {
+      ...state,
+      builds: [
+        {}, // empty
+        good,
+        { k: 'x', x: 0, y: 0, z: 0, yaw: 0 }, // bad kind
+        { k: 'r', x: 'nope', y: 0, z: 0, yaw: 0 }, // x not finite
+      ],
+    };
+    const decoded = decodeSave(JSON.stringify(raw));
+    expect(decoded).not.toBeNull();
+    expect(decoded?.builds).toEqual([good]);
+    // The rest of the save is untouched.
+    expect(decoded?.inventory).toEqual(state.inventory);
+  });
+
+  it('rejects a builds field that is present but not an array', () => {
+    const raw = { ...sampleSave(), builds: 'nope' };
+    expect(decodeSave(JSON.stringify(raw))).toBeNull();
+  });
+
   // --- Cursed Castle: purifiers (inventory) -----------------------------------
 
   it('purifiers count round-trips', () => {

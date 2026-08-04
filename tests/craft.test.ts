@@ -185,6 +185,8 @@ describe('full crafting tree — affordability walk', () => {
     inv.rp = 200; // clears every tier's RP gate up front
     grant(inv, { fiber: 37, resin: 19, shard: 35, spark: 17 }); // sum of every recipe's cost below (incl. charm, purifier)
     inv.mushroom = 3; // purifier's non-{fiber,resin,shard,spark} cost
+    inv.wood = 5; // wall (2) + ramp (3)
+    inv.stone = 4; // wall (3) + ramp (1)
 
     const unlocks = new Set<string>();
     const order: RecipeId[] = RECIPES
@@ -206,11 +208,15 @@ describe('full crafting tree — affordability walk', () => {
     expect(working.darts).toBe(10);
     expect(working.charms).toBe(2);
     expect(working.purifiers).toBe(5);
+    expect(working.walls).toBe(4);
+    expect(working.ramps).toBe(2);
     expect(working.fiber).toBe(0);
     expect(working.resin).toBe(0);
     expect(working.shard).toBe(0);
     expect(working.spark).toBe(0);
     expect(working.mushroom).toBe(0);
+    expect(working.wood).toBe(0);
+    expect(working.stone).toBe(0);
   });
 });
 
@@ -234,5 +240,57 @@ describe('craft — Purifying Dart (Cursed Castle)', () => {
     inv.fiber = 1;
     inv.rp = 74;
     expect(canCraft(inv, 'purifier', new Set())).toEqual({ ok: false, reason: 'rp' });
+  });
+});
+
+describe('craft — wall / ramp (Inventory + Building Task 5)', () => {
+  it('wall: tier 1, 25 RP, cost {wood:2, stone:3}, batches 4 into `walls`', () => {
+    const inv = createInventory();
+    inv.wood = 2;
+    inv.stone = 3;
+    inv.rp = 24;
+    expect(canCraft(inv, 'wall', new Set())).toEqual({ ok: false, reason: 'rp' });
+    inv.rp = 25;
+    expect(canCraft(inv, 'wall', new Set())).toEqual({ ok: true });
+    const r = craft(inv, 'wall', new Set());
+    expect(r.inv.walls).toBe(4);
+    expect(r.inv.wood).toBe(0);
+    expect(r.inv.stone).toBe(0);
+    expect(r.inv.ramps).toBe(0);
+    expect(r.unlocked).toBeUndefined();
+    expect(r.kits).toBeUndefined();
+  });
+
+  it('ramp: tier 1, 25 RP, cost {wood:3, stone:1}, batches 2 into `ramps`', () => {
+    const inv = createInventory();
+    inv.wood = 3;
+    inv.stone = 1;
+    inv.rp = 25;
+    expect(canCraft(inv, 'ramp', new Set())).toEqual({ ok: true });
+    const r = craft(inv, 'ramp', new Set());
+    expect(r.inv.ramps).toBe(2);
+    expect(r.inv.wood).toBe(0);
+    expect(r.inv.stone).toBe(0);
+    expect(r.inv.walls).toBe(0);
+  });
+
+  it('reports insufficient cost when stone is short', () => {
+    const inv = createInventory();
+    inv.rp = 25;
+    inv.wood = 2;
+    inv.stone = 1; // wall needs 3
+    expect(canCraft(inv, 'wall', new Set())).toEqual({ ok: false, reason: 'cost' });
+  });
+
+  it('crafting twice accumulates (batches stack, no once-only gate)', () => {
+    const inv = createInventory();
+    inv.rp = 25;
+    inv.wood = 4;
+    inv.stone = 6;
+    const first = craft(inv, 'wall', new Set());
+    const second = craft(first.inv, 'wall', new Set());
+    expect(second.inv.walls).toBe(8);
+    expect(second.inv.wood).toBe(0);
+    expect(second.inv.stone).toBe(0);
   });
 });

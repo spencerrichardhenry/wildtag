@@ -3,6 +3,7 @@ import { CRYSTAL, GOBLIN, PURIFIER } from '../core/constants.ts';
 import type { DaylightSample } from '../core/daylight.ts';
 import { mulberry32 } from '../core/rng.ts';
 import type { GroundQuery, Vec3 } from '../core/types.ts';
+import type { Obstacle } from '../player/collision.ts';
 import { toast } from '../ui/toasts.ts';
 import { buildCastle, buildCrystal, buildGoblin, removeCastle, removeCrystal, type CrystalMesh } from './builders.ts';
 import {
@@ -95,6 +96,10 @@ export class CastleSystem {
       addElf: (pos: Vec3) => void;
       /** One-shot full-screen white flash (HUD hook) for the purify moment. */
       flashPurify: () => void;
+      /** Build-piece obstacle circles near (x, z) (Inventory+Building Task 5) —
+       *  same 3×3 near-query convention as ward/spire obstacles. Optional so
+       *  existing tests/call sites without a BuildSystem keep compiling. */
+      buildObstacles?: (x: number, z: number) => Obstacle[];
     },
   ) {
     this.crystal = buildCrystal(opts.purified());
@@ -129,7 +134,8 @@ export class CastleSystem {
           // ward, including through a spire's footprint, without this.
           obstacles: castleObstacles()
             .concat(wardObstaclesNear(g.pos.x, g.pos.z))
-            .concat(spireObstacles()),
+            .concat(spireObstacles())
+            .concat(this.opts.buildObstacles?.(g.pos.x, g.pos.z) ?? []),
         },
         dt,
       );

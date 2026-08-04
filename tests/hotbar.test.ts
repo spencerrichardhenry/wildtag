@@ -121,10 +121,14 @@ describe('itemCount', () => {
     expect(itemCount(inv, 'kit:drone')).toBe(5);
   });
 
-  it('returns 0 for wall/ramp — Task 5 has not wired their counters yet', () => {
+  it('reads wall/ramp counts off inv.walls/inv.ramps (Task 5)', () => {
     const inv = createInventory();
     expect(itemCount(inv, 'wall')).toBe(0);
     expect(itemCount(inv, 'ramp')).toBe(0);
+    inv.walls = 3;
+    inv.ramps = 2;
+    expect(itemCount(inv, 'wall')).toBe(3);
+    expect(itemCount(inv, 'ramp')).toBe(2);
   });
 });
 

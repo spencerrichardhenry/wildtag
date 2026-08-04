@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { CASTLE, ELF, WARD, WORLD_SEED } from '../core/constants.ts';
 import { mulberry32 } from '../core/rng.ts';
-import { resolveCollision } from '../player/collision.ts';
+import { resolveCollision, type Obstacle } from '../player/collision.ts';
 import type { GroundQuery, Vec3 } from '../core/types.ts';
 import { buildElf } from './builders.ts';
 import { castleObstacles, spireObstacles } from './layout.ts';
@@ -96,6 +96,10 @@ export class ElfSystem {
   constructor(
     private readonly scene: THREE.Scene,
     private readonly ground: GroundQuery,
+    /** Build-piece obstacle circles near (x, z) (Inventory+Building Task 5) —
+     *  same 3×3 near-query convention as `wardObstaclesNear`/`spireObstacles`.
+     *  Defaults to none so existing call sites/tests keep compiling. */
+    private readonly buildObstacles: (x: number, z: number) => Obstacle[] = () => [],
   ) {}
 
   /** Current live elf count. */
@@ -181,7 +185,10 @@ export class ElfSystem {
       const resolved = resolveCollision(
         { x: e.pos.x, y: e.pos.y, z: e.pos.z },
         ELF.bodyR,
-        castleObstacles().concat(wardObstaclesNear(e.pos.x, e.pos.z)).concat(spireObstacles()),
+        castleObstacles()
+          .concat(wardObstaclesNear(e.pos.x, e.pos.z))
+          .concat(spireObstacles())
+          .concat(this.buildObstacles(e.pos.x, e.pos.z)),
       );
       e.pos.x = resolved.x;
       e.pos.z = resolved.z;

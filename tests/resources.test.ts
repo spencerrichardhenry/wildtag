@@ -100,6 +100,8 @@ describe('inventory', () => {
       darts: 0,
       charms: 0,
       purifiers: 0,
+      walls: 0,
+      ramps: 0,
       kits: { zipline: 0, beacon: 0, drone: 0 },
     });
   });

@@ -91,11 +91,8 @@ export function migrateLegacy(): HotbarState {
 
 /**
  * Map a hotbar `item` to its owned count in `inv`, for HUD count badges and
- * "empty slot" LMB no-ops. `'wall'`/`'ramp'` have no inventory counter yet —
- * Task 5 adds `Inventory.walls`/`.ramps` (mirroring the `charms`/`purifiers`
- * optional-save pattern) and wires real counts here; until then they simply
- * have nothing to place, so this returns a literal `0` placeholder rather
- * than reaching for a field that doesn't exist on `Inventory`.
+ * "empty slot" LMB no-ops. `'wall'`/`'ramp'` read `Inventory.walls`/`.ramps`
+ * (Task 5 — mirrors the `charms`/`purifiers` optional-save pattern).
  */
 export function itemCount(inv: Inventory, item: ItemId): number {
   switch (item) {
@@ -110,7 +107,8 @@ export function itemCount(inv: Inventory, item: ItemId): number {
     case 'kit:drone':
       return inv.kits.drone;
     case 'wall':
+      return inv.walls;
     case 'ramp':
-      return 0;
+      return inv.ramps;
   }
 }
