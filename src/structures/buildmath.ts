@@ -152,12 +152,20 @@ const SNAP_TIE_EPS = 1e-9;
  *   same side (`u = ±wall.w`), `y = p.y`, `yaw = p.yaw` — continues the row.
  * - `'rampfoot'` (existing WALL pieces only, and only when placing a RAMP):
  *   trigger = the wall's front/back face centre at local `(u = 0,
- *   w = ±wall.t/2)`, `y = p.y` (the wall's base). Candidate: the ramp's
- *   yaw is set so its own local +w axis (its high-end direction) points
- *   along the face's outward normal, and its centre sits `run/2` back from
- *   the face along that normal — so the ramp's HIGH end lands exactly on
- *   the wall face, `y = p.y` (same base height as the wall; since
- *   `ramp.rise === wall.h` the high end is then flush with the wall's top).
+ *   w = ±wall.t/2)`, `y = p.y` (the wall's base). Candidate: the ramp's yaw
+ *   is set so its own local +w axis (its high-end direction) points along
+ *   the face's INWARD normal (back toward the wall — the OPPOSITE of the
+ *   face's own outward normal), and its centre sits `run/2` OUT from the
+ *   face along the face's outward normal — so the ramp's HIGH end (local
+ *   `w = +run/2`, displaced `-run/2` along its own +w from the centre, i.e.
+ *   `+run/2` outward from the centre) lands exactly on the wall face,
+ *   `y = p.y` (same base height as the wall; since `ramp.rise === wall.h`
+ *   the high end is then flush with the wall's top), while the LOW end
+ *   (local `w = -run/2`) reaches a full `run` further out into the open —
+ *   where a player actually approaches from. Getting the +w direction
+ *   backwards here (pointing outward instead of inward) would put the HIGH
+ *   end in the open and drive the ramp's whole footprint THROUGH the wall
+ *   instead of butting flush against its face — always overlapping.
  */
 export function resolveSnap(
   pieces: readonly BuildPiece[],
@@ -230,11 +238,16 @@ export function resolveSnap(
         const faceX = p.x + wDirX * (faceSign * (BUILD.wall.t / 2));
         const faceZ = p.z + wDirZ * (faceSign * (BUILD.wall.t / 2));
         const d = dist3(aim, { x: faceX, y: p.y, z: faceZ });
+        // Outward normal of this face (away from the wall's body).
         const normalX = wDirX * faceSign;
         const normalZ = wDirZ * faceSign;
-        const rampYaw = Math.atan2(normalX, normalZ);
-        const centerX = faceX - normalX * (BUILD.ramp.run / 2);
-        const centerZ = faceZ - normalZ * (BUILD.ramp.run / 2);
+        // The ramp's own local +w (its HIGH-end direction) must point the
+        // OPPOSITE way — INWARD, back toward the wall — so the high end
+        // sits flush at the face while the low end reaches outward into the
+        // open (see the doc comment above for the full derivation).
+        const rampYaw = Math.atan2(-normalX, -normalZ);
+        const centerX = faceX + normalX * (BUILD.ramp.run / 2);
+        const centerZ = faceZ + normalZ * (BUILD.ramp.run / 2);
         consider(d, PRIORITY.rampfoot, centerX, p.y, centerZ, rampYaw, 'rampfoot');
       }
     }

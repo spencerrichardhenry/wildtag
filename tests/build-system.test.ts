@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { BUILD } from '../src/core/constants.ts';
+import { BUILD, INPUT } from '../src/core/constants.ts';
 import type { GroundQuery, Vec3 } from '../src/core/types.ts';
 import { createInventory } from '../src/craft/inventory.ts';
 import { BuildSystem } from '../src/structures/build.ts';
+import { resolveCollision } from '../src/player/collision.ts';
 
 // ---------------------------------------------------------------------------
 // BuildSystem (Inventory+Building Task 5): headless THREE.Scene pattern, same
@@ -84,6 +85,37 @@ describe('BuildSystem — place/confirm', () => {
     expect(sys.topAt(0, 0)).toBeCloseTo(2 * BUILD.wall.h, 9);
   });
 
+  it('ramp-to-wall: aiming a ramp at a placed wall face rampfoot-snaps and CONFIRMS (adjacent, not overlapping)', () => {
+    const { sys, inv } = makeSystem(1, 1);
+    // Place the wall first.
+    sys.enter('wall');
+    sys.update(DT, { x: 0, y: 0, z: 0 }, 0);
+    expect(sys.confirm()).toBe(true);
+    expect(inv.walls).toBe(0);
+
+    // Now aim a ramp at the wall's front face (yaw=0 -> face at z=+wall.t/2).
+    sys.enter('ramp');
+    expect(sys.active).toBe(true);
+    sys.update(DT, { x: 0, y: 0, z: BUILD.wall.t / 2 + 0.1 }, 0);
+    expect(sys.confirm()).toBe(true); // was refused ('overlap') before the rampfoot fix
+    expect(inv.ramps).toBe(0);
+
+    expect(sys.pieces()).toHaveLength(2);
+    // The ramp's high end is flush with the wall's face/top, not driven
+    // through it: the wall's own top is untouched by the ramp...
+    expect(sys.topAt(0, 0)).toBeCloseTo(BUILD.wall.h, 9);
+    // ...the ramp's own midpoint (halfway along its run, outward from the
+    // face) sits at half the rise — a monotonic slope, not buried in the wall...
+    const midZ = BUILD.wall.t / 2 + BUILD.ramp.run / 2;
+    expect(sys.topAt(0, midZ)).toBeCloseTo(BUILD.ramp.rise / 2, 6);
+    // ...and right at the face, the ramp's surface reaches the full rise
+    // (=== wall.h), flush with the wall top — approach from just outside the
+    // exact boundary (topAt's footprint gate is inclusive, but floating point
+    // at the exact edge can land either side).
+    const nearFaceZ = BUILD.wall.t / 2 + 0.02;
+    expect(sys.topAt(0, nearFaceZ)).toBeGreaterThan(BUILD.ramp.rise * 0.9);
+  });
+
   it('refuses (no decrement/registration) once the 8 m / 4-piece height cap is exceeded', () => {
     const { sys, inv } = makeSystem(10, 0);
     sys.enter('wall');
@@ -120,16 +152,33 @@ describe('BuildSystem — place/confirm', () => {
     expect(inv.walls).toBe(2); // unchanged — nothing spent on the refusal
   });
 
-  it("refuses once the wall/ramp counter itself hits zero mid-session ('stock')", () => {
+  it('auto-exits the ghost the instant stock hits zero, so a further confirm is a clean no-op', () => {
     const { sys, inv } = makeSystem(1, 0);
     sys.enter('wall');
     sys.update(DT, { x: 0, y: 0, z: 0 }, 0);
     expect(sys.confirm()).toBe(true);
     expect(inv.walls).toBe(0);
+    // Otherwise the ghost would linger active-but-permanently-red until the
+    // player noticed and backed out themselves.
+    expect(sys.active).toBe(false);
 
     sys.update(DT, { x: 10, y: 0, z: 10 }, 0); // fresh freeform spot, no overlap
-    expect(sys.confirm()).toBe(false); // out of stock, even though physically valid
+    expect(sys.confirm()).toBe(false); // no ghost active — nothing to confirm
     expect(sys.pieces()).toHaveLength(1);
+  });
+
+  it("reads as invalid ('stock') rather than auto-exiting when stock runs out from OUTSIDE the active ghost (e.g. spent elsewhere)", () => {
+    const { sys, inv } = makeSystem(1, 0);
+    sys.enter('wall');
+    sys.update(DT, { x: 0, y: 0, z: 0 }, 0);
+    // Stock drained by something else entirely (not this system's own
+    // confirm) while the ghost is still active and tracking a fresh spot.
+    inv.walls = 0;
+    sys.update(DT, { x: 10, y: 0, z: 10 }, 0);
+    expect(sys.active).toBe(true); // still active — only confirm()'s own
+    // successful placement auto-exits; an external drain doesn't reach in.
+    expect(sys.confirm()).toBe(false);
+    expect(sys.pieces()).toHaveLength(0);
   });
 
   it('hides the ghost and clears validity when the aim ray misses entirely', () => {
@@ -281,7 +330,7 @@ describe('BuildSystem — serialize/deserialize', () => {
     expect(fresh.topAt(0, 0)).toBeCloseTo(BUILD.wall.h, 9);
   });
 
-  it('deserialize truncates to BUILD.maxPieces on an over-long save', () => {
+  it('deserialize truncates to BUILD.maxPieces on an over-long save, and SIGNALS the truncation', () => {
     const entries = Array.from({ length: BUILD.maxPieces + 10 }, (_, i) => ({
       k: 'w' as const,
       x: i * 5,
@@ -290,8 +339,18 @@ describe('BuildSystem — serialize/deserialize', () => {
       yaw: 0,
     }));
     const { sys } = makeSystem(0, 0);
-    sys.deserialize(entries);
+    const truncated = sys.deserialize(entries);
     expect(sys.pieces()).toHaveLength(BUILD.maxPieces);
+    // Silent truncation would be invisible to the player (their fort just has
+    // fewer pieces than they left it with) — deserialize must report it.
+    expect(truncated).toBe(true);
+  });
+
+  it('deserialize reports no truncation when the save is within maxPieces', () => {
+    const { sys } = makeSystem(0, 0);
+    const truncated = sys.deserialize([{ k: 'w', x: 0, y: 0, z: 0, yaw: 0 }]);
+    expect(truncated).toBe(false);
+    expect(sys.pieces()).toHaveLength(1);
   });
 
   it('deserialize replaces (not appends to) any prior state', () => {
@@ -300,5 +359,63 @@ describe('BuildSystem — serialize/deserialize', () => {
     sys.deserialize([{ k: 'r', x: 20, y: 0, z: 0, yaw: 0 }]);
     expect(sys.pieces()).toHaveLength(1);
     expect(sys.pieces()[0]).toMatchObject({ kind: 'ramp', x: 20 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Composed regression: the REAL resolveCollision (player/collision.ts) fed
+// obstaclesNear's output at realistic standing/climbing positions. These
+// lock in the standClearance/ramp-exclusion fix (see obstaclesNear's doc in
+// build.ts) against any future change to resolveCollision's own gate — a
+// unit test on obstaclesNear's raw circles alone wouldn't catch a
+// resolveCollision change that broke the composition.
+// ---------------------------------------------------------------------------
+describe('BuildSystem — composed collision regression (real resolveCollision)', () => {
+  it('a player standing exactly on a wall top is NOT displaced in XZ', () => {
+    const { sys } = makeSystem();
+    sys.debugPlace('wall', 0, 0, 0, 0);
+    // Ground-resolve semantics (movement.ts): a standing player's feet sit at
+    // EXACTLY the composed ground height — here, the wall's own top.
+    const feetY = sys.topAt(0, 0);
+    expect(feetY).toBeCloseTo(BUILD.wall.h, 9);
+    const pos: Vec3 = { x: 0, y: feetY, z: 0 };
+    const resolved = resolveCollision(pos, INPUT.playerRadius, sys.obstaclesNear(0, 0));
+    expect(resolved.x).toBeCloseTo(0, 9);
+    expect(resolved.z).toBeCloseTo(0, 9);
+  });
+
+  it('a player standing at the wall BASE (ground level) is still pushed off the side', () => {
+    // Sanity check the fix didn't disable side-collision entirely — only the
+    // TOP-standing case should glide over.
+    const { sys } = makeSystem();
+    sys.debugPlace('wall', 0, 0, 0, 0);
+    const pos: Vec3 = { x: 0, y: 0, z: 0 }; // ground level, dead centre of the wall
+    const resolved = resolveCollision(pos, INPUT.playerRadius, sys.obstaclesNear(0, 0));
+    const moved = Math.hypot(resolved.x - pos.x, resolved.z - pos.z);
+    expect(moved).toBeGreaterThan(0.01);
+  });
+
+  it('a player mid-climb on a ramp (composed ground height) is NOT shoved off', () => {
+    const { sys } = makeSystem();
+    sys.debugPlace('ramp', 0, 0, 0, 0); // yaw 0: low end z=-1, high end z=+1
+    // Composed ground height at the ramp's own centre (t=0.5 -> rise/2).
+    const feetY = sys.topAt(0, 0);
+    expect(feetY).toBeCloseTo(BUILD.ramp.rise / 2, 6);
+    const pos: Vec3 = { x: 0, y: feetY, z: 0 };
+    const resolved = resolveCollision(pos, INPUT.playerRadius, sys.obstaclesNear(0, 0));
+    expect(resolved.x).toBeCloseTo(0, 9);
+    expect(resolved.z).toBeCloseTo(0, 9);
+  });
+
+  it('a player standing on a 2-stack (top piece) is NOT displaced in XZ', () => {
+    const { sys } = makeSystem();
+    sys.debugPlace('wall', 0, 0, 0, 0);
+    sys.debugPlace('wall', 0, BUILD.wall.h, 0, 0);
+    const feetY = sys.topAt(0, 0);
+    expect(feetY).toBeCloseTo(2 * BUILD.wall.h, 9);
+    const pos: Vec3 = { x: 0, y: feetY, z: 0 };
+    const resolved = resolveCollision(pos, INPUT.playerRadius, sys.obstaclesNear(0, 0));
+    expect(resolved.x).toBeCloseTo(0, 9);
+    expect(resolved.z).toBeCloseTo(0, 9);
   });
 });

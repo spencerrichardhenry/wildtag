@@ -205,14 +205,53 @@ describe('resolveSnap', () => {
     const res = resolveSnap([base], 'ramp', aim, 0);
     expect(res.snapped).toBe('rampfoot');
     expect(res.y).toBeCloseTo(0, 9); // same base height as the wall
-    // Ramp centre should sit run/2 out from the face along the face normal (0,1):
-    expect(res.z).toBeCloseTo(BUILD.wall.t / 2 - BUILD.ramp.run / 2, 9);
+    // Ramp centre sits run/2 OUT from the face along the face's OUTWARD
+    // normal (0,1) — the low end reaches further out into the open; getting
+    // this backwards (centre run/2 IN, toward/through the wall) is exactly
+    // the bug the placementValid + high-end checks below catch.
+    expect(res.z).toBeCloseTo(BUILD.wall.t / 2 + BUILD.ramp.run / 2, 9);
     expect(res.x).toBeCloseTo(0, 9);
     // High end (local w=+run/2) of the ramp should land exactly at the wall face.
+    const highEndX = res.x + Math.sin(res.yaw) * (BUILD.ramp.run / 2);
     const highEndZ = res.z + Math.cos(res.yaw) * (BUILD.ramp.run / 2);
+    expect(highEndX).toBeCloseTo(0, 9);
     expect(highEndZ).toBeCloseTo(BUILD.wall.t / 2, 9);
     // Ramp top at the wall face equals rise, which equals wall.h -- flush with the wall top.
     expect(BUILD.ramp.rise).toBe(BUILD.wall.h);
+    // The whole point: this candidate must NOT overlap the wall it's snapped
+    // against (a ramp butted flush against a wall face, not driven through it).
+    const candidate: BuildPiece = { id: -1, kind: 'ramp', x: res.x, y: res.y, z: res.z, yaw: res.yaw };
+    expect(placementValid([base], candidate, 0)).toEqual({ ok: true });
+  });
+
+  it("'rampfoot' snap against the wall's BACK face (faceSign=-1) also lands flush, no overlap", () => {
+    const base = wall(1, 0, 0, 0, 0);
+    const aim: Vec3 = { x: -0.1, y: 0, z: -(BUILD.wall.t / 2 + 0.1) };
+    const res = resolveSnap([base], 'ramp', aim, 0);
+    expect(res.snapped).toBe('rampfoot');
+    const highEndX = res.x + Math.sin(res.yaw) * (BUILD.ramp.run / 2);
+    const highEndZ = res.z + Math.cos(res.yaw) * (BUILD.ramp.run / 2);
+    expect(highEndX).toBeCloseTo(0, 9);
+    expect(highEndZ).toBeCloseTo(-(BUILD.wall.t / 2), 9);
+    const candidate: BuildPiece = { id: -1, kind: 'ramp', x: res.x, y: res.y, z: res.z, yaw: res.yaw };
+    expect(placementValid([base], candidate, 0)).toEqual({ ok: true });
+  });
+
+  it("'rampfoot' snap against a ROTATED wall (yaw=30deg) still lands flush with no overlap", () => {
+    const yaw = 30 * DEG;
+    const base = wall(1, 5, 0, -3, yaw);
+    // Front face (faceSign=+1) world position: face = p + wDir*(t/2), wDir=(sin(yaw),cos(yaw)).
+    const faceX = 5 + Math.sin(yaw) * (BUILD.wall.t / 2);
+    const faceZ = -3 + Math.cos(yaw) * (BUILD.wall.t / 2);
+    const aim: Vec3 = { x: faceX + Math.sin(yaw) * 0.1, y: 0, z: faceZ + Math.cos(yaw) * 0.1 };
+    const res = resolveSnap([base], 'ramp', aim, 0);
+    expect(res.snapped).toBe('rampfoot');
+    const highEndX = res.x + Math.sin(res.yaw) * (BUILD.ramp.run / 2);
+    const highEndZ = res.z + Math.cos(res.yaw) * (BUILD.ramp.run / 2);
+    expect(highEndX).toBeCloseTo(faceX, 9);
+    expect(highEndZ).toBeCloseTo(faceZ, 9);
+    const candidate: BuildPiece = { id: -1, kind: 'ramp', x: res.x, y: res.y, z: res.z, yaw: res.yaw };
+    expect(placementValid([base], candidate, 0)).toEqual({ ok: true });
   });
 
   it("'rampfoot' is not offered when placing a WALL (only ramps get rampfoot candidates)", () => {

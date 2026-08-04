@@ -231,12 +231,17 @@ export class BuildSystem {
       toast(reasonToast(kind, this.pendingReason ?? 'overlap'));
       return false;
     }
-    this.setStock(kind, this.stock(kind) - 1);
+    const remaining = this.stock(kind) - 1;
+    this.setStock(kind, remaining);
     const piece: BuildPiece = { ...this.pending, id: this.nextId++ };
     this.piecesList.push(piece);
     this.rebuildHash();
     this.spawnMesh(piece);
     toast(kind === 'wall' ? 'Wall placed' : 'Ramp placed');
+    // Auto-exit the ghost the moment stock hits zero — otherwise it lingers
+    // active-but-permanently-red (every future update() reads 'stock' as the
+    // invalid reason) until the player notices and backs out themselves.
+    if (remaining <= 0) this.exit();
     return true;
   }
 
@@ -419,9 +424,17 @@ export class BuildSystem {
     }));
   }
 
-  /** Replace every placed piece with `entries` (load path). Truncated to
-   *  `BUILD.maxPieces` in case a hand-edited save carries more. */
-  deserialize(entries: readonly BuildPersistEntry[]): void {
+  /**
+   * Replace every placed piece with `entries` (load path). Truncated to
+   * `BUILD.maxPieces` in case a hand-edited/legacy save carries more —
+   * unlike `confirm()`'s live 'Build limit reached!' toast, a silent load-
+   * time drop would be invisible to the player (their fort just... has
+   * fewer pieces than they left it with). Toasts when truncation actually
+   * happens and returns `true` for that case too, so the signal is directly
+   * testable without a toast spy.
+   */
+  deserialize(entries: readonly BuildPersistEntry[]): boolean {
+    const truncated = entries.length > BUILD.maxPieces;
     for (const id of [...this.meshes.keys()]) this.disposeMesh(id);
     this.piecesList.length = 0;
     this.nextId = 0;
@@ -438,6 +451,10 @@ export class BuildSystem {
       this.spawnMesh(piece);
     }
     this.rebuildHash();
+    if (truncated) {
+      toast(`Build limit reached — only the first ${BUILD.maxPieces} pieces loaded`);
+    }
+    return truncated;
   }
 
   // -------------------------------------------------------------------------
