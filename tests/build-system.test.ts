@@ -79,6 +79,21 @@ describe('BuildSystem — enter/cancel', () => {
     expect(sys.active).toBe(false);
   });
 
+  // Final-review Fix 1 (CONFIRMED): a zero-stock enter() used to return
+  // BEFORE tearing down whatever ghost was already active, so switching from
+  // an in-stock kind to an out-of-stock one left the OLD ghost live while the
+  // hotbar highlighted the new (inactive) slot — LMB would then place the old
+  // kind under the new slot's highlight.
+  it('a zero-stock enter() of a DIFFERENT kind exits the previously-active ghost (cross-kind regression)', () => {
+    const { sys } = makeSystem(3, 0, 0); // walls in stock, ramps/cubes not
+    sys.enter('wall');
+    expect(sys.active).toBe(true);
+
+    sys.enter('ramp'); // 0 ramps in stock
+    expect(sys.active).toBe(false); // the stale wall ghost must not linger
+    expect(sys.confirm()).toBe(false); // nothing to confirm — no leftover kind
+  });
+
   it('confirm()/update() are no-ops when no ghost is active', () => {
     const { sys } = makeSystem();
     expect(sys.confirm()).toBe(false);

@@ -1,12 +1,25 @@
 import * as THREE from 'three';
-import { BUILD, CAMERA, CASTLE, DEMOLISH, ENV, GOBLIN, HEALTH, MAX_FRAME_DT, MOUNT, SIM_DT, STRUCTURES } from './core/constants.ts';
+import {
+  BUILD,
+  CAMERA,
+  CASTLE,
+  DEMOLISH,
+  DISCOVERY_HINTS,
+  ENV,
+  GOBLIN,
+  HEALTH,
+  MAX_FRAME_DT,
+  MOUNT,
+  SIM_DT,
+  STRUCTURES,
+} from './core/constants.ts';
 import { setupEnvironment, setupDaylight, updateWater } from './world/environment.ts';
 import { daylightAt } from './core/daylight.ts';
 import { ChunkManager } from './world/chunks.ts';
 import { PropManager } from './world/props.ts';
 import { groundNormalAt, heightAt } from './world/terrain.ts';
 import type { GroundQuery, Vec3 } from './core/types.ts';
-import { Input } from './player/input.ts';
+import { Input, shouldTreatRmbAsPlacementConfirm } from './player/input.ts';
 import { PlayerController } from './player/controller.ts';
 import { HandsView } from './player/hands.ts';
 import { createHealth, applyHit, isDazed, stepHealth } from './player/health.ts';
@@ -566,10 +579,13 @@ function bootGame(): void {
 
   // -------------------------------------------------------------------------
   // Deployable structures (Task 13): ziplines + drones + their placement mode.
-  // Hotbar 3 → zipline (two-stage), hotbar 4 → drone. Drones register grapple
-  // anchors on the shared registry, so a hovering drone is instantly
-  // grappleable. Live counts/placing/riding are read straight off these
-  // systems by the Task 14 debug handle's `state()` snapshot.
+  // Entered by selecting a 'kit:zipline' (two-stage) or 'kit:drone' hotbar
+  // item — since Inventory+Building Task 3, hotbar slots are a flexible
+  // 6-slot loadout the player assigns freely from the inventory screen, not
+  // fixed slot numbers (see `syncHotbarPlacement`'s doc further down). Drones
+  // register grapple anchors on the shared registry, so a hovering drone is
+  // instantly grappleable. Live counts/placing/riding are read straight off
+  // these systems by the Task 14 debug handle's `state()` snapshot.
   // -------------------------------------------------------------------------
   const ziplines = new ZiplineSystem(scene, ground, inventory);
   const drones = new DroneSystem(scene, ground, anchors, inventory);
@@ -711,9 +727,32 @@ function bootGame(): void {
     snapHintShown = true;
     toast('Hold Ctrl to snap');
   }
-  function syncHotbarPlacement(): void {
+
+  // Kid-UX discovery hint (final-review Fix 5): a one-shot nudge toward the
+  // inventory screen (Esc) — session-only, never persisted to the save (same
+  // convention as `snapHintShown` above). Simpler trigger picked over "first
+  // craft" per the finding's own "pick the simpler trigger" — gated on
+  // `worldTime` (accumulates unconditionally, even while a screen is open —
+  // see `update()`'s very first line) rather than any craft-flow hook, so it
+  // needs no wiring through the craft screen's `applyCraft` callback at all.
+  let inventoryHintShown = false;
+  function maybeShowInventoryHint(): void {
+    if (inventoryHintShown) return;
+    inventoryHintShown = true;
+    toast('Press Esc to open your inventory');
+  }
+  /**
+   * `force` (final-review Fix 4): bypasses the "item unchanged" short-circuit
+   * below. Needed after a mount dismount — mounting-up already cancelled any
+   * active ghost (see `handleMountKey`/`debugRide`) WITHOUT updating
+   * `hotbarSyncedItem` (mount/dismount deliberately bypass `setHotbar` while
+   * riding, per the doc above), so the plain change-detection would otherwise
+   * read the selection as "unchanged" and skip re-entering the ghost even
+   * though it's actually inactive.
+   */
+  function syncHotbarPlacement(force = false): void {
     const item = hotbar.slots[hotbar.selected] ?? null;
-    if (item === hotbarSyncedItem) return;
+    if (!force && item === hotbarSyncedItem) return;
     hotbarSyncedItem = item;
     // Switching straight between two ghosts of the SAME system (zipline<->
     // drone, or wall<->ramp/cube) is handled internally by that system's own
@@ -975,11 +1014,21 @@ function bootGame(): void {
     inventory.resin = 9999;
     inventory.shard = 9999;
     inventory.spark = 9999;
+    // Final-review Fix 7: wood/stone are farm-only (never scattered/harvested
+    // in the world — see core/types.ts's ResourceKind doc), so without this a
+    // dev session couldn't craft/place ANY wall/ramp/cube at all despite the
+    // build pieces themselves being granted below — the wood/stone COST of
+    // crafting more once the starting stock ran out was simply unreachable.
+    inventory.wood = 9999;
+    inventory.stone = 9999;
     inventory.rp = 999;
     inventory.darts = 999;
     inventory.charms = 999;
     inventory.walls = 50;
     inventory.ramps = 50;
+    // Final-review Fix 7: cubes were the one placeable piece missing from the
+    // dev loadout entirely (wall/ramp both got a stack, cube got none).
+    inventory.cubes = 50;
     inventory.kits.zipline = 9;
     inventory.kits.drone = 9;
     for (const u of ['grapple', 'boots', 'glider', 'rocket']) player.unlocks.add(u);
@@ -1323,6 +1372,9 @@ function bootGame(): void {
   function handleMountKey(): void {
     if (player.mounted) {
       mounts.dismount(player);
+      // Final-review Fix 4: force a ghost re-sync — see `syncHotbarPlacement`'s
+      // `force` param doc for why the plain change-detection would miss this.
+      syncHotbarPlacement(true);
       return;
     }
     if (!mounts.active()) {
@@ -1387,6 +1439,7 @@ function bootGame(): void {
   /** Advance simulation state by a fixed timestep. Systems hook in here. */
   function update(dt: number): void {
     worldTime += dt;
+    if (worldTime >= DISCOVERY_HINTS.inventoryHintDelayS) maybeShowInventoryHint();
 
     // While a screen (crafting) is open: don't step movement/collision, and
     // ignore gameplay action edges (interact) — only the screen-toggle edges
@@ -1506,10 +1559,23 @@ function bootGame(): void {
       // reads it via input.state(), so the same R press never ALSO boosts
       // the player this frame. A no-op when R wasn't pressed.
       if (build.active) input.clearRocketEdge();
+      // Final-review Fix 2 (defensive, macOS click translation): while
+      // snap-confirming a build ghost, mask RMB out of the grapple entirely —
+      // see `shouldTreatRmbAsPlacementConfirm`'s doc in input.ts and the
+      // `action.type === 'rmb'` branch below, which does the actual confirm.
+      player.grappleSuppressed = shouldTreatRmbAsPlacementConfirm(build.active, input.snapHeld);
+      const wasMounted = player.mounted;
       player.update(dt);
       // Prismhorse mount: pin/animate the actor under the camera while riding,
       // or loosely trail the player while idle (also handles hold-Space dismount).
       mounts.update(dt, player, input);
+      // Final-review Fix 4: a hold-Space dismount runs INSIDE mounts.update
+      // (KeyV's own dismount branch is in handleMountKey below) — either way,
+      // the mounted branch above bypasses `setHotbar`/`syncHotbarPlacement`
+      // entirely, so a placeable slot selected mid-ride never auto-entered a
+      // ghost. Force a full re-sync the instant riding ends so a selected
+      // wall/ramp/cube/kit slot gets its ghost back immediately on dismount.
+      if (wasMounted && !player.mounted) syncHotbarPlacement(true);
     }
 
     // Structure cosmetics + placement ghost always tick (drones bob/spin even
@@ -1719,6 +1785,21 @@ function bootGame(): void {
           // — the grapple now lives entirely on RMB (no reel binding);
           // suppressed only while riding a zipline.
           fireSelectedItem();
+        }
+      }
+      if (action.type === 'rmb') {
+        // Final-review Fix 2 (defensive, macOS click translation): macOS
+        // translates a Ctrl+LMB click into this same RMB event at the OS
+        // level, so a Ctrl-held snap-confirm may arrive here instead of as
+        // 'lmb' — see `shouldTreatRmbAsPlacementConfirm`'s doc in input.ts.
+        // The grapple itself is ALREADY masked out this frame (controller's
+        // `grappleSuppressed`, set above from the same predicate), so this
+        // is the confirm's only path through while suppressed — normal play
+        // (snap not held, or no ghost active) leaves RMB doing nothing here,
+        // same as before this fix (the grapple fire lives entirely in
+        // controller.ts's own level-read of `input.rmbHeld`, not this queue).
+        if (shouldTreatRmbAsPlacementConfirm(build.active, input.snapHeld)) {
+          build.confirm();
         }
       }
     }

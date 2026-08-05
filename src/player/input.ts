@@ -15,8 +15,9 @@ import type { MoveInput } from '../core/types.ts';
 // KeyQ dash, KeyR rocket (or rotate the active build ghost — context-
 // sensitive, resolved by main.ts off the `'rotate'` action edge, see the
 // `Action` doc below), KeyF interact, KeyX toggle destruction/demolish mode
-// (playtest Task 9 — see the `'toggleDemolish'` action doc below), Digit1–5
-// hotbar, Tab/KeyC/Escape UI, LMB dart throw (Task 10) or, while demolish
+// (playtest Task 9 — see the `'toggleDemolish'` action doc below), Digit1–6
+// hotbar (6 slots since Inventory+Building Task 3 — see `actionForCode`),
+// Tab/KeyC/Escape UI, LMB dart throw (Task 10) or, while demolish
 // mode is active, instant no-penalty reclaim, RMB grapple (Task 12;
 // `rmbHeld` for the reel), Ctrl held = explicit snap-to-piece modifier while
 // placing (`snapHeld`, playtest Task 8) — mouse buttons register only while
@@ -95,6 +96,23 @@ export function actionForCode(code: string): Action | null {
     default:
       return null;
   }
+}
+
+/**
+ * Final-review Fix 2 (defensive, macOS click translation): macOS translates a
+ * Ctrl+LMB click into a secondary-button ("right click") event at the OS
+ * level — a Ctrl-held snap-confirm click on that platform never reaches the
+ * browser as a primary-button click at all, it arrives as RMB. Without this,
+ * that RMB would instead fire the grapple (RMB's normal binding) while the
+ * player was mid-snap-placing a build ghost. This predicate says: while a
+ * build ghost is active AND the snap modifier is held, an RMB press should be
+ * read as "confirm the snapped placement," and the grapple must NOT fire.
+ * Pure (no DOM) so it's unit-testable without synthesizing a real OS-level
+ * click translation, which synthetic browser events can't reproduce — see
+ * the finding's own note that this can't be verified headlessly end-to-end.
+ */
+export function shouldTreatRmbAsPlacementConfirm(buildActive: boolean, snapHeld: boolean): boolean {
+  return buildActive && snapHeld;
 }
 
 /**
@@ -276,6 +294,16 @@ export class Input {
         this.edges.latch('dash');
         return;
       case 'KeyR':
+        // Final-review Fix 3: Ctrl+R is the browser's built-in page-reload
+        // shortcut. Unlike Ctrl+W (a browser chrome shortcut the page can
+        // never intercept), Ctrl+R IS blockable via preventDefault — and R
+        // rotates the active build ghost (see the Action union doc below),
+        // so a player rotating a snapped ghost with Ctrl held (the explicit
+        // snap modifier, `snapHeld`) would otherwise reload the page out from
+        // under themselves mid-placement. Gated on `locked` (mirrors the wheel
+        // handler's gating above) so an un-locked page never has its reload
+        // shortcut touched at all.
+        if (this.locked) e.preventDefault();
         this.edges.latch('rocket');
         // Always also queue a 'rotate' action edge — main.ts decides what R
         // means this frame (rotate the build ghost vs. let the rocket edge

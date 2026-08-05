@@ -154,6 +154,17 @@ export class PlayerController {
   /** Guards `onCeilingBlocked` to one fire per hall stay; reset once `movementCeiling` goes false. */
   private toastedThisHall = false;
 
+  /**
+   * Final-review Fix 2 (defensive, macOS click translation): set by main.ts
+   * every frame to `shouldTreatRmbAsPlacementConfirm(build.active,
+   * input.snapHeld)` — see that predicate's doc in input.ts. While true, RMB
+   * is fully masked out of the grapple fire/cancel/re-fire logic below (not
+   * just "don't fire a NEW hook") so a mashed RMB during a snap-confirm can
+   * never also cancel/re-fire an existing hook that same frame. Defaults to
+   * false so headless/unit use (no main.ts wiring) never suppresses anything.
+   */
+  grappleSuppressed = false;
+
   constructor(
     camera: THREE.PerspectiveCamera,
     input: Input,
@@ -419,7 +430,7 @@ export class PlayerController {
     // RMB is now an edge, not a hold. Idle → fire; flying → cancel (retract);
     // zipping → plain release (keep momentum); hanging → re-fire a new hook
     // (the climb-chaining loop). Any non-normal mode (swim) drops the hook.
-    const rmb = this.input.rmbHeld && this.state.mode === 'normal';
+    const rmb = this.input.rmbHeld && this.state.mode === 'normal' && !this.grappleSuppressed;
     const rmbEdge = rmb && !this.prevRmb;
     this.prevRmb = rmb;
 

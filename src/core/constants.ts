@@ -1686,3 +1686,16 @@ export const PLAYER_START = {
   /** Tracker darts granted at the very start of a fresh game. */
   startingDarts: 4,
 } as const;
+
+/**
+ * Kid-UX discovery hints (final-review Fix 5/6): one-shot nudges so a young
+ * player finds systems they'd otherwise never think to look for. Session-only
+ * (never written to the save, same convention as `snapHintShown` in main.ts) —
+ * a fresh reload always gets the nudge again rather than tracking a permanent
+ * "seen it" flag.
+ */
+export const DISCOVERY_HINTS = {
+  /** Seconds of play before the "press Esc for your inventory" toast fires,
+   *  if the player hasn't already discovered the inventory some other way. */
+  inventoryHintDelayS: 60,
+} as const;

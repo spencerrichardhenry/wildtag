@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { EdgeLatch, actionForCode, hotbarStepForWheel } from '../src/player/input.ts';
+import {
+  EdgeLatch,
+  actionForCode,
+  hotbarStepForWheel,
+  shouldTreatRmbAsPlacementConfirm,
+} from '../src/player/input.ts';
 
 // EdgeLatch is the DOM-free one-shot movement-edge core of Input: keydown
 // latches, state() consumes, ScreenManager clears on screen open/close so a
@@ -120,5 +125,31 @@ describe('hotbarStepForWheel', () => {
 
   it('treats a zero delta as a forward step (never a no-op)', () => {
     expect(hotbarStepForWheel(0)).toBe(1);
+  });
+});
+
+// shouldTreatRmbAsPlacementConfirm (final-review Fix 2, defensive): macOS
+// translates a Ctrl+LMB click into a secondary-button (RMB) event at the OS
+// level, so a Ctrl-held snap-confirm may arrive as RMB instead of LMB — this
+// pure predicate is the seam main.ts/controller.ts both key off of to treat
+// that RMB as a placement confirm (and suppress the grapple) instead of
+// firing the grapple. Can't be verified via a real synthetic-event e2e test
+// (synthetic browser events don't reproduce the OS-level click translation),
+// so this predicate's own logic is the only headlessly-testable part of the fix.
+describe('shouldTreatRmbAsPlacementConfirm', () => {
+  it('is true only while a build ghost is active AND the snap modifier is held', () => {
+    expect(shouldTreatRmbAsPlacementConfirm(true, true)).toBe(true);
+  });
+
+  it('is false with a ghost active but snap not held (ordinary freeform placement)', () => {
+    expect(shouldTreatRmbAsPlacementConfirm(true, false)).toBe(false);
+  });
+
+  it('is false with snap held but no ghost active (grapple should fire normally)', () => {
+    expect(shouldTreatRmbAsPlacementConfirm(false, true)).toBe(false);
+  });
+
+  it('is false with neither active', () => {
+    expect(shouldTreatRmbAsPlacementConfirm(false, false)).toBe(false);
   });
 });

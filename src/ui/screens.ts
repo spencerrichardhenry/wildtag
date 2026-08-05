@@ -172,6 +172,11 @@ function injectStyles(): void {
       color: #f5a1a1;
       border-color: rgba(220, 100, 100, 0.4);
     }
+    .wt-recipe-hint {
+      font-size: 11px;
+      color: #9fb0b8;
+      font-style: italic;
+    }
     .wt-craft-btn {
       margin-top: auto;
       font: inherit;
@@ -347,6 +352,17 @@ function renderRecipeCard(
   card.appendChild(head);
 
   card.appendChild(renderCostPills(inv, recipe.cost));
+
+  // Kid-UX discovery hint (final-review Fix 6): wood/stone are farm-only
+  // (never scattered/harvested in the world — core/types.ts's ResourceKind
+  // doc), so a young player staring at a locked wall/ramp/cube card with no
+  // wood/stone on hand has no in-game clue where to get it without this line.
+  if (recipe.cost.wood != null || recipe.cost.stone != null) {
+    const hint = document.createElement('div');
+    hint.className = 'wt-recipe-hint';
+    hint.textContent = 'Farm critters make wood & stone';
+    card.appendChild(hint);
+  }
 
   const button = document.createElement('button');
   button.className = 'wt-craft-btn';
@@ -645,9 +661,9 @@ export function createCraftScreen(
 // Inventory screen (Inventory+Building Task 3). Esc's new default target
 // (opened when no screen is open; Esc while it's open still just closes it,
 // same as every other screen). Three sections in one panel:
-//   1. Item grid — the 7 ItemIds, shown once owned (count > 0) or already
-//      assigned to a slot. Click a card to "arm" it (highlighted), then click
-//      a hotbar slot below to assign it there.
+//   1. Item grid — the 8 ItemIds (playtest Task 8 added 'cube'), shown once
+//      owned (count > 0) or already assigned to a slot. Click a card to "arm"
+//      it (highlighted), then click a hotbar slot below to assign it there.
 //   2. Resources row — read-only counts for every ResourceKind + RP.
 //   3. Hotbar strip — the live 6 slots. Click an armed slot to assign the
 //      armed item there (overwriting/moving as `assign()` dictates); click a

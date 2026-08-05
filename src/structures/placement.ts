@@ -8,13 +8,18 @@ import type { DroneSystem } from './drones.ts';
 import type { Inventory } from '../craft/inventory.ts';
 
 // ---------------------------------------------------------------------------
-// Structure placement mode (Task 13). Entered from the hotbar: slot 3 places a
-// zipline (two stages — A then B), slot 4 places a drone. A ghost mesh tracks
-// the terrain aim point (raycast from the camera, capped at STRUCTURES.placeRange)
-// and turns green when the current placement is valid, red when not. LMB
-// confirms (a zipline stage A only stages the near post — no kit spent — and
-// stage B validates against A and spends the kit; a drone spends on confirm).
-// Esc or pressing the same hotbar slot again cancels. Every transition toasts.
+// Structure placement mode (Task 13). Entered from the hotbar: selecting the
+// 'kit:zipline' item places a zipline (two stages — A then B), 'kit:drone'
+// places a drone — whichever SLOT those items happen to be assigned to (since
+// Inventory+Building Task 3, hotbar slots are a flexible loadout the player
+// assigns freely, not fixed slot numbers; main.ts's `syncHotbarPlacement`
+// drives entry/exit off the selected ITEM, not a slot index). A ghost mesh
+// tracks the terrain aim point (raycast from the camera, capped at
+// STRUCTURES.placeRange) and turns green when the current placement is valid,
+// red when not. LMB confirms (a zipline stage A only stages the near post —
+// no kit spent — and stage B validates against A and spends the kit; a drone
+// spends on confirm). Esc or re-selecting the same tool's item cancels. Every
+// transition toasts.
 //
 // The ghost group is disposed on every exit (place OR cancel, including
 // cancel-by-hotbar) so no preview geometry leaks into the scene.
@@ -72,9 +77,11 @@ export class PlacementSystem {
   }
 
   /**
-   * Hotbar toggle: pressing the slot for the active tool cancels; pressing a
-   * different slot switches tools; otherwise it enters placement (if a kit is
-   * held). `slot` 3 → zipline, 4 → drone.
+   * Hotbar toggle: re-selecting the active tool's item cancels; selecting the
+   * OTHER tool's item switches tools; otherwise it enters placement (if a kit
+   * is held). Driven by the selected ITEM ('kit:zipline' → 'zipline',
+   * 'kit:drone' → 'drone' — see main.ts's `syncHotbarPlacement`), not a fixed
+   * slot number.
    */
   toggle(tool: Tool): void {
     if (this.tool === tool) {

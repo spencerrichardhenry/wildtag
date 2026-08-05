@@ -193,8 +193,19 @@ export class BuildSystem {
 
   /** Hotbar selection entered a placeable slot: 'wall', 'ramp' or 'cube'.
    *  No-ops (toasts) with an empty stock so the ghost never enters with
-   *  nothing to place. */
+   *  nothing to place.
+   *
+   *  Final-review Fix 1: `exit()` runs BEFORE the zero-stock early-return —
+   *  a previously-active ghost of a DIFFERENT kind must never be left live
+   *  when the new selection can't enter. Without this, selecting an empty
+   *  slot (e.g. Ramp at 0 stock) while a Wall ghost was active left the wall
+   *  ghost live and highlighted the ramp hotbar slot instead — LMB then
+   *  silently placed a wall while the player believed the ramp slot was
+   *  selected. `exit()` itself is a no-op-safe teardown (guards internally
+   *  on `this.ghost`), so calling it unconditionally here costs nothing on
+   *  the common "no ghost was active" path. */
   enter(kind: PieceKind): void {
+    this.exit();
     if (this.stock(kind) <= 0) {
       toast(`No ${kind}s`);
       return;
