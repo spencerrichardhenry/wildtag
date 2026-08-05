@@ -109,6 +109,8 @@ export interface DebugDeps {
   castlePurified(): boolean;
   /** True while the player stands under a roofed hall (Castle Ward Task 5 — state().inHall / verification). */
   inHall(): boolean;
+  /** First-person hands viewmodel snapshot (Inventory+Building Task 6 e2e verification). */
+  handsState(): unknown;
   /**
    * Debug-only: run the full crystal-purify sequence immediately, regardless
    * of dart position (Cursed Castle Task 14 e2e verification —
@@ -170,6 +172,8 @@ export interface GameDebugHandle {
   purifyCrystal(): void;
   /** Debug-only: apply `dmg` HP of damage directly (daze-eject-spires §1 e2e). */
   hurt(dmg: number): void;
+  /** Debug-only: latch a grapple hook directly at (x, y, z) (Inventory+Building Task 6 e2e). */
+  fireGrapple(x: number, y: number, z: number): void;
 }
 
 /** Build the `window.__game` debug handle from the live systems main.ts owns. */
@@ -211,6 +215,8 @@ export function buildDebugHandle(deps: DebugDeps): GameDebugHandle {
         // + whether a build ghost is currently active.
         placedPieces: deps.placedPieces(),
         building: deps.isBuilding(),
+        // Inventory+Building Task 6 e2e verification: hands viewmodel snapshot.
+        hands: deps.handsState(),
       };
     },
 
@@ -394,6 +400,11 @@ export function buildDebugHandle(deps: DebugDeps): GameDebugHandle {
     /** Debug-only: apply `dmg` HP of damage directly (daze-eject-spires §1 e2e). */
     hurt(dmg: number): void {
       deps.hurt(dmg);
+    },
+
+    /** Debug-only: latch a grapple hook directly (Inventory+Building Task 6 e2e). */
+    fireGrapple(x: number, y: number, z: number): void {
+      deps.player.debugFireGrapple({ x, y, z });
     },
   };
 }

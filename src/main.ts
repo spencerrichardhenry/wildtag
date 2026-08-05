@@ -8,10 +8,12 @@ import { groundNormalAt, heightAt } from './world/terrain.ts';
 import type { GroundQuery, Vec3 } from './core/types.ts';
 import { Input } from './player/input.ts';
 import { PlayerController } from './player/controller.ts';
+import { HandsView } from './player/hands.ts';
 import { createHealth, applyHit, isDazed, stepHealth } from './player/health.ts';
 import { createInventory, addResource } from './craft/inventory.ts';
 import {
   createHotbar,
+  itemCount,
   migrateLegacy as migrateLegacyHotbar,
   select as selectHotbar,
   selectStep as selectStepHotbar,
@@ -158,6 +160,11 @@ function bootGame(): void {
   const debugStructures = debugParam === 'structures';
   const debugVillage = debugParam === 'village';
   const debugCastle = debugParam === 'castle';
+  // `?debug=grapple/structures/village/castle` freeze the player for a clean
+  // static framing shot — hoisted here (rather than recomputed per call) so
+  // both the update() gate below and render()'s hands-hidden gate (Inventory+
+  // Building Task 6) share one definition.
+  const debugFrozen = debugGrapple || debugStructures || debugVillage || debugCastle;
   // Dev override (`?forcefx=1`): run cascade shadows + the post composer even on
   // a software backend (SwiftShader). The software gate normally skips both so
   // the headless suite stays on the low/direct path; this forces the real code
@@ -181,6 +188,13 @@ function bootGame(): void {
     CAMERA.near,
     CAMERA.far,
   );
+  // The camera must be part of the scene graph — `WebGLRenderer.render`
+  // builds its draw list by traversing FROM `scene` (not from `camera`), so
+  // anything parented only to the camera (the hands viewmodel, Inventory+
+  // Building Task 6) would have its matrixWorld kept correct but would never
+  // actually be drawn without this. `flagShadowCasters` below explicitly
+  // excludes the hands from shadow-casting, same as it already does skyDome/water.
+  scene.add(camera);
 
   setupEnvironment(scene);
   // Day/night visuals (Cursed Castle Task 5): sun/hemi/fog/sky-dome/stars react
@@ -266,7 +280,7 @@ function bootGame(): void {
     scene.traverse((obj) => {
       const mesh = obj as THREE.Mesh;
       if (!(mesh as unknown as { isMesh?: boolean }).isMesh) return;
-      if (mesh.name === 'skyDome' || mesh.name === 'water') return;
+      if (mesh.name === 'skyDome' || mesh.name === 'water' || mesh.name === 'handsView') return;
       mesh.castShadow = true;
       // Terrain chunks already receive in chunks.ts; broad ground props too.
       if (mesh.name.startsWith('chunk ')) mesh.receiveShadow = true;
@@ -369,6 +383,10 @@ function bootGame(): void {
 
   const input = new Input(canvas as HTMLCanvasElement);
   const player = new PlayerController(camera, input, ground, spawn, scene, anchors);
+  // First-person hands (Inventory+Building Task 6): a camera-child viewmodel,
+  // purely cosmetic — constructed right after the camera/player so it's ready
+  // for the very first render() call below.
+  const hands = new HandsView(camera);
   // Feed the grapple hook the nearby grappleable tree/rock cylinders so a fired
   // hook can latch to props, not just bare terrain.
   player.grappleColliders = (x, z) =>
@@ -1286,8 +1304,7 @@ function bootGame(): void {
     if (!paused) health = stepHealth(health, dt);
 
     // `?debug=grapple`/`?debug=structures` freeze the player for a clean static
-    // screenshot while the world keeps streaming.
-    const debugFrozen = debugGrapple || debugStructures || debugVillage || debugCastle;
+    // screenshot while the world keeps streaming (`debugFrozen` hoisted above).
     // Day/night clock: advances at the same rate as `worldTime` (and so
     // inherits `timeScale` for free via extra accumulator steps per frame),
     // frozen under the same conditions as the rest of the sim.
@@ -1583,8 +1600,11 @@ function bootGame(): void {
     if (skyDome) skyDome.position.set(camera.position.x, 0, camera.position.z);
   }
 
-  /** Draw the current state + repaint the HUD. Called once per frame. */
-  function render(): void {
+  /** Draw the current state + repaint the HUD. Called once per frame with the
+   *  raw (unclamped-by-timeScale) frame delta — only consumed by the hands
+   *  viewmodel's idle-sway/walk-bob clock, which is a wall-clock cosmetic
+   *  effect rather than part of the fixed-step sim. */
+  function render(dt: number): void {
     // Lantern Charm reward: a soft glow tracking the player once owned.
     if (getRewards().has('lanternCharm')) {
       lantern.visible = true;
@@ -1603,6 +1623,24 @@ function bootGame(): void {
     updateShadowFollow();
     // Water 1.5: advance the shader ripple/shimmer clock (one uniform write).
     updateWater(scene, worldTime);
+
+    // First-person hands (Inventory+Building Task 6) — must run before the
+    // render call below since the view model is a camera child. Hidden while
+    // a screen is open, mid daze-blackout, during a `?debug=` framing freeze,
+    // or while mounted (the mount fills the view for both hands, not just the
+    // grapple-gated right one). `selectedItem` is resolved from a zero-count
+    // slot to `null` here — see `HandsUpdateOpts.selectedItem`'s doc comment —
+    // so `HandsView` never has to import `Inventory`/`itemCount` itself.
+    const rawSelectedItem = hotbar.slots[hotbar.selected] ?? null;
+    hands.update(dt, {
+      speed: Math.hypot(player.vel.x, player.vel.z),
+      selectedItem: rawSelectedItem && itemCount(inventory, rawSelectedItem) > 0 ? rawSelectedItem : null,
+      grappleUnlocked: player.unlocks.has('grapple'),
+      hookLive: player.isGrappling(),
+      riding: player.mounted,
+      hidden: screens.isOpen() || ejectPhase === 'blackout' || debugFrozen || player.mounted,
+    });
+
     // High + fxAllowed → the post composer (SSAO + bloom + tone-map output);
     // otherwise the unchanged direct render path (medium/low/software).
     if (post) post.render();
@@ -1884,6 +1922,7 @@ function bootGame(): void {
     purifyCrystal: () => castleSys.purifyCastle(),
     // Castle Ward Task 5 e2e: is the player currently under a roofed hall.
     inHall: () => inHall(player.pos.x, player.pos.z),
+    handsState: () => hands.debugState(),
   });
 
   // Verification aid (Haven V4): expose deterministic village anchors + a couple
@@ -1984,7 +2023,7 @@ function bootGame(): void {
       steps++;
     }
 
-    render();
+    render(frameDt);
   }
 
   requestAnimationFrame(frame);

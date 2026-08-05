@@ -1566,6 +1566,69 @@ export const MOUNT = {
 } as const;
 
 /**
+ * First-person hands viewmodel (Inventory+Building Task 6, `src/player/
+ * hands.ts`). Two camera-child mitten+forearm groups: right permanently shows
+ * the grapple hook (once unlocked, resting between fires — hidden mid-flight/
+ * latched, since the rope+hook visuals already carry that read); left shows a
+ * small model of the selected hotbar item. Purely cosmetic — nothing here
+ * feeds gameplay.
+ */
+export const HANDS = {
+  /** Camera-local rest position (m) of the right (grapple) hand — lower-right of view. */
+  rightOffset: { x: 0.62, y: -0.42, z: -0.82 },
+  /** Camera-local rest position (m) of the left (item) hand — lower-left of view. */
+  leftOffset: { x: -0.62, y: -0.42, z: -0.82 },
+  /** Idle sway: `sin(t*swayFreq + phase) * swayAmp` added to X/Y every frame,
+   *  even standing still — a subtle "still breathing" drift. */
+  swayFreq: 1.15,
+  swayAmp: 0.012,
+  /** Walk bob: `sin(t*bobFreq) * bobAmp * min(speed/bobSpeedCap, 1)` added to Y
+   *  on top of the idle sway, opposite phase per hand (alternating arm-swing). */
+  bobFreq: 9,
+  bobAmp: 0.045,
+  bobSpeedCap: 7,
+  /** Forearm cylinder radii (top = wrist end, bottom = elbow/off-screen end) + length (m). */
+  forearmRadii: { top: 0.05, bottom: 0.066 },
+  forearmLen: 0.3,
+  forearmSegments: 6,
+  /** Sleeve cuff: a short wide cylinder at the forearm's off-screen (elbow) end. */
+  cuffRadii: { top: 0.08, bottom: 0.088 },
+  cuffLen: 0.065,
+  /** Lateral tilt (unitless XZ mix, normalized internally) sending each forearm
+   *  toward ITS OWN bottom screen corner rather than straight down. */
+  armLateral: 0.35,
+  armDown: 0.55,
+  armBack: 0.85,
+  /** Mitten: base sphere radius (m) + non-uniform scale for a squashed paw silhouette. */
+  mittenRadius: 0.095,
+  mittenScale: { x: 1, y: 0.82, z: 1.2 },
+  /** Grapple-hook viewmodel: shaft (radii/len) + prongs (radius/len/count) fanned at the tip. */
+  hookShaft: { topR: 0.015, bottomR: 0.02, len: 0.14 },
+  hookProng: { r: 0.022, len: 0.06, count: 3, fanR: 0.03 },
+  /** Held-item mini models (m). */
+  dart: { r: 0.014, len: 0.18 },
+  charmRadius: 0.06,
+  kitBox: 0.11,
+  wallSlab: { w: 0.21, h: 0.24, t: 0.05 },
+  rampWedge: { w: 0.17, run: 0.18, rise: 0.15 },
+  /** Skin-neutral warm mitten/forearm tone + a darker sleeve-cuff tone. */
+  skinColor: 0xd9a066,
+  sleeveColor: 0x33404e,
+  hookColor: 0xb9c0c6,
+  /** Held-item tints — mirrors `ITEM_COLOR` in `ui/screens.ts` so the same item
+   *  reads as the same color in the inventory screen and in-hand. */
+  itemColor: {
+    darts: 0x66e0ff,
+    purifiers: 0x8ef0c0,
+    charms: 0xd98cff,
+    'kit:zipline': 0xf0c058,
+    'kit:drone': 0x7fb2f0,
+    wall: 0x8f8f92,
+    ramp: 0xc9a06a,
+  },
+} as const;
+
+/**
  * Player starting loadout (Task 14). Applied by main.ts only on a brand-new
  * game (no valid save present, or `?fresh=1`) — a loaded save's own inventory
  * counts always win, and `createInventory()` itself stays a pure zero ctor
