@@ -4,12 +4,14 @@
 //
 // A standalone Node script that drives the real game in a headless Chromium
 // (SwiftShader WebGL) and ASSERTS the whole gameplay loop end-to-end: boot,
-// movement, tracking/link, crafting, structures, grapple, save round-trip,
-// village/bond/barter/farm/mount, quality presets + draw calls, a perf smoke,
-// and (Cursed Castle) the day/night cycle, the castle site + a gargoyle,
-// night goblins landing a hit on the player, and the purify arc (crystal →
-// elves → persists across reload). Every phase writes a screenshot to
-// docs/verify/NN-name.png.
+// movement, tracking/link, crafting, the assignable inventory/hotbar screen,
+// structures, buildable walls/ramps + composed ground, the first-person hands
+// viewmodel, grapple, save round-trip, village/bond/barter/farm (incl. the
+// farm-only wood/stone producers)/mount, quality presets + draw calls, a perf
+// smoke, and (Cursed Castle) the day/night cycle, the castle site + a
+// gargoyle, night goblins landing a hit on the player, and the purify arc
+// (crystal → elves → persists across reload). Every phase writes a
+// screenshot to docs/verify/NN-name.png.
 //
 // Run:
 //   PLAYWRIGHT_DIR=/path/to/playwright/install node e2e/verify.mjs
@@ -222,6 +224,74 @@ async function pollUntil(getter, pred, { timeout = 6000, interval = 150 } = {}) 
   return last;
 }
 
+// --- Inventory-screen helpers (Inventory+Building Task 3's .wt-inv-* DOM) --
+// Esc opens/closes the inventory screen (main.ts: `screens.open('inventory')`
+// when nothing else is open, `screens.handleEscape()` otherwise). Assigning
+// an item to a hotbar slot is a pure DOM click flow (arm a `.wt-inv-card`,
+// then click a `.wt-inv-slot`) — no pointer lock needed, unlike LMB/RMB/wheel.
+
+/** Open the inventory screen via Escape (from a state with no screen open and
+ *  no active placement/build ghost) and wait for its DOM to render. */
+async function openInventory(page) {
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(
+    () => (document.querySelector('.wt-panel h1')?.textContent || '').includes('Inventory'),
+    { timeout: 3000 },
+  );
+}
+
+/** Close whichever screen is open via Escape and wait for the overlay to hide. */
+async function closeInventory(page) {
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(
+    () => document.querySelector('.wt-screen-overlay')?.style.display === 'none',
+    { timeout: 3000 },
+  );
+}
+
+/**
+ * Click-assign `itemLabel` (the exact `hotbarItemLabel` text, e.g. 'Zipline'
+ * or 'Purify') to hotbar slot index `slotIdx` (0-based; key `slotIdx+1`) via
+ * the REAL inventory-screen DOM — arm the owned-item card, then click the
+ * target slot. The inventory screen must already be open (`openInventory`).
+ */
+async function assignItemToSlot(page, itemLabel, slotIdx) {
+  const cardClicked = await page.evaluate((label) => {
+    const card = [...document.querySelectorAll('.wt-inv-card')].find((c) =>
+      (c.textContent || '').includes(label),
+    );
+    if (!card) return false;
+    card.click();
+    return true;
+  }, itemLabel);
+  assert(cardClicked, `inventory item card for "${itemLabel}" not found (not owned/assigned?)`);
+  await sleep(150); // the click's own re-render (armed highlight) settles
+  const slotClicked = await page.evaluate((idx) => {
+    const slot = document.querySelectorAll('.wt-inv-slot')[idx];
+    if (!slot) return false;
+    slot.click();
+    return true;
+  }, slotIdx);
+  assert(slotClicked, `inventory hotbar slot index ${slotIdx} not found`);
+  await sleep(150);
+}
+
+/**
+ * Fake pointer-lock acquisition on the game canvas: `Input.locked` gates
+ * LMB/RMB/wheel handling on `document.pointerLockElement === canvas`, and
+ * headless Chromium cannot acquire a real pointer lock ("root document not
+ * valid for pointer lock" — see the file header's NOTE ON HEADLESS INPUT).
+ * Overriding the getter with an own-property on `document` is the same
+ * technique Task 3's standalone verification script used (task-3-report.md)
+ * to exercise the real wheel-driven hotbar step. Idempotent.
+ */
+async function fakePointerLock(page) {
+  await page.evaluate(() => {
+    const canvas = document.querySelector('canvas');
+    Object.defineProperty(document, 'pointerLockElement', { get: () => canvas, configurable: true });
+  });
+}
+
 // --- PNG luminance-variance (canvas non-blank) -----------------------------
 function decodePNG(buf) {
   if (buf.readUInt32BE(0) !== 0x89504e47) return null;
@@ -414,7 +484,7 @@ async function checkMovement() {
 }
 
 async function checkTracking() {
-  await check('c. Tracking loop: spawn → track → ring → complete → link → guide 1/12', async () => {
+  await check('c. Tracking loop: spawn → track → ring → complete → link → guide 1/15', async () => {
     const page = await openPage('?fresh=1');
     try {
       await page.evaluate(() => window.__game.setTimeScale(1));
@@ -512,19 +582,89 @@ async function checkCraft() {
   });
 }
 
+async function checkInventoryHotbar() {
+  await check('w. Inventory + hotbar: Escape opens it, click-assign purifiers to a slot, wheel-selects it', async () => {
+    const page = await openPage('?fresh=1');
+    try {
+      await page.evaluate(() => window.__game.grant('purifiers', 5));
+
+      await openInventory(page);
+      const h1 = await page.evaluate(() => document.querySelector('.wt-panel h1')?.textContent ?? '');
+      assert(h1.includes('Inventory'), `Escape did not open the Inventory screen (h1="${h1}")`);
+      console.log(`    Escape opened the Inventory screen ("${h1.trim()}")`);
+
+      // Click-assign the owned Purify card to hotbar slot index 1 (key '2') —
+      // the real `.wt-inv-card` / `.wt-inv-slot` DOM (Task 3), not a debug seam.
+      await assignItemToSlot(page, 'Purify', 1);
+      const assigned = await state(page);
+      assert(
+        assigned.hotbarSlots[1] === 'purifiers',
+        `slot index 1 not assigned purifiers ([${assigned.hotbarSlots.join(',')}])`,
+      );
+      console.log(`    assigned purifiers -> hotbar slot 2 via .wt-inv-card/.wt-inv-slot clicks`);
+      await shot(page, '29-inventory-hotbar.png');
+
+      await closeInventory(page);
+      const closedDisplay = await page.evaluate(
+        () => document.querySelector('.wt-screen-overlay')?.style.display,
+      );
+      assert(closedDisplay === 'none', `inventory overlay did not hide on Escape (display="${closedDisplay}")`);
+
+      // Scroll-wheel selection (Input.onWheel, gated on pointer lock — faked
+      // here, see fakePointerLock's doc comment): one tick with deltaY>0
+      // steps the selection +1 (hotbarStepForWheel), landing on the slot we
+      // just assigned purifiers to.
+      const before = await state(page);
+      assert(before.selectedSlot === 0, `expected the default selection (slot 0) before scrolling, got ${before.selectedSlot}`);
+      await fakePointerLock(page);
+      await page.evaluate(() => {
+        document.querySelector('canvas').dispatchEvent(new WheelEvent('wheel', { deltaY: 120, bubbles: true }));
+      });
+      const after = await pollState(page, (s) => s.selectedSlot === 1, { timeout: 3000 });
+      assert(after.selectedSlot === 1, `selectedSlot ${after.selectedSlot} != 1 after one wheel tick`);
+      assert(after.hotbarSlots[after.selectedSlot] === 'purifiers', 'wheel-selected slot is not the purifiers slot');
+      console.log(`    wheel tick (deltaY=120) selectedSlot ${before.selectedSlot} -> ${after.selectedSlot}`);
+
+      assert(page.__errors.length === 0, `console/page errors: ${page.__errors.join(' | ')}`);
+    } finally {
+      await page.close();
+    }
+  });
+}
+
 async function checkStructures() {
-  await check('e. Structures: placement ghost (hotbar 3) + real zipline+drone via ?debug=structures', async () => {
-    // Placement ghost path (keyboard-driven; confirm needs LMB/pointer-lock — see header note).
+  await check('e. Structures: assign zipline kit to a hotbar slot (real inventory UI), select it, ghost active + real zipline+drone via ?debug=structures', async () => {
+    // Placement ghost path: the pre-Task-3 model had a fixed Digit3-enters-
+    // zipline-placement slot; the new 6-slot ASSIGNABLE hotbar starts a fresh
+    // save with darts in slot 1 and every other slot empty, so a kit has to be
+    // click-assigned to a slot via the real inventory screen (Task 3's
+    // `.wt-inv-card`/`.wt-inv-slot` DOM) before any digit key selects it into
+    // a placement ghost (`syncHotbarPlacement` in main.ts). Assigning alone
+    // does not change the SELECTED slot (`assign()` in craft/hotbar.ts keeps
+    // `selected` as-is) — and hotbar/digit actions are frozen while a screen
+    // is open (`paused = screens.isOpen()` in main.ts) — so the inventory
+    // screen must be closed before pressing the digit key that selects it.
     const page = await openPage('?fresh=1');
     try {
       await page.evaluate(() => window.__game.grant('kit:zipline', 3));
-      await page.keyboard.press('3'); // hotbar 3 -> enter zipline placement
+
+      await openInventory(page);
+      await assignItemToSlot(page, 'Zipline', 2); // slot index 2 -> key '3'
+      const assignedState = await state(page);
+      assert(
+        assignedState.hotbarSlots[2] === 'kit:zipline',
+        `slot index 2 not assigned kit:zipline ([${assignedState.hotbarSlots.join(',')}])`,
+      );
+      await closeInventory(page);
+
+      await page.keyboard.press('3'); // hotbar slot 3 (now the zipline kit) -> enter placement
       const placing = await pollState(page, (s) => s.structures.placing === true, { timeout: 3000 });
       assert(placing.structures.placing === true, 'placement ghost (placing flag) never became true');
-      console.log('    zipline placement ghost active (state.structures.placing = true)');
+      assert(placing.selectedSlot === 2, `selectedSlot ${placing.selectedSlot} != 2 after pressing '3'`);
+      console.log('    zipline kit assigned to slot 3 via the real inventory UI, then selected -> placement ghost active');
       await shot(page, '06-placement-ghost.png');
 
-      await page.keyboard.press('Escape'); // cancel placement
+      await page.keyboard.press('Escape'); // cancel placement (Esc's top priority, per main.ts)
       const cancelled = await pollState(page, (s) => s.structures.placing === false, { timeout: 3000 });
       assert(cancelled.structures.placing === false, 'placement did not cancel on Escape');
 
@@ -548,6 +688,169 @@ async function checkStructures() {
     // Zipline count limit (maxZiplines=3) is covered by tests/structures.test.ts
     // ("enforces the max-zipline count and reports it"); confirm placement here
     // needs LMB which requires pointer lock (unavailable headless).
+  });
+}
+
+async function checkBuilding() {
+  await check('x. Building: craft Wall+Ramp, stack via __game.placePiece, composed-ground stand height', async () => {
+    const page = await openPage('?fresh=1');
+    try {
+      await sleep(400); // settle grounded (mirrors checkMovement) before reading p0 below
+
+      // Craft a Wall Block + a Ramp through the REAL craft screen — grants
+      // farm-only wood/stone (Inventory+Building Task 1) directly rather than
+      // farming them, but the RECIPE path itself (RP gate + cost spend +
+      // Task 5's `walls`/`ramps` counters) is exercised for real, same DOM
+      // technique as checkCraft's Grapple Hook click.
+      await page.evaluate(() => {
+        window.__game.grant('rp', 60);
+        window.__game.grant('wood', 10);
+        window.__game.grant('stone', 10);
+      });
+      await page.keyboard.press('c'); // open craft
+      await page.waitForFunction(
+        () => (document.querySelector('.wt-panel h1')?.textContent || '').includes('Crafting'),
+        { timeout: 3000 },
+      );
+      const craftOne = async (name) => {
+        const res = await page.evaluate((n) => {
+          const card = [...document.querySelectorAll('.wt-card')].find((c) =>
+            (c.querySelector('.wt-card-name')?.textContent || '').includes(n),
+          );
+          if (!card) return 'no-card';
+          const btn = card.querySelector('.wt-craft-btn');
+          if (!btn) return 'no-button';
+          if (btn.disabled) return 'disabled';
+          btn.click();
+          return 'clicked';
+        }, name);
+        assert(res === 'clicked', `could not click ${name} craft button: ${res}`);
+      };
+      await craftOne('Wall Block');
+      await craftOne('Ramp');
+      await page.keyboard.press('c'); // close craft
+      await sleep(300);
+
+      const afterCraft = await state(page);
+      assert(afterCraft.inventory.walls === 4, `walls after craft = ${afterCraft.inventory.walls} (expected 4, batch size)`);
+      assert(afterCraft.inventory.ramps === 2, `ramps after craft = ${afterCraft.inventory.ramps} (expected 2, batch size)`);
+      console.log(`    crafted via real craft screen: walls=${afterCraft.inventory.walls}, ramps=${afterCraft.inventory.ramps}`);
+
+      // Place a 2-high wall stack + a standalone ramp via the debug
+      // `__game.placePiece(kind,x,y,z,yaw)` seam, which routes through the
+      // SAME `placementValid` path a real LMB confirm uses (bypassing only
+      // the inventory spend) — a real LMB confirm itself needs a pointer
+      // lock this harness fakes only for the wheel check above, and hold-F
+      // pickup is separately noted as flaky headless below. `y` is each
+      // piece's BASE height; stacking flush means piece 2's base == piece
+      // 1's top (`terrain + wall.h`).
+      const p0 = await pos(page);
+      const bx = p0.x + 6;
+      const bz = p0.z;
+      const placed1 = await page.evaluate(
+        ([x, y, z]) => window.__game.placePiece('wall', x, y, z, 0),
+        [bx, p0.y, bz],
+      );
+      assert(placed1, 'placePiece(wall) #1 failed');
+      const placed2 = await page.evaluate(
+        ([x, y, z]) => window.__game.placePiece('wall', x, y, z, 0),
+        [bx, p0.y + 2, bz],
+      );
+      assert(placed2, 'placePiece(wall) #2 (stacked flush on #1) failed');
+      const rampPlaced = await page.evaluate(
+        ([x, y, z]) => window.__game.placePiece('ramp', x, y, z, 0),
+        [bx + 4, p0.y, bz],
+      );
+      assert(rampPlaced, 'placePiece(ramp) failed');
+
+      const built = await state(page);
+      assert(built.placedPieces === 3, `placedPieces ${built.placedPieces} != 3 (2 walls + 1 ramp)`);
+      console.log(`    placed a 2-wall stack at (${bx.toFixed(1)}, ${bz.toFixed(1)}) + 1 standalone ramp; placedPieces=${built.placedPieces}`);
+
+      // Composed ground (Task 5): teleport just above the stack and let
+      // gravity settle the player — the controller's ground query is
+      // `max(rawTerrain, build.topAt)`, so standing height should land on
+      // the STACK's top (terrain + 2×wall.h = +4), not raw terrain.
+      await page.evaluate(
+        ([x, y, z]) => window.__game.player.teleport(x, y, z),
+        [bx, p0.y + 5, bz],
+      );
+      await sleep(1000);
+      const settled = await pos(page);
+      const expectedY = p0.y + 4;
+      assert(
+        Math.abs(settled.y - expectedY) < 0.15,
+        `standing height ${settled.y.toFixed(3)} not within 0.15 of the stack top ${expectedY.toFixed(3)} (composed ground not wired?)`,
+      );
+      console.log(`    stood on the 2-wall stack: y=${settled.y.toFixed(3)} (terrain ${p0.y.toFixed(3)} + 2×wall.h=4 -> ${expectedY.toFixed(3)})`);
+
+      // Pop to a vantage a few metres back and above so the screenshot
+      // actually frames the stack + ramp (standing ON TOP of the stack looks
+      // out at the landscape, not down at what's underfoot) — same
+      // `window.__village.lookAt` pattern checkVillage/checkPurifyArc use
+      // for their own vantage shots (gated behind the same `?fresh=1` dev
+      // session, not actually village-specific despite the name).
+      await page.evaluate(
+        ([x, y, z]) => window.__game.player.teleport(x, y, z),
+        [bx - 6, expectedY + 4, bz + 6],
+      );
+      await page.evaluate(
+        ([x, y, z]) => window.__village.lookAt(x, y, z),
+        [bx + 1, p0.y + 1, bz],
+      );
+      await sleep(400);
+      await shot(page, '30-building-stack.png');
+
+      // Pick-up (hold-F reclaim) is intentionally NOT exercised here: it is a
+      // real-hold-key + real-aim interaction (task-5-report.md's own manual
+      // real-UI verification already exercised it once, with a documented
+      // methodological note about SwiftShader frame-pacing making a held key
+      // flaky to script reliably headless); BuildSystem's pickup math itself
+      // (aim/begin/tick/cancel/progress) is covered by
+      // tests/build-system.test.ts, not re-verified here.
+      assert(page.__errors.length === 0, `console/page errors: ${page.__errors.join(' | ')}`);
+    } finally {
+      await page.close();
+    }
+  });
+}
+
+async function checkHands() {
+  await check('y. Hands viewmodel: fresh save, camera-child "handsView" root visible + dart held, screenshot', async () => {
+    const page = await openPage('?fresh=1');
+    try {
+      await sleep(400);
+      const st = await state(page);
+      // `state().hands` == `HandsView.debugState()` (Inventory+Building Task
+      // 6): `rootVisible` is literally `this.root.visible` where
+      // `this.root.name === 'handsView'` and `this.root` is a child of the
+      // camera (`camera.add(root)` in hands.ts) — window.__game exposes no
+      // raw camera/scene handle for a `page.evaluate` scene-graph traversal
+      // (debug.ts/main.ts are outside this task's file scope), so this debug
+      // snapshot IS the "camera has a child group named 'handsView' with
+      // visible===true" fact, not a proxy for it.
+      assert(st.hands, 'state().hands missing');
+      assert(st.hands.rootVisible === true, `hands.rootVisible ${st.hands.rootVisible} != true`);
+      // Fresh loadout: darts in slot 0 with PLAYER_START.startingDarts > 0,
+      // so the left hand should be holding the dart mesh, not the bare mitten.
+      assert(st.hands.leftItem === 'darts', `fresh loadout should hold darts in-hand, got "${st.hands.leftItem}"`);
+      console.log(
+        `    hands: rootVisible=${st.hands.rootVisible}, leftItem=${st.hands.leftItem}, ` +
+          `rightWorldPos=[${st.hands.rightWorldPos.map((n) => n.toFixed(2)).join(',')}]`,
+      );
+
+      const buf = await page.screenshot();
+      await shot(page, '31-hands.png');
+      const png = decodePNG(buf);
+      assert(png, 'could not decode hands screenshot PNG');
+      const sd = luminanceStdDev(png);
+      assert(sd > 8, `canvas appears blank (luminance stddev ${sd.toFixed(2)} <= 8)`);
+      console.log(`    canvas luminance stddev = ${sd.toFixed(1)}`);
+
+      assert(page.__errors.length === 0, `console/page errors: ${page.__errors.join(' | ')}`);
+    } finally {
+      await page.close();
+    }
   });
 }
 
@@ -910,6 +1213,52 @@ async function checkFarm() {
   });
 }
 
+async function checkFarmProduce() {
+  await check('l2. Farm produce (Inventory+Building): timberchomp assigned -> hopper accrues wood', async () => {
+    // Mirrors checkFarm's flow exactly (grant a deed, bond, assignFarm,
+    // fast-forward, poll the hopper) substituting a farm-only-resource
+    // producer (timberchomp -> wood, Inventory+Building Task 1's
+    // `farmRole: { kind: 'produce', resource: 'wood', amount: 2 }`) for the
+    // generic puffle checkFarm already covers, so the species' farmRole ->
+    // farm/farm.ts's produce accrual gets one real end-to-end exercise for
+    // the new wood/stone resources specifically (not just "some resource").
+    // The flow transferred cleanly (same debug seams, no species-specific
+    // gate found in bond/assignFarm), so this is a standalone check rather
+    // than an extension of checkFarm's own assertions.
+    const page = await openPage('?fresh=1');
+    try {
+      await page.evaluate(() => {
+        window.__game.grant('charms', 2);
+        window.__game.grantReward('plotDeed');
+      });
+      const id = await page.evaluate(() => window.__game.spawn('timberchomp', 6));
+      assert(id !== null && id !== undefined, 'spawn("timberchomp") returned null');
+      const bonded = await page.evaluate((cid) => window.__game.bond(cid), id);
+      assert(bonded === true, 'bond(timberchomp) failed');
+      const rosterN = (await state(page)).rosterCount;
+      assert(rosterN === 1, `rosterCount ${rosterN} != 1`);
+      const assigned = await page.evaluate((cid) => window.__game.assignFarm(cid), id);
+      assert(assigned === true, '__game.assignFarm(timberchomp) returned false');
+
+      await page.evaluate(() => window.__game.setTimeScale(16));
+      const farm = await pollUntil(
+        () => page.evaluate(() => window.__game.farmState()),
+        (f) => f.plots.some((p) => (p.hopper.wood ?? 0) > 0),
+        { timeout: 15000 },
+      );
+      await page.evaluate(() => window.__game.setTimeScale(1));
+      const wood = farm.plots.reduce((s, p) => s + (p.hopper.wood ?? 0), 0);
+      assert(wood > 0, `timberchomp's farm plot never accrued wood (total=${wood})`);
+      console.log(`    timberchomp produced ${wood} wood into the hopper`);
+      await shot(page, '32-farm-wood.png');
+
+      assert(page.__errors.length === 0, `console/page errors: ${page.__errors.join(' | ')}`);
+    } finally {
+      await page.close();
+    }
+  });
+}
+
 async function checkMount() {
   await check('m. Mount: __game.ride() true, pos moves >5m with W while mounted', async () => {
     const page = await openPage('?fresh=1');
@@ -943,7 +1292,7 @@ async function checkMount() {
 }
 
 async function checkSpeciesPreview() {
-  await check('n. Species preview: ?preview=critters shows all 12, screenshot', async () => {
+  await check('n. Species preview: ?preview=critters shows all 15, screenshot', async () => {
     const page = await context.newPage();
     const errors = [];
     page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
@@ -1311,13 +1660,17 @@ async function main() {
   await checkMovement();
   await checkTracking();
   await checkCraft();
+  await checkInventoryHotbar();
   await checkStructures();
+  await checkBuilding();
+  await checkHands();
   await checkGrapple();
   await checkSaveRoundtrip();
   await checkVillage();
   await checkBondFlow();
   await checkBarter();
   await checkFarm();
+  await checkFarmProduce();
   await checkMount();
   await checkSpeciesPreview();
   await checkPerf();

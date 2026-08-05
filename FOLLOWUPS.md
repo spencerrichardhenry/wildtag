@@ -48,6 +48,88 @@ Constants sanity-checked (numbers hold up, no change made):
 - Giant-tree frequency (`PROPS.treeTiers`, cumulative `p: 1.0` after `0.95`) =
   5% — matches the brief's target.
 
+## Inventory + building fast-follows
+
+Deferred minors noted across the Inventory + Building branch's task reviews
+(6-slot assignable hotbar, inventory screen, buildable walls/ramps, first-
+person hands). None block ship; listed here so they aren't lost.
+
+- **Ramp-onto-wall-top dead-straight climb catches short** (`structures/
+  build.ts` `obstaclesNear`, `core/constants.ts` `BUILD.standClearance`): a
+  wall's own side-collision circles (radius `wall.t*1.5` = 0.6 m) extend
+  ~0.4 m past the wall's own thickness into an adjacent ramp's landing zone,
+  and `standClearance` only releases the height gate once the climber's y is
+  within 0.1 m of the true top — so a perfectly dead-center approach up a
+  ramp onto an adjacent wall's flat top can nudge sideways a fraction of a
+  metre short of fully cresting (observed 8.48-8.98 of an expected 9.06 in
+  task-5's testing). A kid nudging their mouse or sidestepping slightly
+  completes the climb fine in practice; not fixed since it's a separate,
+  more subtle nuance from the overlap bug that WAS fixed (which made ramps
+  unplaceable/unclimbable at all).
+- **Wild critters ignore build pieces** (`critters/manager.ts` /
+  `structures/build.ts`): only the player (`main.ts`'s composed `ground` +
+  `build.obstaclesNear`/`grappleNear`) and castle goblins/elves (explicitly
+  wired `buildObstacles`) resolve against placed walls/ramps. Ordinary wild
+  critters (`CritterManager`'s own ground/collision) walk straight through a
+  player-built fort — both the ground extension (a critter won't stand on a
+  wall top) and the side collision (a critter won't be pushed off a wall's
+  face). Matches the design brief's explicit call-out for wild critters
+  (raw-terrain AI is intentional, not an oversight) but worth flagging
+  together with the ward-wall equivalent already listed above, since both
+  are the same shape of gap against two different geometry sources.
+- **Hands viewmodel on the `low` quality preset unmeasured**: Task 6's visual
+  verification (12 screenshots) and this task's e2e (`checkHands`) both ran
+  on the SwiftShader auto-detected `low` preset by default, but neither
+  explicitly forced `?quality=low` vs `?quality=high` side-by-side for the
+  hands viewmodel specifically — no quality-gated feature branches in
+  `hands.ts` today (it's always-on, unlike shadow cascades/near-LOD), so
+  regression risk is low, but it hasn't been eyeballed at `high` either.
+- **Sway/bob feel unplaytested** (`core/constants.ts` `HANDS.swayAmp`/
+  `bobAmp`/`bobFreq`, `player/hands.ts`): tuned by inspection of static
+  screenshots during Task 6, not by watching continuous motion in a live
+  session; bob timing is tied to a fixed frequency constant, not to actual
+  footstep cadence. A real playtest could still want a pass on feel.
+- **Grapple hook viewmodel reads slightly spiky** (`player/hands.ts`
+  resting-hook mesh): the 3-prong fan reads more "spiky claw" than
+  "grappling hook" at a glance; acceptable per the "chunky > sharp" visual
+  guidance but a future pass could round the prong tips further.
+- **Daze-eject gate teleport stays on raw terrain** (`main.ts`, the castle
+  blackout-drag's gate-exit `heightAt(out.x, out.z) + 0.5`): not migrated to
+  the composed `ground.heightAt` like every other consumer (Task 5's ground-
+  consumer audit) — an extremely narrow edge case (a piece would have to sit
+  exactly at the castle gate's fixed eject point), documented rather than
+  risked touching unrelated Cursed-Castle code for it.
+- **Wall 2-circle obstacle coverage is a fixed-layout caveat, not a
+  parametric guarantee** (`structures/buildmath.ts` `pieceObstacles`): valid
+  for the current `BUILD.wall` dimensions only; a future resize of the wall
+  panel would need this re-derived rather than just re-tuning a constant.
+- **`screens.ts` item-tint color literals duplicate `ui/hud.ts`'s own**
+  (`ITEM_COLOR` in `screens.ts` vs the hotbar strip's inline colors in
+  `hud.ts`, and again in `HANDS.itemColor` in `core/constants.ts`): the same
+  per-item color is defined in three places by convention (kept in sync by
+  hand across Tasks 3 and 6) rather than one shared constant table.
+- **`fireSelectedItem`'s kit/wall/ramp "not active" shake branch is normally
+  unreachable** (`main.ts`, the `'kit:zipline'`/`'kit:drone'`/`'wall'`/`'ramp'`
+  cases' `else hudUi.shake()`): `syncHotbarPlacement` already auto-enters the
+  matching ghost the instant that slot is selected, so the else-branch only
+  fires in the narrow race where stock hits zero between selection and the
+  LMB press — correct, just worth knowing it's a race guard rather than a
+  commonly-hit path if it's ever touched again.
+- **Hotbar-slot shake reads a frame-stale selected slot** (`ui/hud.ts`
+  `shake()` / `main.ts` `fireSelectedItem`): the shake targets
+  `hotbar.selected` at the moment LMB fires, one sim step ahead of the next
+  HUD repaint — imperceptible at frame rate, not worth a synchronization fix.
+- **`HOTBAR_SLOT_COUNT` duplicated** (`core/save.ts` vs `craft/hotbar.ts`'s
+  `NUM_SLOTS`): both are `6` today, defined independently rather than one
+  importing the other's constant.
+- **3 older species still lack `FLAVOR` guide text** (`critters/species.ts`):
+  predates this branch; noted again since Task 1 added flavor text for
+  timberchomp/pebbleshrew but didn't backfill the pre-existing gap.
+- **`HandsView.dispose()` implemented but never called** (`player/hands.ts`):
+  matches `GrappleVisuals`'s existing precedent (no app-wide teardown path
+  exists anywhere in `main.ts`) — kept for hygiene/future reload paths, not a
+  gap specific to this feature.
+
 ## Castle ward fast-follows
 
 Deferred minors noted while building the Castle Ward maze (Tasks 1-7). None
