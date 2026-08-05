@@ -130,6 +130,38 @@ person hands). None block ship; listed here so they aren't lost.
   exists anywhere in `main.ts`) — kept for hygiene/future reload paths, not a
   gap specific to this feature.
 
+## Playtest Task 8 fast-follows
+
+Deferred minors noted while fixing the height-cap bug, adding ghost rotation
++ the cube piece, and making snapping explicit (Ctrl-hold). None block ship;
+listed here so they aren't lost.
+
+- **Climbing a ramp toward a cube gets a brief sideways push near the top**
+  (`structures/buildmath.ts` `pieceCircles`'s cube branch, r=1.2):
+  discovered while writing the ramp→cube→ramp staircase compositional test —
+  for roughly the last 0.5 m of horizontal approach before reaching a cube's
+  face, a climbing player's height is still below the cube's `yTop` (so the
+  glide-over skip hasn't kicked in yet) while already inside the cube's
+  r=1.2 + playerRadius=0.4 push-out radius, so `resolveCollision` nudges them
+  sideways for a few steps. Not a Task 8/cube regression — the identical
+  geometry already exists for a ramp rampfoot-snapped into a WALL's face (a
+  climbing player is similarly still below half the wall's height while
+  within the wall's own r+playerRadius reach); no prior test exercised a full
+  incremental walk to notice it either way. Doesn't block climbing (the push
+  is XZ-only; the ground-resolve Y snap is unaffected) — just a bit of wobble.
+  Candidate fixes: shrink the cube's obstacle radius closer to its true
+  half-width (1.0), or split it into multiple smaller circles like the wall
+  does, or apply `standClearance`-style softening earlier in the approach.
+- **`resolveBuildAim`'s piece-vs-terrain distance compare doesn't account for
+  the ghost's own footprint** (`structures/buildmath.ts`): it compares the
+  raw ray distances to the piece's AABB-entry point vs. the terrain-march
+  hit, which is the right call for "which surface is the crosshair actually
+  looking at," but doesn't reason about where the CANDIDATE piece would end
+  up after `resolveSnap`/`freeformSnap` runs on that aim point — in principle
+  a piece hit could still resolve to an invalid/overlapping placement right
+  at the same spot; `placementValid` catches that downstream as it always
+  has, so this is a documentation note, not a gap.
+
 ## Castle ward fast-follows
 
 Deferred minors noted while building the Castle Ward maze (Tasks 1-7). None

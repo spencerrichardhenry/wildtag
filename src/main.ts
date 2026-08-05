@@ -39,6 +39,7 @@ import { ZiplineSystem } from './structures/ziplines.ts';
 import { DroneSystem } from './structures/drones.ts';
 import { PlacementSystem, serializeStructures, deserializeStructures } from './structures/placement.ts';
 import { BuildSystem } from './structures/build.ts';
+import { pieceAtRayHit, resolveBuildAim } from './structures/buildmath.ts';
 import { raycastTerrain } from './player/grapple.ts';
 import {
   applyStartingLoadout,
@@ -693,12 +694,22 @@ function bootGame(): void {
    * slot already selected never auto-opens a ghost with no player input.
    */
   let hotbarSyncedItem: ItemId | null = hotbar.slots[hotbar.selected] ?? null;
+  // Playtest Task 8 (explicit Ctrl-snap): a one-time-per-session nudge the
+  // first time ANY build ghost enters, so the new "snapping is opt-in" rule
+  // doesn't read as a silent regression. Fires alongside (not instead of)
+  // BuildSystem.enter's own "Wall — aim and click to place"-style toast.
+  let snapHintShown = false;
+  function maybeShowSnapHint(): void {
+    if (snapHintShown) return;
+    snapHintShown = true;
+    toast('Hold Ctrl to snap');
+  }
   function syncHotbarPlacement(): void {
     const item = hotbar.slots[hotbar.selected] ?? null;
     if (item === hotbarSyncedItem) return;
     hotbarSyncedItem = item;
     // Switching straight between two ghosts of the SAME system (zipline<->
-    // drone, or wall<->ramp) is handled internally by that system's own
+    // drone, or wall<->ramp/cube) is handled internally by that system's own
     // enter/toggle (a single "entered" toast, no separate "cancelled" one) —
     // only the OTHER system needs an explicit cancel first.
     if (item === 'kit:zipline') {
@@ -707,12 +718,10 @@ function bootGame(): void {
     } else if (item === 'kit:drone') {
       if (build.active) build.cancel();
       placement.toggle('drone');
-    } else if (item === 'wall') {
+    } else if (item === 'wall' || item === 'ramp' || item === 'cube') {
       if (placement.active) placement.cancel();
-      build.enter('wall');
-    } else if (item === 'ramp') {
-      if (placement.active) placement.cancel();
-      build.enter('ramp');
+      build.enter(item);
+      maybeShowSnapHint();
     } else {
       if (placement.active) placement.cancel();
       if (build.active) build.cancel();
@@ -829,9 +838,9 @@ function bootGame(): void {
    *  - 'charms': NOT an LMB-usable item — charms are spent by the F-interact
    *    bond flow (`tryBondInteract` below), never thrown. The slot shows the
    *    live count for information, but LMB always shakes here.
-   *  - 'wall' / 'ramp': confirms the already-active BuildSystem ghost
-   *    (`syncHotbarPlacement` auto-entered it) — same "shake if somehow not
-   *    active" fallback as the kit slots.
+   *  - 'wall' / 'ramp' / 'cube': confirms the already-active BuildSystem
+   *    ghost (`syncHotbarPlacement` auto-entered it) — same "shake if
+   *    somehow not active" fallback as the kit slots.
    *  - empty slot: shakes.
    */
   function fireSelectedItem(): void {
@@ -850,6 +859,7 @@ function bootGame(): void {
         return;
       case 'wall':
       case 'ramp':
+      case 'cube':
         if (build.active) build.confirm();
         else hudUi.shake();
         return;
@@ -1408,6 +1418,12 @@ function bootGame(): void {
         player.setStumble(null);
       }
       wasDazed = dazedNow;
+      // Playtest Task 8: while a build ghost is active, KeyR rotates the
+      // ghost (handled in the action-consumption loop below) instead of
+      // firing the rocket — drop the rocket edge BEFORE player.update()
+      // reads it via input.state(), so the same R press never ALSO boosts
+      // the player this frame. A no-op when R wasn't pressed.
+      if (build.active) input.clearRocketEdge();
       player.update(dt);
       // Prismhorse mount: pin/animate the actor under the camera while riding,
       // or loosely trail the player while idle (also handles hold-Space dismount).
@@ -1425,15 +1441,22 @@ function bootGame(): void {
       // raycast — against the COMPOSED ground, so a freeform aim can land
       // directly on an existing piece's top — and hands the resolved point +
       // camera yaw (degrees) to BuildSystem, which stays camera-free.
+      //
+      // Playtest Task 8 ("ghost lands behind the target"): the terrain march
+      // only ever finds where the ray crosses the walkable TOP surface — a
+      // wall's vertical FACE isn't part of that height field at all, so
+      // aiming levelly at a wall's side used to sail straight past it into
+      // whatever terrain is behind. Fixed by testing build pieces FIRST
+      // (`pieceAtRayHit`, an AABB ray test that covers side faces too) and
+      // preferring that hit whenever it's nearer than the terrain hit.
       if (build.active) {
         camera.getWorldDirection(_buildDir);
-        const aim = raycastTerrain(
-          { x: camera.position.x, y: camera.position.y, z: camera.position.z },
-          { x: _buildDir.x, y: _buildDir.y, z: _buildDir.z },
-          ground.heightAt,
-          BUILD.placeRange,
-        );
-        build.update(dt, aim, (input.yaw * 180) / Math.PI);
+        const origin: Vec3 = { x: camera.position.x, y: camera.position.y, z: camera.position.z };
+        const dir: Vec3 = { x: _buildDir.x, y: _buildDir.y, z: _buildDir.z };
+        const pieceHit = pieceAtRayHit(build.pieces(), origin, dir, BUILD.placeRange);
+        const terrainAim = raycastTerrain(origin, dir, ground.heightAt, BUILD.placeRange);
+        const aim = resolveBuildAim(pieceHit, terrainAim, origin);
+        build.update(dt, aim, (input.yaw * 180) / Math.PI, input.snapHeld);
       }
 
       // Build pickup (hold F on an aimed piece): reads the held state every
@@ -1524,6 +1547,16 @@ function bootGame(): void {
         continue;
       }
       if (paused) continue; // gameplay actions (interact/hotbar/lmb/rmb) freeze while a screen is open
+      if (action.type === 'rotate') {
+        // Playtest Task 8: R is context-sensitive. The rocket edge (also
+        // always latched on this same KeyR press) is dropped earlier this
+        // tick whenever a ghost is active (see the `input.clearRocketEdge()`
+        // call above `player.update`), so there's no double-fire risk here —
+        // when NOT active, this action is simply a no-op and the rocket edge
+        // already reached `player.update` normally this frame.
+        if (build.active) build.rotateGhost();
+        continue;
+      }
       // While mounted: dart-throw and structure placement are masked (F still
       // talks/collects; the grapple is already gated off in the controller).
       // Hotbar selection still moves the HUD highlight (via the plain

@@ -3,12 +3,15 @@ import { BUILD } from '../src/core/constants.ts';
 import type { Vec3 } from '../src/core/types.ts';
 import {
   buildTopAt,
+  freeformSnap,
   pieceHeight,
   resolveSnap,
   placementValid,
   pieceAtRay,
+  pieceAtRayHit,
   pieceObstacles,
   pieceGrapple,
+  resolveBuildAim,
   type BuildPiece,
 } from '../src/structures/buildmath.ts';
 
@@ -24,6 +27,10 @@ function ramp(id: number, x: number, y: number, z: number, yaw = 0): BuildPiece 
   return { id, kind: 'ramp', x, y, z, yaw };
 }
 
+function cube(id: number, x: number, y: number, z: number, yaw = 0): BuildPiece {
+  return { id, kind: 'cube', x, y, z, yaw };
+}
+
 const DEG = Math.PI / 180;
 
 // ---------------------------------------------------------------------------
@@ -36,6 +43,9 @@ describe('pieceHeight', () => {
   });
   it('ramp height is BUILD.ramp.rise', () => {
     expect(pieceHeight('ramp')).toBe(BUILD.ramp.rise);
+  });
+  it('cube height is BUILD.cube.h (playtest Task 8)', () => {
+    expect(pieceHeight('cube')).toBe(BUILD.cube.h);
   });
 });
 
@@ -141,6 +151,24 @@ describe('buildTopAt', () => {
     const low = wall(1, 0, 0, 0); // top = wall.h
     const highRamp = ramp(2, 0, 3, 0); // top ranges [3, 3+rise], definitely higher
     expect(buildTopAt([low, highRamp], 0, 0)).toBeCloseTo(3 + BUILD.ramp.rise / 2, 9);
+  });
+
+  // --- cube (playtest Task 8): a bigger flat-topped box, same shape-math as wall ---
+
+  it('cube: top at centre is y + cube.h', () => {
+    const pieces = [cube(1, 0, 0, 0)];
+    expect(buildTopAt(pieces, 0, 0)).toBeCloseTo(BUILD.cube.h, 9);
+  });
+
+  it('cube: top holds anywhere within the full 2×2 footprint', () => {
+    const pieces = [cube(1, 5, 1, -3)];
+    expect(buildTopAt(pieces, 5 + 0.9, -3 + 0.9)).toBeCloseTo(1 + BUILD.cube.h, 9);
+  });
+
+  it('cube: just outside the footprint is not covered', () => {
+    const pieces = [cube(1, 0, 0, 0)];
+    expect(buildTopAt(pieces, BUILD.cube.w / 2 + 0.01, 0)).toBe(-Infinity);
+    expect(buildTopAt(pieces, 0, BUILD.cube.d / 2 + 0.01)).toBe(-Infinity);
   });
 });
 
@@ -304,6 +332,76 @@ describe('resolveSnap', () => {
     expect(res.x).toBe(500);
     expect(res.z).toBe(500);
   });
+
+  // --- cube (playtest Task 8): top/edge/rampfoot all treat cubes like walls ---
+
+  it("'top' snap works against a CUBE (any placed kind qualifies)", () => {
+    const base = cube(1, 5, 0, -2, 30 * DEG);
+    const aim: Vec3 = { x: 5.2, y: BUILD.cube.h + 0.1, z: -2.1 };
+    const res = resolveSnap([base], 'wall', aim, 0);
+    expect(res.snapped).toBe('top');
+    expect(res.x).toBeCloseTo(5, 9);
+    expect(res.z).toBeCloseTo(-2, 9);
+    expect(res.y).toBeCloseTo(BUILD.cube.h, 9);
+  });
+
+  it("'edge' snap continues a CUBE row in the cube's own width (not the wall's)", () => {
+    const base = cube(1, 0, 0, 0, 0);
+    const aim: Vec3 = { x: BUILD.cube.w / 2 + 0.1, y: BUILD.cube.h / 2, z: 0.05 };
+    const res = resolveSnap([base], 'cube', aim, 0);
+    expect(res.snapped).toBe('edge');
+    expect(res.x).toBeCloseTo(BUILD.cube.w, 9); // one full cube-width over
+    expect(res.y).toBeCloseTo(0, 9);
+  });
+
+  it("'rampfoot' snap against a CUBE's face lands flush, no overlap — enables ramp->cube staircases", () => {
+    const base = cube(1, 0, 0, 0, 0); // yaw 0 -> wDir=(0,1); front face at z=+cube.d/2
+    const aim: Vec3 = { x: 0.1, y: 0, z: BUILD.cube.d / 2 + 0.1 };
+    const res = resolveSnap([base], 'ramp', aim, 0);
+    expect(res.snapped).toBe('rampfoot');
+    expect(res.y).toBeCloseTo(0, 9);
+    const highEndX = res.x + Math.sin(res.yaw) * (BUILD.ramp.run / 2);
+    const highEndZ = res.z + Math.cos(res.yaw) * (BUILD.ramp.run / 2);
+    expect(highEndX).toBeCloseTo(0, 9);
+    expect(highEndZ).toBeCloseTo(BUILD.cube.d / 2, 9);
+    // Cube height equals ramp rise, so the ramp's high end is flush with the
+    // cube's top too — a second ramp can then 'top'-snap onto the cube.
+    expect(BUILD.ramp.rise).toBe(BUILD.cube.h);
+    const candidate: BuildPiece = { id: -1, kind: 'ramp', x: res.x, y: res.y, z: res.z, yaw: res.yaw };
+    expect(placementValid([base], candidate, 0)).toEqual({ ok: true });
+  });
+
+  it("edge/rampfoot are NOT offered off a RAMP source piece (only wall/cube sources)", () => {
+    const base = ramp(1, 0, 0, 0, 0);
+    const aimEdge: Vec3 = { x: BUILD.ramp.w / 2 + 0.1, y: BUILD.ramp.rise / 2, z: 0 };
+    expect(resolveSnap([base], 'wall', aimEdge, 0).snapped).not.toBe('edge');
+    const aimFoot: Vec3 = { x: 0, y: 0, z: BUILD.ramp.run / 2 + 0.1 };
+    expect(resolveSnap([base], 'ramp', aimFoot, 0).snapped).not.toBe('rampfoot');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// freeformSnap
+// ---------------------------------------------------------------------------
+
+describe('freeformSnap', () => {
+  it('is exactly resolveSnap\'s no-candidate fallback: aim verbatim, yaw stepped to yawStepDeg', () => {
+    const aim: Vec3 = { x: 12.3, y: 4.5, z: -6.7 };
+    const res = freeformSnap(aim, 22);
+    expect(res.snapped).toBeNull();
+    expect(res.x).toBe(aim.x);
+    expect(res.y).toBe(aim.y);
+    expect(res.z).toBe(aim.z);
+    expect(res.yaw).toBeCloseTo(15 * DEG, 9);
+  });
+
+  it('ignores nearby pieces entirely — unlike resolveSnap, there is no piece argument at all', () => {
+    // (compile-time: freeformSnap has no `pieces`/`kind` params — nothing to
+    // assert at runtime beyond the identical fallback math above; this test
+    // exists to document the contract explicitly.)
+    const aim: Vec3 = { x: 0, y: 0, z: 0 };
+    expect(freeformSnap(aim, 0)).toEqual({ x: 0, y: 0, z: 0, yaw: 0, snapped: null });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -324,13 +422,29 @@ describe('placementValid', () => {
     expect(placementValid([], candidate, terrainY).ok).toBe(true);
   });
 
-  it('height cap: just over maxStackH is invalid with reason "height"', () => {
+  it('height cap: clearly over maxStackH (beyond the march-precision tolerance) is invalid with reason "height"', () => {
+    // HEIGHT_EPS (0.05) absorbs realistic raycastTerrain march-precision slop
+    // (see its doc in buildmath.ts) — this delta (0.2) is well beyond that,
+    // so it must still read as a genuine overshoot, not tolerance slack.
     const terrainY = 0;
-    const y = BUILD.maxStackH - BUILD.wall.h + 0.01; // top = maxStackH + 0.01
+    const y = BUILD.maxStackH - BUILD.wall.h + 0.2; // top = maxStackH + 0.2
     const candidate = wall(1, 0, y, 0, 0);
     const res = placementValid([], candidate, terrainY);
     expect(res.ok).toBe(false);
     expect(res.reason).toBe('height');
+  });
+
+  it('height cap: a small overshoot within the march-precision tolerance is still OK (playtest Task 8 fix)', () => {
+    // Root cause (see HEIGHT_EPS's doc in buildmath.ts): a freeform piece's
+    // stored y comes from raycastTerrain's bisection-refined march, which
+    // only converges to within ~0.023 m of the true analytic height — NOT
+    // machine precision. A stack whose base carried that much slop and is
+    // otherwise sitting exactly at the nominal cap must not be spuriously
+    // rejected on its last piece.
+    const terrainY = 0;
+    const y = BUILD.maxStackH - BUILD.wall.h + 0.02; // top = maxStackH + 0.02
+    const candidate = wall(1, 0, y, 0, 0);
+    expect(placementValid([], candidate, terrainY)).toEqual({ ok: true });
   });
 
   it('height cap accounts for terrainY (relative, not absolute, height)', () => {
@@ -403,6 +517,20 @@ describe('placementValid', () => {
     expect(res.ok).toBe(false);
     expect(res.reason).toBe('overlap');
   });
+
+  it('overlap check works against cubes too (cube vs cube, same footprint) — playtest Task 8', () => {
+    const existing = [cube(1, 0, 0, 0, 0)];
+    const candidate = cube(2, 0, 0, 0, 0);
+    const res = placementValid(existing, candidate, 0);
+    expect(res.ok).toBe(false);
+    expect(res.reason).toBe('overlap');
+  });
+
+  it('a cube top-stacked on another cube (flush touch) is NOT an overlap', () => {
+    const existing = [cube(1, 0, 0, 0, 0)];
+    const candidate = cube(2, 0, BUILD.cube.h, 0, 0);
+    expect(placementValid(existing, candidate, 0)).toEqual({ ok: true });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -453,6 +581,109 @@ describe('pieceAtRay', () => {
   it('misses empty piece list', () => {
     expect(pieceAtRay([], { x: 0, y: 0, z: 0 }, { x: 1, y: 0, z: 0 }, 100)).toBeNull();
   });
+
+  it('hits a cube too, via its expanded AABB', () => {
+    const pieces = [cube(1, 10, 0, 0, 0)];
+    const origin: Vec3 = { x: 0, y: 1, z: 0 };
+    const dir: Vec3 = { x: 1, y: 0, z: 0 };
+    const hit = pieceAtRay(pieces, origin, dir, 100);
+    expect(hit).not.toBeNull();
+    expect(hit!.id).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// pieceAtRayHit (playtest Task 8 — "ghost lands behind the target" fix)
+// ---------------------------------------------------------------------------
+
+describe('pieceAtRayHit', () => {
+  it('returns the piece AND its entry point/distance along the ray', () => {
+    const pieces = [wall(1, 10, 0, 0, 0)];
+    const origin: Vec3 = { x: 0, y: 1, z: 0 };
+    const dir: Vec3 = { x: 1, y: 0, z: 0 };
+    const hit = pieceAtRayHit(pieces, origin, dir, 100);
+    expect(hit).not.toBeNull();
+    expect(hit!.piece.id).toBe(1);
+    // Entry point is on the piece's expanded AABB, just short of its centre
+    // (wall.w/2 + PICKUP_AABB_PAD before x=10).
+    expect(hit!.point.x).toBeLessThan(10);
+    expect(hit!.point.x).toBeGreaterThan(8);
+    expect(hit!.point.y).toBeCloseTo(1, 9);
+    expect(hit!.point.z).toBeCloseTo(0, 9);
+    expect(hit!.dist).toBeCloseTo(hit!.point.x - origin.x, 9);
+  });
+
+  it('null on a total miss, same as pieceAtRay', () => {
+    expect(pieceAtRayHit([], { x: 0, y: 0, z: 0 }, { x: 1, y: 0, z: 0 }, 100)).toBeNull();
+  });
+
+  it("aiming at a wall's SIDE FACE hits the wall nearer than terrain would ever be sampled behind it", () => {
+    // This is the exact playtest bug: aiming levelly at a wall's face used to
+    // sail past it (the terrain height field has no notion of a vertical
+    // face) and land on whatever terrain sits behind. `pieceAtRayHit` gives
+    // main.ts a piece-hit distance to compare against the terrain-hit
+    // distance and prefer whichever is nearer — here, the piece is only ~2m
+    // away while "behind the wall" terrain would be 10+m away along the
+    // same ray, so callers should always prefer this hit.
+    const pieces = [wall(1, 2, 1, 0, 0)]; // wall centred at x=2, spanning roughly x in [1,3]
+    const origin: Vec3 = { x: 0, y: 1, z: 0 };
+    const dir: Vec3 = { x: 1, y: 0, z: 0 };
+    const hit = pieceAtRayHit(pieces, origin, dir, 100);
+    expect(hit).not.toBeNull();
+    expect(hit!.dist).toBeLessThan(5);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveBuildAim (playtest Task 8 — the exact "aim at a wall face lands ON
+// it, not behind it" fix, extracted so main.ts's comparison is unit-testable)
+// ---------------------------------------------------------------------------
+
+describe('resolveBuildAim', () => {
+  const origin: Vec3 = { x: 0, y: 1, z: 0 };
+
+  it('prefers the piece hit when it is nearer than the terrain hit', () => {
+    const pieceHit = { piece: wall(1, 2, 1, 0, 0), point: { x: 1.8, y: 1, z: 0 }, dist: 1.8 };
+    const terrainAim: Vec3 = { x: 10, y: 0, z: 0 }; // "behind the wall" — far terrain hit
+    const result = resolveBuildAim(pieceHit, terrainAim, origin);
+    expect(result).toEqual(pieceHit.point);
+  });
+
+  it('prefers the terrain hit when it is nearer than the piece hit', () => {
+    const pieceHit = { piece: wall(1, 50, 1, 0, 0), point: { x: 49.8, y: 1, z: 0 }, dist: 49.8 };
+    const terrainAim: Vec3 = { x: 3, y: 0, z: 0 };
+    const result = resolveBuildAim(pieceHit, terrainAim, origin);
+    expect(result).toEqual(terrainAim);
+  });
+
+  it('a piece hit wins outright when the terrain march missed entirely', () => {
+    const pieceHit = { piece: wall(1, 2, 1, 0, 0), point: { x: 1.8, y: 1, z: 0 }, dist: 1.8 };
+    const result = resolveBuildAim(pieceHit, null, origin);
+    expect(result).toEqual(pieceHit.point);
+  });
+
+  it('falls back to the terrain aim when no piece was hit at all', () => {
+    const terrainAim: Vec3 = { x: 3, y: 0, z: 0 };
+    const result = resolveBuildAim(null, terrainAim, origin);
+    expect(result).toEqual(terrainAim);
+  });
+
+  it('null when both miss', () => {
+    expect(resolveBuildAim(null, null, origin)).toBeNull();
+  });
+
+  it('end-to-end: aiming levelly at a wall face lands ON the wall, not on terrain behind it', () => {
+    // The exact playtest scenario: a wall sits between the player and open
+    // ground; aiming levelly at its face must not sail through to the
+    // terrain beyond.
+    const pieces = [wall(1, 5, 1, 0, 0)]; // wall face at roughly x=4
+    const dir: Vec3 = { x: 1, y: 0, z: 0 };
+    const pieceHit = pieceAtRayHit(pieces, origin, dir, 100);
+    const terrainAim: Vec3 = { x: 40, y: 0, z: 0 }; // "ground behind the wall", far away
+    const result = resolveBuildAim(pieceHit, terrainAim, origin);
+    expect(result).not.toBeNull();
+    expect(result!.x).toBeLessThan(5); // anchored on the wall's face, well short of x=40
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -491,6 +722,16 @@ describe('pieceObstacles', () => {
     for (const o of obs) expect(Math.abs(o.x)).toBeLessThan(1e-6);
     const zs = obs.map((o) => o.z).sort((a, b) => a - b);
     expect(Math.abs(zs[1] - zs[0])).toBeCloseTo(BUILD.wall.w / 2, 6);
+  });
+
+  it('cube: 1 circle, r=1.2, at the piece centre, yTop = y + cube.h (playtest Task 8)', () => {
+    const p = cube(1, 4, 1, 7, 0);
+    const obs = pieceObstacles(p);
+    expect(obs).toHaveLength(1);
+    expect(obs[0].r).toBeCloseTo(1.2, 9);
+    expect(obs[0].x).toBeCloseTo(4, 9);
+    expect(obs[0].z).toBeCloseTo(7, 9);
+    expect(obs[0].yTop).toBeCloseTo(1 + BUILD.cube.h, 9);
   });
 });
 

@@ -10,7 +10,15 @@ import type { Inventory } from './inventory.ts';
 /** Everything assignable to a hotbar slot. Grapple is NOT here — it stays
  * permanently equipped (right hand, RMB) per the design decision to keep it
  * off the hotbar entirely. */
-export type ItemId = 'darts' | 'purifiers' | 'charms' | 'kit:zipline' | 'kit:drone' | 'wall' | 'ramp';
+export type ItemId =
+  | 'darts'
+  | 'purifiers'
+  | 'charms'
+  | 'kit:zipline'
+  | 'kit:drone'
+  | 'wall'
+  | 'ramp'
+  | 'cube';
 
 /** Every assignable `ItemId`, in canonical order — used by the inventory
  * screen (Task 3) to enumerate the owned-items picker without duplicating
@@ -23,6 +31,7 @@ export const ITEM_IDS: readonly ItemId[] = [
   'kit:drone',
   'wall',
   'ramp',
+  'cube',
 ];
 
 /** Runtime type guard for `ItemId` — used by `src/core/save.ts` to validate
@@ -92,7 +101,8 @@ export function migrateLegacy(): HotbarState {
 /**
  * Map a hotbar `item` to its owned count in `inv`, for HUD count badges and
  * "empty slot" LMB no-ops. `'wall'`/`'ramp'` read `Inventory.walls`/`.ramps`
- * (Task 5 — mirrors the `charms`/`purifiers` optional-save pattern).
+ * (Task 5 — mirrors the `charms`/`purifiers` optional-save pattern); `'cube'`
+ * reads `Inventory.cubes` the same way (playtest Task 8).
  */
 export function itemCount(inv: Inventory, item: ItemId): number {
   switch (item) {
@@ -110,5 +120,7 @@ export function itemCount(inv: Inventory, item: ItemId): number {
       return inv.walls;
     case 'ramp':
       return inv.ramps;
+    case 'cube':
+      return inv.cubes;
   }
 }

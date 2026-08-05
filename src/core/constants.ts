@@ -339,6 +339,13 @@ export const BUILD = {
    * walking up a ramp against a wall reaches the top of that wall.
    */
   ramp: { w: 2, run: 2, rise: 2 },
+  /**
+   * Cube block (playtest Task 8): width × height × depth (m) — a bigger,
+   * square flat-topped box. `h` equals `wall.h`/`ramp.rise` on purpose, same
+   * reason as the ramp/wall match above: a ramp's high end lands flush with
+   * a cube's top too, so ramp→cube→ramp staircases climb evenly.
+   */
+  cube: { w: 2, h: 2, d: 2 },
   /** Hard cap (m) on a placed piece's top height above the terrain beneath it. */
   maxStackH: 8,
   /** Hard cap on concurrently-placed pieces (toast when full). */
@@ -1611,6 +1618,8 @@ export const HANDS = {
   kitBox: 0.11,
   wallSlab: { w: 0.21, h: 0.24, t: 0.05 },
   rampWedge: { w: 0.17, run: 0.18, rise: 0.15 },
+  /** Mini cube-block viewmodel: a small cube's side length (m). */
+  cubeBlock: 0.22,
   /** Skin-neutral warm mitten/forearm tone + a darker sleeve-cuff tone. */
   skinColor: 0xd9a066,
   sleeveColor: 0x33404e,
@@ -1625,6 +1634,7 @@ export const HANDS = {
     'kit:drone': 0x7fb2f0,
     wall: 0x8f8f92,
     ramp: 0xc9a06a,
+    cube: 0x8f8f92,
   },
 } as const;
 

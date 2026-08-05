@@ -185,8 +185,8 @@ describe('full crafting tree — affordability walk', () => {
     inv.rp = 200; // clears every tier's RP gate up front
     grant(inv, { fiber: 37, resin: 19, shard: 35, spark: 17 }); // sum of every recipe's cost below (incl. charm, purifier)
     inv.mushroom = 3; // purifier's non-{fiber,resin,shard,spark} cost
-    inv.wood = 5; // wall (2) + ramp (3)
-    inv.stone = 4; // wall (3) + ramp (1)
+    inv.wood = 7; // wall (2) + ramp (3) + cube (2)
+    inv.stone = 6; // wall (3) + ramp (1) + cube (2)
 
     const unlocks = new Set<string>();
     const order: RecipeId[] = RECIPES
@@ -210,6 +210,7 @@ describe('full crafting tree — affordability walk', () => {
     expect(working.purifiers).toBe(5);
     expect(working.walls).toBe(4);
     expect(working.ramps).toBe(2);
+    expect(working.cubes).toBe(4);
     expect(working.fiber).toBe(0);
     expect(working.resin).toBe(0);
     expect(working.shard).toBe(0);
@@ -280,6 +281,24 @@ describe('craft — wall / ramp (Inventory + Building Task 5)', () => {
     inv.wood = 2;
     inv.stone = 1; // wall needs 3
     expect(canCraft(inv, 'wall', new Set())).toEqual({ ok: false, reason: 'cost' });
+  });
+
+  it('cube: tier 1, 25 RP, cost {wood:2, stone:2}, batches 4 into `cubes` (playtest Task 8)', () => {
+    const inv = createInventory();
+    inv.wood = 2;
+    inv.stone = 2;
+    inv.rp = 24;
+    expect(canCraft(inv, 'cube', new Set())).toEqual({ ok: false, reason: 'rp' });
+    inv.rp = 25;
+    expect(canCraft(inv, 'cube', new Set())).toEqual({ ok: true });
+    const r = craft(inv, 'cube', new Set());
+    expect(r.inv.cubes).toBe(4);
+    expect(r.inv.wood).toBe(0);
+    expect(r.inv.stone).toBe(0);
+    expect(r.inv.walls).toBe(0);
+    expect(r.inv.ramps).toBe(0);
+    expect(r.unlocked).toBeUndefined();
+    expect(r.kits).toBeUndefined();
   });
 
   it('crafting twice accumulates (batches stack, no once-only gate)', () => {

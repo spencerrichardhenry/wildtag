@@ -381,7 +381,8 @@ const KEYBINDS: [string, string][] = [
   ['Shift', 'Sprint'],
   ['Space', 'Jump  (hold to Glide — when crafted)'],
   ['Q', 'Dash'],
-  ['R', 'Rocket  (when crafted)'],
+  ['R', 'Rocket  (when crafted) — rotates the build ghost +90° while placing'],
+  ['Ctrl', 'Hold while placing to snap to nearby pieces (freeform otherwise)'],
   ['RMB', 'Fire Grapple — auto-zips on latch  (when crafted)'],
   ['F', 'Harvest / Interact'],
   ['LMB', 'Use the selected hotbar item (throw / confirm placement)'],
@@ -663,6 +664,7 @@ const ITEM_COLOR: Record<ItemId, string> = {
   'kit:drone': '#7fb2f0',
   wall: '#8f8f92',
   ramp: '#c9a06a',
+  cube: '#8f8f92',
 };
 
 const RESOURCE_COLOR: Record<ResourceKind, string> = {

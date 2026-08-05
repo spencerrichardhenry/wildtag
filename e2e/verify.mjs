@@ -692,7 +692,7 @@ async function checkStructures() {
 }
 
 async function checkBuilding() {
-  await check('x. Building: craft Wall+Ramp, stack via __game.placePiece, composed-ground stand height', async () => {
+  await check('x. Building: craft Wall+Ramp, stack via __game.placePiece (+cube), composed-ground stand height', async () => {
     const page = await openPage('?fresh=1');
     try {
       await sleep(400); // settle grounded (mirrors checkMovement) before reading p0 below
@@ -762,10 +762,19 @@ async function checkBuilding() {
         [bx + 4, p0.y, bz],
       );
       assert(rampPlaced, 'placePiece(ramp) failed');
+      // Playtest Task 8: the cube piece routes through the SAME
+      // `placePiece`/`debugPlace` seam — a standalone placement well clear of
+      // the wall stack + ramp confirms 'cube' is accepted end-to-end (not
+      // just at the pure-unit level).
+      const cubePlaced = await page.evaluate(
+        ([x, y, z]) => window.__game.placePiece('cube', x, y, z, 0),
+        [bx + 8, p0.y, bz],
+      );
+      assert(cubePlaced, "placePiece('cube') failed");
 
       const built = await state(page);
-      assert(built.placedPieces === 3, `placedPieces ${built.placedPieces} != 3 (2 walls + 1 ramp)`);
-      console.log(`    placed a 2-wall stack at (${bx.toFixed(1)}, ${bz.toFixed(1)}) + 1 standalone ramp; placedPieces=${built.placedPieces}`);
+      assert(built.placedPieces === 4, `placedPieces ${built.placedPieces} != 4 (2 walls + 1 ramp + 1 cube)`);
+      console.log(`    placed a 2-wall stack at (${bx.toFixed(1)}, ${bz.toFixed(1)}) + 1 standalone ramp + 1 cube; placedPieces=${built.placedPieces}`);
 
       // Composed ground (Task 5): teleport just above the stack and let
       // gravity settle the player — the controller's ground query is

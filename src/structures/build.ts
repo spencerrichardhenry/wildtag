@@ -7,12 +7,15 @@ import type { GrappleCollider } from '../player/grapple.ts';
 import { toast } from '../ui/toasts.ts';
 import {
   buildTopAt,
+  freeformSnap,
   pieceAtRay,
   pieceGrapple,
+  pieceHeight,
   pieceObstacles,
   placementValid,
   resolveSnap,
   type BuildPiece,
+  type PieceKind,
 } from './buildmath.ts';
 import type { BuildPersistEntry } from '../core/save.ts';
 
@@ -45,12 +48,15 @@ const INVALID_COLOR = 0xe0463a;
 const WALL_COLOR = 0x8f8f92; // stone grey
 const RAMP_COLOR = 0x8a5a35; // wood brown — "ramps read wood" (design spec §3)
 
+/** Capitalized display names, for toasts ("Wall placed", "+1 Cube reclaimed"). */
+const KIND_LABEL: Record<PieceKind, string> = { wall: 'Wall', ramp: 'Ramp', cube: 'Cube' };
+
 /** Vertical offset (m) from a piece's stored `y` (base) to its MESH's local
- *  origin: a wall's shared BoxGeometry is centred, so its mesh sits half its
- *  height above the base; a ramp's geometry starts at local y=0 (its own
+ *  origin: a wall/cube's shared BoxGeometry is centred, so its mesh sits half
+ *  its height above the base; a ramp's geometry starts at local y=0 (its own
  *  base), so no offset is needed. */
-function baseYOffset(kind: 'wall' | 'ramp'): number {
-  return kind === 'wall' ? BUILD.wall.h / 2 : 0;
+function baseYOffset(kind: PieceKind): number {
+  return kind === 'ramp' ? 0 : pieceHeight(kind) / 2;
 }
 
 /**
@@ -95,14 +101,23 @@ function buildRampGeometry(): THREE.BufferGeometry {
 
 const wallGeo = new THREE.BoxGeometry(BUILD.wall.w, BUILD.wall.h, BUILD.wall.t);
 const rampGeo = buildRampGeometry();
+// Cube (playtest Task 8) shares the wall's stone-grey material — the brief's
+// "stone-gray cube, shared material" — only the geometry differs.
+const cubeGeo = new THREE.BoxGeometry(BUILD.cube.w, BUILD.cube.h, BUILD.cube.d);
 const wallMat = new THREE.MeshStandardMaterial({ color: WALL_COLOR });
 const rampMat = new THREE.MeshStandardMaterial({ color: RAMP_COLOR });
 
-function geometryFor(kind: 'wall' | 'ramp'): THREE.BufferGeometry {
-  return kind === 'wall' ? wallGeo : rampGeo;
+function geometryFor(kind: PieceKind): THREE.BufferGeometry {
+  if (kind === 'ramp') return rampGeo;
+  if (kind === 'cube') return cubeGeo;
+  return wallGeo;
 }
 
-function reasonToast(kind: 'wall' | 'ramp', reason: 'height' | 'overlap' | 'max' | 'stock'): string {
+function materialFor(kind: PieceKind): THREE.MeshStandardMaterial {
+  return kind === 'ramp' ? rampMat : wallMat;
+}
+
+function reasonToast(kind: PieceKind, reason: 'height' | 'overlap' | 'max' | 'stock'): string {
   if (reason === 'max') return 'Build limit reached!';
   if (reason === 'stock') return `No ${kind}s left`;
   if (reason === 'height') return 'Too high — 4-piece stack limit';
@@ -128,12 +143,22 @@ export class BuildSystem {
   private readonly meshes = new Map<number, THREE.Mesh>();
 
   // --- Ghost placement -----------------------------------------------------
-  private kind: 'wall' | 'ramp' | null = null;
+  private kind: PieceKind | null = null;
   private ghost: THREE.Mesh | null = null;
   private ghostMat: THREE.MeshStandardMaterial | null = null;
   private pending: BuildPiece | null = null;
   private pendingReason: 'height' | 'overlap' | 'max' | 'stock' | null = null;
   private valid = false;
+  /**
+   * Accumulated +90°-step rotation offset (radians, playtest Task 8) applied
+   * ON TOP of whatever yaw `resolveSnap`/`freeformSnap` resolved — additive,
+   * so it combines with both camera-yaw-stepped freeform placement AND a
+   * snap candidate's own inherited yaw (e.g. rotating a piece that's
+   * top-snapped onto an existing stack). Reset whenever a fresh ghost is
+   * entered or the ghost exits (place/cancel) — a rotation never carries
+   * over to the NEXT ghost session.
+   */
+  private ghostYawOffset = 0;
 
   // --- Pickup (hold-F reclaim) ----------------------------------------------
   private pickupId: number | null = null;
@@ -145,9 +170,16 @@ export class BuildSystem {
     this.inventory = inventory;
   }
 
-  /** True while a ghost is active (a wall/ramp hotbar slot is selected). */
+  /** True while a ghost is active (a wall/ramp/cube hotbar slot is selected). */
   get active(): boolean {
     return this.kind !== null;
+  }
+
+  /** Rotate the active ghost +90° (accumulating). No-op with no ghost active.
+   *  Playtest Task 8: KeyR while a ghost is active — see main.ts's dispatch. */
+  rotateGhost(): void {
+    if (!this.kind) return;
+    this.ghostYawOffset += Math.PI / 2;
   }
 
   /** Live placed pieces (read-only snapshot reference — not copied). */
@@ -159,10 +191,10 @@ export class BuildSystem {
   // Ghost placement
   // -------------------------------------------------------------------------
 
-  /** Hotbar selection entered a placeable slot: 'wall' or 'ramp'. No-ops
-   *  (toasts) with an empty stock so the ghost never enters with nothing to
-   *  place. */
-  enter(kind: 'wall' | 'ramp'): void {
+  /** Hotbar selection entered a placeable slot: 'wall', 'ramp' or 'cube'.
+   *  No-ops (toasts) with an empty stock so the ghost never enters with
+   *  nothing to place. */
+  enter(kind: PieceKind): void {
     if (this.stock(kind) <= 0) {
       toast(`No ${kind}s`);
       return;
@@ -171,8 +203,9 @@ export class BuildSystem {
     this.pending = null;
     this.pendingReason = null;
     this.valid = false;
+    this.ghostYawOffset = 0;
     this.buildGhost(kind);
-    toast(kind === 'wall' ? 'Wall — aim and click to place' : 'Ramp — aim and click to place');
+    toast(`${KIND_LABEL[kind]} — aim and click to place`);
   }
 
   /** Cancel the active ghost (Esc, or the hotbar selection moving away). */
@@ -186,9 +219,15 @@ export class BuildSystem {
    * Per-frame ghost update. `aim` is the already-raycast world point (against
    * the COMPOSED ground — main.ts's job) or `null` on a total miss; `camYawDeg`
    * is the camera yaw in DEGREES (the one non-radians input `resolveSnap`
-   * takes, per its own doc). No-ops when no ghost is active.
+   * takes, per its own doc). `snapHeld` (playtest Task 8 — explicit Ctrl-
+   * snap): snap candidates are only consulted while true; while false, the
+   * ghost is pure freeform (`freeformSnap` — camera-yaw-stepped, never
+   * anchored to an existing piece) regardless of aim proximity to one.
+   * Gated HERE rather than in `buildmath.ts` so that module stays pure/
+   * unconditional and its own `resolveSnap` unit tests need no changes.
+   * No-ops when no ghost is active.
    */
-  update(_dt: number, aim: Vec3 | null, camYawDeg: number): void {
+  update(_dt: number, aim: Vec3 | null, camYawDeg: number, snapHeld: boolean): void {
     const kind = this.kind;
     if (!kind || !this.ghost) return;
 
@@ -200,8 +239,13 @@ export class BuildSystem {
       return;
     }
 
-    const snap = resolveSnap(this.piecesList, kind, aim, camYawDeg);
-    const candidate: BuildPiece = { id: -1, kind, x: snap.x, y: snap.y, z: snap.z, yaw: snap.yaw };
+    const snap = snapHeld
+      ? resolveSnap(this.piecesList, kind, aim, camYawDeg)
+      : freeformSnap(aim, camYawDeg);
+    // The ghost-rotation offset (KeyR) applies ADDITIVELY on top of whichever
+    // yaw resolveSnap/freeformSnap resolved — see `rotateGhost`'s doc.
+    const yaw = snap.yaw + this.ghostYawOffset;
+    const candidate: BuildPiece = { id: -1, kind, x: snap.x, y: snap.y, z: snap.z, yaw };
     const terrainY = this.ground.heightAt(candidate.x, candidate.z);
     const maxed = this.piecesList.length >= BUILD.maxPieces;
     const outOfStock = this.stock(kind) <= 0;
@@ -237,7 +281,7 @@ export class BuildSystem {
     this.piecesList.push(piece);
     this.rebuildHash();
     this.spawnMesh(piece);
-    toast(kind === 'wall' ? 'Wall placed' : 'Ramp placed');
+    toast(`${KIND_LABEL[kind]} placed`);
     // Auto-exit the ghost the moment stock hits zero — otherwise it lingers
     // active-but-permanently-red (every future update() reads 'stock' as the
     // invalid reason) until the player notices and backs out themselves.
@@ -296,7 +340,7 @@ export class BuildSystem {
     this.piecesList.splice(idx, 1);
     this.rebuildHash();
     this.setStock(piece.kind, this.stock(piece.kind) + 1);
-    toast(piece.kind === 'wall' ? '+1 Wall reclaimed' : '+1 Ramp reclaimed');
+    toast(`+1 ${KIND_LABEL[piece.kind]} reclaimed`);
   }
 
   // -------------------------------------------------------------------------
@@ -337,22 +381,24 @@ export class BuildSystem {
    *    (`grappleNear` below, unaffected — a different mechanic with no
    *    walking-through-it problem) and still blocks nothing it shouldn't.
    *
-   * 2. WALL yTop IS LOWERED BY `BUILD.standClearance`. The height-cap gate
-   *    is `pos.y > ob.yTop` (STRICT). A player standing on a wall's flat top
+   * 2. WALL/CUBE yTop IS LOWERED BY `BUILD.standClearance`. The height-cap
+   *    gate is `pos.y > ob.yTop` (STRICT). A player standing on a flat top
    *    has `pos.y` set to EXACTLY that top (the ground-resolve snap in
    *    movement.ts), so `pos.y > yTop` is false at that exact value and the
-   *    "glide over" skip never triggers — the wall's own side-collision
+   *    "glide over" skip never triggers — the piece's own side-collision
    *    circles keep shoving a standing player off their own platform (an
    *    empirically observed ~1.5 m/step drift verified during hands-on
    *    testing, not caught by any prior unit test since none composed
    *    obstaclesNear with resolveCollision + the ground-resolve snap
    *    together). Lowering the ceiling by a few centimetres — well under
-   *    `wall.h` — costs nothing: walking into the wall's SIDE happens at
-   *    ground level, far below `yTop - standClearance` either way.
+   *    `wall.h`/`cube.h` — costs nothing: walking into the piece's SIDE
+   *    happens at ground level, far below `yTop - standClearance` either way.
+   *    Cubes (playtest Task 8) get the exact same treatment as walls — same
+   *    flat-topped-box shape, just bigger — so a player can stand on one.
    */
   obstaclesNear(x: number, z: number): Obstacle[] {
     return this.near(x, z)
-      .filter((p) => p.kind === 'wall')
+      .filter((p) => p.kind === 'wall' || p.kind === 'cube')
       .flatMap(pieceObstacles)
       .map((o) => ({ ...o, yTop: (o.yTop ?? 0) - BUILD.standClearance }));
   }
@@ -397,9 +443,9 @@ export class BuildSystem {
   // crafting/selecting through the hotbar. Returns false on any rejection.
   // -------------------------------------------------------------------------
   debugPlace(kind: string, x: number, y: number, z: number, yaw: number): boolean {
-    if (kind !== 'wall' && kind !== 'ramp') return false;
+    const k = kind === 'wall' || kind === 'ramp' || kind === 'cube' ? kind : null;
+    if (!k) return false;
     if (this.piecesList.length >= BUILD.maxPieces) return false;
-    const k: 'wall' | 'ramp' = kind === 'wall' ? 'wall' : 'ramp';
     const candidate: BuildPiece = { id: -1, kind: k, x, y, z, yaw };
     const terrainY = this.ground.heightAt(x, z);
     if (!placementValid(this.piecesList, candidate, terrainY).ok) return false;
@@ -416,7 +462,7 @@ export class BuildSystem {
 
   serialize(): BuildPersistEntry[] {
     return this.piecesList.map((p) => ({
-      k: p.kind === 'wall' ? 'w' : 'r',
+      k: p.kind === 'wall' ? 'w' : p.kind === 'cube' ? 'c' : 'r',
       x: p.x,
       y: p.y,
       z: p.z,
@@ -441,7 +487,7 @@ export class BuildSystem {
     for (const e of entries.slice(0, BUILD.maxPieces)) {
       const piece: BuildPiece = {
         id: this.nextId++,
-        kind: e.k === 'w' ? 'wall' : 'ramp',
+        kind: e.k === 'w' ? 'wall' : e.k === 'c' ? 'cube' : 'ramp',
         x: e.x,
         y: e.y,
         z: e.z,
@@ -459,17 +505,20 @@ export class BuildSystem {
 
   // -------------------------------------------------------------------------
 
-  private stock(kind: 'wall' | 'ramp'): number {
-    return kind === 'wall' ? this.inventory.walls : this.inventory.ramps;
+  private stock(kind: PieceKind): number {
+    if (kind === 'wall') return this.inventory.walls;
+    if (kind === 'cube') return this.inventory.cubes;
+    return this.inventory.ramps;
   }
 
-  private setStock(kind: 'wall' | 'ramp', n: number): void {
+  private setStock(kind: PieceKind, n: number): void {
     if (kind === 'wall') this.inventory.walls = n;
+    else if (kind === 'cube') this.inventory.cubes = n;
     else this.inventory.ramps = n;
   }
 
   private spawnMesh(piece: BuildPiece): void {
-    const mesh = new THREE.Mesh(geometryFor(piece.kind), piece.kind === 'wall' ? wallMat : rampMat);
+    const mesh = new THREE.Mesh(geometryFor(piece.kind), materialFor(piece.kind));
     mesh.position.set(piece.x, piece.y + baseYOffset(piece.kind), piece.z);
     mesh.rotation.y = piece.yaw;
     this.scene.add(mesh);
@@ -484,7 +533,7 @@ export class BuildSystem {
     this.meshes.delete(id);
   }
 
-  private buildGhost(kind: 'wall' | 'ramp'): void {
+  private buildGhost(kind: PieceKind): void {
     this.disposeGhost();
     const mat = new THREE.MeshStandardMaterial({
       color: VALID_COLOR,
@@ -516,5 +565,6 @@ export class BuildSystem {
     this.pending = null;
     this.pendingReason = null;
     this.valid = false;
+    this.ghostYawOffset = 0;
   }
 }

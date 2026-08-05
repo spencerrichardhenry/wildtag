@@ -395,11 +395,41 @@ describe('encodeSave / decodeSave', () => {
     expect(decodeSave(JSON.stringify(nan))).toBeNull();
   });
 
-  it('round-trips placed pieces (builds)', () => {
+  // --- Playtest Task 8: cubes counter + 'c' build entries -------------------
+
+  it('cubes count round-trips (mirrors walls/ramps)', () => {
+    const state = sampleSave();
+    state.inventory.cubes = 3;
+    const decoded = decodeSave(encodeSave(state));
+    expect(decoded?.inventory.cubes).toBe(3);
+  });
+
+  it('pre-Task-8 save without a cubes field loads with 0', () => {
+    const state = sampleSave();
+    const { cubes, ...invNoCubes } = state.inventory;
+    void cubes;
+    const raw = { ...state, inventory: invNoCubes };
+    const decoded = decodeSave(JSON.stringify(raw));
+    expect(decoded).not.toBeNull();
+    expect(decoded?.inventory.cubes).toBe(0);
+    expect(decoded?.inventory.fiber).toBe(state.inventory.fiber);
+  });
+
+  it('rejects a negative / non-finite cubes count', () => {
+    const negCubes = sampleSave();
+    negCubes.inventory.cubes = -1;
+    expect(decodeSave(JSON.stringify(negCubes))).toBeNull();
+
+    const nan = { ...sampleSave(), inventory: { ...sampleSave().inventory, cubes: 'lots' } };
+    expect(decodeSave(JSON.stringify(nan))).toBeNull();
+  });
+
+  it('round-trips placed pieces (builds), including a cube ("c")', () => {
     const state = sampleSave({
       builds: [
         { k: 'w', x: 1, y: 2, z: 3, yaw: 0 },
         { k: 'r', x: -4, y: 0, z: 8, yaw: 1.57 },
+        { k: 'c', x: 5, y: 0, z: -2, yaw: 0.4 },
       ],
     });
     const decoded = decodeSave(encodeSave(state));

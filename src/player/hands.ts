@@ -85,6 +85,7 @@ const ITEM_IDS_WITH_MESH: readonly ItemId[] = [
   'kit:drone',
   'wall',
   'ramp',
+  'cube',
 ];
 
 /** Merge cylinder-shaft + fanned cone-prongs into one BufferGeometry so the
@@ -200,7 +201,13 @@ function buildItemMeshes(group: THREE.Group): Record<ItemId, THREE.Mesh> {
   rampMesh.position.set(0, HANDS.mittenRadius * 0.55, -HANDS.mittenRadius * 0.3);
   rampMesh.rotation.y = Math.PI / 5;
 
-  for (const m of [dartMesh, kitMesh, charmMesh, wallMesh, rampMesh]) {
+  // Mini cube-block viewmodel (playtest Task 8) — a small cube, same tint
+  // family as the wall slab (both read as stone).
+  const cubeGeo = new THREE.BoxGeometry(HANDS.cubeBlock, HANDS.cubeBlock, HANDS.cubeBlock);
+  const cubeMesh = new THREE.Mesh(cubeGeo, makeSurfaceMaterial({ color: HANDS.itemColor.cube }));
+  cubeMesh.position.set(0, HANDS.mittenRadius * 0.75, -HANDS.mittenRadius * 0.35);
+
+  for (const m of [dartMesh, kitMesh, charmMesh, wallMesh, rampMesh, cubeMesh]) {
     tagMesh(m);
     m.visible = false;
     group.add(m);
@@ -214,6 +221,7 @@ function buildItemMeshes(group: THREE.Group): Record<ItemId, THREE.Mesh> {
     'kit:drone': kitMesh,
     wall: wallMesh,
     ramp: rampMesh,
+    cube: cubeMesh,
   };
 }
 

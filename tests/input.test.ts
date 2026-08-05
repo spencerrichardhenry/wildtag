@@ -42,6 +42,27 @@ describe('EdgeLatch', () => {
     latch.latch('rocket');
     expect(latch.consume()).toEqual({ jump: false, dash: false, rocket: true });
   });
+
+  // clearRocket (playtest Task 8): KeyR always latches 'rocket' regardless of
+  // context (see the `Action` doc in input.ts — a build ghost active means R
+  // rotates the ghost instead), so main.ts drops JUST the rocket edge that
+  // frame rather than the broad clear() screens use, which would also eat a
+  // legitimately-pending jump/dash from the same frame.
+  it('clearRocket() drops only the rocket edge, leaving jump/dash untouched', () => {
+    const latch = new EdgeLatch();
+    latch.latch('jump');
+    latch.latch('dash');
+    latch.latch('rocket');
+    latch.clearRocket();
+    expect(latch.consume()).toEqual({ jump: true, dash: true, rocket: false });
+  });
+
+  it('clearRocket() is a harmless no-op when no rocket edge is pending', () => {
+    const latch = new EdgeLatch();
+    latch.latch('jump');
+    latch.clearRocket();
+    expect(latch.consume()).toEqual({ jump: true, dash: false, rocket: false });
+  });
 });
 
 // actionForCode is the DOM-free key-code → UI-action mapping extracted from

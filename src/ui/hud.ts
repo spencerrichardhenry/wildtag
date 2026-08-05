@@ -61,7 +61,7 @@ export interface HudFrame {
    * below) since visually it's the same "something interactive is aimed at"
    * cue.
    */
-  buildPickup: { kind: 'wall' | 'ramp'; progress: number } | null;
+  buildPickup: { kind: 'wall' | 'ramp' | 'cube'; progress: number } | null;
   spawn: Vec3;
   /** True while the pointer is locked (drives first-run hints). */
   locked: boolean;

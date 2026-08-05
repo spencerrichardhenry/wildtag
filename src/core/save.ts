@@ -119,8 +119,9 @@ export interface SaveV3 {
    */
   hotbar?: { slots: (string | null)[]; selected: number };
   /**
-   * Inventory+Building Task 5: placed wall/ramp pieces — compact `{k, x, y,
-   * z, yaw}` entries (`k`: 'w' wall / 'r' ramp). Optional + shape-guarded
+   * Inventory+Building Task 5: placed wall/ramp/cube pieces — compact `{k,
+   * x, y, z, yaw}` entries (`k`: 'w' wall / 'r' ramp / 'c' cube, the last
+   * added by the playtest Task 8). Optional + shape-guarded
    * (absent → BuildSystem starts empty) so pre-Task-5 saves migrate
    * losslessly; malformed entries are dropped like the structures/roster
    * element guards, and the whole array is truncated to `BUILD.maxPieces` on
@@ -129,9 +130,10 @@ export interface SaveV3 {
   builds?: BuildPersistEntry[];
 }
 
-/** A persisted placed piece (Inventory+Building Task 5). */
+/** A persisted placed piece (Inventory+Building Task 5; `k: 'c'` cube added
+ *  by the playtest Task 8). */
 export interface BuildPersistEntry {
-  k: 'w' | 'r';
+  k: 'w' | 'r' | 'c';
   x: number;
   y: number;
   z: number;
@@ -313,7 +315,7 @@ function parseFarm(v: unknown): FarmState | undefined {
 function parseBuildEntry(b: unknown): BuildPersistEntry | null {
   if (!b || typeof b !== 'object') return null;
   const e = b as Record<string, unknown>;
-  if (e.k !== 'w' && e.k !== 'r') return null;
+  if (e.k !== 'w' && e.k !== 'r' && e.k !== 'c') return null;
   if (!Number.isFinite(e.x) || !Number.isFinite(e.y) || !Number.isFinite(e.z) || !Number.isFinite(e.yaw)) {
     return null;
   }
@@ -399,6 +401,11 @@ export function decodeSave(json: string): SaveV3 | null {
     const walls = isCount(inv.walls) ? (inv.walls as number) : 0;
     if (inv.ramps !== undefined && !isCount(inv.ramps)) return null;
     const ramps = isCount(inv.ramps) ? (inv.ramps as number) : 0;
+    // `cubes` mirrors `walls`/`ramps` (playtest Task 8): forward-compat for
+    // pre-Task-8 saves (missing → defaults to 0), but a present tampered/
+    // negative value rejects.
+    if (inv.cubes !== undefined && !isCount(inv.cubes)) return null;
+    const cubes = isCount(inv.cubes) ? (inv.cubes as number) : 0;
     const kits: Inventory['kits'] = { zipline: 0, beacon: 0, drone: 0 };
     if (inv.kits !== undefined && inv.kits !== null) {
       if (typeof inv.kits !== 'object') return null;
@@ -423,6 +430,7 @@ export function decodeSave(json: string): SaveV3 | null {
       purifiers,
       walls,
       ramps,
+      cubes,
       kits,
     };
     if (!Array.isArray(o.unlocks) || !o.unlocks.every((u) => typeof u === 'string')) return null;

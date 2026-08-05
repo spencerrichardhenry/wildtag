@@ -76,6 +76,19 @@ export const RECIPES: Recipe[] = [
     batch: 2,
     grants: 'ramps',
   },
+  {
+    // Playtest Task 8: a bigger, square building block — ramp→cube→ramp
+    // makes a staircase (resolveSnap's top/edge/rampfoot candidates all
+    // treat cubes the same as walls).
+    id: 'cube',
+    name: 'Cube Block',
+    tier: 1,
+    rpRequired: 25,
+    cost: { wood: 2, stone: 2 },
+    kind: 'consumable',
+    batch: 4,
+    grants: 'cubes',
+  },
   // --- Tier 2 (75 RP) --------------------------------------------------------
   {
     // Cursed Castle: glow mushrooms (Task 1) become ammo that cleanses

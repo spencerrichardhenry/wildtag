@@ -51,6 +51,7 @@ const ITEM_LABELS: Record<ItemId, string> = {
   'kit:drone': 'Drone',
   wall: 'Wall',
   ramp: 'Ramp',
+  cube: 'Cube',
 };
 
 export function hotbarItemLabel(item: ItemId | null): string {

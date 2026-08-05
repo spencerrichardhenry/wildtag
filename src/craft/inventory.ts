@@ -32,6 +32,8 @@ export interface Inventory {
   walls: number;
   /** Ramp wedges on hand (Inventory+Building Task 5) — BuildSystem places/reclaims them. */
   ramps: number;
+  /** Cube blocks on hand (Inventory+Building playtest Task 8) — BuildSystem places/reclaims them. */
+  cubes: number;
   /** Held-but-not-yet-placed deployable structure counts (Task 13 consumes). */
   kits: Record<DeployableId, number>;
 }
@@ -52,6 +54,7 @@ export function createInventory(): Inventory {
     purifiers: 0,
     walls: 0,
     ramps: 0,
+    cubes: 0,
     kits: { zipline: 0, beacon: 0, drone: 0 },
   };
 }

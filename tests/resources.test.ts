@@ -102,6 +102,7 @@ describe('inventory', () => {
       purifiers: 0,
       walls: 0,
       ramps: 0,
+      cubes: 0,
       kits: { zipline: 0, beacon: 0, drone: 0 },
     });
   });

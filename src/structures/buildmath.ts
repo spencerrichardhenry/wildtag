@@ -39,9 +39,18 @@ import type { Vec3 } from '../core/types.ts';
 // DEGREES-flavoured input, converted at that boundary only.
 // ---------------------------------------------------------------------------
 
+/** Every placeable piece kind. `cube` (playtest Task 8) is a flat-topped
+ *  BOX like `wall` (same footprint-math shape: a rectangle in the local
+ *  (u,w) frame, contributing `y + height` over it), just bigger and square —
+ *  see `footprintHalfExtents`/`pieceHeight`, which key off `BUILD.cube`
+ *  instead of `BUILD.wall` but otherwise share every wall codepath (top-snap,
+ *  edge-snap, rampfoot-snap-target, `buildTopAt`'s flat-top branch,
+ *  `placementValid`'s OBB overlap, `pieceAtRay`'s AABB). */
+export type PieceKind = 'wall' | 'ramp' | 'cube';
+
 export interface BuildPiece {
   id: number;
-  kind: 'wall' | 'ramp';
+  kind: PieceKind;
   x: number;
   y: number;
   z: number;
@@ -49,11 +58,13 @@ export interface BuildPiece {
   yaw: number;
 }
 
-/** Vertical extent of a piece above its own `y` (wall → height, ramp → rise
- *  at its high end). Not in the original interface list, but a natural
+/** Vertical extent of a piece above its own `y` (wall/cube → height, ramp →
+ *  rise at its high end). Not in the original interface list, but a natural
  *  shared helper — exported since Task 5's ghost/ground code wants it too. */
-export function pieceHeight(kind: 'wall' | 'ramp'): number {
-  return kind === 'wall' ? BUILD.wall.h : BUILD.ramp.rise;
+export function pieceHeight(kind: PieceKind): number {
+  if (kind === 'ramp') return BUILD.ramp.rise;
+  if (kind === 'cube') return BUILD.cube.h;
+  return BUILD.wall.h;
 }
 
 function dist3(a: Vec3, b: Vec3): number {
@@ -65,10 +76,10 @@ function clamp(v: number, lo: number, hi: number): number {
 }
 
 /** Local-frame half-extents (u = width axis, w = depth/run axis) per kind. */
-function footprintHalfExtents(kind: 'wall' | 'ramp'): { halfU: number; halfW: number } {
-  return kind === 'wall'
-    ? { halfU: BUILD.wall.w / 2, halfW: BUILD.wall.t / 2 }
-    : { halfU: BUILD.ramp.w / 2, halfW: BUILD.ramp.run / 2 };
+function footprintHalfExtents(kind: PieceKind): { halfU: number; halfW: number } {
+  if (kind === 'ramp') return { halfU: BUILD.ramp.w / 2, halfW: BUILD.ramp.run / 2 };
+  if (kind === 'cube') return { halfU: BUILD.cube.w / 2, halfW: BUILD.cube.d / 2 };
+  return { halfU: BUILD.wall.w / 2, halfW: BUILD.wall.t / 2 };
 }
 
 // ---------------------------------------------------------------------------
@@ -100,14 +111,15 @@ export function buildTopAt(pieces: readonly BuildPiece[], x: number, z: number):
 
     if (Math.abs(u) > halfU) continue; // outside the width — never contributes
 
-    if (p.kind === 'wall') {
-      if (Math.abs(w) > halfW) continue; // outside the thickness
-      const y = p.y + BUILD.wall.h;
-      if (y > top) top = y;
-    } else {
+    if (p.kind === 'ramp') {
       if (w < -halfW || w > halfW) continue; // beyond the run
       const t = clamp((w + halfW) / (2 * halfW), 0, 1);
       const y = p.y + BUILD.ramp.rise * t;
+      if (y > top) top = y;
+    } else {
+      // wall OR cube: a flat top over the whole rectangular footprint.
+      if (Math.abs(w) > halfW) continue; // outside the thickness/depth
+      const y = p.y + pieceHeight(p.kind);
       if (y > top) top = y;
     }
   }
@@ -146,30 +158,36 @@ const SNAP_TIE_EPS = 1e-9;
  * - `'top'` (any existing piece, any placed `kind`): trigger = the piece's
  *   top-face centre `(p.x, p.y + pieceHeight(p.kind), p.z)`. Candidate =
  *   that same point, `yaw = p.yaw` (flush stack, inherits x/z/yaw).
- * - `'edge'` (existing WALL pieces only): trigger = the left/right edge
- *   midpoint at local `(u = ±wall.w/2, w = 0)`, vertical midpoint
- *   `y = p.y + wall.h/2`. Candidate = one full width further out along the
- *   same side (`u = ±wall.w`), `y = p.y`, `yaw = p.yaw` — continues the row.
- * - `'rampfoot'` (existing WALL pieces only, and only when placing a RAMP):
- *   trigger = the wall's front/back face centre at local `(u = 0,
- *   w = ±wall.t/2)`, `y = p.y` (the wall's base). Candidate: the ramp's yaw
+ * - `'edge'` (existing WALL or CUBE pieces only): trigger = the left/right
+ *   edge midpoint at local `(u = ±halfU, w = 0)` (the source piece's OWN
+ *   half-width — `wall.w/2` or `cube.w/2`), vertical midpoint `y = p.y +
+ *   pieceHeight(p.kind)/2`. Candidate = one full width further out along the
+ *   same side (`u = ±2·halfU`), `y = p.y`, `yaw = p.yaw` — continues the row
+ *   (a cube row continues in cubes' own width; a wall row in walls').
+ * - `'rampfoot'` (existing WALL or CUBE pieces only, and only when placing a
+ *   RAMP): trigger = the source piece's front/back face centre at local
+ *   `(u = 0, w = ±halfW)` (the source's own half-thickness/depth — `wall.t/2`
+ *   or `cube.d/2`), `y = p.y` (the source's base). Candidate: the ramp's yaw
  *   is set so its own local +w axis (its high-end direction) points along
- *   the face's INWARD normal (back toward the wall — the OPPOSITE of the
- *   face's own outward normal), and its centre sits `run/2` OUT from the
+ *   the face's INWARD normal (back toward the source piece — the OPPOSITE of
+ *   the face's own outward normal), and its centre sits `run/2` OUT from the
  *   face along the face's outward normal — so the ramp's HIGH end (local
  *   `w = +run/2`, displaced `-run/2` along its own +w from the centre, i.e.
- *   `+run/2` outward from the centre) lands exactly on the wall face,
- *   `y = p.y` (same base height as the wall; since `ramp.rise === wall.h`
- *   the high end is then flush with the wall's top), while the LOW end
- *   (local `w = -run/2`) reaches a full `run` further out into the open —
- *   where a player actually approaches from. Getting the +w direction
+ *   `+run/2` outward from the centre) lands exactly on the source's face,
+ *   `y = p.y` (same base height as the source; since `ramp.rise === wall.h
+ *   === cube.h` the high end is then flush with the source's top), while the
+ *   LOW end (local `w = -run/2`) reaches a full `run` further out into the
+ *   open — where a player actually approaches from. Getting the +w direction
  *   backwards here (pointing outward instead of inward) would put the HIGH
- *   end in the open and drive the ramp's whole footprint THROUGH the wall
- *   instead of butting flush against its face — always overlapping.
+ *   end in the open and drive the ramp's whole footprint THROUGH the source
+ *   instead of butting flush against its face — always overlapping. This is
+ *   what lets a ramp→cube→ramp staircase compose: the first ramp's rampfoot
+ *   targets the cube's face, and a second ramp's `'top'` candidate targets
+ *   the cube's top (any placed kind qualifies for `'top'`, see above).
  */
 export function resolveSnap(
   pieces: readonly BuildPiece[],
-  kind: 'wall' | 'ramp',
+  kind: PieceKind,
   aim: Vec3,
   camYawDeg: number,
 ): SnapResult {
@@ -212,7 +230,10 @@ export function resolveSnap(
     const topY = p.y + pieceHeight(p.kind);
     consider(dist3(aim, { x: p.x, y: topY, z: p.z }), PRIORITY.top, p.x, topY, p.z, p.yaw, 'top');
 
-    if (p.kind !== 'wall') continue; // edge + rampfoot both anchor off WALL pieces only
+    // edge + rampfoot both anchor off flat-topped WALL/CUBE source pieces —
+    // a ramp's own sloped face isn't a sensible row-continuation or
+    // rampfoot target.
+    if (p.kind === 'ramp') continue;
 
     const cosY = Math.cos(p.yaw);
     const sinY = Math.sin(p.yaw);
@@ -220,31 +241,32 @@ export function resolveSnap(
     const uDirZ = -sinY;
     const wDirX = sinY;
     const wDirZ = cosY;
+    const { halfU: srcHalfU, halfW: srcHalfW } = footprintHalfExtents(p.kind);
 
-    // --- edge: continue the row left/right ---
+    // --- edge: continue the row left/right (in the SOURCE piece's own width) ---
     for (const side of [-1, 1] as const) {
-      const edgeX = p.x + uDirX * (side * (BUILD.wall.w / 2));
-      const edgeZ = p.z + uDirZ * (side * (BUILD.wall.w / 2));
-      const edgeY = p.y + BUILD.wall.h / 2;
+      const edgeX = p.x + uDirX * (side * srcHalfU);
+      const edgeZ = p.z + uDirZ * (side * srcHalfU);
+      const edgeY = p.y + pieceHeight(p.kind) / 2;
       const d = dist3(aim, { x: edgeX, y: edgeY, z: edgeZ });
-      const newX = p.x + uDirX * (side * BUILD.wall.w);
-      const newZ = p.z + uDirZ * (side * BUILD.wall.w);
+      const newX = p.x + uDirX * (side * srcHalfU * 2);
+      const newZ = p.z + uDirZ * (side * srcHalfU * 2);
       consider(d, PRIORITY.edge, newX, p.y, newZ, p.yaw, 'edge');
     }
 
-    // --- rampfoot: ramp's high end meets the wall's base face ---
+    // --- rampfoot: ramp's high end meets the source piece's base face ---
     if (kind === 'ramp') {
       for (const faceSign of [-1, 1] as const) {
-        const faceX = p.x + wDirX * (faceSign * (BUILD.wall.t / 2));
-        const faceZ = p.z + wDirZ * (faceSign * (BUILD.wall.t / 2));
+        const faceX = p.x + wDirX * (faceSign * srcHalfW);
+        const faceZ = p.z + wDirZ * (faceSign * srcHalfW);
         const d = dist3(aim, { x: faceX, y: p.y, z: faceZ });
-        // Outward normal of this face (away from the wall's body).
+        // Outward normal of this face (away from the source piece's body).
         const normalX = wDirX * faceSign;
         const normalZ = wDirZ * faceSign;
         // The ramp's own local +w (its HIGH-end direction) must point the
-        // OPPOSITE way — INWARD, back toward the wall — so the high end
-        // sits flush at the face while the low end reaches outward into the
-        // open (see the doc comment above for the full derivation).
+        // OPPOSITE way — INWARD, back toward the source piece — so the high
+        // end sits flush at the face while the low end reaches outward into
+        // the open (see the doc comment above for the full derivation).
         const rampYaw = Math.atan2(-normalX, -normalZ);
         const centerX = faceX + normalX * (BUILD.ramp.run / 2);
         const centerZ = faceZ + normalZ * (BUILD.ramp.run / 2);
@@ -257,8 +279,22 @@ export function resolveSnap(
     return { x: bestX, y: bestY, z: bestZ, yaw: bestYaw, snapped: bestSnapped };
   }
 
-  // Freeform fallback: aim verbatim, yaw snapped to the nearest yawStepDeg
-  // multiple of the camera yaw (converted degrees→radians at this boundary).
+  return freeformSnap(aim, camYawDeg);
+}
+
+/**
+ * The freeform (unsnapped) placement rule, on its own: `aim` verbatim (the
+ * caller supplies `aim.y` — typically `effectiveGroundAt`), with yaw snapped
+ * to the nearest `BUILD.yawStepDeg` multiple of the camera yaw (converted
+ * degrees→radians at this boundary — the one non-radians input here, mirrors
+ * `resolveSnap`'s own `camYawDeg`). Extracted from `resolveSnap`'s no-
+ * candidate-in-range fallback (Task 8 playtest, Ctrl-to-snap): `resolveSnap`
+ * still calls this internally for that fallback, but `BuildSystem` also
+ * calls it DIRECTLY — bypassing every snap candidate — while Ctrl isn't
+ * held, so snapping only ever engages with the modifier down. Kept pure/
+ * three-free like the rest of this module.
+ */
+export function freeformSnap(aim: Vec3, camYawDeg: number): SnapResult {
   const yawStepRad = (BUILD.yawStepDeg * Math.PI) / 180;
   const camYawRad = (camYawDeg * Math.PI) / 180;
   const yaw = Math.round(camYawRad / yawStepRad) * yawStepRad;
@@ -272,8 +308,34 @@ export function resolveSnap(
 /** Y-interval overlap tolerance (m): stacked pieces flush top-to-bottom (an
  *  exact touch, plus a little float slack) do NOT count as overlapping. */
 const OVERLAP_Y_TOL = 0.05;
-/** Height-cap boundary tolerance (float safety only — exactly at the cap is OK). */
-const HEIGHT_EPS = 1e-6;
+/**
+ * Height-cap boundary tolerance (m) — exactly at the cap is OK.
+ *
+ * ROOT CAUSE (playtest Task 8, "can only stack 3 high, not 4"): this used to
+ * be `1e-6`, i.e. pure-float-rounding-only slack. But `candidate.y` for a
+ * FREEFORM (unsnapped) placement is never pure/exact — it's `aim.y`, and in
+ * real play `aim` comes from `raycastTerrain`'s bisection-refined terrain
+ * march (`player/grapple.ts`), which only converges to within roughly
+ * `GRAPPLE.marchStep / 2^(GRAPPLE.marchRefine + 1)` ≈ 0.75 / 32 ≈ 0.023 m of
+ * the true surface — NOT machine precision. `placementValid`'s own
+ * `terrainY` argument, by contrast, is always an EXACT fresh `heightAt(x, z)`
+ * sample. So the very first (freeform) piece of a stack can land with up to
+ * ~0.02 m of vertical slop baked into its stored `y`; every piece stacked on
+ * top of it via `resolveSnap`'s exact `'top'` candidate inherits that same
+ * offset verbatim (no further drift — confirmed empirically: only the
+ * freeform base introduces error, top-snap never adds any). That's normally
+ * harmless slop, but once a stack's nominal height reaches EXACTLY
+ * `maxStackH` (4 walls × 2 m = 8 m), a base that happened to overshoot by
+ * even 0.005 m pushes the top just past the old 1e-6 boundary — an entirely
+ * real, exactly-at-the-cap stack gets spuriously rejected on its last piece.
+ * Reproduced deterministically (not slope-specific — the same march-
+ * precision floor exists on flat ground too, it's a function of the ray's
+ * vertical alignment against `marchStep`, not terrain shape) in
+ * `tests/build-system.test.ts`. Widened to comfortably exceed that ~0.023 m
+ * worst case with margin, while staying far too tight to let a player
+ * meaningfully cheat the cap (2.5% of one wall's height).
+ */
+const HEIGHT_EPS = 0.05;
 /** XZ separating-axis tolerance (float safety only): an exact edge-to-edge
  *  touch (e.g. two walls placed via the 'edge' snap candidate) must NOT read
  *  as overlapping, so a separating axis found within this slack still counts
@@ -427,18 +489,36 @@ function rayAabbEntry(o: Vec3, d: Vec3, box: Aabb): number | null {
   return tMin;
 }
 
+/** `pieceAtRayHit`'s result: the nearest hit piece, its ray-entry world point,
+ *  and the distance along `dir` (in whatever units `dir` was — see
+ *  `pieceAtRayHit`'s doc) at which it was hit. */
+export interface PieceRayHit {
+  piece: BuildPiece;
+  point: Vec3;
+  dist: number;
+}
+
 /**
- * Coarse ray-vs-piece pickup aiming: sweeps `origin` along `dir` (need not be
- * unit) up to `maxDist` against each piece's world AABB (footprint rotated,
- * then expanded by 0.2 m — see `pieceAabb`), returning the nearest hit piece
- * or `null` on a total miss.
+ * Coarse ray-vs-piece aiming: sweeps `origin` along `dir` (need not be unit —
+ * `dist` comes back in units of the NORMALIZED direction either way) up to
+ * `maxDist` against each piece's world AABB (footprint rotated, then
+ * expanded by 0.2 m — see `pieceAabb`), returning the nearest hit piece +
+ * its entry point, or `null` on a total miss. `pieceAtRay` (below) is a thin
+ * wrapper kept for pickup callers that only need the piece, not the point.
+ *
+ * The `point` is what Task 8's placement-ghost aim wants: when a build
+ * piece's AABB is nearer than whatever the terrain march found along the
+ * same ray, the ghost should anchor on the PIECE's face, not on the ground
+ * behind it (the playtest "ghost lands behind the target" bug) — see
+ * `BuildSystem.update`'s caller in `main.ts`, which compares this `dist`
+ * against the terrain hit's distance and prefers whichever is nearer.
  */
-export function pieceAtRay(
+export function pieceAtRayHit(
   pieces: readonly BuildPiece[],
   origin: Vec3,
   dir: Vec3,
   maxDist: number,
-): BuildPiece | null {
+): PieceRayHit | null {
   const len = Math.hypot(dir.x, dir.y, dir.z) || 1;
   const d: Vec3 = { x: dir.x / len, y: dir.y / len, z: dir.z / len };
 
@@ -451,7 +531,46 @@ export function pieceAtRay(
       best = p;
     }
   }
-  return best;
+  if (!best) return null;
+  return {
+    piece: best,
+    point: { x: origin.x + d.x * bestT, y: origin.y + d.y * bestT, z: origin.z + d.z * bestT },
+    dist: bestT,
+  };
+}
+
+/**
+ * Coarse ray-vs-piece pickup aiming: same as `pieceAtRayHit`, returning just
+ * the nearest hit piece (or `null` on a total miss) — the shape existing
+ * pickup callers/tests want.
+ */
+export function pieceAtRay(
+  pieces: readonly BuildPiece[],
+  origin: Vec3,
+  dir: Vec3,
+  maxDist: number,
+): BuildPiece | null {
+  return pieceAtRayHit(pieces, origin, dir, maxDist)?.piece ?? null;
+}
+
+/**
+ * Playtest Task 8 ("ghost lands behind the target"): pick whichever of a
+ * piece-ray hit or a terrain-march hit is NEARER `origin`, preferring the
+ * piece whenever it's closer (including when the terrain march missed
+ * entirely — `terrainAim === null` — a piece hit always wins then). `null`
+ * only when BOTH miss. Pure/three-free so main.ts's per-frame ghost-aim
+ * comparison (the caller — see its own doc for why pieces must be tested
+ * FIRST) is directly unit-testable without a camera or a real terrain field.
+ */
+export function resolveBuildAim(
+  pieceHit: PieceRayHit | null,
+  terrainAim: Vec3 | null,
+  origin: Vec3,
+): Vec3 | null {
+  if (!pieceHit) return terrainAim;
+  if (!terrainAim) return pieceHit.point;
+  const terrainDist = dist3(origin, terrainAim);
+  return pieceHit.dist < terrainDist ? pieceHit.point : terrainAim;
 }
 
 // ---------------------------------------------------------------------------
@@ -484,6 +603,11 @@ function pieceCircles(p: BuildPiece): PieceCircle[] {
       yTop,
     }));
   }
+  if (p.kind === 'cube') {
+    // A single circle at the piece centre, big enough (r=1.2, vs the cube's
+    // own 1 m half-width/half-depth) to cover the full 2×2 footprint.
+    return [{ x: p.x, z: p.z, r: 1.2, yBase, yTop: p.y + BUILD.cube.h }];
+  }
   // ramp: a single circle at the piece centre.
   return [{ x: p.x, z: p.z, r: 0.9, yBase, yTop: p.y + BUILD.ramp.rise }];
 }
@@ -491,7 +615,8 @@ function pieceCircles(p: BuildPiece): PieceCircle[] {
 /**
  * Collision circles for a piece: walls get 2 overlapping circles
  * (`r = wall.t * 1.5`) spaced along the panel width so their union covers
- * the whole 2 m panel without a gap; ramps get 1 centred circle (`r = 0.9`).
+ * the whole 2 m panel without a gap; cubes get 1 centred circle (`r = 1.2`,
+ * covering the whole 2×2 footprint); ramps get 1 centred circle (`r = 0.9`).
  * `yTop` is the piece's top so a gliding/falling player can pass over it
  * (matches `Obstacle`'s finite-height convention in `player/collision.ts`).
  */

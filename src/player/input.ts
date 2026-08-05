@@ -12,9 +12,12 @@ import type { MoveInput } from '../core/types.ts';
 // drained via `consumeActions()` — reserved for later screens/HUD tasks.
 //
 // Key map (final): W/A/S/D move, ShiftLeft sprint, Space jump (hold = glide),
-// KeyQ dash, KeyR rocket, KeyF interact, Digit1–5 hotbar, Tab/KeyC/Escape UI,
-// LMB dart throw (Task 10), RMB grapple (Task 12; `rmbHeld` for the reel) —
-// mouse buttons register only while pointer-locked.
+// KeyQ dash, KeyR rocket (or rotate the active build ghost — context-
+// sensitive, resolved by main.ts off the `'rotate'` action edge, see the
+// `Action` doc below), KeyF interact, Digit1–5 hotbar, Tab/KeyC/Escape UI,
+// LMB dart throw (Task 10), RMB grapple (Task 12; `rmbHeld` for the reel),
+// Ctrl held = explicit snap-to-piece modifier while placing (`snapHeld`,
+// playtest Task 8) — mouse buttons register only while pointer-locked.
 // ---------------------------------------------------------------------------
 
 export type Action =
@@ -27,7 +30,18 @@ export type Action =
   | { type: 'mount' }
   | { type: 'escape' }
   | { type: 'lmb' }
-  | { type: 'rmb' };
+  | { type: 'rmb' }
+  /**
+   * KeyR's edge, queued IN ADDITION TO (never instead of) the `rocket` edge
+   * latch below — playtest Task 8: R is context-sensitive (rotate a build
+   * ghost if one's active, otherwise fire the rocket), and `input.ts` stays
+   * dumb about which: it just reports "R was pressed" here, and separately
+   * always latches `rocket` as before. main.ts's action-consumption loop
+   * decides what a `'rotate'` action means (rotate the ghost) and, whenever
+   * a ghost IS active, calls `clearRocketEdge()` before `player.update` runs
+   * so the rocket never ALSO fires that frame.
+   */
+  | { type: 'rotate' };
 
 /**
  * Pure key-code → queued-UI-action mapping (Digit1–6 hotbar, F/Tab/C/B/V/Esc),
@@ -114,6 +128,17 @@ export class EdgeLatch {
   clear(): void {
     this.jump = false;
     this.dash = false;
+    this.rocket = false;
+  }
+
+  /**
+   * Drop ONLY the pending rocket edge, leaving jump/dash untouched (unlike
+   * `clear()`, which drops all three). Playtest Task 8: main.ts calls this
+   * every frame a build ghost is active, so KeyR's rocket edge — always
+   * latched on keydown regardless of context, see the `Action` doc above —
+   * never reaches `player.update` while R is instead rotating the ghost.
+   */
+  clearRocket(): void {
     this.rocket = false;
   }
 }
@@ -225,6 +250,11 @@ export class Input {
         return;
       case 'KeyR':
         this.edges.latch('rocket');
+        // Always also queue a 'rotate' action edge — main.ts decides what R
+        // means this frame (rotate the build ghost vs. let the rocket edge
+        // through) based on whether a ghost is active. See the Action union
+        // doc above.
+        this.actions.push({ type: 'rotate' });
         return;
       case 'Tab':
         // Tab would otherwise shift focus off the canvas — still needs the
@@ -272,6 +302,22 @@ export class Input {
    */
   clearEdges(): void {
     this.edges.clear();
+  }
+
+  /** Drop only the pending rocket edge (see `EdgeLatch.clearRocket`'s doc) —
+   *  main.ts calls this every frame a build ghost is active so KeyR rotates
+   *  the ghost instead of also firing the rocket that same frame. */
+  clearRocketEdge(): void {
+    this.edges.clearRocket();
+  }
+
+  /**
+   * True while either Ctrl key is held (playtest Task 8 — explicit Ctrl-to-
+   * snap). Mechanical only: `Input` doesn't know what "snap" means, it just
+   * reports the raw modifier state, same spirit as `rmbHeld`/`lmbHeld`.
+   */
+  get snapHeld(): boolean {
+    return this.held.has('ControlLeft') || this.held.has('ControlRight');
   }
 
   /** True while the right mouse button is held and the pointer is locked. */

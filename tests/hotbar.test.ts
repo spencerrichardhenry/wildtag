@@ -130,6 +130,13 @@ describe('itemCount', () => {
     expect(itemCount(inv, 'wall')).toBe(3);
     expect(itemCount(inv, 'ramp')).toBe(2);
   });
+
+  it('reads cube counts off inv.cubes (playtest Task 8)', () => {
+    const inv = createInventory();
+    expect(itemCount(inv, 'cube')).toBe(0);
+    inv.cubes = 4;
+    expect(itemCount(inv, 'cube')).toBe(4);
+  });
 });
 
 // Sanity: the exported types compose the way Tasks 3/5 will rely on.
