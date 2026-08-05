@@ -62,6 +62,18 @@ export interface HudFrame {
    * cue.
    */
   buildPickup: { kind: 'wall' | 'ramp' | 'cube'; progress: number } | null;
+  /**
+   * Destruction ("demolish") mode's current aim target label (playtest Task
+   * 9), e.g. "Wall" or "Drone", or null while inactive/aiming at nothing.
+   * Painted as "Reclaim: {label}" — its own wording, distinct from
+   * `harvestPrompt`'s "F — Harvest {kind}" and `buildPickup`'s "Hold F —
+   * Reclaim {kind} {pct}%", since demolish is an instant LMB click, not an
+   * F-hold. Takes priority over both in `paintCrosshair` whenever non-null;
+   * main.ts only computes a non-null value while the mode is actually on
+   * (`hudUi.setCrosshairMode('demolish')` drives the crosshair GLYPH
+   * separately — see main.ts's render()).
+   */
+  demolishTarget: string | null;
   spawn: Vec3;
   /** True while the pointer is locked (drives first-run hints). */
   locked: boolean;
@@ -227,7 +239,8 @@ export class HUD {
     // --- Crosshair ---------------------------------------------------------
     this.crosshair = el('div', 'wt-crosshair');
     this.crosshair.innerHTML =
-      '<span class="wt-cross-dot"></span><span class="wt-cross-diamond"></span>';
+      '<span class="wt-cross-dot"></span><span class="wt-cross-diamond"></span>' +
+      '<span class="wt-cross-x"><span class="wt-cross-x-bar"></span><span class="wt-cross-x-bar"></span></span>';
     this.harvestLabel = el('div', 'wt-harvest');
     this.crosshair.appendChild(this.harvestLabel);
     this.root.appendChild(this.crosshair);
@@ -463,11 +476,13 @@ export class HUD {
       this.crosshair.className = `wt-crosshair wt-cross-${mode}`;
       this.lastCrosshair = mode;
     }
-    const label = frame.buildPickup
-      ? `Hold F — Reclaim ${cap(frame.buildPickup.kind)} ${Math.round(frame.buildPickup.progress * 100)}%`
-      : frame.harvestPrompt
-        ? `F — Harvest ${cap(frame.harvestPrompt)}`
-        : '';
+    const label = frame.demolishTarget
+      ? `Reclaim: ${frame.demolishTarget}`
+      : frame.buildPickup
+        ? `Hold F — Reclaim ${cap(frame.buildPickup.kind)} ${Math.round(frame.buildPickup.progress * 100)}%`
+        : frame.harvestPrompt
+          ? `F — Harvest ${cap(frame.harvestPrompt)}`
+          : '';
     if (this.harvestLabel.textContent !== label) this.harvestLabel.textContent = label;
   }
 
@@ -844,7 +859,7 @@ const STYLE = `
   height: 22px;
   z-index: 6;
 }
-.wt-cross-dot, .wt-cross-diamond {
+.wt-cross-dot, .wt-cross-diamond, .wt-cross-x {
   position: absolute;
   left: 50%;
   top: 50%;
@@ -866,6 +881,21 @@ const STYLE = `
 .wt-cross-dart .wt-cross-diamond { display: block; }
 .wt-cross-harvest .wt-cross-dot { display: block; background: #a8e6bc; }
 .wt-cross-grapple .wt-cross-dot { display: block; background: #f0c058; }
+/* Destruction ("demolish") mode crosshair (playtest Task 9) — a distinct red
+   X, built from two perpendicular bars, so it reads unmistakably differently
+   from every other crosshair glyph at a glance. */
+.wt-cross-demolish .wt-cross-x { display: block; }
+.wt-cross-x-bar {
+  position: absolute;
+  left: -6px;
+  top: -1px;
+  width: 12px;
+  height: 2px;
+  background: #ff5a4a;
+  box-shadow: 0 0 3px rgba(0,0,0,0.8);
+}
+.wt-cross-x-bar:first-child { transform: rotate(45deg); }
+.wt-cross-x-bar:last-child { transform: rotate(-45deg); }
 .wt-harvest {
   position: absolute;
   left: 50%;

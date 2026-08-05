@@ -47,6 +47,34 @@ export interface DebugDeps {
   placePiece(kind: string, x: number, y: number, z: number, yaw: number): boolean;
   /** True while a grapple rope is attached (Task 15 verification observes this). */
   isGrappling(): boolean;
+  /** True while destruction ("demolish") mode is active (playtest Task 9 —
+   *  state().demolish / e2e verification). Session-only, never persisted. */
+  isDemolishing(): boolean;
+  /**
+   * Debug-only: toggle destruction mode directly (playtest Task 9 e2e
+   * verification convenience — equivalent to a real KeyX press, which itself
+   * needs no pointer lock, so this mostly saves a `page.keyboard.press('x')`
+   * call; kept for symmetry with the rest of this file's direct-mutation
+   * style). Returns the new state.
+   */
+  setDemolishing(next: boolean): boolean;
+  /**
+   * Debug-only: place a drone directly over (x, z) via the REAL
+   * `DroneSystem.place` path (spends a kit, same as a live placement
+   * confirm) — playtest Task 9 e2e verification convenience, since driving
+   * the full ghost-placement UI (pointer lock + aimed LMB) just to set up a
+   * drone to then demolish would test the ghost flow twice for no benefit.
+   * Returns the new drone's id, or null on failure (no kit / at the cap).
+   */
+  placeDrone(x: number, z: number): string | null;
+  /**
+   * Debug-only: place a zipline directly between two ground points via the
+   * REAL `ZiplineSystem.place` path (spends a kit) — same rationale as
+   * `placeDrone`. `postHeight` is added to each endpoint's ground height
+   * automatically (mirrors the real placement ghost's own post-top math).
+   * Returns the new zipline's id, or null on failure.
+   */
+  placeZipline(ax: number, az: number, bx: number, bz: number): string | null;
   getTimeScale(): number;
   setTimeScale(f: number): void;
   /** Set the day/night world clock (seconds since world start), Task 5 e2e. */
@@ -174,6 +202,12 @@ export interface GameDebugHandle {
   hurt(dmg: number): void;
   /** Debug-only: latch a grapple hook directly at (x, y, z) (Inventory+Building Task 6 e2e). */
   fireGrapple(x: number, y: number, z: number): void;
+  /** Debug-only: toggle destruction mode directly (playtest Task 9 e2e). Returns the new state. */
+  setDemolishing(next: boolean): boolean;
+  /** Debug-only: place a drone directly via the real place() path (playtest Task 9 e2e). */
+  placeDrone(x: number, z: number): string | null;
+  /** Debug-only: place a zipline directly via the real place() path (playtest Task 9 e2e). */
+  placeZipline(ax: number, az: number, bx: number, bz: number): string | null;
 }
 
 /** Build the `window.__game` debug handle from the live systems main.ts owns. */
@@ -217,6 +251,8 @@ export function buildDebugHandle(deps: DebugDeps): GameDebugHandle {
         building: deps.isBuilding(),
         // Inventory+Building Task 6 e2e verification: hands viewmodel snapshot.
         hands: deps.handsState(),
+        // Playtest Task 9 e2e verification: destruction mode's live state.
+        demolish: deps.isDemolishing(),
       };
     },
 
@@ -405,6 +441,21 @@ export function buildDebugHandle(deps: DebugDeps): GameDebugHandle {
     /** Debug-only: latch a grapple hook directly (Inventory+Building Task 6 e2e). */
     fireGrapple(x: number, y: number, z: number): void {
       deps.player.debugFireGrapple({ x, y, z });
+    },
+
+    /** Debug-only: toggle destruction mode directly (playtest Task 9 e2e). */
+    setDemolishing(next: boolean): boolean {
+      return deps.setDemolishing(next);
+    },
+
+    /** Debug-only: place a drone directly via the real place() path (playtest Task 9 e2e). */
+    placeDrone(x: number, z: number): string | null {
+      return deps.placeDrone(x, z);
+    },
+
+    /** Debug-only: place a zipline directly via the real place() path (playtest Task 9 e2e). */
+    placeZipline(ax: number, az: number, bx: number, bz: number): string | null {
+      return deps.placeZipline(ax, az, bx, bz);
     },
   };
 }

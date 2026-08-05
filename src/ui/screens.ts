@@ -386,6 +386,7 @@ const KEYBINDS: [string, string][] = [
   ['RMB', 'Fire Grapple — auto-zips on latch  (when crafted)'],
   ['F', 'Harvest / Interact'],
   ['LMB', 'Use the selected hotbar item (throw / confirm placement)'],
+  ['X', 'Toggle Demolish mode — click anything to reclaim it, no penalty'],
   ['1 – 6', 'Hotbar select'],
   ['Wheel', 'Hotbar select'],
   ['C', 'Crafting'],

@@ -332,6 +332,19 @@ export class BuildSystem {
     return Math.min(1, this.pickupElapsed / BUILD.pickupHoldS);
   }
 
+  /**
+   * Destruction mode (playtest Task 9): reclaim a piece by id INSTANTLY, no
+   * hold — the exact same refund path as the hold-F pickup (`completePickup`
+   * below), just triggered by a demolish-mode LMB click instead of a timed
+   * hold. Returns false (no-op) if `id` isn't a currently-live piece (e.g.
+   * demolished by a stale/duplicate click the same frame).
+   */
+  demolishReclaim(id: number): boolean {
+    if (!this.piecesList.some((p) => p.id === id)) return false;
+    this.completePickup(id);
+    return true;
+  }
+
   private completePickup(id: number): void {
     const idx = this.piecesList.findIndex((p) => p.id === id);
     if (idx < 0) return;

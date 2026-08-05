@@ -176,6 +176,21 @@ export class DroneSystem {
   }
 
   /**
+   * The id of the nearest recallable drone within `droneRecallRange`
+   * horizontally of `pos`, or null (playtest Task 9 — destruction mode's
+   * drone reclaim). A thin public wrapper over the same private proximity
+   * test `nearRecall` already uses, just returning the id instead of a
+   * boolean so the caller (main.ts's demolish LMB handler) can act on a
+   * specific drone. Drones deliberately reclaim by PROXIMITY rather than by
+   * aiming a ray at them — see `structures/demolish.ts`'s file header for why
+   * (they station-keep at `STRUCTURES.droneHover`, far past any reasonable
+   * click-aim range).
+   */
+  recallableIdNear(pos: Vec3): string | null {
+    return this.nearestRecallable(pos);
+  }
+
+  /**
    * Per-step proximity-recall handler: while standing beneath a drone, a held F
    * for `recallHold` seconds recalls it. Returns true when owning the F input.
    */

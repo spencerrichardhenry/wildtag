@@ -94,6 +94,11 @@ describe('actionForCode', () => {
     expect(actionForCode('Escape')).toEqual({ type: 'escape' });
   });
 
+  // Playtest Task 9: KeyX toggles destruction/"demolish" mode.
+  it('maps KeyX to toggleDemolish', () => {
+    expect(actionForCode('KeyX')).toEqual({ type: 'toggleDemolish' });
+  });
+
   it('returns null for unmapped codes (movement keys, modifiers)', () => {
     expect(actionForCode('KeyW')).toBeNull();
     expect(actionForCode('ShiftLeft')).toBeNull();

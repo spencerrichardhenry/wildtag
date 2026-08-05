@@ -212,6 +212,25 @@ function horiz(a, b) {
   return Math.hypot(a.x - b.x, a.z - b.z);
 }
 
+/**
+ * Real ground height at (x, z) via the teleport-and-settle trick (same
+ * pattern checkBiomeTour uses for its vista shots) — this script has no
+ * direct `heightAt` hook, and meadow terrain has enough fbm-noise texture
+ * over a 20-30 m span (`TERRAIN.biomeProfile.meadow`'s amp=4) that a nearby
+ * point's height (e.g. `p0.y`) is NOT a safe stand-in when the caller needs
+ * to aim a narrow-radius ray at something (a zipline post) built on the
+ * REAL height there. `timeScale` is bumped so the fall settles quickly
+ * regardless of drop distance, then restored.
+ */
+async function groundYAt(page, x, z, dropFrom) {
+  await page.evaluate(([xx, yy, zz]) => window.__game.player.teleport(xx, yy, zz), [x, dropFrom, z]);
+  await page.evaluate(() => window.__game.setTimeScale(8));
+  await sleep(1200);
+  await page.evaluate(() => window.__game.setTimeScale(1));
+  await sleep(200);
+  return (await pos(page)).y;
+}
+
 /** Poll an arbitrary async getter until `pred` holds (or timeout); returns last value. */
 async function pollUntil(getter, pred, { timeout = 6000, interval = 150 } = {}) {
   const deadline = Date.now() + timeout;
@@ -822,6 +841,144 @@ async function checkBuilding() {
       await page.close();
     }
   });
+}
+
+async function checkDemolish() {
+  await check(
+    'x2. Demolish mode (playtest Task 9): KeyX toggle + crosshair, instant no-penalty reclaim of a wall + a drone + a zipline via real clicks',
+    async () => {
+      const page = await openPage('?fresh=1');
+      try {
+        await sleep(400); // settle grounded before reading p0 below
+        const p0 = await pos(page);
+
+        // --- Toggle on (KeyX needs no pointer lock — it's a plain keydown) ---
+        await page.keyboard.press('x');
+        const on = await pollState(page, (s) => s.demolish === true, { timeout: 3000 });
+        assert(on.demolish === true, 'state().demolish did not become true after KeyX');
+        const crosshairClass = await page.evaluate(
+          () => document.querySelector('.wt-crosshair')?.className ?? '',
+        );
+        assert(
+          crosshairClass.includes('wt-cross-demolish'),
+          `crosshair did not switch to the demolish glyph (class="${crosshairClass}")`,
+        );
+        console.log('    KeyX -> state().demolish=true, crosshair class includes wt-cross-demolish');
+        await shot(page, '33-demolish-mode.png');
+
+        // fakePointerLock once — LMB/mouse listeners are gated on it, same
+        // technique checkInventoryHotbar's wheel check already relies on.
+        await fakePointerLock(page);
+        const lmbClick = async () => {
+          await page.evaluate(() => {
+            document.dispatchEvent(new MouseEvent('mousedown', { button: 0, bubbles: true }));
+            document.dispatchEvent(new MouseEvent('mouseup', { button: 0, bubbles: true }));
+          });
+        };
+        /** Aim the real camera at a world point (sets input yaw/pitch via
+         *  `window.__village.lookAt`, same debug hook checkBuilding/checkVillage
+         *  use for framing screenshots) and let a couple of sim steps' worth of
+         *  `player.update()`/`syncCamera()` catch the THREE camera's actual
+         *  rotation up to it before clicking. */
+        const clickAt = async (tx, ty, tz) => {
+          await page.evaluate(([x, y, z]) => window.__village.lookAt(x, y, z), [tx, ty, tz]);
+          await sleep(150);
+          await lmbClick();
+          await sleep(150);
+        };
+
+        // --- Wall: placed via the debug seam, reclaimed by a real aimed click ---
+        const bx = p0.x + 6;
+        const bz = p0.z;
+        const wallPlaced = await page.evaluate(
+          ([x, y, z]) => window.__game.placePiece('wall', x, y, z, 0),
+          [bx, p0.y, bz],
+        );
+        assert(wallPlaced, 'placePiece(wall) failed');
+        await page.evaluate(
+          ([x, y, z]) => window.__game.player.teleport(x, y, z),
+          [bx - 5, p0.y + 1, bz],
+        );
+        const beforeWall = await state(page);
+        assert(beforeWall.placedPieces === 1, `expected 1 placed piece, got ${beforeWall.placedPieces}`);
+        await clickAt(bx, p0.y + 1, bz); // the wall's vertical centre
+        const afterWall = await pollState(page, (s) => s.placedPieces === 0, { timeout: 3000 });
+        assert(afterWall.placedPieces === 0, `wall not reclaimed (placedPieces=${afterWall.placedPieces})`);
+        assert(afterWall.inventory.walls === 1, `walls counter not refunded (walls=${afterWall.inventory.walls})`);
+        console.log('    wall: real aimed click reclaimed it — placedPieces 1 -> 0, inventory.walls -> 1');
+
+        // --- Drone: placed via the real place() path (debug seam spends a kit) ---
+        // Drones reclaim by PROXIMITY (standing beneath one), not by aim — see
+        // structures/demolish.ts — so no lookAt is needed here, just being
+        // within STRUCTURES.droneRecallRange (8 m) horizontally.
+        await page.evaluate(() => window.__game.grant('kit:drone', 1));
+        const dx = p0.x + 30;
+        const dz = p0.z;
+        const droneId = await page.evaluate(([x, z]) => window.__game.placeDrone(x, z), [dx, dz]);
+        assert(droneId, 'placeDrone failed');
+        const beforeDrone = await state(page);
+        assert(beforeDrone.structures.drones === 1, `expected 1 drone, got ${beforeDrone.structures.drones}`);
+        await page.evaluate(
+          ([x, y, z]) => window.__game.player.teleport(x, y, z),
+          [dx + 3, p0.y, dz],
+        );
+        await sleep(100);
+        await lmbClick();
+        const afterDrone = await pollState(page, (s) => s.structures.drones === 0, { timeout: 3000 });
+        assert(afterDrone.structures.drones === 0, `drone not reclaimed (drones=${afterDrone.structures.drones})`);
+        assert(
+          afterDrone.inventory.kits.drone === 1,
+          `drone kit not refunded (kits.drone=${afterDrone.inventory.kits.drone})`,
+        );
+        console.log('    drone: proximity click reclaimed it — drones 1 -> 0, kits.drone -> 1');
+
+        // --- Zipline: placed via the real place() path (debug seam spends a kit) ---
+        // Posts sit STRUCTURES.postHeight (4 m) above the ground the debug seam
+        // samples internally via the real heightAt. `p0.y` is NOT a safe stand-
+        // in for the aim target's height here (unlike the wall/drone above,
+        // where either the AABB pad or proximity-only test tolerates a few m
+        // of slop) — a zipline post's ray-hit sphere is only 1.3 m, and meadow
+        // terrain can vary by more than that over 20 m — so measure the REAL
+        // ground height via `groundYAt` first.
+        await page.evaluate(() => window.__game.grant('kit:zipline', 1));
+        const zax = p0.x - 20;
+        const zaz = p0.z;
+        const zbx = p0.x - 10;
+        const zbz = p0.z;
+        const zGroundA = await groundYAt(page, zax, zaz, p0.y + 60);
+        const zipId = await page.evaluate(
+          ([ax, az, bx2, bz2]) => window.__game.placeZipline(ax, az, bx2, bz2),
+          [zax, zaz, zbx, zbz],
+        );
+        assert(zipId, 'placeZipline failed');
+        const beforeZip = await state(page);
+        assert(beforeZip.structures.ziplines === 1, `expected 1 zipline, got ${beforeZip.structures.ziplines}`);
+        const zPostAY = zGroundA + 4; // STRUCTURES.postHeight
+        await page.evaluate(
+          ([x, y, z]) => window.__game.player.teleport(x, y, z),
+          [zax - 5, zPostAY, zaz],
+        );
+        await clickAt(zax, zPostAY, zaz); // post A
+        const afterZip = await pollState(page, (s) => s.structures.ziplines === 0, { timeout: 3000 });
+        assert(afterZip.structures.ziplines === 0, `zipline not reclaimed (ziplines=${afterZip.structures.ziplines})`);
+        assert(
+          afterZip.inventory.kits.zipline === 1,
+          `zipline kit not refunded (kits.zipline=${afterZip.inventory.kits.zipline})`,
+        );
+        console.log('    zipline: real aimed click reclaimed the whole line (one post) — ziplines 1 -> 0, kits.zipline -> 1');
+
+        // --- Toggle off ------------------------------------------------------
+        await page.keyboard.press('x');
+        const off = await pollState(page, (s) => s.demolish === false, { timeout: 3000 });
+        assert(off.demolish === false, 'state().demolish did not return to false after a second KeyX');
+        console.log('    KeyX again -> state().demolish=false');
+
+        assert(page.__errors.length === 0, `console/page errors: ${page.__errors.join(' | ')}`);
+      } finally {
+        await page.close();
+      }
+    },
+  );
 }
 
 async function checkHands() {
@@ -1672,6 +1829,7 @@ async function main() {
   await checkInventoryHotbar();
   await checkStructures();
   await checkBuilding();
+  await checkDemolish();
   await checkHands();
   await checkGrapple();
   await checkSaveRoundtrip();

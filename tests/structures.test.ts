@@ -314,7 +314,10 @@ describe('DroneSystem', () => {
   }
 
   it('enforces the max-drone count', () => {
-    const { sys } = makeSystem();
+    // Needs at least maxDrones kits (12 as of playtest Task 9, up from 2) —
+    // makeSystem's own default (10) predates that bump and would starve the
+    // loop below on kit count rather than the cap it's meant to exercise.
+    const { sys } = makeSystem(STRUCTURES.maxDrones);
     for (let i = 0; i < STRUCTURES.maxDrones; i++) {
       expect(sys.place({ x: i * 10, y: 5, z: 0 }).ok).toBe(true);
     }
@@ -350,5 +353,46 @@ describe('DroneSystem', () => {
     // Station-holds within the bob band around ground(5)+hover.
     expect(pos.y).toBeGreaterThan(5 + STRUCTURES.droneHover - STRUCTURES.droneBob - 1e-6);
     expect(pos.y).toBeLessThan(5 + STRUCTURES.droneHover + STRUCTURES.droneBob + 1e-6);
+  });
+
+  // Destruction mode (playtest Task 9): drones reclaim by PROXIMITY (standing
+  // beneath one), not by aiming a ray — see structures/demolish.ts's file
+  // header for why. `recallableIdNear` is a thin public wrapper over the same
+  // private test `nearRecall` already uses.
+  describe('recallableIdNear (playtest Task 9 demolish proximity reclaim)', () => {
+    it('returns the id of a recallable drone within droneRecallRange', () => {
+      const { sys } = makeSystem(1);
+      const res = sys.place({ x: 0, y: 5, z: 0 }, { instant: true });
+      sys.update(DT); // register the anchor
+      expect(sys.recallableIdNear({ x: 1, y: 5, z: 0 })).toBe(res.id);
+    });
+
+    it('returns null when no drone is within range', () => {
+      const { sys } = makeSystem(1);
+      sys.place({ x: 0, y: 5, z: 0 }, { instant: true });
+      sys.update(DT);
+      expect(sys.recallableIdNear({ x: 999, y: 5, z: 0 })).toBeNull();
+    });
+
+    it('mirrors nearRecall\'s boolean — id present iff nearRecall is true', () => {
+      const { sys } = makeSystem(1);
+      sys.place({ x: 0, y: 5, z: 0 }, { instant: true });
+      sys.update(DT);
+      const near = { x: 2, y: 5, z: 0 };
+      const far = { x: 999, y: 5, z: 0 };
+      expect(sys.recallableIdNear(near) !== null).toBe(sys.nearRecall(near));
+      expect(sys.recallableIdNear(far) !== null).toBe(sys.nearRecall(far));
+    });
+
+    it('the returned id actually recalls that drone and refunds its kit', () => {
+      const { sys, inv } = makeSystem(1);
+      sys.place({ x: 0, y: 5, z: 0 }, { instant: true });
+      sys.update(DT);
+      const id = sys.recallableIdNear({ x: 0, y: 5, z: 0 });
+      expect(id).not.toBeNull();
+      expect(sys.recall(id!)).toBe(true);
+      expect(inv.kits.drone).toBe(1);
+      expect(sys.count).toBe(0);
+    });
   });
 });

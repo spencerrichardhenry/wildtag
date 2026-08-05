@@ -162,6 +162,34 @@ listed here so they aren't lost.
   at the same spot; `placementValid` catches that downstream as it always
   has, so this is a documentation note, not a gap.
 
+## Playtest Task 9 fast-follows
+
+Deferred minors/design notes from adding destruction ("demolish") mode. None
+block ship; listed here so they aren't lost.
+
+- **No aim-highlight mesh tint on the targeted build piece** (design decision,
+  not a bug): `build.ts`'s wall/ramp/cube meshes all share ONE module-level
+  material per kind (`wallMat`/`rampMat`/`cubeGeo`+`wallMat`) — bumping the
+  aimed piece's emissive would tint EVERY piece of that kind, not just the
+  aimed one. Per the brief's own explicit escape hatch ("skip highlight if
+  invasive"), feedback is the prompt line only (`Reclaim: {label}` under the
+  crosshair, plus the distinct red-X crosshair glyph while the mode is
+  active) — giving every build piece its own material clone just for this
+  cosmetic would be a real (if small) perf/complexity cost for a mode most
+  players toggle rarely. Revisit if a future task already needs per-instance
+  materials for another reason.
+- **Drones reclaim by proximity, not by aim** (`structures/demolish.ts`'s file
+  header has the full reasoning): a drone station-keeps at
+  `STRUCTURES.droneHover` (25 m) above ground, far past `DEMOLISH.range` (10 m)
+  — so aiming a ray at one from the ground is essentially impossible. Demolish
+  mode reuses the exact same "stand beneath it" test the pre-existing hold-F
+  recall already used (`DroneSystem.recallableIdNear`, `droneRecallRange` =
+  8 m horizontal), just triggered by LMB instead of a timed hold. This means a
+  player standing under a recallable drone reclaims it with ANY aim direction
+  — a deliberate simplification, not an oversight, but worth knowing if a
+  later task wants drones to be aim-targetable from farther away (e.g. via a
+  grapple-latch-style long-range hook instead of a short ray).
+
 ## Castle ward fast-follows
 
 Deferred minors noted while building the Castle Ward maze (Tasks 1-7). None

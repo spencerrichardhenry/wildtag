@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { BUILD, CAMERA, CASTLE, ENV, GOBLIN, HEALTH, MAX_FRAME_DT, MOUNT, SIM_DT, STRUCTURES } from './core/constants.ts';
+import { BUILD, CAMERA, CASTLE, DEMOLISH, ENV, GOBLIN, HEALTH, MAX_FRAME_DT, MOUNT, SIM_DT, STRUCTURES } from './core/constants.ts';
 import { setupEnvironment, setupDaylight, updateWater } from './world/environment.ts';
 import { daylightAt } from './core/daylight.ts';
 import { ChunkManager } from './world/chunks.ts';
@@ -40,6 +40,7 @@ import { DroneSystem } from './structures/drones.ts';
 import { PlacementSystem, serializeStructures, deserializeStructures } from './structures/placement.ts';
 import { BuildSystem } from './structures/build.ts';
 import { pieceAtRayHit, resolveBuildAim } from './structures/buildmath.ts';
+import { demolishTargetAt, type DemolishHit } from './structures/demolish.ts';
 import { raycastTerrain } from './player/grapple.ts';
 import {
   applyStartingLoadout,
@@ -461,6 +462,12 @@ function bootGame(): void {
   // read every frame, not through the edge-action queue).
   let buildInteractHeldPrev = false;
 
+  // Destruction ("demolish") mode (playtest Task 9): KeyX toggle, SESSION-ONLY
+  // (deliberately never written to/read from the save — a fresh reload always
+  // starts with it off, same as e.g. `snapHintShown` below). See `setDemolish`
+  // (below `setHotbar`) for the enter/exit side effects.
+  let demolishActive = false;
+
   // --- Maze-aware daze ejection (daze-eject-spires design spec §1) ---------
   // A tiny 3-state machine: 'stumbling' (isDazed(health) true — the corridor
   // walk below) → 'blackout' (daze just ended, still inside the walls — the
@@ -713,18 +720,93 @@ function bootGame(): void {
     // enter/toggle (a single "entered" toast, no separate "cancelled" one) —
     // only the OTHER system needs an explicit cancel first.
     if (item === 'kit:zipline') {
+      setDemolish(false); // playtest Task 9: a placeable slot always exits demolish first
       if (build.active) build.cancel();
       placement.toggle('zipline');
     } else if (item === 'kit:drone') {
+      setDemolish(false);
       if (build.active) build.cancel();
       placement.toggle('drone');
     } else if (item === 'wall' || item === 'ramp' || item === 'cube') {
+      setDemolish(false);
       if (placement.active) placement.cancel();
       build.enter(item);
       maybeShowSnapHint();
     } else {
       if (placement.active) placement.cancel();
       if (build.active) build.cancel();
+    }
+  }
+
+  /**
+   * Destruction mode (playtest Task 9): entering cancels any active build/
+   * placement ghost — the two are mutually exclusive, same reasoning as
+   * `syncHotbarPlacement`'s cross-system cancels above (a ghost and a
+   * demolish target reticle can't coexist without conflicting over what LMB
+   * means). Selecting a placeable hotbar slot while demolish is active exits
+   * it FIRST (see `syncHotbarPlacement`'s `setDemolish(false)` calls) rather
+   * than leaving it on and silently re-suppressing the ghost every frame —
+   * picked as the more discoverable of the two possible semantics: LMB
+   * unambiguously means "confirm placement" the moment a wall/kit is
+   * selected, with no leftover demolish state for the player to remember
+   * they're still in. A no-op when the mode is already in the requested
+   * state (idempotent — safe to call from multiple sync points).
+   */
+  function setDemolish(next: boolean): void {
+    if (next === demolishActive) return;
+    demolishActive = next;
+    if (next) {
+      if (build.active) build.cancel();
+      if (placement.active) placement.cancel();
+      toast('Demolish mode — click to reclaim');
+    } else {
+      toast('Demolish off');
+    }
+  }
+
+  /**
+   * The current demolish aim target (a build piece or zipline post — see
+   * `structures/demolish.ts`'s file header for why drones are excluded from
+   * this ray test), or null on a miss. Recomputed fresh from the live camera
+   * aim every time it's needed — same redundant-but-cheap pattern as
+   * `build.aimedPiece`'s call sites (one in the interact-action check below,
+   * a separate one in render()'s HUD prompt).
+   */
+  function demolishAim(): DemolishHit | null {
+    return demolishTargetAt(
+      camera.position,
+      cameraLook(),
+      build.pieces(),
+      ziplines.list(),
+      DEMOLISH.range,
+      DEMOLISH.zipPostRadius,
+    );
+  }
+
+  /**
+   * LMB while demolish mode is active (Inventory+Building playtest Task 9):
+   * instant, no-penalty reclaim. Drones check first — see `demolishAim`'s doc
+   * for why they're a separate PROXIMITY branch rather than part of the ray
+   * test. Toasts on both success and a total miss (mirrors `build.confirm`'s
+   * "Nothing to place there" precedent) so a click always gives feedback.
+   */
+  function tryDemolishReclaim(): void {
+    const droneId = drones.recallableIdNear(player.pos);
+    if (droneId) {
+      drones.recall(droneId);
+      toast('Drone reclaimed');
+      return;
+    }
+    const hit = demolishAim();
+    if (!hit) {
+      toast('Nothing to reclaim');
+      return;
+    }
+    if (hit.system === 'build') {
+      build.demolishReclaim(hit.id);
+    } else {
+      ziplines.recall(hit.id);
+      toast('Zipline reclaimed');
     }
   }
 
@@ -1557,6 +1639,10 @@ function bootGame(): void {
         if (build.active) build.rotateGhost();
         continue;
       }
+      if (action.type === 'toggleDemolish') {
+        setDemolish(!demolishActive);
+        continue;
+      }
       // While mounted: dart-throw and structure placement are masked (F still
       // talks/collects; the grapple is already gated off in the controller).
       // Hotbar selection still moves the HUD highlight (via the plain
@@ -1616,7 +1702,15 @@ function bootGame(): void {
         }
       }
       if (action.type === 'lmb') {
-        if (placement.active) {
+        if (demolishActive) {
+          // Playtest Task 9: demolish mode owns LMB outright — normal
+          // fire/placement-confirm never runs while it's active (entering it
+          // already cancelled any ghost, and a placeable hotbar slot exits it
+          // first — see `setDemolish`/`syncHotbarPlacement`, so the other two
+          // branches below are unreachable here anyway; this ordering just
+          // makes that explicit rather than relying on it).
+          tryDemolishReclaim();
+        } else if (placement.active) {
           placement.confirm(); // LMB confirms a placement
         } else if (build.active) {
           build.confirm(); // LMB confirms a build ghost
@@ -1684,8 +1778,20 @@ function bootGame(): void {
     // Build pickup prompt (Inventory+Building Task 5): aiming at a placed
     // piece within pickup range, regardless of whether F is currently held.
     const aimedPieceForPrompt = build.aimedPiece(camera.position, cameraLook());
-    // Latched-rope crosshair state (amber) so an attach is always legible.
-    hudUi.setCrosshairMode(player.isGrappling() ? 'grapple' : 'auto');
+    // Demolish-mode prompt (playtest Task 9): drone proximity checked first
+    // (see `demolishAim`'s doc — drones reclaim by standing beneath one, not
+    // by aim), then the ray-based build-piece/zipline-post target. Only
+    // computed while the mode is actually active — a real per-frame cost
+    // (a ray sweep over every placed piece + zipline post) with nothing to
+    // show for it otherwise.
+    const demolishTargetLabel = demolishActive
+      ? drones.recallableIdNear(p)
+        ? 'Drone'
+        : demolishAim()?.label ?? null
+      : null;
+    // Latched-rope / demolish crosshair states take priority over the
+    // harvest/dart auto-detection below (`paintCrosshair`'s own fallback).
+    hudUi.setCrosshairMode(demolishActive ? 'demolish' : player.isGrappling() ? 'grapple' : 'auto');
     hudUi.update({
       pos: p,
       yaw: input.yaw,
@@ -1701,6 +1807,7 @@ function bootGame(): void {
       buildPickup: aimedPieceForPrompt
         ? { kind: aimedPieceForPrompt.kind, progress: build.pickupProgress() }
         : null,
+      demolishTarget: demolishTargetLabel,
       spawn,
       locked: input.locked,
       screenOpen: screens.isOpen(),
@@ -1897,6 +2004,24 @@ function bootGame(): void {
     placePiece: (kind: string, x: number, y: number, z: number, yaw: number) =>
       build.debugPlace(kind, x, y, z, yaw),
     isGrappling: () => player.isGrappling(),
+    // Playtest Task 9 e2e verification hooks (destruction mode).
+    isDemolishing: () => demolishActive,
+    setDemolishing: (next: boolean) => {
+      setDemolish(next);
+      return demolishActive;
+    },
+    placeDrone: (x: number, z: number) => {
+      const res = drones.place({ x, y: ground.heightAt(x, z), z }, { instant: true });
+      if (!res.ok || !res.id) return null;
+      drones.update(SIM_DT); // register the anchor immediately (instant spawns at altitude)
+      return res.id;
+    },
+    placeZipline: (ax: number, az: number, bx: number, bz: number) => {
+      const a = { x: ax, y: ground.heightAt(ax, az) + STRUCTURES.postHeight, z: az };
+      const b = { x: bx, y: ground.heightAt(bx, bz) + STRUCTURES.postHeight, z: bz };
+      const res = ziplines.place(a, b);
+      return res.ok && res.id ? res.id : null;
+    },
     getTimeScale: () => timeScale,
     setTimeScale: (f: number) => {
       timeScale = Math.max(0.1, Math.min(16, f));

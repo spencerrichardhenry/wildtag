@@ -270,8 +270,14 @@ export const GRAPPLE = {
 export const STRUCTURES = {
   /** Hard cap on concurrently-placed ziplines. */
   maxZiplines: 3,
-  /** Hard cap on concurrently-deployed drones. */
-  maxDrones: 2,
+  /**
+   * Hard cap on concurrently-deployed drones. 2→12 (playtest Task 9 — direct
+   * owner feedback: "make the drone limit like 12 not 2"). A hovering drone
+   * is just one more sphere in `AnchorRegistry.raycastAnchors`'s linear scan
+   * and one more entry in `DroneSystem`'s update loop — both O(n) over a
+   * handful of drones either way, no perf concern at 12.
+   */
+  maxDrones: 12,
   /** Max zipline span (m); a longer A→B is rejected. */
   ziplineMaxLen: 80,
   /** Base ride speed along a zipline (m/s), before slope assist. */
@@ -312,6 +318,38 @@ export const STRUCTURES = {
   droneRotorRate: 30,
   /** Recall a drone while standing within this horizontal distance beneath it (m). */
   droneRecallRange: 8,
+} as const;
+
+/**
+ * Destruction ("demolish") mode — playtest Task 9: KeyX toggles a session-
+ * only mode (never persisted) where LMB instantly reclaims whatever's aimed
+ * at, no penalty, no hold — build pieces, drones and ziplines all reuse
+ * their existing no-penalty refund paths (`BuildSystem`'s pickup counter
+ * restore, `DroneSystem.recall`/`ZiplineSystem.recall`'s kit refunds); this
+ * mode only changes HOW a target is picked and how fast the refund lands,
+ * not what refunds. See `structures/demolish.ts`'s file header for the full
+ * per-system targeting rationale (why drones are proximity-based, not
+ * ray-based, despite everything else here being a ray test). Distances in m.
+ */
+export const DEMOLISH = {
+  /**
+   * Max aim distance (m) for the ray-based build-piece/zipline-post reclaim
+   * test — a bit past `BUILD.pickupRange` (6): demolish mode is meant to be
+   * the fast, forgiving "click on anything nearby" tool, not a precision
+   * pickup. Drones are deliberately NOT included in this ray test at all —
+   * see `structures/demolish.ts`.
+   */
+  range: 10,
+  /**
+   * Ray-hit sphere radius (m) around each zipline post. Generous relative to
+   * the post's actual model radius (~0.2 m, `ziplines.ts`'s `CylinderGeometry`)
+   * since aiming precisely at a thin pole from a few metres away would
+   * otherwise be unreasonably fiddly. Smaller than `STRUCTURES.mountRange`
+   * (2.5 m) — that one is a horizontal STANDING-proximity test (how close you
+   * must be to even mount/recall via F), not a ray-aim tolerance, so the two
+   * numbers aren't meant to match.
+   */
+  zipPostRadius: 1.3,
 } as const;
 
 /**

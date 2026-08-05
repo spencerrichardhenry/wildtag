@@ -592,6 +592,51 @@ describe('BuildSystem — pickup (hold-F reclaim)', () => {
   });
 });
 
+describe('BuildSystem — demolishReclaim (playtest Task 9, instant/no-hold reclaim)', () => {
+  it('reclaims a piece by id instantly — no hold, same refund as completePickup', () => {
+    const { sys, inv } = makeSystem(0, 0);
+    sys.debugPlace('wall', 0, 1, 0, 0);
+    const piece = sys.pieces()[0]!;
+    expect(sys.demolishReclaim(piece.id)).toBe(true);
+    expect(sys.pieces()).toHaveLength(0);
+    expect(inv.walls).toBe(1); // no-penalty refund, identical to hold-F pickup
+  });
+
+  it('credits the ramps counter for a ramp, not walls', () => {
+    const { sys, inv } = makeSystem(0, 0);
+    sys.debugPlace('ramp', 0, 0, 0, 0);
+    const piece = sys.pieces()[0]!;
+    expect(sys.demolishReclaim(piece.id)).toBe(true);
+    expect(inv.ramps).toBe(1);
+    expect(inv.walls).toBe(0);
+  });
+
+  it('invalidates the hash immediately — no lingering obstacle/topAt', () => {
+    const { sys } = makeSystem(0, 0);
+    sys.debugPlace('wall', 0, 1, 0, 0);
+    const id = sys.pieces()[0]!.id;
+    sys.demolishReclaim(id);
+    expect(sys.obstaclesNear(0, 0)).toEqual([]);
+    expect(sys.topAt(0, 0)).toBe(-Infinity);
+  });
+
+  it('returns false (safe no-op) for an id that is not a live piece', () => {
+    const { sys, inv } = makeSystem(0, 0);
+    expect(sys.demolishReclaim(999)).toBe(false);
+    expect(inv.walls).toBe(0);
+    expect(inv.ramps).toBe(0);
+  });
+
+  it('does not require an active ghost or hold state', () => {
+    const { sys, inv } = makeSystem(0, 0, 0);
+    sys.debugPlace('cube', 0, 0, 0, 0);
+    expect(sys.active).toBe(false); // no ghost entered at all
+    const id = sys.pieces()[0]!.id;
+    expect(sys.demolishReclaim(id)).toBe(true);
+    expect(inv.cubes).toBe(1);
+  });
+});
+
 describe('BuildSystem — serialize/deserialize', () => {
   it('round-trips placed pieces through a fresh instance', () => {
     const { sys } = makeSystem();

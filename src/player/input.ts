@@ -14,10 +14,13 @@ import type { MoveInput } from '../core/types.ts';
 // Key map (final): W/A/S/D move, ShiftLeft sprint, Space jump (hold = glide),
 // KeyQ dash, KeyR rocket (or rotate the active build ghost — context-
 // sensitive, resolved by main.ts off the `'rotate'` action edge, see the
-// `Action` doc below), KeyF interact, Digit1–5 hotbar, Tab/KeyC/Escape UI,
-// LMB dart throw (Task 10), RMB grapple (Task 12; `rmbHeld` for the reel),
-// Ctrl held = explicit snap-to-piece modifier while placing (`snapHeld`,
-// playtest Task 8) — mouse buttons register only while pointer-locked.
+// `Action` doc below), KeyF interact, KeyX toggle destruction/demolish mode
+// (playtest Task 9 — see the `'toggleDemolish'` action doc below), Digit1–5
+// hotbar, Tab/KeyC/Escape UI, LMB dart throw (Task 10) or, while demolish
+// mode is active, instant no-penalty reclaim, RMB grapple (Task 12;
+// `rmbHeld` for the reel), Ctrl held = explicit snap-to-piece modifier while
+// placing (`snapHeld`, playtest Task 8) — mouse buttons register only while
+// pointer-locked.
 // ---------------------------------------------------------------------------
 
 export type Action =
@@ -41,7 +44,17 @@ export type Action =
    * a ghost IS active, calls `clearRocketEdge()` before `player.update` runs
    * so the rocket never ALSO fires that frame.
    */
-  | { type: 'rotate' };
+  | { type: 'rotate' }
+  /**
+   * KeyX's edge (playtest Task 9 — destruction/"demolish" mode). Unlike
+   * `'rotate'`, this is unconditional: `input.ts` has no notion of what
+   * demolish means, it just reports "X was pressed" — main.ts's action loop
+   * flips its own `demolishActive` flag, toasts, cancels any active build/
+   * placement ghost, and swaps the crosshair. Chosen over the already-taken
+   * single-letter keys (Q/R/F/C/B/V all bound — see the key map above); X
+   * was free.
+   */
+  | { type: 'toggleDemolish' };
 
 /**
  * Pure key-code → queued-UI-action mapping (Digit1–6 hotbar, F/Tab/C/B/V/Esc),
@@ -55,6 +68,8 @@ export function actionForCode(code: string): Action | null {
   switch (code) {
     case 'KeyF':
       return { type: 'interact' };
+    case 'KeyX':
+      return { type: 'toggleDemolish' };
     case 'Digit1':
       return { type: 'hotbar', slot: 1 };
     case 'Digit2':
@@ -167,7 +182,7 @@ export class Input {
     this.canvas = canvas;
     canvas.addEventListener('click', this.onClick);
     canvas.addEventListener('contextmenu', this.onContextMenu);
-    canvas.addEventListener('wheel', this.onWheel, { passive: true });
+    canvas.addEventListener('wheel', this.onWheel, { passive: false });
     document.addEventListener('mousemove', this.onMouseMove);
     document.addEventListener('mousedown', this.onMouseDown);
     document.addEventListener('mouseup', this.onMouseUp);
@@ -217,12 +232,24 @@ export class Input {
     if (e.button === 2) this.rmbDown = false;
   };
 
-  /** Scroll-wheel hotbar stepping — only while pointer-locked (mirrors the
-   *  mouse-button handlers), so scrolling a page behind the canvas never
-   *  fires game actions. Passive: the game never needs to block page scroll
-   *  for this event (there's no scrollable page under a locked pointer). */
+  /**
+   * Scroll-wheel hotbar stepping — only while pointer-locked (mirrors the
+   * mouse-button handlers), so scrolling a page behind the canvas never
+   * fires game actions.
+   *
+   * Task 8/9 review fix: registered NON-passive (see the constructor) so this
+   * handler CAN call `preventDefault()` — but only while locked, exactly the
+   * gate above. Ctrl+wheel is the browser's built-in page-zoom gesture; while
+   * the pointer is locked and Ctrl is held to snap-place a build piece
+   * (`Input.snapHeld`), an un-prevented wheel tick would zoom the whole page
+   * instead of (or in addition to) stepping the hotbar. Gating on `locked`
+   * means an un-locked page — no gameplay canvas focus, nothing to protect —
+   * never has its scroll/zoom touched at all, so this fixes the in-game
+   * conflict with zero regression risk to normal page scrolling.
+   */
   private readonly onWheel = (e: WheelEvent): void => {
     if (!this.locked) return;
+    e.preventDefault();
     this.actions.push({ type: 'hotbarStep', dir: hotbarStepForWheel(e.deltaY) });
   };
 
