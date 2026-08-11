@@ -4,8 +4,8 @@ import { SPECIES } from './species.ts';
 import { buildCritterModel, type CritterParts } from './models.ts';
 import { animateCritter } from './animation.ts';
 
-// Dev aid: `?preview=critters`. Lays out all 15 species on a flat stage before
-// a fixed camera in a 2×8 grid, each on a slow turntable and animated at its
+// Dev aid: `?preview=critters`. Lays out all 17 species on a flat stage before
+// a fixed camera in a 2×9 grid, each on a slow turntable and animated at its
 // walk speed, with a floating DOM name label projected above it. Skips the
 // normal player spawn. Kept intentionally — the turntable + labels make
 // model/animation regressions obvious at a glance, and it's what the
@@ -61,8 +61,8 @@ export function runCritterPreview(renderer: THREE.WebGLRenderer): void {
 
   const rng = mulberry32(20240808);
   // Dev close-up: `?preview=critters&focus=<id>` builds just one species big and
-  // centred so charm reads at arm's length (verification aid). `focusList` lets
-  // a few be lined up (comma-separated ids). Empty = the full 2×8 roster grid.
+  // centred so charm reads at arm's length (verification aid). A comma-separated
+  // focus list lines up a few species. Empty = the full 2×9 roster grid.
   const focusParam = new URLSearchParams(window.location.search).get('focus');
   const focusIds = focusParam
     ? focusParam.split(',').map((s) => s.trim()).filter(Boolean)
@@ -71,14 +71,14 @@ export function runCritterPreview(renderer: THREE.WebGLRenderer): void {
     ? focusIds.map((id) => SPECIES.find((s) => s.id === id)).filter((s): s is (typeof SPECIES)[number] => !!s)
     : SPECIES;
 
-  // 2 rows × 8 columns for the 15-species roster (15 → 8 front + 7 back). The
+  // 2 rows × 9 columns for the 17-species roster (17 → 9 front + 8 back). The
   // back row is staggered half a column into the front row's gaps and pushed
   // well back so tall front-row critters never occlude it; the camera looks
   // down from a height.
-  const cols = focusIds ? Math.min(roster.length, 3) : 8;
-  // Tightened from 3.6 (the 7-col era) so the extra 8th column still fits the
-  // camera frustum without clipping the outermost critters (puffle/lumenstag).
-  const colSpacing = focusIds ? 2.6 : 3.0;
+  const cols = focusIds ? Math.min(roster.length, 3) : 9;
+  // Keep the 9-column span equal to the former 8×3m layout so the established
+  // studio camera still frames the outermost critters.
+  const colSpacing = focusIds ? 2.6 : 2.625;
   const rowZ = focusIds ? [0, -3] : [3.5, -5.5]; // [front, back]
   const rowXOffset = [0, colSpacing / 2]; // stagger the back row into the gaps
   const startX = -((cols - 1) * colSpacing) / 2;
@@ -104,7 +104,7 @@ export function runCritterPreview(renderer: THREE.WebGLRenderer): void {
     stands.push({ group, parts, walkSpeed: sp.walkSpeed, speciesId: sp.id, label, worldX, worldZ });
   });
 
-  // Frame the whole 2×8 grid from a raised vantage so both rows read without
+  // Frame the whole 2×9 grid from a raised vantage so both rows read without
   // the back row hiding behind the tall front-row critters. Focus mode pulls
   // the camera in close and low so the eyes/features read at arm's length.
   if (focusIds) {

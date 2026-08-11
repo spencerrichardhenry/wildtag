@@ -1,6 +1,7 @@
-// The game's cast: 15 procedural blocky critters (8 phase-1 + 4 Haven whimsy +
+// The game's cast: 17 procedural critters (8 phase-1 + 4 Haven whimsy +
 // 1 Cursed Castle gargoyle, the sole `biomes: []` fixed-slot-only species + 2
-// Inventory+Building farm-only-material producers: timberchomp/pebbleshrew).
+// Inventory+Building farm-only-material producers: timberchomp/pebbleshrew +
+// 2 low-flying field species: Shardwing/Nectar Wisp).
 // This module is pure *content*
 // (data only) — the tracking params (trackRadius R / trackTime T, awareness,
 // fleeStyle) are binding per the design spec §4 and the Task 8 brief and are
@@ -34,7 +35,7 @@ export const SPECIES: SpeciesDef[] = [
     awareness: 8,
     fleeStyle: 'none',
     trackRadius: 12,
-    trackTime: 8,
+    trackTime: 3,
     rarity: 1.0,
     rewardSparks: 1,
     rewardRP: 8,
@@ -134,6 +135,51 @@ export const SPECIES: SpeciesDef[] = [
     rewardRP: 20,
     rideable: false,
     farmRole: { kind: 'produce', resource: 'spark', amount: 1 },
+  },
+  {
+    // Butterfly-inspired without borrowing the real animal name: four broad
+    // crystal-mosaic wings and a sharply broken, bobbing escape line.
+    id: 'shardwing',
+    bold: false,
+    name: 'Shardwing',
+    biomes: ['meadow', 'forest', 'wetland'],
+    size: 0.5,
+    walkSpeed: 3.4,
+    fleeSpeed: 8.8,
+    awareness: 11,
+    fleeStyle: 'flutter',
+    trackRadius: 12,
+    trackTime: 7,
+    rarity: 0.65,
+    rewardSparks: 2,
+    rewardRP: 13,
+    rideable: false,
+    ringHeight: 1.2,
+    // Its wingdraft speeds adjacent farm plots without introducing another
+    // one-off material economy.
+    farmRole: { kind: 'aura', auraPct: 15 },
+  },
+  {
+    // Bee-inspired amber hoverer. It is placid until tagged, then turns and
+    // pursues the tracker for contact stings until the Link completes.
+    id: 'nectarwisp',
+    bold: true,
+    name: 'Nectar Wisp',
+    biomes: ['meadow', 'forest'],
+    size: 0.62,
+    walkSpeed: 2.8,
+    fleeSpeed: 6.8,
+    awareness: 18,
+    fleeStyle: 'sting',
+    trackRadius: 9,
+    trackTime: 9,
+    rarity: 0.5,
+    rewardSparks: 2,
+    rewardRP: 15,
+    rewardHoney: 2,
+    rideable: false,
+    ringHeight: 1.35,
+    farmRole: { kind: 'produce', resource: 'honey', amount: 1 },
   },
   {
     id: 'emberpup',

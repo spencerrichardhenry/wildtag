@@ -5,7 +5,7 @@ import { CritterManager, spawnSlotsForCell } from '../src/critters/manager.ts';
 import { speciesById } from '../src/critters/species.ts';
 import type { Biome, CritterState, GroundQuery, SpeciesDef, Vec3 } from '../src/core/types.ts';
 import { mulberry32 } from '../src/core/rng.ts';
-import { AI, VILLAGE } from '../src/core/constants.ts';
+import { AI, TRACKING, VILLAGE } from '../src/core/constants.ts';
 import { biomeAt } from '../src/world/terrain.ts';
 import { inVillage } from '../src/village/layout.ts';
 
@@ -200,6 +200,86 @@ describe('fly flee', () => {
     const out = run(c, 'zephyrfinch', player, 0.1, 60); // 6 s
     expect(out.pos.y).toBeGreaterThan(6);
     expect(out.pos.y).toBeLessThanOrEqual(12 + 0.5);
+  });
+});
+
+describe('Shardwing broken flight', () => {
+  it('reverses its turn sharply from one flutter leg to the next', () => {
+    let c = makeCritter('shardwing', {
+      state: 'wander',
+      stateDur: 999,
+      targetYaw: 0,
+      yaw: 0,
+      flightHeight: AI.flutterHeight,
+      pos: { x: 0, y: AI.flutterHeight, z: 0 },
+    });
+    for (let i = 0; i < 3; i++) c = stepAI(c, ctx('shardwing', { x: 100, y: 0, z: 100 }), 0.1);
+    const firstLegYaw = c.yaw;
+    for (let i = 0; i < 5; i++) c = stepAI(c, ctx('shardwing', { x: 100, y: 0, z: 100 }), 0.1);
+    const secondLegYaw = c.yaw;
+    expect(firstLegYaw).toBeGreaterThan(0.4);
+    expect(secondLegYaw).toBeLessThan(-0.2);
+    expect(Math.abs(firstLegYaw - secondLegYaw)).toBeGreaterThan(0.8);
+  });
+
+  it('bobs vertically while flying rather than following a flat cruise line', () => {
+    let c = makeCritter('shardwing', {
+      state: 'wander',
+      stateDur: 999,
+      flightHeight: AI.flutterHeight,
+      pos: { x: 0, y: AI.flutterHeight, z: 0 },
+    });
+    let minY = Infinity;
+    let maxY = -Infinity;
+    for (let i = 0; i < 60; i++) {
+      c = stepAI(c, ctx('shardwing', { x: 100, y: 0, z: 100 }), 0.05);
+      minY = Math.min(minY, c.pos.y);
+      maxY = Math.max(maxY, c.pos.y);
+    }
+    expect(maxY - minY).toBeGreaterThan(0.5);
+  });
+});
+
+describe('Nectar Wisp pursuit', () => {
+  it('flies toward the player after it is tagged', () => {
+    const player = { x: 20, y: 0, z: 0 };
+    const c = makeCritter('nectarwisp', {
+      state: 'flee',
+      tagged: true,
+      yaw: Math.PI / 2,
+      flightHeight: AI.stingPatrolHeight,
+      pos: { x: 0, y: AI.stingPatrolHeight, z: 0 },
+    });
+    const out = stepAI(c, ctx('nectarwisp', player), 0.1);
+    const toPlayer = { x: player.x - out.pos.x, z: player.z - out.pos.z };
+    expect(out.vel.x * toPlayer.x + out.vel.z * toPlayer.z).toBeGreaterThan(0);
+  });
+
+  it('does not calm at long range while tagged, then stands down when untagged', () => {
+    let c = makeCritter('nectarwisp', { state: 'flee', tagged: true });
+    c = run(c, 'nectarwisp', { x: 500, y: 0, z: 0 }, 0.1, 100);
+    expect(c.state).toBe('flee');
+    c = stepAI({ ...c, tagged: false }, ctx('nectarwisp', { x: 500, y: 0, z: 0 }), 0.1);
+    expect(c.state).toBe('calm');
+  });
+});
+
+describe('Slowing Dart movement penalty', () => {
+  it('reduces realised animal speed by 20%', () => {
+    const base = makeCritter('puffle', {
+      state: 'wander',
+      stateDur: 999,
+      targetYaw: 0,
+      yaw: 0,
+    });
+    const normal = stepAI(base, ctx('puffle', { x: 100, y: 0, z: 100 }), 0.5);
+    const slowed = stepAI(
+      { ...base, slowFor: TRACKING.slowDurationS },
+      ctx('puffle', { x: 100, y: 0, z: 100 }),
+      0.5,
+    );
+    expect(horiz(slowed.vel)).toBeCloseTo(horiz(normal.vel) * TRACKING.slowMultiplier, 6);
+    expect(TRACKING.slowMultiplier).toBe(0.8);
   });
 });
 

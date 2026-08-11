@@ -104,12 +104,14 @@ describe('migrateLegacy', () => {
 });
 
 describe('itemCount', () => {
-  it('reads darts/purifiers/charms straight off the inventory', () => {
+  it('reads dart and charm consumables straight off the inventory', () => {
     const inv = createInventory();
     inv.darts = 4;
+    inv.slowDarts = 3;
     inv.purifiers = 2;
     inv.charms = 1;
     expect(itemCount(inv, 'darts')).toBe(4);
+    expect(itemCount(inv, 'slowDarts')).toBe(3);
     expect(itemCount(inv, 'purifiers')).toBe(2);
     expect(itemCount(inv, 'charms')).toBe(1);
   });

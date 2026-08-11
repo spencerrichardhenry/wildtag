@@ -65,10 +65,13 @@ spent currency — it only ever grows, and crafting checks it without subtractin
 1. **Harvest** — press `F` at fibre, resin, crystal/shard and spark nodes scattered
    across the biomes.
 2. **Craft darts** — `C` → *Tracker Dart* (3 Fibre + 1 Resin → 10 darts). You also
-   start every fresh game with 4 darts.
+   start every fresh game with 4 darts. Linking a **Nectar Wisp** yields honey;
+   1 Honey crafts 3 **Slowing Darts**, which cut a critter's speed by 20% for 20 s.
 3. **Track & Link** — `LMB` throws a dart; a hit *tags* a critter and opens its
-   tracking ring. Stay inside the ring's radius until the ring fills to **Link**
-   it — that grants Sparks + RP and adds it to your Field Guide.
+   tracking ring. Stay inside the ring's radius for that species' tracking time
+   to **Link** it (a Puffle takes only 3 s; harder critters take longer). If a
+   live tag sits fully empty for 2 minutes, it expires and its ring disappears.
+   Linking grants Sparks + RP and adds the critter to your Field Guide.
 4. **Tier 1 (25 RP)** — craft the **Grapple Hook** (a Terraria-style projectile
    that arcs out, latches to trees/rocks/terrain/drones, and auto-zips you in —
    hang and re-fire to climb) or **Sky Boots** (an extra mid-air jump).
@@ -82,6 +85,7 @@ spent currency — it only ever grows, and crafting checks it without subtractin
 | Tier | Item          | RP gate | Cost                              | Effect                        |
 | ---- | ------------- | ------- | --------------------------------- | ----------------------------- |
 | 0    | Tracker Dart  | 0       | 3 Fibre, 1 Resin (→ ×10)          | Tag critters                  |
+| 0    | Slowing Dart  | 0       | 1 Honey (→ ×3)                    | −20% critter speed for 20 s   |
 | 1    | Grapple Hook  | 25      | 8 Fibre, 4 Resin, 6 Shard         | Projectile hook + auto-zip (RMB) |
 | 1    | Sky Boots     | 25      | 6 Fibre, 8 Resin, 2 Shard         | One extra mid-air jump        |
 | 2    | Glider        | 75      | 12 Fibre, 6 Resin, 4 Shard, 2 Spark | Hold-Space glide            |
@@ -113,8 +117,9 @@ The full progression:
    Assign a bonded critter and it putters on its plot, producing its species
    resource into the plot hopper on a ~90 s timer (`F` collects). Roles differ:
    haulers produce bulk fibre, others resin/shard/spark, and some are **auras** —
-   Mirefin/Emberpup add +25 % speed to adjacent plots (cap +50 %), Bumblewhale
-   raises adjacent hopper caps, adjacent Snickerdoodles double each other.
+   Mirefin/Emberpup add +25 % speed to adjacent plots, Shardwing adds +15 %
+   (combined cap +50 %), Bumblewhale raises adjacent hopper caps, adjacent
+   Snickerdoodles double each other, and Nectar Wisps produce honey.
 4. **Barter** (no money, ever) — each NPC holds one request (`Bring me N × species`
    or `N × resource`). `F` to talk, then **Fulfill** when you can meet it.
    Delivered critters are **traded away for good** and live on visibly in a pen by
@@ -131,7 +136,7 @@ The full progression:
 
 ## Species
 
-Twelve procedural critters, ordered easiest → hardest. Difficulty rises with
+Seventeen procedural critters, ordered easiest → hardest. Difficulty rises with
 awareness radius, flee speed/style and the tracking time needed to Link. Every
 species also has a **farm role** once bonded (produce / aura / none).
 
@@ -146,9 +151,14 @@ species also has a **farm role** once bonded (produce / aura / none).
 | Bumblewhale   | Wetland (drifts above)       | slow rise      | Medium     | aura: +1 hopper cap |
 | Craghorn      | Crags                        | scales ledges  | Medium     | shard ×2 |
 | Zephyrfinch   | Meadow, Forest, Highlands    | takes flight   | Hard       | spark ×1 |
+| Shardwing     | Meadow, Forest, Wetland      | sharp flutter-zags | Medium  | aura: +15 % speed |
+| Nectar Wisp   | Meadow, Forest               | pursues & stings when tagged | Hard | honey ×1 |
 | Emberpup      | Highlands                    | zigzags        | Hard       | aura: +25 % speed |
 | Prismhorse    | Crags, Highlands             | sprints        | Hard       | none — **the mount** |
 | Lumen Stag    | Forest, Highlands, Crags     | sprints        | Legendary  | spark ×2 |
+| Gargoyle      | Cursed Castle perches        | glides from perch | Hard     | aura: +20 % speed |
+| Timberchomp   | Forest, Wetland               | dives & swims  | Medium     | wood ×2 |
+| Pebbleshrew   | Crags, Highlands              | zigzags        | Medium     | stone ×2 |
 
 The Lumen Stag is effectively unique world-wide (rarity ~0.02, concurrency
 capped) — a rare deep-wood trophy. The **Prismhorse** (horse-sized, 16 legs, a
@@ -208,7 +218,7 @@ Append to `http://localhost:5199/`:
 | `?screen=guide`     | Open the Field Guide on boot |
 | `?screen=roster`    | Open the roster on boot (seeded with a few bonded critters for a screenshot) |
 | `?screen=help`      | Open the pause/help overlay on boot |
-| `?preview=critters` | Turntable showcase of all 12 species |
+| `?preview=critters` | Turntable showcase of all 17 species |
 | `?debug=grapple`    | Drop into the crags, auto-fire a grapple and freeze for a static rope shot |
 | `?debug=structures` | Auto-place a zipline + drone and frame them |
 
@@ -258,7 +268,7 @@ instead of letting the script spawn its own `npm run dev`.
 ## Assets & provenance
 
 **Everything is procedural.** There are no imported models, textures, audio
-files or fonts beyond the OS monospace stack. Terrain, props, all twelve critters
+files or fonts beyond the OS monospace stack. Terrain, props, all seventeen critters
 and their animations, the village and its NPCs, the sky gradient and water, the
 UI and the chime are all generated in code at runtime from a single world seed.
 Nothing is downloaded and no third-party art is bundled.

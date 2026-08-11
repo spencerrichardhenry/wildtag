@@ -269,15 +269,15 @@ async function closeInventory(page) {
 }
 
 /**
- * Click-assign `itemLabel` (the exact `hotbarItemLabel` text, e.g. 'Zipline'
- * or 'Purify') to hotbar slot index `slotIdx` (0-based; key `slotIdx+1`) via
+ * Click-assign `itemLabel` (the exact hover name, e.g. 'Zipline' or 'Purify')
+ * to hotbar slot index `slotIdx` (0-based; key `slotIdx+1`) via
  * the REAL inventory-screen DOM — arm the owned-item card, then click the
  * target slot. The inventory screen must already be open (`openInventory`).
  */
 async function assignItemToSlot(page, itemLabel, slotIdx) {
   const cardClicked = await page.evaluate((label) => {
     const card = [...document.querySelectorAll('.wt-inv-card')].find((c) =>
-      (c.textContent || '').includes(label),
+      c.getAttribute('data-item-name') === label,
     );
     if (!card) return false;
     card.click();
@@ -611,6 +611,18 @@ async function checkInventoryHotbar() {
       const h1 = await page.evaluate(() => document.querySelector('.wt-panel h1')?.textContent ?? '');
       assert(h1.includes('Inventory'), `Escape did not open the Inventory screen (h1="${h1}")`);
       console.log(`    Escape opened the Inventory screen ("${h1.trim()}")`);
+
+      const itemArt = await page.$$eval('.wt-inv-card', (cards) =>
+        cards.map((card) => ({
+          name: card.getAttribute('data-item-name'),
+          tooltip: card.getAttribute('data-tooltip'),
+          src: card.querySelector('img')?.getAttribute('src') ?? '',
+        })),
+      );
+      assert(itemArt.length >= 2, `expected at least two owned item cards, got ${itemArt.length}`);
+      assert(itemArt.every((item) => item.name && item.tooltip === item.name), 'inventory item hover names missing');
+      assert(itemArt.every((item) => item.src.startsWith('data:image/png')), 'inventory item 3D thumbnails missing');
+      console.log(`    ${itemArt.length} inventory cards render cached 3D-object PNGs with hover names`);
 
       // Click-assign the owned Purify card to hotbar slot index 1 (key '2') —
       // the real `.wt-inv-card` / `.wt-inv-slot` DOM (Task 3), not a debug seam.
@@ -1303,6 +1315,18 @@ async function checkBondFlow() {
       const st = await pollState(page, (s) => s.rosterCount === 1, { timeout: 4000 });
       assert(st.rosterCount === 1, `rosterCount ${st.rosterCount} != 1 after bond`);
       console.log(`    bonded puffle → rosterCount=${st.rosterCount}`);
+      await page.keyboard.press('b');
+      await page.waitForFunction(
+        () => (document.querySelector('.wt-panel h1')?.textContent || '').includes('Roster'),
+        { timeout: 3000 },
+      );
+      const portrait = await page.$eval('.wt-roster-portrait', (el) => ({
+        tooltip: el.getAttribute('data-tooltip') ?? '',
+        src: el.querySelector('img')?.getAttribute('src') ?? '',
+      }));
+      assert(portrait.tooltip.includes('Puffle'), `roster portrait hover name missing (${portrait.tooltip})`);
+      assert(portrait.src.startsWith('data:image/png'), 'roster critter 3D thumbnail missing');
+      console.log('    B roster shows the bonded critter\'s seeded 3D portrait + hover name');
       await shot(page, '17-bond-roster.png');
 
       assert(page.__errors.length === 0, `console/page errors: ${page.__errors.join(' | ')}`);
@@ -1458,7 +1482,7 @@ async function checkMount() {
 }
 
 async function checkSpeciesPreview() {
-  await check('n. Species preview: ?preview=critters shows all 15, screenshot', async () => {
+  await check('n. Species preview: ?preview=critters shows all 17, screenshot', async () => {
     const page = await context.newPage();
     const errors = [];
     page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));

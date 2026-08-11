@@ -8,6 +8,8 @@ export type ResourceKind =
   | 'resin'
   | 'shard'
   | 'spark'
+  /** Gathered from Linked/bonded Nectar Wisps; crafts Slowing Darts. */
+  | 'honey'
   | 'mushroom'
   // Inventory + Building (Task 1): farm-only materials — produced exclusively
   // by the timberchomp (wood) and pebbleshrew (stone) farm plots, never
@@ -25,6 +27,7 @@ export type ResourceKind =
 /** Ids of the craftable recipes across all tiers (+ Haven V2 Bond Charm). */
 export type RecipeId =
   | 'dart'
+  | 'slowdart'
   | 'charm'
   | 'purifier'
   | 'grapple'
@@ -62,7 +65,7 @@ export interface Recipe {
    * Haven V2 so the Bond Charm recipe can stock `charms` through the same
    * path; Cursed Castle adds `purifiers` for the Purifying Dart.
    */
-  grants?: 'darts' | 'charms' | 'purifiers' | 'walls' | 'ramps' | 'cubes';
+  grants?: 'darts' | 'slowDarts' | 'charms' | 'purifiers' | 'walls' | 'ramps' | 'cubes';
 }
 
 export interface MoveInput {
@@ -128,7 +131,18 @@ export interface SpeciesDef {
   walkSpeed: number;
   fleeSpeed: number;
   awareness: number;
-  fleeStyle: 'sprint' | 'zigzag' | 'fly' | 'swim' | 'ledge' | 'perch' | 'none';
+  fleeStyle:
+    | 'sprint'
+    | 'zigzag'
+    | 'fly'
+    /** Low-flying, fast direction changes in both wander and escape. */
+    | 'flutter'
+    /** A tagged flyer that pursues the player until Linked or expired. */
+    | 'sting'
+    | 'swim'
+    | 'ledge'
+    | 'perch'
+    | 'none';
   /** Bold species ignore the player entirely until TAGGED — only a beacon on
    *  their back spooks them (e.g. birds). Skittish species (false) alert at
    *  their awareness radius as usual. */
@@ -138,6 +152,8 @@ export interface SpeciesDef {
   rarity: number;
   rewardSparks: number;
   rewardRP: number;
+  /** Optional honey granted once on Link (Nectar Wisp). */
+  rewardHoney?: number;
   /** Can this species be ridden with a Saddle? True only for the prismhorse. */
   rideable: boolean;
   /**
@@ -163,6 +179,10 @@ export interface CritterState {
   tagged: boolean;
   linked: boolean;
   trackProgress: number;
+  /** Seconds a tagged, unlinked critter's tracking progress has stayed at 0. */
+  trackEmptyFor?: number;
+  /** Gameplay seconds remaining on a Slowing Dart's movement debuff. */
+  slowFor?: number;
   home: Vec3;
   flightHeight: number;
   /**

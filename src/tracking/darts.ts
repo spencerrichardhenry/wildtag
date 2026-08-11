@@ -1,10 +1,11 @@
 import * as THREE from 'three';
-import { DART } from '../core/constants.ts';
+import { DART, TRACKING } from '../core/constants.ts';
 import type { GroundQuery, Vec3 } from '../core/types.ts';
 import type { CritterManager } from '../critters/manager.ts';
 import type { Inventory } from '../craft/inventory.ts';
 import { speciesById } from '../critters/species.ts';
 import { blip } from '../ui/audio.ts';
+import { toast } from '../ui/toasts.ts';
 
 // ---------------------------------------------------------------------------
 // Tracker darts (Task 10). The pure core (`stepDart` / `dartHitCritter`) is
@@ -14,8 +15,10 @@ import { blip } from '../ui/audio.ts';
 // (species.size) sphere it enters. `DartSystem` is the thin three.js owner:
 // it reads camera pos/dir on throw, spends an inventory dart, renders a small
 // elongated mesh + fading trail per live dart, and on a critter hit calls
-// `manager.setTagged` (which lights the tracking beacon on the critter).
+// `manager.setTagged` (tracker) or `manager.setSlowed` (honey Slowing Dart).
 // ---------------------------------------------------------------------------
+
+export type DartKind = 'tracker' | 'slowing';
 
 /** Pure ballistic state of one dart in flight. */
 export interface DartState {
@@ -112,12 +115,14 @@ export function dartHitCritter(
 
 interface LiveDart {
   state: DartState;
+  kind: DartKind;
   mesh: THREE.Mesh;
   trail: THREE.Line;
   positions: Vec3[];
 }
 
 const DART_COLOR = 0xffd24a;
+const SLOW_DART_COLOR = 0x77d6b2;
 
 export class DartSystem {
   private readonly scene: THREE.Scene;
@@ -146,9 +151,10 @@ export class DartSystem {
    * Throw a dart from the camera along its look direction, spending one
    * inventory dart. No-op (returns false) when the player is out of darts.
    */
-  tryThrow(): boolean {
-    if (this.inventory.darts <= 0) return false;
-    this.inventory.darts -= 1;
+  tryThrow(kind: DartKind = 'tracker'): boolean {
+    const ammo = kind === 'slowing' ? 'slowDarts' : 'darts';
+    if (this.inventory[ammo] <= 0) return false;
+    this.inventory[ammo] -= 1;
     const cp = this.camera.position;
     this.camera.getWorldDirection(this._dir);
     const state = spawnDart(
@@ -156,9 +162,10 @@ export class DartSystem {
       { x: this._dir.x, y: this._dir.y, z: this._dir.z },
     );
 
+    const color = kind === 'slowing' ? SLOW_DART_COLOR : DART_COLOR;
     const mesh = new THREE.Mesh(
       new THREE.CylinderGeometry(0.02, 0.02, 0.4, 6),
-      new THREE.MeshBasicMaterial({ color: DART_COLOR }),
+      new THREE.MeshBasicMaterial({ color }),
     );
     const trailGeo = new THREE.BufferGeometry();
     trailGeo.setAttribute(
@@ -167,12 +174,12 @@ export class DartSystem {
     );
     const trail = new THREE.Line(
       trailGeo,
-      new THREE.LineBasicMaterial({ color: DART_COLOR, transparent: true, opacity: 0.5 }),
+      new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.5 }),
     );
     this.scene.add(mesh);
     this.scene.add(trail);
-    this.live.push({ state, mesh, trail, positions: [{ ...state.pos }] });
-    blip(660, 0.05);
+    this.live.push({ state, kind, mesh, trail, positions: [{ ...state.pos }] });
+    blip(kind === 'slowing' ? 540 : 660, 0.05);
     return true;
   }
 
@@ -191,8 +198,16 @@ export class DartSystem {
       }));
       const hitId = dartHitCritter(dart.state, targets);
       if (hitId !== null) {
-        this.manager.setTagged(hitId);
-        blip(880, 0.06);
+        if (dart.kind === 'slowing') {
+          const hit = this.manager.byId(hitId);
+          this.manager.setSlowed(hitId);
+          const name = hit ? speciesById(hit.species)?.name ?? 'critter' : 'critter';
+          const pct = Math.round((1 - TRACKING.slowMultiplier) * 100);
+          toast(`${name} slowed ${pct}% for ${TRACKING.slowDurationS} seconds`);
+        } else {
+          this.manager.setTagged(hitId);
+        }
+        blip(dart.kind === 'slowing' ? 620 : 880, 0.06);
         this.removeAt(i);
         continue;
       }

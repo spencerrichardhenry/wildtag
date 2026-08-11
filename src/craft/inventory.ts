@@ -14,6 +14,8 @@ export interface Inventory {
   resin: number;
   shard: number;
   spark: number;
+  /** Amber honey gathered from Nectar Wisps; ingredient for Slowing Darts. */
+  honey: number;
   /** Foraged glow mushrooms (Cursed Castle) — later spent on purifying darts. */
   mushroom: number;
   /** Farm-only material (Inventory+Building Task 1): timberchomp produce. */
@@ -24,6 +26,8 @@ export interface Inventory {
   rp: number;
   /** Tracker darts on hand (Task 10). */
   darts: number;
+  /** Slowing Darts on hand — reduce a hit critter's speed for 20 seconds. */
+  slowDarts: number;
   /** Bond Charms on hand (Haven V2) — consumed to bond a Linked critter. */
   charms: number;
   /** Purifying Darts on hand (Cursed Castle) — Task 12 spends them on fire. */
@@ -45,11 +49,13 @@ export function createInventory(): Inventory {
     resin: 0,
     shard: 0,
     spark: 0,
+    honey: 0,
     mushroom: 0,
     wood: 0,
     stone: 0,
     rp: 0,
     darts: 0,
+    slowDarts: 0,
     charms: 0,
     purifiers: 0,
     walls: 0,

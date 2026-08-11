@@ -163,9 +163,9 @@ const centreProject: Projected = { x: 0, y: 0, behind: false };
 
 describe('ringScreenState', () => {
   it('clamps progress fraction to [0, 1]', () => {
-    const puffle = sp('puffle'); // trackTime 8
+    const puffle = sp('puffle'); // trackTime 3
     const under = ringScreenState(
-      critter({ trackProgress: 4 }),
+      critter({ trackProgress: 1.5 }),
       puffle,
       { x: 0, y: 0, z: 0 },
       () => centreProject,
@@ -294,6 +294,7 @@ describe('healthBarHideEligible', () => {
 describe('hotbarItemLabel', () => {
   it('labels every ItemId', () => {
     expect(hotbarItemLabel('darts')).toBe('Darts');
+    expect(hotbarItemLabel('slowDarts')).toBe('Slow Darts');
     expect(hotbarItemLabel('purifiers')).toBe('Purify');
     expect(hotbarItemLabel('charms')).toBe('Charm');
     expect(hotbarItemLabel('kit:zipline')).toBe('Zipline');

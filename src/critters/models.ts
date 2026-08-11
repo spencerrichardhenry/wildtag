@@ -791,6 +791,216 @@ function buildZephyrfinch(rng: () => number): { group: THREE.Group; parts: Critt
 }
 
 /**
+ * Shardwing — a butterfly-inspired little sky jewel without borrowing the
+ * real animal's name. A slim indigo body carries four oversized stained-
+ * crystal wing lobes. Their broad translucent silhouette is the entire read;
+ * bright facet-knots make the facing and wing beat visible at a distance.
+ */
+function buildShardwing(rng: () => number): { group: THREE.Group; parts: CritterParts } {
+  const g = new THREE.Group();
+  const shell = jitterColor(0x3f4f86, rng, 0.08);
+  const shellDark = jitterColor(0x252b57, rng, 0.06);
+  const foreC = jitterColor(0x75c8d8, rng, 0.1);
+  const hindC = jitterColor(0xb576d2, rng, 0.1);
+  const glow = jitterColor(0xe7f4a8, rng, 0.03);
+
+  const body = new THREE.Group();
+  body.position.set(0, 0.5, 0);
+  const thorax = capsule(0.105, 0.3, shell, {}, 2, 7);
+  thorax.rotation.x = Math.PI / 2;
+  thorax.scale.set(1, 1, 0.92);
+  body.add(thorax);
+  const abdomen = capsule(0.075, 0.3, shellDark, {}, 2, 6);
+  abdomen.rotation.x = Math.PI / 2;
+  abdomen.position.z = -0.28;
+  body.add(abdomen);
+  g.add(body);
+
+  const head = new THREE.Group();
+  head.position.set(0, 0.52, 0.29);
+  const skull = sphere(0.145, shell, {}, 8, 6);
+  skull.scale.set(1.05, 0.92, 0.9);
+  head.add(skull);
+  for (const e of eyePair(0.08, 0.025, 0.115, 0.065, { iris: 0x172238, irisR: 0.72 }, 0.2)) {
+    head.add(e);
+  }
+  const sip = cone(0.022, 0.18, glow, 6);
+  sip.rotation.x = Math.PI / 2;
+  sip.position.set(0, -0.07, 0.2);
+  head.add(sip);
+  // Paired feelers curl out and forward; kept static so the giant wings own
+  // the animation silhouette rather than tiny antenna motion.
+  for (const sx of [-1, 1] as const) {
+    head.add(
+      segmentedHorn(
+        [
+          [sx * 0.045, 0.1, 0.02],
+          [sx * 0.1, 0.22, 0.08],
+          [sx * 0.17, 0.27, 0.17],
+        ],
+        0.018,
+        0.01,
+        shellDark,
+        {},
+        5,
+      ),
+    );
+  }
+  g.add(head);
+
+  const wings: THREE.Object3D[] = [];
+  const spotRoll = rng();
+  for (const sx of [-1, 1] as const) {
+    const wing = new THREE.Group();
+    wing.position.set(sx * 0.08, 0.56, -0.02);
+
+    const fore = sphere(0.31, foreC, { opacity: 0.72 }, 7, 5);
+    fore.scale.set(0.9, 1.25, 0.13);
+    fore.position.set(sx * 0.29, 0.17, 0.05);
+    fore.rotation.z = sx * -0.28;
+    wing.add(fore);
+
+    const hind = sphere(0.28, hindC, { opacity: 0.72 }, 7, 5);
+    hind.scale.set(1.0, 1.05, 0.13);
+    hind.position.set(sx * 0.27, -0.2, -0.09);
+    hind.rotation.z = sx * 0.22;
+    wing.add(hind);
+
+    // Faceted glowing knots sell the "Shard" identity and stay readable
+    // through the transparent membrane from either side.
+    for (const [x, y, z, r] of [
+      [sx * 0.27, 0.23, 0.02, 0.075],
+      [sx * 0.24, -0.18, -0.02, 0.06],
+    ] as const) {
+      const knot = crystal(r, glow, { emissive: glow, emissiveIntensity: 0.55 });
+      knot.position.set(x, y, z);
+      wing.add(knot);
+    }
+    if (spotRoll < 0.42 && sx === -1) {
+      const tiny = crystal(0.042, 0xffffff, { emissive: glow, emissiveIntensity: 0.35 });
+      tiny.position.set(sx * 0.39, 0.08, 0.01);
+      wing.add(tiny);
+    }
+    wings.push(wing);
+    g.add(wing);
+  }
+
+  // The six hair-thin legs are silhouette accents, not gait drivers; baking
+  // them as loose root detail keeps this tiny flyer to a handful of draws.
+  const legs: THREE.Object3D[] = [];
+  for (let i = 0; i < 3; i++) {
+    const z = 0.16 - i * 0.16;
+    for (const sx of [-1, 1] as const) {
+      const l = legGroup(sx * 0.075, 0.46, z, 0.014, 0.012, 0.18, shellDark, sx * 0.5);
+      g.add(l);
+    }
+  }
+  return { group: g, parts: { legs, wings, head, body } };
+}
+
+/**
+ * Nectar Wisp — a bee-inspired amber hover-spirit. Its striped round body,
+ * glassy double wings, dangling honey lantern and ivory tail needle make the
+ * role readable without using a real-world animal name. Faces +Z.
+ */
+function buildNectarWisp(rng: () => number): { group: THREE.Group; parts: CritterParts } {
+  const g = new THREE.Group();
+  const amber = jitterColor(0xd99632, rng, 0.05);
+  const amberLight = jitterColor(0xf0c45b, rng, 0.04);
+  const dark = jitterColor(0x3b2b35, rng, 0.03);
+  const wingC = jitterColor(0xc9edf0, rng, 0.04);
+  const ivory = jitterColor(0xeee2c4, rng, 0.02);
+
+  const body = new THREE.Group();
+  body.position.set(0, 0.52, -0.02);
+  const abdomen = capsule(0.245, 0.3, amber, {}, 2, 7);
+  abdomen.rotation.x = Math.PI / 2;
+  abdomen.scale.set(1.02, 1, 0.9);
+  body.add(abdomen);
+  for (const z of [-0.13, 0.12]) {
+    const band = new THREE.Mesh(new THREE.TorusGeometry(0.225, 0.045, 5, 10), mat(dark));
+    band.position.z = z;
+    body.add(band);
+  }
+  // Warm pollen/honey lantern: the fantasy cue that separates it from an
+  // ordinary insect silhouette and previews its Link reward.
+  const lantern = sphere(0.1, amberLight, { emissive: amber, emissiveIntensity: 0.8 }, 7, 5);
+  lantern.position.set(0, -0.26, 0.02);
+  body.add(lantern);
+  const stinger = cone(0.075, 0.3, ivory, 7);
+  stinger.rotation.x = -Math.PI / 2;
+  stinger.position.set(0, 0, -0.43);
+  body.add(stinger);
+  g.add(body);
+
+  const head = new THREE.Group();
+  head.position.set(0, 0.56, 0.36);
+  const skull = sphere(0.21, amberLight, {}, 8, 6);
+  skull.scale.set(1.02, 0.94, 0.9);
+  head.add(skull);
+  for (const e of eyePair(0.115, 0.035, 0.16, 0.085, { iris: 0x281a20, irisR: 0.68 }, 0.16)) {
+    head.add(e);
+  }
+  const mouth = smile(0.052, 0.012, dark, 1.55);
+  mouth.position.set(0, -0.1, 0.19);
+  head.add(mouth);
+  for (const sx of [-1, 1] as const) {
+    head.add(
+      segmentedHorn(
+        [
+          [sx * 0.07, 0.13, 0.02],
+          [sx * 0.13, 0.25, 0.07],
+          [sx * 0.18, 0.3, 0.15],
+        ],
+        0.022,
+        0.012,
+        dark,
+        {},
+        5,
+      ),
+    );
+  }
+  g.add(head);
+
+  const wings: THREE.Object3D[] = [];
+  for (const sx of [-1, 1] as const) {
+    const wing = new THREE.Group();
+    wing.position.set(sx * 0.17, 0.7, -0.05);
+    const front = sphere(0.24, wingC, { opacity: 0.54 }, 6, 4);
+    front.scale.set(0.65, 1.25, 0.16);
+    front.position.set(sx * 0.18, 0.1, 0.08);
+    front.rotation.z = sx * -0.35;
+    wing.add(front);
+    const rear = sphere(0.19, wingC, { opacity: 0.54 }, 6, 4);
+    rear.scale.set(0.68, 1.15, 0.15);
+    rear.position.set(sx * 0.17, -0.1, -0.14);
+    rear.rotation.z = sx * 0.25;
+    wing.add(rear);
+    wings.push(wing);
+    g.add(wing);
+  }
+
+  // Static dangling legs bake together as one loose accent draw; the wings
+  // carry all readable locomotion at this scale.
+  const legs: THREE.Object3D[] = [];
+  for (let i = 0; i < 3; i++) {
+    const z = 0.18 - i * 0.18;
+    for (const sx of [-1, 1] as const) {
+      const l = legGroup(sx * 0.13, 0.43, z, 0.025, 0.018, 0.25, dark, sx * 0.42);
+      g.add(l);
+    }
+  }
+  // Unconditional variation draw: a little pale pollen mote on some Wisps.
+  const pollenRoll = rng();
+  if (pollenRoll < 0.38) {
+    const mote = blob(0.045, ivory, { emissive: amber, emissiveIntensity: 0.4 });
+    mote.position.set(0.23, 0.39, 0.2);
+    g.add(mote);
+  }
+  return { group: g, parts: { legs, wings, head, body } };
+}
+
+/**
  * Emberpup — THE marquee cutie. A plump fox-pup where the head is nearly half
  * the pup: HUGE close eyes, cream cheeks with warm blush pads, a tiny smile
  * under the button nose, plump rounded ears with glowing ember tips, stubby
@@ -1690,6 +1900,8 @@ const BUILDERS: Record<string, (rng: () => number) => { group: THREE.Group; part
   mirefin: buildMirefin,
   craghorn: buildCraghorn,
   zephyrfinch: buildZephyrfinch,
+  shardwing: buildShardwing,
+  nectarwisp: buildNectarWisp,
   emberpup: buildEmberpup,
   lumenstag: buildLumenstag,
   prismhorse: buildPrismhorse,

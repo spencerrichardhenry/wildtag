@@ -45,6 +45,9 @@ function dist(a: Vec3, b: Vec3): number {
 /** Advance tracking for every tagged-not-linked critter by one `dt` step. */
 export function updateTracking(dt: number, deps: TrackerDeps): void {
   const { manager, inventory, playerPos, onLink, fillRate = 1 } = deps;
+  // Timer owner lives on the manager so streamed-out touched slots continue
+  // expiring/unslowing; this call stays inside main.ts's gameplay pause gate.
+  manager.tickTrackingTimers(dt);
   for (const c of manager.list()) {
     if (!c.tagged || c.linked) continue;
     const sp = speciesById(c.species);
@@ -57,6 +60,7 @@ export function updateTracking(dt: number, deps: TrackerDeps): void {
       manager.setLinked(c.id); // flips linked → guard blocks any re-award
       inventory.spark += sp.rewardSparks;
       inventory.rp += sp.rewardRP;
+      inventory.honey += sp.rewardHoney ?? 0;
       onLink?.(c, sp);
     }
   }

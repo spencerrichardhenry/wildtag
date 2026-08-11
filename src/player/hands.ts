@@ -79,6 +79,7 @@ function tagMesh<T extends THREE.Mesh>(mesh: T): T {
 
 const ITEM_IDS_WITH_MESH: readonly ItemId[] = [
   'darts',
+  'slowDarts',
   'purifiers',
   'charms',
   'kit:zipline',
@@ -215,6 +216,7 @@ function buildItemMeshes(group: THREE.Group): Record<ItemId, THREE.Mesh> {
 
   return {
     darts: dartMesh,
+    slowDarts: dartMesh,
     purifiers: dartMesh,
     charms: charmMesh,
     'kit:zipline': kitMesh,
@@ -316,7 +318,13 @@ export class HandsView {
     mesh.visible = true;
     // darts/purifiers share one mesh, as do the two kits — re-tint on select
     // rather than swapping geometry (wall/ramp/charms each own a fixed color).
-    if (item === 'darts' || item === 'purifiers' || item === 'kit:zipline' || item === 'kit:drone') {
+    if (
+      item === 'darts' ||
+      item === 'slowDarts' ||
+      item === 'purifiers' ||
+      item === 'kit:zipline' ||
+      item === 'kit:drone'
+    ) {
       (mesh.material as THREE.MeshStandardMaterial | THREE.MeshLambertMaterial).color.setHex(HANDS.itemColor[item]);
     }
   }

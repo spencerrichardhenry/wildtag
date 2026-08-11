@@ -9,6 +9,7 @@ import {
   type ItemId,
 } from '../craft/hotbar.ts';
 import { hotbarItemLabel } from './hud-math.ts';
+import { itemThumbnailUrl } from './model-thumbnails.ts';
 import type { Recipe, RecipeId, ResourceKind } from '../core/types.ts';
 import { clearSave } from '../core/save.ts';
 import { QUALITY_IDS, type QualityId } from '../core/quality.ts';
@@ -292,6 +293,7 @@ const RESOURCE_LABEL: Record<ResourceKind, string> = {
   resin: 'Resin',
   shard: 'Shard',
   spark: 'Spark',
+  honey: 'Honey',
   mushroom: 'Mushroom',
   wood: 'Wood',
   stone: 'Stone',
@@ -361,6 +363,12 @@ function renderRecipeCard(
     const hint = document.createElement('div');
     hint.className = 'wt-recipe-hint';
     hint.textContent = 'Farm critters make wood & stone';
+    card.appendChild(hint);
+  }
+  if (recipe.cost.honey != null) {
+    const hint = document.createElement('div');
+    hint.className = 'wt-recipe-hint';
+    hint.textContent = 'Link Nectar Wisps to gather honey';
     card.appendChild(hint);
   }
 
@@ -675,6 +683,7 @@ export function createCraftScreen(
 
 const ITEM_COLOR: Record<ItemId, string> = {
   darts: '#66e0ff',
+  slowDarts: '#77d6b2',
   purifiers: '#8ef0c0',
   charms: '#d98cff',
   'kit:zipline': '#f0c058',
@@ -689,6 +698,7 @@ const RESOURCE_COLOR: Record<ResourceKind, string> = {
   resin: '#e0a85c',
   shard: '#8ecbe0',
   spark: '#f0e06a',
+  honey: '#e6a83c',
   mushroom: '#9c5bd0',
   wood: '#8a5a35',
   stone: '#8f8f92',
@@ -715,28 +725,51 @@ function injectInventoryStyles(): void {
       margin: 4px 0;
     }
     .wt-inv-items {
-      display: flex;
-      flex-wrap: wrap;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, 88px);
       gap: 10px;
     }
     .wt-inv-card {
-      display: flex;
-      align-items: center;
-      gap: 8px;
+      width: 88px;
+      height: 88px;
+      position: relative;
+      display: grid;
+      place-items: center;
       border: 1px solid rgba(200, 220, 230, 0.18);
       border-radius: 8px;
-      background: rgba(255, 255, 255, 0.03);
-      padding: 8px 12px;
+      background:
+        radial-gradient(circle at 50% 42%, rgba(120, 160, 180, 0.14), transparent 64%),
+        rgba(255, 255, 255, 0.03);
+      padding: 5px;
       cursor: pointer;
       font: inherit;
-      font-size: 13px;
       color: #eef2f4;
+      overflow: visible;
     }
-    .wt-inv-card:hover { background: rgba(255, 255, 255, 0.07); }
+    .wt-inv-card:hover {
+      background:
+        radial-gradient(circle at 50% 42%, rgba(150, 205, 225, 0.2), transparent 66%),
+        rgba(255, 255, 255, 0.07);
+    }
     .wt-inv-card.wt-inv-armed {
       border-color: #a8e6bc;
       box-shadow: 0 0 0 1px #a8e6bc;
       background: rgba(120, 200, 150, 0.16);
+    }
+    .wt-inv-art {
+      display: block;
+      width: 76px;
+      height: 76px;
+      object-fit: contain;
+      pointer-events: none;
+      filter: drop-shadow(0 4px 4px rgba(0, 0, 0, 0.42));
+    }
+    .wt-inv-card-zero .wt-inv-art { opacity: 0.5; filter: grayscale(0.35); }
+    .wt-inv-art-fallback {
+      width: 38px;
+      height: 38px;
+      border-radius: 9px;
+      box-shadow: 0 3px 8px rgba(0, 0, 0, 0.45), inset 0 0 0 2px rgba(255,255,255,0.2);
     }
     .wt-inv-dot {
       width: 11px;
@@ -746,8 +779,19 @@ function injectInventoryStyles(): void {
       flex: none;
     }
     .wt-inv-card-count {
+      position: absolute;
+      right: 6px;
+      bottom: 4px;
+      min-width: 16px;
+      padding: 1px 4px;
+      border-radius: 9px;
       font-weight: bold;
-      color: #9fd8b8;
+      font-size: 12px;
+      line-height: 16px;
+      text-align: center;
+      color: #0b0d10;
+      background: #ffe06a;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.55);
     }
     .wt-inv-res-row {
       display: flex;
@@ -763,11 +807,12 @@ function injectInventoryStyles(): void {
     }
     .wt-inv-hotbar {
       display: flex;
+      flex-wrap: wrap;
       gap: 8px;
     }
     .wt-inv-slot {
-      width: 78px;
-      height: 62px;
+      width: 72px;
+      height: 72px;
       border: 1px solid rgba(200, 220, 230, 0.28);
       border-radius: 7px;
       background: rgba(14, 18, 22, 0.62);
@@ -780,6 +825,7 @@ function injectInventoryStyles(): void {
       font: inherit;
       color: #dbe6ea;
       position: relative;
+      overflow: visible;
     }
     .wt-inv-slot:hover { background: rgba(255, 255, 255, 0.06); }
     .wt-inv-slot-key {
@@ -789,8 +835,20 @@ function injectInventoryStyles(): void {
       font-size: 10px;
       color: #9fb0b8;
     }
-    .wt-inv-slot-name { font-size: 11px; }
-    .wt-inv-slot-count { font-size: 11px; color: #9fd8b8; }
+    .wt-inv-slot .wt-inv-art { width: 60px; height: 60px; }
+    .wt-inv-slot-count {
+      position: absolute;
+      right: 4px;
+      bottom: 3px;
+      min-width: 15px;
+      padding: 0 3px;
+      border-radius: 8px;
+      font-size: 11px;
+      font-weight: bold;
+      text-align: center;
+      color: #0b0d10;
+      background: #ffe06a;
+    }
     .wt-inv-slot-empty { font-size: 11px; color: #66707a; }
     .wt-inv-slot.wt-inv-slot-selected {
       border-color: #a8e6bc;
@@ -809,8 +867,54 @@ function injectInventoryStyles(): void {
       cursor: pointer;
     }
     .wt-inv-controls-btn:hover { background: rgba(200, 220, 230, 0.12); }
+    .wt-inv-card::after,
+    .wt-inv-slot[data-tooltip]::after {
+      content: attr(data-tooltip);
+      position: absolute;
+      left: 50%;
+      bottom: calc(100% + 7px);
+      z-index: 8;
+      transform: translate(-50%, 4px);
+      padding: 5px 8px;
+      border: 1px solid rgba(190, 220, 235, 0.3);
+      border-radius: 5px;
+      background: rgba(8, 11, 14, 0.96);
+      color: #f1f5f6;
+      font-size: 12px;
+      line-height: 1;
+      white-space: nowrap;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 80ms ease, transform 80ms ease;
+      box-shadow: 0 5px 14px rgba(0,0,0,0.45);
+    }
+    .wt-inv-card:hover::after,
+    .wt-inv-card:focus-visible::after,
+    .wt-inv-slot[data-tooltip]:hover::after,
+    .wt-inv-slot[data-tooltip]:focus-visible::after {
+      opacity: 1;
+      transform: translate(-50%, 0);
+    }
   `;
   document.head.appendChild(style);
+}
+
+/** Actual rendered 3D-object snip, with a simple colour tile fallback for a
+ * device that cannot spare the thumbnail studio's one additional WebGL context. */
+function renderItemArt(item: ItemId): HTMLElement {
+  const url = itemThumbnailUrl(item);
+  if (url) {
+    const image = document.createElement('img');
+    image.className = 'wt-inv-art';
+    image.src = url;
+    image.alt = '';
+    image.draggable = false;
+    return image;
+  }
+  const fallback = document.createElement('span');
+  fallback.className = 'wt-inv-art-fallback';
+  fallback.style.background = ITEM_COLOR[item];
+  return fallback;
 }
 
 export interface InventoryScreenDeps {
@@ -829,6 +933,7 @@ const RESOURCE_KINDS: readonly ResourceKind[] = [
   'resin',
   'shard',
   'spark',
+  'honey',
   'mushroom',
   'wood',
   'stone',
@@ -903,18 +1008,18 @@ export function createInventoryScreen(deps: InventoryScreenDeps): ScreenDef {
         const itemsGrid = document.createElement('div');
         itemsGrid.className = 'wt-inv-items';
         for (const item of owned) {
+          const label = hotbarItemLabel(item);
+          const ownedCount = itemCount(inventory, item);
           const card = document.createElement('button');
           card.type = 'button';
-          card.className = `wt-inv-card${item === armed ? ' wt-inv-armed' : ''}`;
-          const dot = document.createElement('span');
-          dot.className = 'wt-inv-dot';
-          dot.style.background = ITEM_COLOR[item];
-          const name = document.createElement('span');
-          name.textContent = hotbarItemLabel(item);
+          card.className = `wt-inv-card${item === armed ? ' wt-inv-armed' : ''}${ownedCount <= 0 ? ' wt-inv-card-zero' : ''}`;
+          card.dataset.tooltip = label;
+          card.dataset.itemName = label;
+          card.setAttribute('aria-label', `${label}, ${ownedCount} owned`);
           const count = document.createElement('span');
           count.className = 'wt-inv-card-count';
-          count.textContent = String(itemCount(inventory, item));
-          card.append(dot, name, count);
+          count.textContent = String(ownedCount);
+          card.append(renderItemArt(item), count);
           card.addEventListener('click', () => {
             armed = armed === item ? null : item; // clicking the armed card again disarms it
             refresh();
@@ -972,17 +1077,19 @@ export function createInventoryScreen(deps: InventoryScreenDeps): ScreenDef {
         key.textContent = String(i + 1);
         slot.appendChild(key);
         if (item) {
-          const name = document.createElement('span');
-          name.className = 'wt-inv-slot-name';
-          name.textContent = hotbarItemLabel(item);
+          const label = hotbarItemLabel(item);
+          const ownedCount = itemCount(inventory, item);
+          slot.dataset.tooltip = label;
+          slot.setAttribute('aria-label', `Hotbar ${i + 1}: ${label}, ${ownedCount} owned`);
           const count = document.createElement('span');
           count.className = 'wt-inv-slot-count';
-          count.textContent = String(itemCount(inventory, item));
-          slot.append(name, count);
+          count.textContent = String(ownedCount);
+          slot.append(renderItemArt(item), count);
         } else {
           const empty = document.createElement('span');
           empty.className = 'wt-inv-slot-empty';
           empty.textContent = 'Empty';
+          slot.setAttribute('aria-label', `Hotbar ${i + 1}: empty`);
           slot.appendChild(empty);
         }
         slot.addEventListener('click', () => {

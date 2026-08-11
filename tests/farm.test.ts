@@ -345,6 +345,14 @@ describe('save round-trip', () => {
     expect(decoded!.farm!.plots[1]!.hopper.stone).toBe(2);
   });
 
+  it('round-trips Nectar Wisp honey in a hopper', () => {
+    let f = assign(createFarm(1), 0, 7);
+    f = tick(f, [entry(7, 'nectarwisp')], speciesById, FARM.producePeriod);
+    const decoded = decodeSave(encodeSave(baseSave(f)));
+    expect(decoded).not.toBeNull();
+    expect(decoded!.farm!.plots[0]!.hopper.honey).toBe(1);
+  });
+
   it('a save without a farm field decodes with farm undefined (lossless)', () => {
     const decoded = decodeSave(encodeSave(baseSave(undefined)));
     expect(decoded).not.toBeNull();

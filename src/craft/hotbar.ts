@@ -12,6 +12,7 @@ import type { Inventory } from './inventory.ts';
  * off the hotbar entirely. */
 export type ItemId =
   | 'darts'
+  | 'slowDarts'
   | 'purifiers'
   | 'charms'
   | 'kit:zipline'
@@ -25,6 +26,7 @@ export type ItemId =
  * this list. */
 export const ITEM_IDS: readonly ItemId[] = [
   'darts',
+  'slowDarts',
   'purifiers',
   'charms',
   'kit:zipline',
@@ -108,6 +110,8 @@ export function itemCount(inv: Inventory, item: ItemId): number {
   switch (item) {
     case 'darts':
       return inv.darts;
+    case 'slowDarts':
+      return inv.slowDarts;
     case 'purifiers':
       return inv.purifiers;
     case 'charms':

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import {
+  AI,
   BUILD,
   CAMERA,
   CASTLE,
@@ -888,6 +889,17 @@ function bootGame(): void {
     return { x: (dx / len) * mag, y: mag * 0.3, z: (dz / len) * mag };
   }
 
+  // Nectar Wisps use the critter manager's contact hook so the species/AI
+  // layer stays independent of player HP. They sting only while tagged and
+  // unlinked; manager.ts stops invoking this the instant the circle completes
+  // or its empty two-minute window expires.
+  critters.onPlayerSting = (dmg, from) => {
+    if (isDazed(health)) return;
+    health = applyHit(health, dmg);
+    player.applyImpulse(awayFrom(from, player.pos, AI.stingKnockback));
+    blip(230, 0.09);
+  };
+
   // Cursed Castle (Task 12): happy elves — persistent castle residents that
   // wander/dance around the grounds. Purified goblins become elves; count is
   // restored from the save (defaults to 0 elves) and grows via `elves.addAt`
@@ -950,8 +962,9 @@ function bootGame(): void {
   /**
    * LMB dispatch on the selected hotbar item (Inventory+Building Task 3),
    * replacing the old fixed slot-5-is-Purify / slot-3-4-toggle behavior:
-   *  - 'darts' / 'purifiers': throw (their own `tryThrow` already no-ops —
-   *    and returns false — at zero count, which shakes the slot).
+   *  - 'darts' / 'slowDarts' / 'purifiers': throw (their own `tryThrow`
+   *    already no-ops — and returns false — at zero count, which shakes the
+   *    slot).
    *  - 'kit:zipline' / 'kit:drone': confirms the already-active placement
    *    ghost (selecting the slot auto-entered it — `syncHotbarPlacement`
    *    above); if it somehow isn't active (e.g. the kit ran out right as the
@@ -969,6 +982,9 @@ function bootGame(): void {
     switch (item) {
       case 'darts':
         if (!darts.tryThrow()) hudUi.shake();
+        return;
+      case 'slowDarts':
+        if (!darts.tryThrow('slowing')) hudUi.shake();
         return;
       case 'purifiers':
         if (!purifier.tryThrow()) hudUi.shake();
@@ -1023,6 +1039,8 @@ function bootGame(): void {
     inventory.stone = 9999;
     inventory.rp = 999;
     inventory.darts = 999;
+    inventory.slowDarts = 999;
+    inventory.honey = 999;
     inventory.charms = 999;
     inventory.walls = 50;
     inventory.ramps = 50;
@@ -1656,7 +1674,8 @@ function bootGame(): void {
         fillRate: trackingFillRate(getRewards()),
         onLink: (view, sp) => {
           chime();
-          toast(`Linked ${sp.name}!  +${sp.rewardSparks} spark  +${sp.rewardRP} RP`);
+          const honey = sp.rewardHoney ? `  +${sp.rewardHoney} honey` : '';
+          toast(`Linked ${sp.name}!  +${sp.rewardSparks} spark  +${sp.rewardRP} RP${honey}`);
           // Live-refresh an open screen so the Field Guide reflects a fresh Link
           // immediately (it rebuilds from manager.linkedSpecies() on render).
           screens.refresh();

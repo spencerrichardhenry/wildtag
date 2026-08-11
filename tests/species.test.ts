@@ -5,12 +5,14 @@ import { SPECIES, speciesById } from '../src/critters/species.ts';
 // params, awareness radii and flee styles are the contract other systems
 // (tracking, AI, spawns) build on, so they are pinned verbatim here.
 const TABLE = [
-  { id: 'puffle', bold: false, rideable: false, awareness: 8, fleeStyle: 'none', trackRadius: 12, trackTime: 8, rewardRP: 8, rewardSparks: 1, farmRole: { kind: 'produce', resource: 'fiber', amount: 2 } },
+  { id: 'puffle', bold: false, rideable: false, awareness: 8, fleeStyle: 'none', trackRadius: 12, trackTime: 3, rewardRP: 8, rewardSparks: 1, farmRole: { kind: 'produce', resource: 'fiber', amount: 2 } },
   { id: 'skitterling', bold: false, rideable: false, awareness: 14, fleeStyle: 'sprint', trackRadius: 10, trackTime: 10, rewardRP: 10, rewardSparks: 1, farmRole: { kind: 'produce', resource: 'resin', amount: 2 } },
   { id: 'bellowbuck', bold: false, rideable: false, awareness: 10, fleeStyle: 'none', trackRadius: 15, trackTime: 14, rewardRP: 14, rewardSparks: 2, farmRole: { kind: 'produce', resource: 'fiber', amount: 4 } },
   { id: 'mirefin', bold: true, rideable: false, awareness: 12, fleeStyle: 'swim', trackRadius: 14, trackTime: 12, rewardRP: 12, rewardSparks: 2, farmRole: { kind: 'aura', auraPct: 25 } },
   { id: 'craghorn', bold: false, rideable: false, awareness: 16, fleeStyle: 'ledge', trackRadius: 14, trackTime: 16, rewardRP: 18, rewardSparks: 3, farmRole: { kind: 'produce', resource: 'shard', amount: 2 } },
   { id: 'zephyrfinch', bold: true, rideable: false, awareness: 20, fleeStyle: 'fly', trackRadius: 18, trackTime: 15, rewardRP: 20, rewardSparks: 3, farmRole: { kind: 'produce', resource: 'spark', amount: 1 } },
+  { id: 'shardwing', bold: false, rideable: false, awareness: 11, fleeStyle: 'flutter', trackRadius: 12, trackTime: 7, rewardRP: 13, rewardSparks: 2, farmRole: { kind: 'aura', auraPct: 15 } },
+  { id: 'nectarwisp', bold: true, rideable: false, awareness: 18, fleeStyle: 'sting', trackRadius: 9, trackTime: 9, rewardRP: 15, rewardSparks: 2, farmRole: { kind: 'produce', resource: 'honey', amount: 1 } },
   { id: 'emberpup', bold: false, rideable: false, awareness: 13, fleeStyle: 'zigzag', trackRadius: 11, trackTime: 14, rewardRP: 16, rewardSparks: 2, farmRole: { kind: 'aura', auraPct: 25 } },
   { id: 'lumenstag', bold: false, rideable: false, awareness: 35, fleeStyle: 'sprint', trackRadius: 20, trackTime: 25, rewardRP: 40, rewardSparks: 6, farmRole: { kind: 'produce', resource: 'spark', amount: 2 } },
   { id: 'prismhorse', bold: true, rideable: true, awareness: 22, fleeStyle: 'sprint', trackRadius: 16, trackTime: 18, rewardRP: 34, rewardSparks: 5, farmRole: { kind: 'none' } },
@@ -23,8 +25,8 @@ const TABLE = [
 ] as const;
 
 describe('SPECIES roster', () => {
-  it('has exactly 15 species', () => {
-    expect(SPECIES).toHaveLength(15);
+  it('has exactly 17 species', () => {
+    expect(SPECIES).toHaveLength(17);
   });
 
   it('has unique ids', () => {
@@ -97,6 +99,12 @@ describe('farm roles + rideable (spec §4/§5)', () => {
   it('exactly one adjacencyDouble producer (the snickerdoodle)', () => {
     const adj = SPECIES.filter((s) => s.farmRole.special === 'adjacencyDouble');
     expect(adj.map((s) => s.id)).toEqual(['snickerdoodle']);
+  });
+
+  it('Nectar Wisp is the honey producer and grants honey when Linked', () => {
+    const nectar = speciesById('nectarwisp');
+    expect(nectar?.farmRole).toEqual({ kind: 'produce', resource: 'honey', amount: 1 });
+    expect(nectar?.rewardHoney).toBe(2);
   });
 });
 

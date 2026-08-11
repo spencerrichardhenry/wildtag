@@ -35,6 +35,8 @@ export interface CritterPersistEntry {
   tagged: boolean;
   linked: boolean;
   trackProgress: number;
+  trackEmptyFor?: number;
+  slowFor?: number;
   species?: string;
 }
 
@@ -290,7 +292,7 @@ function parseFarm(v: unknown): FarmState | undefined {
     // straight into a plot hopper like any other producer, so they need the
     // same shape guard as fiber/resin/shard/spark. 'mushroom' stays absent —
     // it's forage-only and never a farm-role resource.
-    for (const k of ['fiber', 'resin', 'shard', 'spark', 'wood', 'stone'] as const) {
+    for (const k of ['fiber', 'resin', 'shard', 'spark', 'honey', 'wood', 'stone'] as const) {
       const n = (p.hopper as Record<string, unknown>)[k];
       if (n === undefined) continue;
       if (typeof n !== 'number' || !Number.isFinite(n) || n < 0) return undefined;
@@ -378,6 +380,12 @@ export function decodeSave(json: string): SaveV3 | null {
     // value is still validated (a tampered/negative count rejects the save).
     if (inv.charms !== undefined && !isCount(inv.charms)) return null;
     const charms = isCount(inv.charms) ? (inv.charms as number) : 0;
+    // Honey + Slowing Darts are optional for every save written before the
+    // field-critters pass; present values still receive the normal tamper guard.
+    if (inv.honey !== undefined && !isCount(inv.honey)) return null;
+    const honey = isCount(inv.honey) ? (inv.honey as number) : 0;
+    if (inv.slowDarts !== undefined && !isCount(inv.slowDarts)) return null;
+    const slowDarts = isCount(inv.slowDarts) ? (inv.slowDarts as number) : 0;
     // `mushroom` mirrors `charms`: forward-compat for pre-Cursed-Castle saves
     // (missing → defaults to 0), but a present tampered/negative value rejects.
     if (inv.mushroom !== undefined && !isCount(inv.mushroom)) return null;
@@ -421,8 +429,10 @@ export function decodeSave(json: string): SaveV3 | null {
       resin: inv.resin as number,
       shard: inv.shard as number,
       spark: inv.spark as number,
+      honey,
       rp: inv.rp as number,
       darts: inv.darts as number,
+      slowDarts,
       mushroom,
       wood,
       stone,

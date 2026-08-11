@@ -31,9 +31,9 @@ function rest(o: { rotation: { x: number; y: number; z: number }; position: { y:
  * Advance one critter's pose. `dt` is accepted for API symmetry / future
  * spring damping but the current animation is a pure function of `t` and
  * `speed`, so it stays deterministic and stateless across frames. `speciesId`
- * selects per-species specials (the 16-leg prismhorse wave, the snickerdoodle
- * flop, the bumblewhale hover, gloomgobbler's stride); omit it for the generic
- * quadruped gait.
+ * selects per-species specials (the 16-leg prismhorse wave, snickerdoodle
+ * flop, bumblewhale hover, Shardwing/Nectar Wisp wing beats, and
+ * gloomgobbler's stride); omit it for the generic quadruped gait.
  */
 export function animateCritter(
   parts: CritterParts,
@@ -132,12 +132,24 @@ export function animateCritter(
   if (parts.wings) {
     // Bumblewhale's flippers flap lazily; other flyers beat fast.
     const whale = speciesId === 'bumblewhale';
-    const flapFreq = whale ? ANIM.whaleFlapFreq : ANIM.flapFreqBase + capped * ANIM.flapFreqPerSpeed;
+    const flutter = speciesId === 'shardwing';
+    const sting = speciesId === 'nectarwisp';
+    const flapFreq = whale
+      ? ANIM.whaleFlapFreq
+      : flutter
+        ? ANIM.flutterFlapFreq
+        : sting
+          ? ANIM.stingFlapFreq
+          : ANIM.flapFreqBase + capped * ANIM.flapFreqPerSpeed;
     const flapAmp = whale
       ? ANIM.whaleFlapAmp
-      : moving
-        ? ANIM.flapAmpBase + capped * ANIM.flapAmpPerSpeed
-        : ANIM.flapIdleAmp;
+      : flutter
+        ? ANIM.flutterFlapAmp
+        : sting
+          ? ANIM.stingFlapAmp
+          : moving
+            ? ANIM.flapAmpBase + capped * ANIM.flapAmpPerSpeed
+            : ANIM.flapIdleAmp;
     const f = Math.sin(t * flapFreq) * flapAmp;
     let wi = 0;
     for (const wing of parts.wings) {

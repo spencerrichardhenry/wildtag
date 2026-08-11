@@ -179,12 +179,24 @@ describe('craft — Bond Charm (Haven V2)', () => {
   });
 });
 
+describe('craft — Slowing Dart', () => {
+  it('turns one honey into a batch of three slowing darts', () => {
+    const inv = createInventory();
+    inv.honey = 1;
+    const result = craft(inv, 'slowdart', new Set());
+    expect(result.inv.honey).toBe(0);
+    expect(result.inv.slowDarts).toBe(3);
+    expect(result.inv.darts).toBe(0);
+  });
+});
+
 describe('full crafting tree — affordability walk', () => {
-  it('every recipe is craftable in tier order once granted its resources + RP, and the final state matches all unlocks/kits/darts/charms', () => {
+  it('every recipe is craftable in tier order once granted its resources + RP, and the final state matches every grant', () => {
     const inv = createInventory();
     inv.rp = 200; // clears every tier's RP gate up front
     grant(inv, { fiber: 37, resin: 19, shard: 35, spark: 17 }); // sum of every recipe's cost below (incl. charm, purifier)
     inv.mushroom = 3; // purifier's non-{fiber,resin,shard,spark} cost
+    inv.honey = 1; // slowing dart's Nectar Wisp resource cost
     inv.wood = 7; // wall (2) + ramp (3) + cube (2)
     inv.stone = 6; // wall (3) + ramp (1) + cube (2)
 
@@ -206,6 +218,7 @@ describe('full crafting tree — affordability walk', () => {
     expect(unlocks).toEqual(new Set(['grapple', 'boots', 'glider', 'rocket']));
     expect(working.kits).toEqual({ zipline: 1, beacon: 0, drone: 1 });
     expect(working.darts).toBe(10);
+    expect(working.slowDarts).toBe(3);
     expect(working.charms).toBe(2);
     expect(working.purifiers).toBe(5);
     expect(working.walls).toBe(4);
@@ -216,6 +229,7 @@ describe('full crafting tree — affordability walk', () => {
     expect(working.shard).toBe(0);
     expect(working.spark).toBe(0);
     expect(working.mushroom).toBe(0);
+    expect(working.honey).toBe(0);
     expect(working.wood).toBe(0);
     expect(working.stone).toBe(0);
   });

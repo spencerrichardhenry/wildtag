@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import * as THREE from 'three';
 import { stepTracking, isComplete } from '../src/tracking/progress.ts';
 import { spawnDart, stepDart, dartHitCritter } from '../src/tracking/darts.ts';
 import type { DartState } from '../src/tracking/darts.ts';
-import { shouldLink } from '../src/tracking/tracker.ts';
+import { shouldLink, updateTracking } from '../src/tracking/tracker.ts';
+import { CritterManager } from '../src/critters/manager.ts';
+import { createInventory } from '../src/craft/inventory.ts';
 import { speciesById } from '../src/critters/species.ts';
 import { DART, TRACKING } from '../src/core/constants.ts';
 import type { GroundQuery, SpeciesDef, Vec3 } from '../src/core/types.ts';
@@ -29,7 +32,7 @@ const abyss: GroundQuery = {
 // ---------------------------------------------------------------------------
 
 describe('stepTracking', () => {
-  const puffle = sp('puffle'); // trackRadius 12, trackTime 8
+  const puffle = sp('puffle'); // trackRadius 12, trackTime 3
 
   it('accumulates at +dt while inside the track radius', () => {
     expect(stepTracking(0, 5, 1, puffle)).toBeCloseTo(1, 6);
@@ -37,11 +40,20 @@ describe('stepTracking', () => {
   });
 
   it('decays at TRACKING.trackDecayFactor of the accrual rate while outside', () => {
-    expect(stepTracking(4, 100, 1, puffle)).toBeCloseTo(4 - TRACKING.trackDecayFactor, 6);
-    expect(stepTracking(4, puffle.trackRadius + 0.01, 2, puffle)).toBeCloseTo(
-      4 - 2 * TRACKING.trackDecayFactor,
+    expect(stepTracking(2.5, 100, 1, puffle)).toBeCloseTo(2.5 - TRACKING.trackDecayFactor, 6);
+    expect(stepTracking(2.5, puffle.trackRadius + 0.01, 2, puffle)).toBeCloseTo(
+      2.5 - 2 * TRACKING.trackDecayFactor,
       6,
     );
+  });
+
+  it('honours each species track length (Puffle 3s, Shardwing 7s, Nectar Wisp 9s)', () => {
+    expect(sp('puffle').trackTime).toBe(3);
+    expect(sp('shardwing').trackTime).toBe(7);
+    expect(sp('nectarwisp').trackTime).toBe(9);
+    expect(isComplete(3, sp('puffle'))).toBe(true);
+    expect(isComplete(3, sp('shardwing'))).toBe(false);
+    expect(isComplete(7, sp('shardwing'))).toBe(true);
   });
 
   it('clamps at the low end (never negative)', () => {
@@ -245,5 +257,29 @@ describe('shouldLink (no-double-award guard)', () => {
     expect(progress).toBe(puffle2.trackTime); // clamped, not overshooting
     expect(linked).toBe(true);
     expect(awards).toBe(1); // awarded exactly once
+  });
+
+  it('grants Nectar Wisp honey exactly once when its Link completes', () => {
+    const manager = new CritterManager(new THREE.Scene());
+    const id = manager.debugSpawn('nectarwisp', { x: 0, y: 0, z: 0 })!;
+    const nectar = sp('nectarwisp');
+    const inventory = createInventory();
+    manager.setTagged(id);
+    manager.setTrackProgress(id, nectar.trackTime);
+
+    updateTracking(1 / 60, {
+      manager,
+      inventory,
+      playerPos: { x: 0, y: 0, z: 0 },
+    });
+    expect(manager.byId(id)?.linked).toBe(true);
+    expect(inventory.honey).toBe(nectar.rewardHoney);
+
+    updateTracking(1 / 60, {
+      manager,
+      inventory,
+      playerPos: { x: 0, y: 0, z: 0 },
+    });
+    expect(inventory.honey).toBe(nectar.rewardHoney);
   });
 });

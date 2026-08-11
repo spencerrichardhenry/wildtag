@@ -25,6 +25,16 @@ export const RECIPES: Recipe[] = [
     batch: 10,
     grants: 'darts',
   },
+  {
+    id: 'slowdart',
+    name: 'Slowing Dart',
+    tier: 0,
+    rpRequired: 0,
+    cost: { honey: 1 },
+    kind: 'consumable',
+    batch: 3,
+    grants: 'slowDarts',
+  },
   // --- Tier 1 (25 RP) --------------------------------------------------------
   {
     // Haven V2: sparks make Linking feed capturing — one charm bonds one

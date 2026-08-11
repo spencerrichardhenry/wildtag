@@ -1,4 +1,4 @@
-import { AI } from '../core/constants.ts';
+import { AI, TRACKING } from '../core/constants.ts';
 import type { Biome, CritterState, GroundQuery, SpeciesDef, Vec3 } from '../core/types.ts';
 
 // ---------------------------------------------------------------------------
@@ -59,6 +59,15 @@ function randRange(rand: () => number, lo: number, hi: number): number {
   return lo + rand() * (hi - lo);
 }
 
+function isFlyer(sp: SpeciesDef): boolean {
+  return (
+    sp.fleeStyle === 'fly' ||
+    sp.fleeStyle === 'flutter' ||
+    sp.fleeStyle === 'sting' ||
+    sp.fleeStyle === 'perch'
+  );
+}
+
 /** Pick a fresh wander target near home and return the heading toward it. */
 function pickWanderYaw(c: CritterState, rand: () => number): number {
   const ang = rand() * TWO_PI;
@@ -96,6 +105,10 @@ export function stepAI(c: CritterState, ctx: AIContext, dt: number): CritterStat
   // Bold species (birds etc.) don't care about the player until a tracker is
   // on their back; skittish ones alert at awareness regardless.
   const canFlee = sp.fleeStyle !== 'none' && !c.linked && (!sp.bold || c.tagged);
+  // Nectar Wisps aggro for the whole tagged window, even if the player fired
+  // from outside their ordinary awareness radius. Other species retain the
+  // normal proximity trigger.
+  const shouldReact = canFlee && (sp.fleeStyle === 'sting' ? c.tagged : dist <= sp.awareness);
 
   // Desired heading + target ground speed produced by the active state.
   let desiredYaw = c.yaw;
@@ -106,7 +119,7 @@ export function stepAI(c: CritterState, ctx: AIContext, dt: number): CritterStat
   switch (c.state) {
     case 'idle': {
       speed = 0;
-      if (canFlee && dist <= sp.awareness) {
+      if (shouldReact) {
         enter(out, 'alert', ctx.rand, sp);
       } else if (out.stateTime >= c.stateDur) {
         enter(out, 'wander', ctx.rand, sp);
@@ -117,7 +130,7 @@ export function stepAI(c: CritterState, ctx: AIContext, dt: number): CritterStat
     }
 
     case 'wander': {
-      if (canFlee && dist <= sp.awareness) {
+      if (shouldReact) {
         enter(out, 'alert', ctx.rand, sp);
         speed = 0;
         desiredYaw = towardYaw;
@@ -146,6 +159,10 @@ export function stepAI(c: CritterState, ctx: AIContext, dt: number): CritterStat
       }
       speed = sp.walkSpeed;
       desiredYaw = c.targetYaw;
+      if (sp.fleeStyle === 'flutter') {
+        const leg = Math.floor(c.stateTime / AI.flutterPeriod);
+        desiredYaw += (leg % 2 === 0 ? 1 : -1) * AI.flutterAngle * 0.62;
+      }
       // Leash back toward home if we've wandered past the radius.
       const homeDist = Math.hypot(c.pos.x - c.home.x, c.pos.z - c.home.z);
       if (homeDist > AI.wanderRadius) {
@@ -187,15 +204,23 @@ export function stepAI(c: CritterState, ctx: AIContext, dt: number): CritterStat
         speed = sp.walkSpeed * AI.calmSpeedFactor;
         break;
       }
-      desiredYaw = fleeYaw(c, sp, awayYaw, ctx);
+      desiredYaw = fleeYaw(c, sp, awayYaw, towardYaw, ctx);
       speed = fleeSpeed(c, sp);
+      // Nectar Wisps rush into contact, then hover in striking distance instead
+      // of repeatedly overshooting the player at full flight speed. If the
+      // player moves away they immediately resume the pursuit.
+      if (sp.fleeStyle === 'sting' && dist <= AI.stingRange * 0.7) speed = 0;
       // Calm once the player has stayed far for long enough.
-      if (dist > sp.awareness * AI.calmDistFactor) {
+      if (sp.fleeStyle === 'sting') {
+        // A Nectar Wisp only stands down when the tag expires or the circle
+        // completes (both make canFlee false on the next step).
+        out.farTime = 0;
+      } else if (dist > sp.awareness * AI.calmDistFactor) {
         out.farTime = c.farTime + dt;
       } else {
         out.farTime = 0;
       }
-      if (out.farTime >= AI.calmTriggerTime) {
+      if (sp.fleeStyle !== 'sting' && out.farTime >= AI.calmTriggerTime) {
         enter(out, 'calm', ctx.rand, sp);
         speed = sp.walkSpeed * AI.calmSpeedFactor;
       }
@@ -208,7 +233,7 @@ export function stepAI(c: CritterState, ctx: AIContext, dt: number): CritterStat
       // holding whatever heading it fled in.
       desiredYaw = perch ? yawTo(c.home.x - c.pos.x, c.home.z - c.pos.z) : c.yaw;
       // A re-approaching player re-triggers the chase.
-      if (canFlee && dist <= sp.awareness) {
+      if (shouldReact) {
         enter(out, 'alert', ctx.rand, sp);
         speed = 0;
         desiredYaw = towardYaw;
@@ -221,6 +246,7 @@ export function stepAI(c: CritterState, ctx: AIContext, dt: number): CritterStat
     }
   }
 
+  if ((c.slowFor ?? 0) > 0) speed *= TRACKING.slowMultiplier;
   locomote(out, c, sp, ctx, desiredYaw, speed, dt);
   return out;
 }
@@ -254,7 +280,13 @@ function fleeSpeed(c: CritterState, sp: SpeciesDef): number {
 }
 
 /** Desired heading during flee, per the species' flee style. */
-function fleeYaw(c: CritterState, sp: SpeciesDef, awayYaw: number, ctx: AIContext): number {
+function fleeYaw(
+  c: CritterState,
+  sp: SpeciesDef,
+  awayYaw: number,
+  towardYaw: number,
+  ctx: AIContext,
+): number {
   switch (sp.fleeStyle) {
     case 'zigzag': {
       const leg = Math.floor(c.stateTime / AI.zigzagPeriod);
@@ -268,6 +300,12 @@ function fleeYaw(c: CritterState, sp: SpeciesDef, awayYaw: number, ctx: AIContex
       // clamped to home.y + AI.perchAltClamp in `locomote`).
       return awayYaw + Math.sin(c.stateTime * AI.flyArcRate) * 0.8;
     }
+    case 'flutter': {
+      const leg = Math.floor(c.stateTime / AI.flutterPeriod);
+      return awayYaw + (leg % 2 === 0 ? 1 : -1) * AI.flutterAngle;
+    }
+    case 'sting':
+      return towardYaw;
     case 'swim':
       return swimYaw(c, awayYaw, ctx);
     case 'ledge':
@@ -333,7 +371,7 @@ function locomote(
   dt: number,
 ): void {
   // Rate-limited turn.
-  const maxTurn = AI.turnRate * dt;
+  const maxTurn = (sp.fleeStyle === 'flutter' ? AI.flutterTurnRate : AI.turnRate) * dt;
   const d = angDiff(desiredYaw, prev.yaw);
   let yaw = prev.yaw + Math.max(-maxTurn, Math.min(maxTurn, d));
 
@@ -342,7 +380,7 @@ function locomote(
   // but get their own altitude target (see below) instead of a
   // terrain-relative cruise band.
   const perch = sp.fleeStyle === 'perch';
-  const flyer = sp.fleeStyle === 'fly' || perch;
+  const flyer = isFlyer(sp);
   const swimmer = sp.fleeStyle === 'swim';
 
   let nx = prev.pos.x;
@@ -389,7 +427,12 @@ function locomote(
     // critter can never climb above its own perch.
     out.pos.y = Math.min(y, prev.home.y + AI.perchAltClamp);
   } else if (flyer) {
-    const target = terrainY + prev.flightHeight;
+    let target = terrainY + prev.flightHeight;
+    if (sp.fleeStyle === 'flutter') {
+      target += Math.sin(out.stateTime * AI.flutterBobRate + prev.id * 0.37) * AI.flutterBobAmp;
+    } else if (sp.fleeStyle === 'sting' && prev.tagged && !prev.linked) {
+      target = ctx.playerPos.y + AI.stingHoverAbovePlayer;
+    }
     const k = Math.min(1, AI.flyClimbRate * dt);
     out.pos.y = prev.pos.y + (target - prev.pos.y) * k;
   } else if (swimmer) {

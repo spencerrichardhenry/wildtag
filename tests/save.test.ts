@@ -94,6 +94,22 @@ describe('encodeSave / decodeSave', () => {
     expect(decoded?.critterPersist).toEqual(state.critterPersist);
   });
 
+  it('round-trips track-expiry and slowing timers', () => {
+    const state = sampleSave({
+      critterPersist: {
+        5: {
+          tagged: true,
+          linked: false,
+          trackProgress: 0,
+          trackEmptyFor: 83.25,
+          slowFor: 12.5,
+          species: 'nectarwisp',
+        },
+      },
+    });
+    expect(decodeSave(encodeSave(state))?.critterPersist).toEqual(state.critterPersist);
+  });
+
   it('round-trips a negative critterPersist key (Cursed Castle fixed-slot gargoyle ids)', () => {
     // CritterManager.addFixedSlots (castle perches) and debugSpawn both hand
     // out ids from a reserved negative range (-1, -2, ...), distinct from the
@@ -162,6 +178,8 @@ describe('encodeSave / decodeSave', () => {
     expect(decoded!.critterPersist).toEqual(v1blob.critterPersist);
     // Haven defaults: charms 0, kits zeroed, roster [], no phantom V4 keys.
     expect(decoded!.inventory.charms).toBe(0);
+    expect(decoded!.inventory.honey).toBe(0);
+    expect(decoded!.inventory.slowDarts).toBe(0);
     expect(decoded!.inventory.kits).toEqual({ zipline: 0, beacon: 0, drone: 0 });
     expect(decoded!.roster).toEqual([]);
     expect('barter' in decoded!).toBe(false);
@@ -274,6 +292,40 @@ describe('encodeSave / decodeSave', () => {
 
     const nan = { ...sampleSave(), inventory: { ...sampleSave().inventory, charms: 'lots' } };
     expect(decodeSave(JSON.stringify(nan))).toBeNull();
+  });
+
+  // --- Field critters: honey + slowing darts --------------------------------
+
+  it('round-trips honey and slowing darts', () => {
+    const state = sampleSave();
+    state.inventory.honey = 6;
+    state.inventory.slowDarts = 11;
+    const decoded = decodeSave(encodeSave(state));
+    expect(decoded?.inventory.honey).toBe(6);
+    expect(decoded?.inventory.slowDarts).toBe(11);
+  });
+
+  it('defaults missing honey and slowing-dart fields to 0 for old saves', () => {
+    const state = sampleSave();
+    const { honey, slowDarts, ...legacyInventory } = state.inventory;
+    void honey;
+    void slowDarts;
+    const decoded = decodeSave(JSON.stringify({ ...state, inventory: legacyInventory }));
+    expect(decoded).not.toBeNull();
+    expect(decoded?.inventory.honey).toBe(0);
+    expect(decoded?.inventory.slowDarts).toBe(0);
+  });
+
+  it('rejects negative or non-numeric honey and slowing-dart counts', () => {
+    const negativeHoney = sampleSave();
+    negativeHoney.inventory.honey = -1;
+    expect(decodeSave(JSON.stringify(negativeHoney))).toBeNull();
+
+    const badDarts = {
+      ...sampleSave(),
+      inventory: { ...sampleSave().inventory, slowDarts: 'several' },
+    };
+    expect(decodeSave(JSON.stringify(badDarts))).toBeNull();
   });
 
   // --- Cursed Castle: mushroom (inventory) ------------------------------------

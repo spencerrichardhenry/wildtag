@@ -6,6 +6,7 @@ import type { CritterView } from '../critters/manager.ts';
 import { speciesById } from '../critters/species.ts';
 import { HEALTH, MOVE, SCATTER } from '../core/constants.ts';
 import { toast } from './toasts.ts';
+import { itemThumbnailUrl } from './model-thumbnails.ts';
 import {
   HUD as HUDT,
   CARDINALS as CARDINAL_LABEL,
@@ -110,13 +111,24 @@ const RES_COLOR: Record<string, string> = {
   resin: hex(SCATTER.colors.resin),
   shard: hex(SCATTER.colors.shard),
   spark: hex(SCATTER.colors.spark),
+  honey: '#e6a83c', // Nectar Wisp amber honey
   mushroom: '#9c5bd0', // glow-mushroom cap colour
   wood: '#8a5a35', // timberchomp produce — dam-brown
   stone: '#8f8f92', // pebbleshrew produce — flint grey
   dart: '#66e0ff',
+  slow: '#77d6b2', // honey-weighted Slowing Dart
   charm: '#d98cff', // Bond Charm — distinct violet
   purifier: '#8ef0c0', // Purifying Dart — pale minty green
   rp: '#9fd8b8',
+};
+
+const RES_TAG: Readonly<Record<string, string>> = {
+  rp: 'RP',
+  dart: 'darts',
+  slow: 'slow',
+  honey: 'honey',
+  charm: 'charms',
+  purifier: 'Purifiers',
 };
 
 const RING_IN = '#6fe08a'; // within track radius (green)
@@ -174,8 +186,10 @@ export class HUD {
   private readonly resEls = new Map<string, { dot: HTMLElement; count: HTMLElement; last: number }>();
   private readonly slots: {
     root: HTMLDivElement;
-    nameEl: HTMLSpanElement;
+    art: HTMLImageElement;
+    fallback: HTMLSpanElement;
     badge: HTMLDivElement;
+    item: ItemId | null;
   }[] = [];
   /** Last-painted selected slot index (0-based) — `shake()` reads this to
    *  know which slot's DOM node to flash, without main.ts having to pass it
@@ -247,7 +261,7 @@ export class HUD {
 
     // --- Resource strip (top-left) -----------------------------------------
     const res = el('div', 'wt-resources');
-    for (const kind of ['fiber', 'resin', 'shard', 'spark', 'mushroom', 'wood', 'stone', 'dart', 'charm', 'purifier', 'rp'] as const) {
+    for (const kind of ['fiber', 'resin', 'shard', 'spark', 'honey', 'mushroom', 'wood', 'stone', 'dart', 'slow', 'charm', 'purifier', 'rp'] as const) {
       const item = el('div', 'wt-res');
       const dot = el('span', 'wt-res-dot');
       if (kind === 'rp') dot.classList.add('wt-res-rp');
@@ -255,16 +269,7 @@ export class HUD {
       const count = el('span', 'wt-res-count');
       count.textContent = '0';
       const tag = el('span', 'wt-res-tag');
-      tag.textContent =
-        kind === 'rp'
-          ? 'RP'
-          : kind === 'dart'
-            ? 'darts'
-            : kind === 'charm'
-              ? 'charms'
-              : kind === 'purifier'
-                ? 'Purifiers'
-                : '';
+      tag.textContent = RES_TAG[kind] ?? '';
       item.append(dot, count, tag);
       res.appendChild(item);
       this.resEls.set(kind, { dot, count, last: -1 });
@@ -328,11 +333,16 @@ export class HUD {
       const slot = el('div', 'wt-slot');
       const keyEl = el('span', 'wt-slot-key');
       keyEl.textContent = String(i + 1);
-      const nameEl = el('span', 'wt-slot-name');
+      const art = el('img', 'wt-slot-art');
+      art.alt = '';
+      art.draggable = false;
+      art.style.display = 'none';
+      const fallback = el('span', 'wt-slot-fallback');
       const badge = el('div', 'wt-slot-badge');
-      slot.append(keyEl, nameEl, badge);
+      slot.setAttribute('aria-label', `Hotbar ${i + 1}: empty`);
+      slot.append(keyEl, art, fallback, badge);
       hotbar.appendChild(slot);
-      this.slots.push({ root: slot, nameEl, badge });
+      this.slots.push({ root: slot, art, fallback, badge, item: null });
     }
     this.root.appendChild(hotbar);
 
@@ -457,7 +467,7 @@ export class HUD {
     }
     if (!this.hintedTag && frame.critters.some((c) => c.tagged && !c.linked)) {
       this.hintedTag = true;
-      toast("Stay within the ring's radius!");
+      toast("Stay within the ring — an empty tag expires after 2 minutes");
     }
   }
 
@@ -593,10 +603,12 @@ export class HUD {
       resin: inv.resin,
       shard: inv.shard,
       spark: inv.spark,
+      honey: inv.honey,
       mushroom: inv.mushroom,
       wood: inv.wood,
       stone: inv.stone,
       dart: inv.darts,
+      slow: inv.slowDarts,
       charm: inv.charms,
       purifier: inv.purifiers,
       rp: inv.rp,
@@ -625,11 +637,23 @@ export class HUD {
       const item = frame.hotbarSlots[i] ?? null;
       const count = item ? itemCount(inv, item) : 0;
       const label = hotbarItemLabel(item);
-      if (slot.nameEl.textContent !== label) slot.nameEl.textContent = label;
+      if (slot.item !== item) {
+        slot.item = item;
+        const url = item ? itemThumbnailUrl(item) : null;
+        slot.art.style.display = url ? '' : 'none';
+        slot.art.src = url ?? '';
+        slot.fallback.style.display = item && !url ? '' : 'none';
+        slot.fallback.textContent = item ? label.slice(0, 1) : '';
+        slot.root.title = label;
+        slot.root.setAttribute('aria-label', item ? `${label}, ${count} owned` : `Hotbar ${i + 1}: empty`);
+      }
       slot.root.classList.toggle('wt-slot-dim', item === null || count <= 0);
       slot.root.classList.toggle('wt-slot-active', frame.selectedSlot === i);
       const badge = item ? String(count) : '';
-      if (slot.badge.textContent !== badge) slot.badge.textContent = badge;
+      if (slot.badge.textContent !== badge) {
+        slot.badge.textContent = badge;
+        slot.root.setAttribute('aria-label', item ? `${label}, ${count} owned` : `Hotbar ${i + 1}: empty`);
+      }
     }
   }
 
@@ -775,7 +799,7 @@ export class HUD {
         node.arrow.style.borderBottomColor = color;
       }
 
-      const distText = `${r.dist.toFixed(1)}m`;
+      const distText = `${r.dist.toFixed(1)}m · ${c.trackProgress.toFixed(1)}/${sp.trackTime}s`;
       if (node.label.textContent !== distText) node.label.textContent = distText;
     }
 
@@ -1139,10 +1163,22 @@ const STYLE = `
   font-size: 10px;
   color: #9fb0b8;
 }
-.wt-slot-name { font-size: 11px; color: #dbe6ea; }
+.wt-slot-art {
+  display: block;
+  width: 48px;
+  height: 46px;
+  object-fit: contain;
+  pointer-events: none;
+  filter: drop-shadow(0 3px 3px rgba(0,0,0,0.45));
+}
+.wt-slot-fallback {
+  display: none;
+  font-size: 18px;
+  font-weight: bold;
+  color: #dbe6ea;
+}
 /* dim = unusable right now (empty slot or a zero-count item) */
 .wt-slot-dim { opacity: 0.42; }
-.wt-slot-dim .wt-slot-name { color: #8a9aa2; }
 .wt-slot-active {
   border-color: #a8e6bc;
   box-shadow: 0 0 0 1px #a8e6bc, 0 0 10px rgba(120, 220, 160, 0.4);

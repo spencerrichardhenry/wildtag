@@ -1,5 +1,6 @@
 import type { RosterEntry } from '../critters/roster.ts';
 import { speciesById } from '../critters/species.ts';
+import { critterThumbnailUrl } from './model-thumbnails.ts';
 import type { ScreenDef, ScreenManager } from './screens.ts';
 
 // ---------------------------------------------------------------------------
@@ -74,7 +75,58 @@ function injectStyles(): void {
       background: rgba(255, 255, 255, 0.03);
       padding: 10px 14px;
     }
-    .wt-roster-id { flex: 1 1 auto; }
+    .wt-roster-portrait {
+      position: relative;
+      width: 84px;
+      height: 84px;
+      flex: 0 0 84px;
+      display: grid;
+      place-items: center;
+      border: 1px solid rgba(200, 220, 230, 0.18);
+      border-radius: 9px;
+      background:
+        radial-gradient(circle at 50% 40%, rgba(150, 195, 215, 0.19), transparent 67%),
+        rgba(8, 12, 16, 0.52);
+    }
+    .wt-roster-portrait img {
+      display: block;
+      width: 80px;
+      height: 80px;
+      object-fit: contain;
+      pointer-events: none;
+      filter: drop-shadow(0 5px 5px rgba(0,0,0,0.48));
+    }
+    .wt-roster-portrait-fallback {
+      font-size: 30px;
+      font-weight: bold;
+      color: #9fd8b8;
+    }
+    .wt-roster-portrait::after {
+      content: attr(data-tooltip);
+      position: absolute;
+      left: 50%;
+      top: calc(100% + 7px);
+      z-index: 8;
+      transform: translate(-50%, -4px);
+      padding: 5px 8px;
+      border: 1px solid rgba(190, 220, 235, 0.3);
+      border-radius: 5px;
+      background: rgba(8, 11, 14, 0.96);
+      color: #f1f5f6;
+      font-size: 12px;
+      line-height: 1;
+      white-space: nowrap;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 80ms ease, transform 80ms ease;
+      box-shadow: 0 5px 14px rgba(0,0,0,0.45);
+    }
+    .wt-roster-portrait:hover::after,
+    .wt-roster-portrait:focus-visible::after {
+      opacity: 1;
+      transform: translate(-50%, 0);
+    }
+    .wt-roster-id { flex: 1 1 auto; min-width: 110px; }
     .wt-roster-nick { font-size: 15px; font-weight: bold; }
     .wt-roster-species { font-size: 12px; color: #9fd8b8; }
     .wt-roster-status {
@@ -99,6 +151,11 @@ function injectStyles(): void {
     .wt-roster-btn.wt-roster-release { background: rgba(220, 120, 90, 0.2); }
     .wt-roster-btn.wt-roster-release:hover:not(:disabled) { background: rgba(220, 120, 90, 0.32); }
     .wt-roster-btn.wt-roster-arm { background: rgba(220, 120, 90, 0.4); }
+    @media (max-width: 720px) {
+      .wt-roster-row { align-items: flex-start; flex-wrap: wrap; }
+      .wt-roster-status { margin-left: auto; padding-top: 8px; }
+      .wt-roster-actions { flex: 1 0 100%; justify-content: flex-end; }
+    }
   `;
   document.head.appendChild(style);
 }
@@ -174,6 +231,27 @@ export function createRosterScreen(deps: {
     const row = document.createElement('div');
     row.className = 'wt-roster-row';
 
+    const portrait = document.createElement('div');
+    portrait.className = 'wt-roster-portrait';
+    portrait.tabIndex = 0;
+    const speciesName = sp?.name ?? entry.speciesId;
+    portrait.dataset.tooltip = `${entry.nickname} · ${speciesName}`;
+    portrait.setAttribute('aria-label', `${entry.nickname}, ${speciesName}`);
+    const thumbnail = critterThumbnailUrl(entry.speciesId, entry.id);
+    if (thumbnail) {
+      const image = document.createElement('img');
+      image.src = thumbnail;
+      image.alt = '';
+      image.draggable = false;
+      portrait.appendChild(image);
+    } else {
+      const fallback = document.createElement('span');
+      fallback.className = 'wt-roster-portrait-fallback';
+      fallback.textContent = speciesName.slice(0, 1).toUpperCase();
+      portrait.appendChild(fallback);
+    }
+    row.appendChild(portrait);
+
     const idBlock = document.createElement('div');
     idBlock.className = 'wt-roster-id';
     const nick = document.createElement('div');
@@ -181,7 +259,7 @@ export function createRosterScreen(deps: {
     nick.textContent = entry.nickname;
     const species = document.createElement('div');
     species.className = 'wt-roster-species';
-    species.textContent = sp?.name ?? entry.speciesId;
+    species.textContent = speciesName;
     idBlock.append(nick, species);
     row.appendChild(idBlock);
 

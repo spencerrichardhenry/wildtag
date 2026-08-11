@@ -914,6 +914,11 @@ export const ANIM = {
   flapAmpBase: 0.5,
   flapAmpPerSpeed: 0.06,
   flapIdleAmp: 0.06,
+  /** Low field flyers keep their wings visibly alive even while hovering. */
+  flutterFlapFreq: 20,
+  flutterFlapAmp: 0.78,
+  stingFlapFreq: 24,
+  stingFlapAmp: 0.58,
 
   // --- Haven Village whimsy pass (per-species specials) ---------------------
   /** Prismhorse: extra phase (rad) added per leg index so the 16-leg gait reads
@@ -987,11 +992,26 @@ export const AI = {
   /** Zigzag flee: swerve angle (rad) flipped every `zigzagPeriod` s. */
   zigzagAngle: (55 * Math.PI) / 180,
   zigzagPeriod: 0.7,
+  /** Shardwing flutter: much sharper, faster alternating flight legs. */
+  flutterAngle: (72 * Math.PI) / 180,
+  flutterPeriod: 0.38,
+  flutterTurnRate: 6.5,
+  flutterBobRate: 4.8,
+  flutterBobAmp: 0.8,
   /** Fly flee: cruise altitude band above terrain (m), picked per-individual. */
   flyHeightMin: 10,
   flyHeightMax: 16,
   /** Low-hover flyers (bumblewhale) drift this far above terrain (m). */
   hoverHeightLow: 3,
+  /** Shardwings and Nectar Wisps stay low enough to track from the ground. */
+  flutterHeight: 4.2,
+  stingPatrolHeight: 2.6,
+  /** Nectar Wisp contact attack while tagged and not yet Linked. */
+  stingHoverAbovePlayer: 0.9,
+  stingRange: 1.55,
+  stingCooldown: 2.4,
+  stingDamage: 8,
+  stingKnockback: 3.5,
   /** Vertical approach rate toward the target flight altitude (1/s lerp). */
   flyClimbRate: 1.5,
   /** Wide-arc yaw sweep rate while a flyer loops (rad/s). */
@@ -1122,6 +1142,11 @@ export const CRYSTAL = {
 export const TRACKING = {
   /** Progress decay rate outside the ring, as a fraction of the accrual rate. */
   trackDecayFactor: 0.5,
+  /** A tagged circle that stays completely empty this long disappears. */
+  emptyExpiryS: 120,
+  /** Slowing Darts reduce planar critter movement by 20% for 20 seconds. */
+  slowMultiplier: 0.8,
+  slowDurationS: 20,
   /** Golden Dart Tip reward (Haven V4): inside-ring fill-rate multiplier. */
   goldenDartFill: 1.5,
 } as const;
@@ -1545,6 +1570,7 @@ export const FARM = {
     resin: 0xe0932a,
     shard: 0xb07fe0,
     spark: 0xffe06a,
+    honey: 0xe6a83c,
     // Mushrooms aren't farmable (forage-only) but ResourceKind is exhaustive
     // here — reuse the mushroom cap colour so this compiles meaningfully.
     mushroom: 0x9c5bd0,
@@ -1666,6 +1692,7 @@ export const HANDS = {
    *  reads as the same color in the inventory screen and in-hand. */
   itemColor: {
     darts: 0x66e0ff,
+    slowDarts: 0x77d6b2,
     purifiers: 0x8ef0c0,
     charms: 0xd98cff,
     'kit:zipline': 0xf0c058,

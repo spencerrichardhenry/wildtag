@@ -93,11 +93,13 @@ describe('inventory', () => {
       resin: 0,
       shard: 0,
       spark: 0,
+      honey: 0,
       mushroom: 0,
       wood: 0,
       stone: 0,
       rp: 0,
       darts: 0,
+      slowDarts: 0,
       charms: 0,
       purifiers: 0,
       walls: 0,
@@ -124,6 +126,13 @@ describe('inventory', () => {
     expect(inv.mushroom).toBe(3);
     expect(spend(inv, { mushroom: 2 })!.mushroom).toBe(1);
     expect(spend(inv, { mushroom: 9 })).toBeNull();
+  });
+
+  it('inventory tracks Nectar Wisp honey', () => {
+    const inv = createInventory();
+    addResource(inv, 'honey', 2);
+    expect(inv.honey).toBe(2);
+    expect(spend(inv, { honey: 1 })!.honey).toBe(1);
   });
 
   // --- Inventory + Building Task 1: farm-only wood/stone ---------------------

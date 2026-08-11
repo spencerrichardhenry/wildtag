@@ -4,7 +4,7 @@ import { SPECIES } from '../critters/species.ts';
 import type { Biome, SpeciesDef } from '../core/types.ts';
 
 // ---------------------------------------------------------------------------
-// Field Guide (Task 10, Tab). A silhouette-style grid of all 8 species: each
+// Field Guide (Task 10, Tab). A silhouette-style grid of all 17 species: each
 // still-unknown critter shows a dark "???" card with only a biome hint, while
 // a Linked critter reveals its coloured name, tracking stats, biome, flee
 // style, a flavour line and a "Linked ✓" badge. Data comes from the static
@@ -21,6 +21,8 @@ const FLAVOR: Record<string, string> = {
   mirefin: 'Half fish, half rumour, all mud. Surfaces only to judge you.',
   craghorn: 'Ledge-hopping cliff dweller that treats gravity as a suggestion.',
   zephyrfinch: 'A gust with feathers — blink and it is a dot on the horizon.',
+  shardwing: 'Its stained-crystal wings never choose the same direction twice.',
+  nectarwisp: 'A floating amber lantern that takes tracker darts very personally.',
   emberpup: 'Warm to the touch and impossible to corner; zigzags on principle.',
   lumenstag: 'The living lantern of the deep wood. Few ever see it. Fewer link it.',
   gargoyle: 'Stone by day, wings by night — it only stirs once you dare tag it.',
@@ -34,6 +36,8 @@ const FLEE_LABEL: Record<SpeciesDef['fleeStyle'], string> = {
   sprint: 'sprints',
   zigzag: 'zigzags',
   fly: 'takes flight',
+  flutter: 'flits in sharp zags',
+  sting: 'turns and stings',
   swim: 'dives & swims',
   ledge: 'scales ledges',
   perch: 'perches',

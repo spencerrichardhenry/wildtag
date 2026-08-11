@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { AI, WORLD_SEED } from '../core/constants.ts';
+import { AI, TRACKING, WORLD_SEED } from '../core/constants.ts';
 import type { Biome, CritterState, GroundQuery, Vec3 } from '../core/types.ts';
 import { hash2, mulberry32 } from '../core/rng.ts';
 import { biomeAt, groundNormalAt, heightAt } from '../world/terrain.ts';
@@ -43,6 +43,10 @@ export interface CritterView {
   tagged: boolean;
   linked: boolean;
   trackProgress: number;
+  /** Always present on manager views; optional for older test/save literals. */
+  trackEmptyFor?: number;
+  /** Gameplay seconds remaining on a Slowing Dart debuff. */
+  slowFor?: number;
 }
 
 const CELL = AI.cellSize;
@@ -108,7 +112,9 @@ export function spawnSlotsForCell(cx: number, cz: number): SpawnSlot[] {
 
     // Land species may not home on a water tile; fliers/swimmers are exempt.
     const overWater = biomeAt(x, z) === 'water';
-    if (overWater && def.fleeStyle !== 'swim' && def.fleeStyle !== 'fly') continue;
+    const flies =
+      def.fleeStyle === 'fly' || def.fleeStyle === 'flutter' || def.fleeStyle === 'sting';
+    if (overWater && def.fleeStyle !== 'swim' && !flies) continue;
 
     // Nothing spawns inside Haven Village — the plaza is for villagers.
     if (inVillage(x, z)) continue;
@@ -119,7 +125,11 @@ export function spawnSlotsForCell(cx: number, cz: number): SpawnSlot[] {
     const flightHeight =
       species === 'bumblewhale'
         ? AI.hoverHeightLow
-        : AI.flyHeightMin + h(salt + 4, cx, cz) * (AI.flyHeightMax - AI.flyHeightMin);
+        : species === 'shardwing'
+          ? AI.flutterHeight
+          : species === 'nectarwisp'
+            ? AI.stingPatrolHeight
+            : AI.flyHeightMin + h(salt + 4, cx, cz) * (AI.flyHeightMax - AI.flyHeightMin);
     out.push({ id: slotId(cx, cz, i), species, home: { x, y, z }, flightHeight });
   }
   return out;
@@ -129,6 +139,10 @@ interface PersistState {
   tagged: boolean;
   linked: boolean;
   trackProgress: number;
+  /** Seconds progress has remained fully empty while the tag is live. */
+  trackEmptyFor?: number;
+  /** Gameplay seconds remaining on the 20% movement slow. */
+  slowFor?: number;
   /** Species id, remembered so `linkedSpecies()` can resolve linked slots. */
   species?: string;
   /**
@@ -146,6 +160,8 @@ interface ActiveCritter {
   rng: () => number;
   /** Blinking tracking beacon (child of `group`) while tagged-not-linked. */
   beacon: THREE.Mesh | null;
+  /** Local contact-attack cadence; only read for fleeStyle:'sting'. */
+  stingCooldown: number;
 }
 
 /** Beacon: a small bright octahedron that hovers above a tagged critter. */
@@ -189,6 +205,9 @@ export class CritterManager {
    * gameplay flags below.
    */
   private listCache: CritterView[] | null = null;
+
+  /** Main-game hook for Nectar Wisp contact stings (keeps health out of this system). */
+  onPlayerSting: ((damage: number, from: Vec3) => void) | null = null;
 
   constructor(scene: THREE.Scene) {
     this.scene = scene;
@@ -250,6 +269,25 @@ export class CritterManager {
       entry.group.rotation.y = s.yaw;
       animateCritter(entry.parts, Math.hypot(s.vel.x, s.vel.z), this.worldTime, dt, s.species);
 
+      // Nectar Wisp: once tagged it pursues via stepAI's 'sting' steering and
+      // deals contact damage on a readable cadence until Link/expiry. The
+      // callback is deliberately health-agnostic; main.ts applies the same HP
+      // and knockback rules used by other world threats.
+      entry.stingCooldown = Math.max(0, entry.stingCooldown - dt);
+      if (def.fleeStyle === 'sting' && s.tagged && !s.linked) {
+        const d = Math.hypot(
+          s.pos.x - playerPos.x,
+          s.pos.y - (playerPos.y + AI.stingHoverAbovePlayer),
+          s.pos.z - playerPos.z,
+        );
+        if (d <= AI.stingRange && entry.stingCooldown <= 0) {
+          entry.stingCooldown = AI.stingCooldown;
+          this.onPlayerSting?.(AI.stingDamage, { ...s.pos });
+        }
+      } else {
+        entry.stingCooldown = 0;
+      }
+
       // Tracking beacon: shown while tagged-not-linked, blinking; removed once
       // the critter Links (or is somehow untagged).
       if (s.tagged && !s.linked) {
@@ -262,6 +300,48 @@ export class CritterManager {
         this.removeBeacon(entry);
       }
     }
+  }
+
+  /**
+   * Advance tag-expiry and Slowing Dart clocks for every touched critter,
+   * including streamed-out slots. Called from the gameplay-gated tracking
+   * loop so menus freeze these timers just like ring progress.
+   */
+  tickTrackingTimers(dt: number): void {
+    if (!(dt > 0)) return;
+    let changed = false;
+    for (const [id, p] of this.registry) {
+      if ((p.slowFor ?? 0) > 0) {
+        const remaining = (p.slowFor ?? 0) - dt;
+        // Avoid leaving a sub-epsilon debuff alive for one extra frame after
+        // an exact-duration tick split (e.g. 19.99 + 0.01 seconds).
+        p.slowFor = remaining <= 1e-9 ? 0 : remaining;
+        changed = true;
+      }
+
+      if (p.tagged && !p.linked && p.trackProgress <= 0) {
+        p.trackEmptyFor = (p.trackEmptyFor ?? 0) + dt;
+        changed = true;
+        if (p.trackEmptyFor >= TRACKING.emptyExpiryS) {
+          p.tagged = false;
+          p.trackProgress = 0;
+          p.trackEmptyFor = 0;
+        }
+      } else if ((p.trackEmptyFor ?? 0) !== 0) {
+        p.trackEmptyFor = 0;
+        changed = true;
+      }
+
+      const entry = this.active.get(id);
+      if (entry) {
+        entry.state.tagged = p.tagged;
+        entry.state.linked = p.linked;
+        entry.state.trackProgress = p.trackProgress;
+        entry.state.trackEmptyFor = p.trackEmptyFor ?? 0;
+        entry.state.slowFor = p.slowFor ?? 0;
+      }
+    }
+    if (changed) this.invalidateList();
   }
 
   private ensureBeacon(entry: ActiveCritter, def: { size: number }): void {
@@ -304,7 +384,7 @@ export class CritterManager {
   private persistFor(id: number): PersistState {
     let p = this.registry.get(id);
     if (!p) {
-      p = { tagged: false, linked: false, trackProgress: 0 };
+      p = { tagged: false, linked: false, trackProgress: 0, trackEmptyFor: 0, slowFor: 0 };
       this.registry.set(id, p);
     }
     return p;
@@ -334,6 +414,8 @@ export class CritterManager {
       tagged: persist?.tagged ?? false,
       linked: persist?.linked ?? false,
       trackProgress: persist?.trackProgress ?? 0,
+      trackEmptyFor: persist?.trackEmptyFor ?? 0,
+      slowFor: persist?.slowFor ?? 0,
       home: { ...slot.home },
       flightHeight: slot.flightHeight,
       stateDur: perch
@@ -341,7 +423,7 @@ export class CritterManager {
         : AI.idleMin + rng() * (AI.idleMax - AI.idleMin),
       farTime: 0,
     };
-    this.active.set(slot.id, { state, group, parts, rng, beacon: null });
+    this.active.set(slot.id, { state, group, parts, rng, beacon: null, stingCooldown: 0 });
     this.invalidateList();
   }
 
@@ -353,11 +435,13 @@ export class CritterManager {
     // only allocate a registry entry when there is something non-default to
     // remember (keeps the registry from growing unboundedly on long roams).
     const s = entry.state;
-    if (s.tagged || s.linked || s.trackProgress > 0 || this.registry.has(id)) {
+    if (s.tagged || s.linked || s.trackProgress > 0 || (s.slowFor ?? 0) > 0 || this.registry.has(id)) {
       const p = this.persistFor(id);
       p.tagged = s.tagged;
       p.linked = s.linked;
       p.trackProgress = s.trackProgress;
+      p.trackEmptyFor = s.trackEmptyFor ?? 0;
+      p.slowFor = s.slowFor ?? 0;
       p.species = s.species;
     }
     this.removeBeacon(entry);
@@ -390,9 +474,18 @@ export class CritterManager {
   setTagged(id: number, value = true): void {
     const p = this.persistFor(id);
     p.tagged = value;
+    if (value) {
+      // A fresh dart renews an empty tag's full two-minute opportunity.
+      if (p.trackProgress <= 0) p.trackEmptyFor = 0;
+    } else {
+      p.trackProgress = 0;
+      p.trackEmptyFor = 0;
+    }
     const entry = this.active.get(id);
     if (entry) {
       entry.state.tagged = value;
+      entry.state.trackProgress = p.trackProgress;
+      entry.state.trackEmptyFor = p.trackEmptyFor ?? 0;
       p.species = entry.state.species;
       this.invalidateList();
     }
@@ -400,10 +493,28 @@ export class CritterManager {
 
   /** Persist and (if active) apply the tracking progress for a critter. */
   setTrackProgress(id: number, value: number): void {
-    this.persistFor(id).trackProgress = value;
+    const p = this.persistFor(id);
+    const wasPositive = p.trackProgress > 0;
+    p.trackProgress = value;
+    // Any non-empty progress interrupts the empty-circle expiry. When decay
+    // first reaches zero, start a fresh 120-second empty window from there.
+    if (value > 0 || wasPositive) p.trackEmptyFor = 0;
     const entry = this.active.get(id);
     if (entry) {
       entry.state.trackProgress = value;
+      entry.state.trackEmptyFor = p.trackEmptyFor ?? 0;
+      this.invalidateList();
+    }
+  }
+
+  /** Apply or refresh the Slowing Dart debuff on a live/persisted critter. */
+  setSlowed(id: number, duration = TRACKING.slowDurationS): void {
+    const p = this.persistFor(id);
+    p.slowFor = Math.max(p.slowFor ?? 0, duration);
+    const entry = this.active.get(id);
+    if (entry) {
+      entry.state.slowFor = p.slowFor;
+      p.species = entry.state.species;
       this.invalidateList();
     }
   }
@@ -556,6 +667,8 @@ export class CritterManager {
       entry.state.tagged = p.tagged;
       entry.state.linked = p.linked;
       entry.state.trackProgress = p.trackProgress;
+      entry.state.trackEmptyFor = p.trackEmptyFor ?? 0;
+      entry.state.slowFor = p.slowFor ?? 0;
     }
     this.invalidateList();
   }
@@ -569,9 +682,18 @@ export class CritterManager {
    * deactivate-by-distance and persistence).
    */
   debugSpawn(speciesId: string, pos: Vec3): number | null {
-    if (!speciesById(speciesId)) return null;
+    const sp = speciesById(speciesId);
+    if (!sp) return null;
     const id = this.debugIdCounter--;
-    const slot: SpawnSlot = { id, species: speciesId, home: { ...pos }, flightHeight: AI.flyHeightMin };
+    const flightHeight =
+      speciesId === 'shardwing'
+        ? AI.flutterHeight
+        : speciesId === 'nectarwisp'
+          ? AI.stingPatrolHeight
+          : sp.fleeStyle === 'fly'
+            ? AI.flyHeightMin
+            : 0;
+    const slot: SpawnSlot = { id, species: speciesId, home: { ...pos }, flightHeight };
     this.activate(slot);
     return id;
   }
@@ -602,6 +724,8 @@ function view(s: CritterState): CritterView {
     tagged: s.tagged,
     linked: s.linked,
     trackProgress: s.trackProgress,
+    trackEmptyFor: s.trackEmptyFor ?? 0,
+    slowFor: s.slowFor ?? 0,
   };
 }
 
