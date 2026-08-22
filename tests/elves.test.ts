@@ -187,6 +187,9 @@ describe('ElfSystem — wall collision', () => {
         }
       }
     },
-    20_000,
+    // 45s (was 20s): the exhaustive sim legitimately runs 14-19s on an idle
+    // machine and the fidelity-3 sessions showed ambient load tips it over —
+    // the assertion is wall-collision correctness, not speed.
+    45_000,
   );
 });

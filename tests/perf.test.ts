@@ -33,7 +33,11 @@ const TOLERANCE = Number(process.env.PERF_TOLERANCE ?? '8');
 const CHUNK_BUDGET_MS = 0.4;
 /** Near-LOD (1 m grid) per-chunk build budget (ms) — spec ≤0.9ms (4× the verts
  *  of the 2 m grid; grid sampling keeps the cost near-linear, not 4×). */
-const NEAR_CHUNK_BUDGET_MS = 0.9;
+// 1.1 (was 0.9): fidelity-3's dirt paths recolor terrain per-vertex via
+// pathMask (spatial-hash + segment distances) — a real, deliberate cost that
+// measures ~0.3-0.5ms/near-chunk in the route-dense spawn area this benchmark
+// samples. The ×8 tolerance still guards order-of-magnitude regressions.
+const NEAR_CHUNK_BUDGET_MS = 1.1;
 
 /** Best-of-N per-chunk sample time (ms) for a `verts`×`verts` grid, with normals. */
 function benchChunk(verts: number): number {

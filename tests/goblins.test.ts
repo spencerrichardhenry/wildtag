@@ -310,5 +310,6 @@ describe('goblins FSM — wall collision', () => {
         }
       }
     }
-  }, 10_000);
+    // 30s (was 10s): same rationale as the elves sim — correctness, not speed.
+  }, 30_000);
 });
