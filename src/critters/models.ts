@@ -507,267 +507,298 @@ function buildSkitterling(rng: () => number): { group: THREE.Group; parts: Critt
   return { group: g, parts: { legs, head, body } };
 }
 
-/**
- * Bellowbuck — a big plump elk/moose strider. Smooth rounded barrel with a
- * lighter belly, a thick neck, a big-cheeked soft head with plump ears, chunky
- * ORGANIC antlers (smooth tapered branches), strider legs and a flick tail.
- */
+/** Bellowbuck — gentle plush elk crowned by broad mossy palmate antlers. */
 function buildBellowbuck(rng: () => number): { group: THREE.Group; parts: CritterParts } {
   const g = new THREE.Group();
-  const hide = jitterColor(0x6b5236, rng, 0.04);
-  const hideLight = jitterColor(0x8a6d47, rng, 0.03);
-  const antlerC = jitterColor(0xcabf9a, rng, 0.02, 0.05);
+  const hide = jitterColor(0x8a5b37, rng, 0.04);
+  const hideLight = jitterColor(0xf0cf91, rng, 0.04);
+  const hideDark = jitterColor(0x5c3a27, rng, 0.03);
+  const antlerC = jitterColor(0x71864d, rng, 0.05, 0.05);
 
   const body = new THREE.Group();
-  body.position.y = 1.35;
-  const barrel = capsule(0.44, 0.66, hide, {}, 2, 8);
-  barrel.rotation.x = Math.PI / 2; // lie along Z
+  body.position.y = 1.08;
+  const barrel = capsule(0.43, 0.62, hide, {}, 2, 8);
+  barrel.rotation.x = Math.PI / 2;
   body.add(barrel);
-  // Lighter plump underbelly, slightly bottom-heavy.
-  const belly = capsule(0.36, 0.5, hideLight, {}, 2, 6);
+  const belly = capsule(0.3, 0.45, hideLight, {}, 2, 6);
   belly.rotation.x = Math.PI / 2;
-  belly.position.y = -0.17;
+  belly.position.set(0, -0.2, 0.1);
   body.add(belly);
-  // Soft shoulder hump for a moose-y silhouette.
-  const hump = sphere(0.3, hide, {}, 6, 4);
-  hump.scale.set(0.95, 0.88, 0.85);
-  hump.position.set(0, 0.24, 0.34);
+  const hump = sphere(0.32, hideDark, {}, 7, 5);
+  hump.scale.set(1, 0.9, 0.85);
+  hump.position.set(0, 0.2, 0.3);
   body.add(hump);
   g.add(body);
 
   const head = new THREE.Group();
-  head.position.set(0, 1.62, 0.62);
-  const neck = capsule(0.18, 0.4, hide, {}, 2, 6);
-  neck.rotation.x = -0.6;
+  head.position.set(0, 1.28, 0.56);
+  const neck = capsule(0.2, 0.42, hideDark, {}, 2, 6);
+  neck.rotation.x = -0.42;
+  neck.position.set(0, 0.05, -0.06);
   head.add(neck);
-  const skull = sphere(0.23, hideLight, {}, 10, 7);
-  skull.scale.set(1, 0.95, 1.15);
-  skull.position.set(0, 0.34, 0.28);
+  // A wide, low, heavy head conveys the species' unflappable temperament.
+  const skull = sphere(0.29, hide, {}, 10, 7);
+  skull.scale.set(1.12, 0.9, 1.05);
+  skull.position.set(0, 0.31, 0.28);
   head.add(skull);
-  // Big soft plump muzzle.
-  const muzzle = sphere(0.15, hide, {}, 6, 4);
-  muzzle.scale.set(0.95, 0.85, 1.1);
-  muzzle.position.set(0, 0.26, 0.48);
+  const muzzle = sphere(0.19, hideLight, {}, 8, 5);
+  muzzle.scale.set(1.12, 0.75, 1.0);
+  muzzle.position.set(0, 0.21, 0.5);
   head.add(muzzle);
-  for (const e of eyePair(0.14, 0.44, 0.42, 0.085, { irisR: 0.6 }, 0.16)) head.add(e);
-  // Plump rounded ears.
+  for (const e of eyePair(0.155, 0.39, 0.49, 0.11, { iris: 0x4b3b25, irisR: 0.64 }, 0.08)) {
+    e.scale.y = 0.92;
+    head.add(e);
+  }
+  const nose = sphere(0.07, hideDark, {}, 6, 4);
+  nose.scale.set(1.25, 0.65, 0.55);
+  nose.position.set(0, 0.2, 0.69);
+  head.add(nose);
+  const mouth = smile(0.07, 0.012, hideDark);
+  mouth.position.set(0, 0.1, 0.66);
+  head.add(mouth);
   for (const sx of [-1, 1]) {
-    const ear = plumpEar(0.09, hide);
-    ear.position.set(sx * 0.19, 0.5, 0.2);
-    ear.rotation.z = sx * 0.7;
+    const ear = plumpEar(0.105, hideLight);
+    ear.position.set(sx * 0.26, 0.48, 0.19);
+    ear.rotation.z = sx * 0.95;
     head.add(ear);
   }
-  // Chunky ORGANIC antlers: a smooth connected beam curling up-and-out, plus a
-  // couple of rounded tines per side (soft, not spiky).
+
+  // Mossy palmate crowns: broad flattened palms dominate the silhouette, with
+  // three rounded fingers instead of sharp deer spikes.
   const chipRoll = rng();
-  for (const sx of [-1, 1]) {
-    // Some bucks have a snapped-short left antler.
-    const chipped = chipRoll < 0.3 && sx === -1;
-    const beamPts: ReadonlyArray<readonly [number, number, number]> = [
-      [sx * 0.13, 0.42, 0.18],
-      [sx * 0.24, 0.62, 0.16],
-      [sx * 0.34, 0.82, 0.12],
-      [sx * 0.4, 1.0, 0.06],
-    ];
-    head.add(segmentedHorn(chipped ? beamPts.slice(0, 3) : beamPts, 0.06, 0.025, antlerC, {}, 5));
-    if (!chipped) {
-      for (const [ty, tzr, ta] of [
-        [0.66, 0.2, 0.9],
-        [0.84, 0.16, 1.1],
-      ] as const) {
-        const tine = capsule(0.028, 0.15, antlerC, {}, 1, 5);
-        tine.position.set(sx * (0.26 + (ty - 0.66) * 0.55), ty, tzr);
-        tine.rotation.z = sx * ta;
-        head.add(tine);
-      }
+  for (const sx of [-1, 1] as const) {
+    head.add(segmentedHorn([
+      [sx * 0.13, 0.5, 0.18],
+      [sx * 0.22, 0.67, 0.12],
+      [sx * 0.34, 0.76, 0.08],
+    ], 0.065, 0.045, antlerC, {}, 6));
+    const palm = sphere(0.23, antlerC, {}, 8, 6);
+    palm.scale.set(1.05, 1.22, 0.3);
+    palm.position.set(sx * 0.43, 0.82, 0.08);
+    palm.rotation.z = sx * -0.18;
+    head.add(palm);
+    const fingers = chipRoll < 0.28 && sx === -1 ? 2 : 3;
+    for (let i = 0; i < fingers; i++) {
+      const finger = capsule(0.042, 0.17 + i * 0.025, antlerC, {}, 1, 5);
+      finger.position.set(sx * (0.31 + i * 0.12), 1.03 + i * 0.025, 0.07);
+      finger.rotation.z = sx * (-0.42 + i * 0.34);
+      head.add(finger);
     }
   }
   g.add(head);
 
   const legs: THREE.Object3D[] = [];
   for (const [sx, sz] of QUAD) {
-    const l = legGroup(sx * 0.25, 1.02, sz * 0.4, 0.1, 0.12, 1.02, hide, 0, 0x33251a);
+    const l = legGroup(sx * 0.25, 0.82, sz * 0.38, 0.1, 0.13, 0.82, hideDark, 0, 0x36251c);
     legs.push(l);
     g.add(l);
   }
   const tail = new THREE.Group();
-  tail.position.set(0, 1.45, -0.6);
-  const tm = capsule(0.06, 0.24, hide, {}, 2, 5);
-  tm.position.z = -0.16;
-  tm.rotation.x = Math.PI / 2 - 0.3;
+  tail.position.set(0, 1.15, -0.62);
+  const tm = sphere(0.1, hideLight, {}, 6, 4);
+  tm.scale.set(0.8, 1.0, 1.3);
+  tm.position.z = -0.08;
   tail.add(tm);
   g.add(tail);
   return { group: g, parts: { legs, head, body, tail } };
 }
 
-/**
- * Mirefin — a plump amphibious newt/tadpole. Fat smooth body with a pale
- * belly, big high-set froggy eyes over a wide happy smile, soft rounded dorsal
- * lobes (not spikes), stubby fin-feet and a broad rounded tail paddle.
- */
+/** Mirefin — saturated axolotl-dolphin with a six-petal pink head frill. */
 function buildMirefin(rng: () => number): { group: THREE.Group; parts: CritterParts } {
   const g = new THREE.Group();
-  const skin = jitterColor(0x496a6a, rng, 0.05);
-  const belly = jitterColor(0x9db09f, rng, 0.03);
+  const skin = jitterColor(0x169bb3, rng, 0.07);
+  const skinDark = jitterColor(0x087083, rng, 0.05);
+  const belly = jitterColor(0xa8f0e2, rng, 0.04);
+  const frillC = jitterColor(0xf27daf, rng, 0.05);
+  const frillLight = jitterColor(0xffb4cf, rng, 0.04);
 
   const body = new THREE.Group();
-  body.position.y = 0.3;
-  const torso = capsule(0.3, 0.5, skin, {}, 3, 9);
+  body.position.y = 0.32;
+  const torso = capsule(0.31, 0.52, skin, {}, 3, 9);
   torso.rotation.x = Math.PI / 2;
   body.add(torso);
-  const bel = capsule(0.22, 0.38, belly, {}, 2, 7);
+  const bel = capsule(0.2, 0.42, belly, {}, 2, 7);
   bel.rotation.x = Math.PI / 2;
-  bel.position.y = -0.14;
+  bel.position.set(0, -0.16, 0.06);
   body.add(bel);
-  // Soft rounded dorsal lobes (plump, not fin-spikes).
-  for (const [z, s] of [
-    [0.2, 0.8],
-    [-0.02, 1.0],
-    [-0.24, 0.8],
-  ] as const) {
-    const f = sphere(0.09 * s, skin, {}, 6, 4);
-    f.scale.set(0.45, 1.25, 0.9);
-    f.position.set(0, 0.28, z);
-    body.add(f);
-  }
   g.add(body);
 
   const head = new THREE.Group();
-  head.position.set(0, 0.36, 0.44);
-  const hb = sphere(0.24, skin, {}, 9, 7);
-  hb.scale.set(1.08, 0.85, 0.95);
+  head.position.set(0, 0.43, 0.46);
+  const hb = sphere(0.28, skin, {}, 10, 7);
+  hb.scale.set(1.1, 0.88, 0.96);
   head.add(hb);
-  // Bulging froggy eyes set high and close.
-  for (const e of eyePair(0.14, 0.15, 0.12, 0.095, { irisR: 0.6 }, 0.2)) head.add(e);
-  const snout = sphere(0.13, belly, {}, 7, 5);
-  snout.scale.set(1.15, 0.75, 1.0);
-  snout.position.set(0, -0.06, 0.16);
+  const snout = sphere(0.16, belly, {}, 7, 5);
+  snout.scale.set(1.25, 0.68, 0.8);
+  snout.position.set(0, -0.08, 0.22);
   head.add(snout);
-  // Wide happy frog smile.
-  const mouth = smile(0.085, 0.013, 0x22312e, 2.0);
-  mouth.position.set(0, 0.0, 0.26);
+  for (const e of eyePair(0.145, 0.07, 0.23, 0.12, { iris: 0x144d65, irisR: 0.67 }, 0.07)) {
+    head.add(e);
+  }
+  const mouth = smile(0.09, 0.015, skinDark, 1.95);
+  mouth.position.set(0, -0.1, 0.36);
   head.add(mouth);
+  for (const sx of [-1, 1]) {
+    const cheek = blush(0.06, frillLight);
+    cheek.position.set(sx * 0.24, -0.07, 0.27);
+    head.add(cheek);
+  }
+
+  // Three soft frill paddles on each cheek make a six-point axolotl halo.
+  for (const sx of [-1, 1] as const) {
+    for (const [i, yy, tilt] of [
+      [0, 0.18, 0.78],
+      [1, 0.02, 0.2],
+      [2, -0.14, -0.55],
+    ] as const) {
+      const frill = sphere(0.115 - i * 0.008, frillC, {}, 7, 5);
+      frill.scale.set(0.48, 1.24, 0.34);
+      frill.position.set(sx * (0.29 + i * 0.035), yy, 0.01);
+      frill.rotation.z = sx * -tilt;
+      head.add(frill);
+      const dot = blob(0.035, frillLight);
+      dot.position.set(sx * (0.31 + i * 0.035), yy + 0.02, 0.055);
+      head.add(dot);
+    }
+  }
   g.add(head);
 
   const legs: THREE.Object3D[] = [];
   for (const [sx, sz] of QUAD) {
-    const l = legGroup(sx * 0.22, 0.15, sz * 0.26, 0.045, 0.07, 0.15, skin, sx * 0.5);
+    const l = legGroup(sx * 0.23, 0.15, sz * 0.27, 0.045, 0.075, 0.15, skinDark, sx * 0.52);
     legs.push(l);
     g.add(l);
   }
-  // Broad rounded tail paddle.
+
+  // A huge vertical tail fan, attached at the joint for the existing sway.
   const tail = new THREE.Group();
-  tail.position.set(0, 0.3, -0.46);
-  const paddle = sphere(0.22, skin, {}, 8, 6);
-  paddle.scale.set(1.25, 1.0, 0.3);
-  paddle.position.z = -0.2;
+  tail.position.set(0, 0.34, -0.5);
+  const base = capsule(0.11, 0.25, skinDark, {}, 2, 6);
+  base.rotation.x = Math.PI / 2;
+  base.position.z = -0.12;
+  tail.add(base);
+  const paddle = sphere(0.27, frillC, {}, 9, 6);
+  paddle.scale.set(0.28, 1.25, 1.35);
+  paddle.position.set(0, 0.05, -0.34);
   tail.add(paddle);
   g.add(tail);
 
-  const wRoll = rng();
-  if (wRoll < 0.35) {
-    // A nicked tail fin — a small notch of belly colour.
-    const nick = blob(0.05, belly);
-    nick.position.set(0.16, 0.4, -0.6);
-    g.add(nick);
+  if (rng() < 0.35) {
+    const tailSpot = blob(0.055, frillLight);
+    tailSpot.position.set(0.04, 0.5, -0.78);
+    tail.add(tailSpot);
   }
   return { group: g, parts: { legs, head, body, tail } };
 }
 
-/**
- * Craghorn — a stocky mountain ram. Plump woolly body, a broad soft head with
- * a rounded beard, big curled ram horns — the horn keeps its RIDGED FACETING
- * (material identity), everything else is smooth — and chunky legs.
- */
+/** Craghorn — woolly tank with fat, fully curling faceted ram horns. */
 function buildCraghorn(rng: () => number): { group: THREE.Group; parts: CritterParts } {
   const g = new THREE.Group();
-  const wool = jitterColor(0x8b8a86, rng, 0.02, 0.06);
-  const woolDark = jitterColor(0x5f5d59, rng, 0.02, 0.05);
-  const hornC = jitterColor(0x6a5a44, rng, 0.03, 0.05);
+  const wool = jitterColor(0xc9c7bc, rng, 0.02, 0.06);
+  const woolDark = jitterColor(0x666d7a, rng, 0.03, 0.05);
+  const muzzleC = jitterColor(0xeee0c2, rng, 0.03);
+  const hornC = jitterColor(0x9a764b, rng, 0.04, 0.05);
 
   const body = new THREE.Group();
-  body.position.y = 0.72;
-  const barrel = capsule(0.36, 0.46, wool, {}, 3, 9);
+  body.position.y = 0.68;
+  const barrel = capsule(0.4, 0.5, wool, {}, 3, 9);
   barrel.rotation.x = Math.PI / 2;
   body.add(barrel);
-  // Plump woolly shoulder lump.
-  const woolLump = sphere(0.31, wool, {}, 9, 7);
-  woolLump.scale.set(1.05, 0.95, 0.85);
-  woolLump.position.set(0, 0.1, 0.24);
+  const woolLump = sphere(0.33, muzzleC, {}, 8, 6);
+  woolLump.scale.set(1.06, 0.9, 0.8);
+  woolLump.position.set(0, 0.08, 0.25);
   body.add(woolLump);
   g.add(body);
 
   const head = new THREE.Group();
-  head.position.set(0, 0.9, 0.46);
-  const skull = sphere(0.21, woolDark, {}, 9, 7);
-  skull.scale.set(1, 1, 1.12);
+  head.position.set(0, 0.87, 0.47);
+  const skull = sphere(0.25, woolDark, {}, 9, 7);
+  skull.scale.set(1.08, 0.98, 1.08);
   head.add(skull);
-  const muzzle = sphere(0.12, wool, {}, 7, 5);
-  muzzle.scale.set(1, 0.88, 1.05);
-  muzzle.position.set(0, -0.05, 0.18);
+  const forehead = sphere(0.16, wool, {}, 7, 5);
+  forehead.scale.set(1.15, 0.75, 0.55);
+  forehead.position.set(0, 0.12, 0.16);
+  head.add(forehead);
+  const muzzle = sphere(0.14, muzzleC, {}, 7, 5);
+  muzzle.scale.set(1.08, 0.75, 1.0);
+  muzzle.position.set(0, -0.08, 0.21);
   head.add(muzzle);
-  for (const e of eyePair(0.13, 0.07, 0.16, 0.08, { irisR: 0.58 }, 0.14)) head.add(e);
-  // Soft rounded beard (a plump teardrop, not a spike).
-  const beard = sphere(0.08, woolDark, {}, 6, 4);
-  beard.scale.set(0.8, 1.5, 0.7);
-  beard.position.set(0, -0.19, 0.12);
+  for (const [i, e] of eyePair(0.13, 0.055, 0.22, 0.095, { iris: 0x30353d, irisR: 0.58 }, 0.08).entries()) {
+    const sx = i === 0 ? -1 : 1;
+    e.scale.y = 0.72;
+    e.rotation.z = sx * -0.09;
+    head.add(e);
+    const brow = capsule(0.018, 0.12, hornC, {}, 1, 5);
+    brow.rotation.z = sx * -1.43;
+    brow.position.set(sx * 0.13, 0.15, 0.29);
+    head.add(brow);
+  }
+  const nose = blob(0.045, 0x343139);
+  nose.position.set(0, -0.06, 0.34);
+  head.add(nose);
+  const beard = sphere(0.09, woolDark, {}, 6, 4);
+  beard.scale.set(0.82, 1.45, 0.72);
+  beard.position.set(0, -0.22, 0.13);
   head.add(beard);
-  // Big bighorn-ram curl: connected tapered segments sweeping OUT/back off the
-  // brow, then curling down and forward under the ear. Kept RIDGED (flat).
+
+  // Each thick ridge traces almost a complete spiral around the ear. The last
+  // segment comes forward again, making the curl legible even head-on.
   const chipRoll = rng();
-  for (const sx of [-1, 1]) {
-    // Some rams have a snapped-short horn on the right — drop the last point.
+  for (const sx of [-1, 1] as const) {
     const chipped = chipRoll < 0.35 && sx === 1;
     const pts: ReadonlyArray<readonly [number, number, number]> = [
-      [sx * 0.14, 0.14, 0.02],
-      [sx * 0.28, 0.26, -0.02],
-      [sx * 0.4, 0.2, -0.18],
-      [sx * 0.42, 0.03, -0.26],
-      [sx * 0.34, -0.08, -0.16],
+      [sx * 0.13, 0.14, 0.02],
+      [sx * 0.3, 0.31, -0.03],
+      [sx * 0.48, 0.23, -0.16],
+      [sx * 0.52, 0.01, -0.2],
+      [sx * 0.44, -0.19, -0.1],
+      [sx * 0.28, -0.24, 0.05],
+      [sx * 0.19, -0.08, 0.17],
     ];
-    head.add(segmentedHorn(chipped ? pts.slice(0, 4) : pts, 0.09, 0.03, hornC, { flat: true }, 5));
+    head.add(segmentedHorn(chipped ? pts.slice(0, 6) : pts, 0.115, 0.03, hornC, { flat: true }, 6));
   }
   g.add(head);
 
   const legs: THREE.Object3D[] = [];
   for (const [sx, sz] of QUAD) {
-    const l = legGroup(sx * 0.22, 0.54, sz * 0.28, 0.09, 0.11, 0.54, woolDark, 0, 0x2f2b24);
+    const l = legGroup(sx * 0.23, 0.5, sz * 0.3, 0.1, 0.13, 0.5, woolDark, 0, 0x323039);
     legs.push(l);
     g.add(l);
   }
   return { group: g, parts: { legs, head, body } };
 }
 
-/**
- * Zephyrfinch — a plump round songbird. Bottom-heavy egg body with a warm
- * chest, an oversized round head with big close eyes and a little beak, soft
- * rounded tail plumes and plump folded wings.
- */
+/** Zephyrfinch — round sky-blue chick with three swept crown quills. */
 function buildZephyrfinch(rng: () => number): { group: THREE.Group; parts: CritterParts } {
   const g = new THREE.Group();
-  const feather = jitterColor(0x466f9f, rng, 0.06);
-  const belly = jitterColor(0xd6ab52, rng, 0.05);
-  const beakC = jitterColor(0xe6a030, rng, 0.03);
-  const legC = jitterColor(0xe6a030, rng, 0.02);
+  const feather = jitterColor(0x65b8e8, rng, 0.06);
+  const featherDark = jitterColor(0x337eb6, rng, 0.05);
+  const cream = jitterColor(0xffe6af, rng, 0.04);
+  const beakC = jitterColor(0xf3a848, rng, 0.03);
 
   const body = new THREE.Group();
-  body.position.y = 0.34;
-  // Plump bottom-heavy egg torso.
-  const torso = egg(0.22, 0.46, feather, {}, 0.3, 12);
+  body.position.y = 0.16;
+  const torso = egg(0.28, 0.52, feather, {}, 0.38, 13);
   body.add(torso);
-  const chest = sphere(0.16, belly, {}, 8, 6);
-  chest.scale.set(0.95, 1.05, 0.75);
-  chest.position.set(0, 0.18, 0.12);
+  const chest = sphere(0.2, cream, {}, 8, 6);
+  chest.scale.set(0.9, 1.08, 0.58);
+  chest.position.set(0, 0.22, 0.22);
   body.add(chest);
-  // Soft rounded tail plumes (flattened capsules, not cone spikes).
+  // Three small cream beads form a feathery chest bib.
+  for (const [sx, yy] of [[-0.06, 0.29], [0.06, 0.29], [0, 0.2]] as const) {
+    const tuft = blob(0.07, cream);
+    tuft.scale.set(0.85, 1.2, 0.55);
+    tuft.position.set(sx, yy, 0.34);
+    body.add(tuft);
+  }
   const tail = new THREE.Group();
-  tail.position.set(0, 0.16, -0.14);
+  tail.position.set(0, 0.2, -0.18);
   for (const [sx, rz] of [
     [-1, 0.3],
     [0, 0],
     [1, -0.3],
   ] as const) {
-    const f = capsule(0.05, 0.22, feather, {}, 2, 5);
+    const f = capsule(0.055, 0.2, featherDark, {}, 2, 5);
     f.rotation.x = Math.PI / 2 + 0.45;
     f.rotation.z = rz;
     f.position.set(sx * 0.06, 0.0, -0.15);
@@ -777,32 +808,40 @@ function buildZephyrfinch(rng: () => number): { group: THREE.Group; parts: Critt
   body.add(tail);
   g.add(body);
 
-  // Oversized round head — near half the bird.
   const head = new THREE.Group();
-  head.position.set(0, 0.82, 0.1);
-  const hb = sphere(0.19, feather, {}, 10, 7);
+  head.position.set(0, 0.65, 0.14);
+  const hb = sphere(0.24, feather, {}, 10, 7);
+  hb.scale.set(1.04, 0.98, 0.96);
   head.add(hb);
-  for (const e of eyePair(0.095, 0.035, 0.13, 0.075, { irisR: 0.66 }, 0.18)) head.add(e);
-  const beak = cone(0.05, 0.13, beakC, 8);
+  for (const e of eyePair(0.12, 0.045, 0.2, 0.105, { iris: 0x244764, irisR: 0.68 }, 0.08)) {
+    head.add(e);
+  }
+  const beak = cone(0.055, 0.14, beakC, 8);
   beak.rotation.x = Math.PI / 2;
-  beak.position.set(0, -0.03, 0.22);
+  beak.position.set(0, -0.055, 0.31);
   head.add(beak);
-  // Plump little crest bobble.
-  const crest = blob(0.055, belly);
-  crest.position.set(0, 0.19, 0.02);
-  head.add(crest);
+
+  // Three plush quills sweep backward like a cartoon pompadour.
+  const plumeRoll = rng();
+  const plumeCount = plumeRoll < 0.22 ? 2 : 3;
+  for (let i = 0; i < plumeCount; i++) {
+    const quill = capsule(0.04, 0.18 + i * 0.025, i === 1 ? cream : featherDark, {}, 1, 5);
+    quill.position.set((i - 1) * 0.07, 0.25 + i * 0.025, -0.04 - i * 0.025);
+    quill.rotation.x = -0.7 - i * 0.1;
+    quill.rotation.z = (i - 1) * -0.24;
+    head.add(quill);
+  }
   g.add(head);
 
-  // Plump folded wings (pivot at shoulder, flap about Z).
   const wings: THREE.Object3D[] = [];
   for (const sx of [-1, 1]) {
     const w = new THREE.Group();
-    w.position.set(sx * 0.16, 0.56, 0);
-    const wm = capsule(0.07, 0.24, feather, {}, 2, 7);
+    w.position.set(sx * 0.21, 0.43, 0.02);
+    const wm = capsule(0.085, 0.22, featherDark, {}, 2, 7);
     wm.rotation.z = Math.PI / 2;
     wm.rotation.y = sx * -0.35;
-    wm.scale.set(1, 1, 0.55);
-    wm.position.set(sx * 0.16, 0, -0.03);
+    wm.scale.set(1, 1, 0.5);
+    wm.position.set(sx * 0.13, 0, -0.03);
     w.add(wm);
     wings.push(w);
     g.add(w);
@@ -810,68 +849,71 @@ function buildZephyrfinch(rng: () => number): { group: THREE.Group; parts: Critt
 
   const legs: THREE.Object3D[] = [];
   for (const sx of [-1, 1]) {
-    const l = legGroup(sx * 0.08, 0.36, -0.02, 0.02, 0.028, 0.12, legC);
+    const l = legGroup(sx * 0.09, 0.16, -0.01, 0.025, 0.035, 0.16, beakC);
     legs.push(l);
     g.add(l);
   }
   return { group: g, parts: { legs, wings, head, body } };
 }
 
-/**
- * Shardwing — a butterfly-inspired little sky jewel without borrowing the
- * real animal's name. A slim indigo body carries four oversized stained-
- * crystal wing lobes. Their broad translucent silhouette is the entire read;
- * bright facet-knots make the facing and wing beat visible at a distance.
- */
+/** Shardwing — plump moth plush carrying two pairs of true crystal wings. */
 function buildShardwing(rng: () => number): { group: THREE.Group; parts: CritterParts } {
   const g = new THREE.Group();
-  const shell = jitterColor(0x3f4f86, rng, 0.08);
-  const shellDark = jitterColor(0x252b57, rng, 0.06);
-  const foreC = jitterColor(0x75c8d8, rng, 0.1);
-  const hindC = jitterColor(0xb576d2, rng, 0.1);
-  const glow = jitterColor(0xe7f4a8, rng, 0.03);
+  const fur = jitterColor(0x7652b8, rng, 0.08);
+  const furDark = jitterColor(0x392a72, rng, 0.06);
+  const cream = jitterColor(0xf5d7f0, rng, 0.04);
+  const foreC = jitterColor(0x68e2ed, rng, 0.09);
+  const hindC = jitterColor(0xd98cf2, rng, 0.09);
+  const glow = jitterColor(0xf4ffb8, rng, 0.03);
 
   const body = new THREE.Group();
-  body.position.set(0, 0.5, 0);
-  const thorax = capsule(0.105, 0.3, shell, {}, 2, 7);
-  thorax.rotation.x = Math.PI / 2;
-  thorax.scale.set(1, 1, 0.92);
+  body.position.set(0, 0.18, -0.04);
+  const thorax = egg(0.23, 0.52, fur, {}, 0.38, 11);
   body.add(thorax);
-  const abdomen = capsule(0.075, 0.3, shellDark, {}, 2, 6);
-  abdomen.rotation.x = Math.PI / 2;
-  abdomen.position.z = -0.28;
-  body.add(abdomen);
+  const belly = sphere(0.16, cream, {}, 7, 5);
+  belly.scale.set(0.82, 1.05, 0.52);
+  belly.position.set(0, 0.19, 0.19);
+  body.add(belly);
+  // Furry neck ruff, deliberately lumpy against the faceted wings.
+  for (const sx of [-1, 0, 1]) {
+    const ruff = blob(0.085, cream);
+    ruff.position.set(sx * 0.09, 0.46 - Math.abs(sx) * 0.025, 0.04);
+    body.add(ruff);
+  }
   g.add(body);
 
   const head = new THREE.Group();
-  head.position.set(0, 0.52, 0.29);
-  const skull = sphere(0.145, shell, {}, 8, 6);
-  skull.scale.set(1.05, 0.92, 0.9);
+  head.position.set(0, 0.53, 0.23);
+  const skull = sphere(0.21, furDark, {}, 9, 7);
+  skull.scale.set(1.05, 0.96, 0.94);
   head.add(skull);
-  for (const e of eyePair(0.08, 0.025, 0.115, 0.065, { iris: 0x172238, irisR: 0.72 }, 0.2)) {
+  for (const e of eyePair(0.105, 0.035, 0.17, 0.095, { iris: 0x38235f, irisR: 0.72 }, 0.08)) {
     head.add(e);
   }
-  const sip = cone(0.022, 0.18, glow, 6);
-  sip.rotation.x = Math.PI / 2;
-  sip.position.set(0, -0.07, 0.2);
-  head.add(sip);
-  // Paired feelers curl out and forward; kept static so the giant wings own
-  // the animation silhouette rather than tiny antenna motion.
+  const smileM = smile(0.045, 0.01, 0x281c40);
+  smileM.position.set(0, -0.08, 0.23);
+  head.add(smileM);
+  // Hooked feelers curl back toward their own stems.
   for (const sx of [-1, 1] as const) {
     head.add(
       segmentedHorn(
         [
-          [sx * 0.045, 0.1, 0.02],
-          [sx * 0.1, 0.22, 0.08],
-          [sx * 0.17, 0.27, 0.17],
+          [sx * 0.05, 0.11, 0.01],
+          [sx * 0.12, 0.25, 0.07],
+          [sx * 0.24, 0.32, 0.15],
+          [sx * 0.3, 0.24, 0.22],
+          [sx * 0.22, 0.17, 0.25],
         ],
-        0.018,
-        0.01,
-        shellDark,
+        0.022,
+        0.012,
+        furDark,
         {},
         5,
       ),
     );
+    const tip = blob(0.035, glow, { emissive: glow, emissiveIntensity: 0.5 });
+    tip.position.set(sx * 0.215, 0.165, 0.26);
+    head.add(tip);
   }
   g.add(head);
 
@@ -879,105 +921,102 @@ function buildShardwing(rng: () => number): { group: THREE.Group; parts: Critter
   const spotRoll = rng();
   for (const sx of [-1, 1] as const) {
     const wing = new THREE.Group();
-    wing.position.set(sx * 0.08, 0.56, -0.02);
+    wing.position.set(sx * 0.08, 0.48, -0.04);
 
-    const fore = sphere(0.31, foreC, { opacity: 0.72 }, 7, 5);
-    fore.scale.set(0.9, 1.25, 0.13);
-    fore.position.set(sx * 0.29, 0.17, 0.05);
-    fore.rotation.z = sx * -0.28;
+    const fore = crystal(0.43, foreC, { opacity: 0.7, emissive: foreC, emissiveIntensity: 0.28 });
+    fore.scale.set(0.72, 1.22, 0.16);
+    fore.position.set(sx * 0.34, 0.2, 0.04);
+    fore.rotation.z = sx * -0.2;
     wing.add(fore);
 
-    const hind = sphere(0.28, hindC, { opacity: 0.72 }, 7, 5);
-    hind.scale.set(1.0, 1.05, 0.13);
-    hind.position.set(sx * 0.27, -0.2, -0.09);
+    const hind = crystal(0.37, hindC, { opacity: 0.7, emissive: hindC, emissiveIntensity: 0.24 });
+    hind.scale.set(0.8, 1.05, 0.17);
+    hind.position.set(sx * 0.32, -0.22, -0.08);
     hind.rotation.z = sx * 0.22;
     wing.add(hind);
-
-    // Faceted glowing knots sell the "Shard" identity and stay readable
-    // through the transparent membrane from either side.
-    for (const [x, y, z, r] of [
-      [sx * 0.27, 0.23, 0.02, 0.075],
-      [sx * 0.24, -0.18, -0.02, 0.06],
-    ] as const) {
-      const knot = crystal(r, glow, { emissive: glow, emissiveIntensity: 0.55 });
-      knot.position.set(x, y, z);
-      wing.add(knot);
-    }
+    const knot = crystal(0.075, glow, { emissive: glow, emissiveIntensity: 0.7 });
+    knot.position.set(sx * 0.3, 0.02, 0.03);
+    wing.add(knot);
     if (spotRoll < 0.42 && sx === -1) {
       const tiny = crystal(0.042, 0xffffff, { emissive: glow, emissiveIntensity: 0.35 });
-      tiny.position.set(sx * 0.39, 0.08, 0.01);
+      tiny.position.set(sx * 0.52, 0.24, 0.04);
       wing.add(tiny);
     }
     wings.push(wing);
     g.add(wing);
   }
 
-  // The six hair-thin legs are silhouette accents, not gait drivers; baking
-  // them as loose root detail keeps this tiny flyer to a handful of draws.
+  // Six static thread-feet remain loose details; `parts.legs` intentionally
+  // stays empty, matching the existing flight-animation contract.
   const legs: THREE.Object3D[] = [];
   for (let i = 0; i < 3; i++) {
     const z = 0.16 - i * 0.16;
     for (const sx of [-1, 1] as const) {
-      const l = legGroup(sx * 0.075, 0.46, z, 0.014, 0.012, 0.18, shellDark, sx * 0.5);
+      const l = legGroup(sx * 0.08, 0.18, z, 0.014, 0.012, 0.18, furDark, sx * 0.48);
       g.add(l);
     }
   }
   return { group: g, parts: { legs, wings, head, body } };
 }
 
-/**
- * Nectar Wisp — a bee-inspired amber hover-spirit. Its striped round body,
- * glassy double wings, dangling honey lantern and ivory tail needle make the
- * role readable without using a real-world animal name. Faces +Z.
- */
+/** Nectar Wisp — chubby striped bumble with a heart nose and toy wings. */
 function buildNectarWisp(rng: () => number): { group: THREE.Group; parts: CritterParts } {
   const g = new THREE.Group();
-  const amber = jitterColor(0xd99632, rng, 0.05);
-  const amberLight = jitterColor(0xf0c45b, rng, 0.04);
-  const dark = jitterColor(0x3b2b35, rng, 0.03);
-  const wingC = jitterColor(0xc9edf0, rng, 0.04);
-  const ivory = jitterColor(0xeee2c4, rng, 0.02);
+  const amber = jitterColor(0xf5b82e, rng, 0.05);
+  const amberLight = jitterColor(0xffdf65, rng, 0.04);
+  const dark = jitterColor(0x4c354d, rng, 0.03);
+  const wingC = jitterColor(0xbdeeff, rng, 0.04);
+  const cream = jitterColor(0xffedc8, rng, 0.025);
+  const heartC = jitterColor(0xe96f91, rng, 0.04);
 
   const body = new THREE.Group();
-  body.position.set(0, 0.52, -0.02);
-  const abdomen = capsule(0.245, 0.3, amber, {}, 2, 7);
-  abdomen.rotation.x = Math.PI / 2;
-  abdomen.scale.set(1.02, 1, 0.9);
+  body.position.set(0, 0.35, -0.03);
+  const abdomen = sphere(0.31, amber, {}, 10, 7);
+  abdomen.scale.set(1.02, 0.9, 1.2);
   body.add(abdomen);
-  for (const z of [-0.13, 0.12]) {
-    const band = new THREE.Mesh(new THREE.TorusGeometry(0.225, 0.045, 5, 10), mat(dark));
+  for (const z of [-0.16, 0.1]) {
+    const band = new THREE.Mesh(new THREE.TorusGeometry(0.285, 0.05, 5, 10), mat(dark));
     band.position.z = z;
+    band.scale.y = 0.9;
     body.add(band);
   }
-  // Warm pollen/honey lantern: the fantasy cue that separates it from an
-  // ordinary insect silhouette and previews its Link reward.
-  const lantern = sphere(0.1, amberLight, { emissive: amber, emissiveIntensity: 0.8 }, 7, 5);
-  lantern.position.set(0, -0.26, 0.02);
+  const lantern = sphere(0.085, amberLight, { emissive: amber, emissiveIntensity: 0.65 }, 6, 4);
+  lantern.position.set(0, -0.27, -0.04);
   body.add(lantern);
-  const stinger = cone(0.075, 0.3, ivory, 7);
-  stinger.rotation.x = -Math.PI / 2;
-  stinger.position.set(0, 0, -0.43);
-  body.add(stinger);
   g.add(body);
 
   const head = new THREE.Group();
-  head.position.set(0, 0.56, 0.36);
-  const skull = sphere(0.21, amberLight, {}, 8, 6);
-  skull.scale.set(1.02, 0.94, 0.9);
+  head.position.set(0, 0.43, 0.36);
+  const skull = sphere(0.24, amberLight, {}, 9, 7);
+  skull.scale.set(1.04, 0.96, 0.92);
   head.add(skull);
-  for (const e of eyePair(0.115, 0.035, 0.16, 0.085, { iris: 0x281a20, irisR: 0.68 }, 0.16)) {
+  const mask = sphere(0.14, cream, {}, 7, 5);
+  mask.scale.set(1.22, 0.7, 0.52);
+  mask.position.set(0, -0.06, 0.17);
+  head.add(mask);
+  for (const e of eyePair(0.12, 0.055, 0.19, 0.105, { iris: 0x38253a, irisR: 0.7 }, 0.08)) {
     head.add(e);
   }
-  const mouth = smile(0.052, 0.012, dark, 1.55);
-  mouth.position.set(0, -0.1, 0.19);
+  // Two lobes plus a tiny downward point make a readable heart-shaped nose.
+  for (const sx of [-1, 1]) {
+    const lobe = blob(0.04, heartC);
+    lobe.position.set(sx * 0.032, -0.045, 0.29);
+    head.add(lobe);
+  }
+  const heartTip = cone(0.045, 0.075, heartC, 7);
+  heartTip.rotation.z = Math.PI;
+  heartTip.position.set(0, -0.09, 0.29);
+  head.add(heartTip);
+  const mouth = smile(0.05, 0.011, dark, 1.65);
+  mouth.position.set(0, -0.14, 0.29);
   head.add(mouth);
   for (const sx of [-1, 1] as const) {
     head.add(
       segmentedHorn(
         [
-          [sx * 0.07, 0.13, 0.02],
-          [sx * 0.13, 0.25, 0.07],
-          [sx * 0.18, 0.3, 0.15],
+          [sx * 0.065, 0.13, 0.01],
+          [sx * 0.12, 0.24, 0.04],
+          [sx * 0.18, 0.28, 0.11],
         ],
         0.022,
         0.012,
@@ -986,200 +1025,214 @@ function buildNectarWisp(rng: () => number): { group: THREE.Group; parts: Critte
         5,
       ),
     );
+    const bobble = blob(0.04, heartC);
+    bobble.position.set(sx * 0.18, 0.28, 0.12);
+    head.add(bobble);
   }
   g.add(head);
 
   const wings: THREE.Object3D[] = [];
   for (const sx of [-1, 1] as const) {
     const wing = new THREE.Group();
-    wing.position.set(sx * 0.17, 0.7, -0.05);
-    const front = sphere(0.24, wingC, { opacity: 0.54 }, 6, 4);
-    front.scale.set(0.65, 1.25, 0.16);
-    front.position.set(sx * 0.18, 0.1, 0.08);
-    front.rotation.z = sx * -0.35;
-    wing.add(front);
-    const rear = sphere(0.19, wingC, { opacity: 0.54 }, 6, 4);
-    rear.scale.set(0.68, 1.15, 0.15);
-    rear.position.set(sx * 0.17, -0.1, -0.14);
-    rear.rotation.z = sx * 0.25;
-    wing.add(rear);
+    wing.position.set(sx * 0.23, 0.5, -0.08);
+    const stub = sphere(0.18, wingC, { opacity: 0.62 }, 7, 5);
+    stub.scale.set(0.72, 1.0, 0.2);
+    stub.position.set(sx * 0.12, 0.03, -0.03);
+    stub.rotation.z = sx * -0.55;
+    wing.add(stub);
     wings.push(wing);
     g.add(wing);
   }
 
-  // Static dangling legs bake together as one loose accent draw; the wings
-  // carry all readable locomotion at this scale.
+  // Static thread legs keep the established empty `parts.legs` flight shape.
   const legs: THREE.Object3D[] = [];
   for (let i = 0; i < 3; i++) {
-    const z = 0.18 - i * 0.18;
+    const z = 0.14 - i * 0.14;
     for (const sx of [-1, 1] as const) {
-      const l = legGroup(sx * 0.13, 0.43, z, 0.025, 0.018, 0.25, dark, sx * 0.42);
+      const l = legGroup(sx * 0.13, 0.18, z, 0.022, 0.017, 0.18, dark, sx * 0.42);
       g.add(l);
     }
   }
-  // Unconditional variation draw: a little pale pollen mote on some Wisps.
   const pollenRoll = rng();
   if (pollenRoll < 0.38) {
-    const mote = blob(0.045, ivory, { emissive: amber, emissiveIntensity: 0.4 });
-    mote.position.set(0.23, 0.39, 0.2);
+    const mote = blob(0.045, cream, { emissive: amber, emissiveIntensity: 0.4 });
+    mote.position.set(0.27, 0.3, 0.2);
     g.add(mote);
   }
   return { group: g, parts: { legs, wings, head, body } };
 }
 
-/**
- * Emberpup — THE marquee cutie. A plump fox-pup where the head is nearly half
- * the pup: HUGE close eyes, cream cheeks with warm blush pads, a tiny smile
- * under the button nose, plump rounded ears with glowing ember tips, stubby
- * paws and a fat plume tail with a glowing tip.
- */
+/** Emberpup — huge-eared fox pup with a mischievous mask and forked flame tail. */
 function buildEmberpup(rng: () => number): { group: THREE.Group; parts: CritterParts } {
   const g = new THREE.Group();
-  const coat = jitterColor(0xcc6430, rng, 0.04);
-  const cream = jitterColor(0xe8c48a, rng, 0.04);
-  const blushC = jitterColor(0xe08a5a, rng, 0.03);
+  const coat = jitterColor(0xe15f32, rng, 0.045);
+  const coatDark = jitterColor(0x9d3829, rng, 0.04);
+  const cream = jitterColor(0xffdaa0, rng, 0.04);
+  const blushC = jitterColor(0xf18b86, rng, 0.03);
   const ember = 0xff7a2a;
 
   const body = new THREE.Group();
-  body.position.y = 0.42;
-  const torso = capsule(0.23, 0.3, coat, {}, 2, 7);
+  body.position.y = 0.4;
+  const torso = capsule(0.24, 0.32, coat, {}, 2, 7);
   torso.rotation.x = Math.PI / 2;
   body.add(torso);
-  const bel = capsule(0.17, 0.24, cream, {}, 2, 4);
-  bel.rotation.x = Math.PI / 2;
-  bel.position.y = -0.1;
-  body.add(bel);
+  const chest = sphere(0.17, cream, {}, 7, 5);
+  chest.scale.set(0.78, 1.25, 0.52);
+  chest.position.set(0, 0.02, 0.24);
+  body.add(chest);
   g.add(body);
 
-  // Oversized head — the charm centre, nearly half the visual mass.
   const head = new THREE.Group();
-  head.position.set(0, 0.58, 0.32);
-  const skull = sphere(0.27, coat, {}, 12, 9);
+  head.position.set(0, 0.6, 0.32);
+  const skull = sphere(0.3, coat, {}, 11, 8);
   skull.scale.set(1.02, 0.95, 0.9);
   head.add(skull);
-  // Cream cheeks + warm blush pads.
   for (const sx of [-1, 1]) {
-    const cheek = sphere(0.11, cream, {}, 6, 4);
-    cheek.position.set(sx * 0.16, -0.08, 0.14);
+    const cheek = sphere(0.125, cream, {}, 7, 5);
+    cheek.position.set(sx * 0.17, -0.09, 0.17);
     head.add(cheek);
-    const b = blush(0.06, blushC);
-    b.position.set(sx * 0.18, -0.02, 0.19);
+    const b = blush(0.065, blushC);
+    b.position.set(sx * 0.21, -0.035, 0.24);
     b.rotation.y = sx * 0.5;
     head.add(b);
   }
-  // Soft snout, button nose, tiny smile.
-  const snout = sphere(0.1, cream, {}, 6, 4);
+  const snout = sphere(0.115, cream, {}, 7, 5);
   snout.scale.set(0.95, 0.75, 1.1);
-  snout.position.set(0, -0.08, 0.22);
+  snout.position.set(0, -0.1, 0.25);
   head.add(snout);
   const nose = blob(0.042, 0x2a1c14);
-  nose.position.set(0, -0.04, 0.33);
+  nose.position.set(0, -0.05, 0.38);
   head.add(nose);
   const mouth = smile(0.04, 0.01);
-  mouth.position.set(0, -0.1, 0.31);
+  mouth.position.set(0, -0.13, 0.36);
   head.add(mouth);
-  // HUGE close-set eyes.
-  for (const e of eyePair(0.125, 0.07, 0.19, 0.12, { irisR: 0.7 }, 0.1)) head.add(e);
-  // Plump rounded ears with glowing ember tips (never spikes).
+  for (const [i, e] of eyePair(0.14, 0.075, 0.22, 0.13, { iris: 0x4c2830, irisR: 0.68 }, 0.06).entries()) {
+    const sx = i === 0 ? -1 : 1;
+    e.scale.y = 0.86;
+    e.rotation.z = sx * -0.08;
+    head.add(e);
+    const brow = capsule(0.017, 0.115, coatDark, {}, 1, 5);
+    brow.rotation.z = sx * -1.38;
+    brow.position.set(sx * 0.145, 0.19, 0.31);
+    head.add(brow);
+  }
+
+  // Huge satellite-dish ears — the silhouette now reads fox before colour.
   const notchRoll = rng();
-  for (const sx of [-1, 1]) {
-    // Weathering: a notched (short) left ear on some pups; keep the glow tip
-    // draw unconditional either way.
+  for (const sx of [-1, 1] as const) {
     const short = notchRoll < 0.3 && sx === -1;
-    const ear = plumpEar(0.1, coat);
-    // Stubbier, rounder pup ears (plush read; the squash keeps them un-spiky).
-    ear.scale.set(0.8, short ? 0.9 : 1.15, 0.52);
-    ear.position.set(sx * 0.15, short ? 0.22 : 0.25, -0.01);
-    ear.rotation.z = sx * -0.2;
+    const ear = sphere(0.16, coat, {}, 8, 6);
+    ear.scale.set(0.8, short ? 1.35 : 1.75, 0.48);
+    ear.position.set(sx * 0.23, short ? 0.26 : 0.34, -0.015);
+    ear.rotation.z = sx * -0.34;
     head.add(ear);
-    const inner = sphere(0.05, cream, {}, 4, 3);
-    inner.scale.set(0.6, 1.1, 0.4);
-    inner.position.set(sx * 0.14, short ? 0.22 : 0.25, 0.035);
+    const inner = sphere(0.095, blushC, {}, 6, 4);
+    inner.scale.set(0.62, short ? 1.26 : 1.62, 0.27);
+    inner.position.set(sx * 0.23, short ? 0.26 : 0.34, 0.075);
+    inner.rotation.z = sx * -0.34;
     head.add(inner);
-    const tip = sphere(0.035, 0xffb060, { emissive: ember, emissiveIntensity: 1.0 }, 6, 4);
-    tip.position.set(sx * 0.145, short ? 0.3 : 0.38, -0.02);
+    const tip = sphere(0.04, 0xffb060, { emissive: ember, emissiveIntensity: 1.0 }, 6, 4);
+    tip.position.set(sx * (short ? 0.27 : 0.31), short ? 0.43 : 0.58, -0.02);
     head.add(tip);
   }
   g.add(head);
 
-  // Soft rounded pup paws (no hooves) — tapered stubby legs.
   const legs: THREE.Object3D[] = [];
   for (const [sx, sz] of QUAD) {
-    const l = legGroup(sx * 0.14, 0.3, sz * 0.17, 0.06, 0.085, 0.3, coat);
+    const l = legGroup(sx * 0.15, 0.3, sz * 0.18, 0.065, 0.09, 0.3, coatDark);
     legs.push(l);
     g.add(l);
   }
-  // Fat plume tail with a glowing ember tip.
+
+  // A forked two-tuft flame plume, both soft tips sharing one emissive class.
   const tail = new THREE.Group();
   tail.position.set(0, 0.48, -0.26);
-  const plume = capsule(0.11, 0.2, coat, {}, 2, 5);
-  plume.rotation.x = -0.5;
-  plume.position.set(0, 0.06, -0.15);
+  const plume = capsule(0.12, 0.22, coat, {}, 2, 6);
+  plume.rotation.x = -0.65;
+  plume.position.set(0, 0.08, -0.16);
   tail.add(plume);
-  const ttip = sphere(0.085, 0xffb060, { emissive: ember, emissiveIntensity: 0.8 }, 6, 4);
-  ttip.position.set(0, 0.19, -0.3);
-  tail.add(ttip);
+  for (const sx of [-1, 1]) {
+    const lick = capsule(0.065, 0.13, cream, {}, 1, 5);
+    lick.rotation.set(-0.65, 0, sx * -0.38);
+    lick.position.set(sx * 0.055, 0.19, -0.29);
+    tail.add(lick);
+    const ttip = sphere(0.067, 0xffb060, { emissive: ember, emissiveIntensity: 0.82 }, 6, 4);
+    ttip.position.set(sx * 0.085, 0.28, -0.38);
+    tail.add(ttip);
+  }
   g.add(tail);
   return { group: g, parts: { legs, head, body, tail } };
 }
 
-/**
- * Lumenstag — a marquee ethereal deer. Smooth graceful body with a plump
- * chest, a gentle big-eyed head on a slender neck, GLOWING branched antlers
- * (pale cyan emissive, smooth), plump ears and a soft plume tail.
- */
+/** Lumenstag — slim pearl stag with serene almond eyes and light-shod hooves. */
 function buildLumenstag(rng: () => number): { group: THREE.Group; parts: CritterParts } {
   const g = new THREE.Group();
-  const coat = jitterColor(0xe2e6ec, rng, 0.02, 0.05);
-  const shade = jitterColor(0xc0c8d4, rng, 0.02, 0.04);
+  const coat = jitterColor(0xe9e7ff, rng, 0.025, 0.05);
+  const shade = jitterColor(0xaeb9dc, rng, 0.035, 0.04);
+  const cream = jitterColor(0xfff0d2, rng, 0.025);
   const glow = 0x9be8ff;
 
   const body = new THREE.Group();
-  body.position.y = 1.3;
-  const barrel = capsule(0.35, 0.68, coat, {}, 2, 8);
+  body.position.y = 1.18;
+  const barrel = capsule(0.29, 0.72, coat, {}, 2, 8);
   barrel.rotation.x = Math.PI / 2;
   body.add(barrel);
-  const bel = capsule(0.28, 0.5, shade, {}, 2, 6);
+  const bel = capsule(0.22, 0.52, cream, {}, 2, 6);
   bel.rotation.x = Math.PI / 2;
-  bel.position.y = -0.14;
+  bel.position.set(0, -0.13, 0.08);
   body.add(bel);
+  const chest = sphere(0.22, shade, {}, 7, 5);
+  chest.scale.set(0.9, 1.15, 0.75);
+  chest.position.set(0, 0.15, 0.37);
+  body.add(chest);
   g.add(body);
 
   const head = new THREE.Group();
-  head.position.set(0, 1.66, 0.6);
-  const neck = capsule(0.13, 0.5, coat, {}, 2, 6);
-  neck.rotation.x = -0.5;
+  head.position.set(0, 1.46, 0.58);
+  const neck = capsule(0.12, 0.58, coat, {}, 2, 6);
+  neck.rotation.x = -0.38;
+  neck.position.set(0, 0.04, -0.03);
   head.add(neck);
-  const skull = sphere(0.18, shade, {}, 11, 8);
-  skull.scale.set(1, 0.95, 1.2);
-  skull.position.set(0, 0.36, 0.26);
+  const skull = sphere(0.21, shade, {}, 10, 7);
+  skull.scale.set(0.95, 1.0, 1.2);
+  skull.position.set(0, 0.41, 0.29);
   head.add(skull);
-  const muzzle = sphere(0.1, coat, {}, 6, 4);
-  muzzle.scale.set(0.9, 0.8, 1.1);
-  muzzle.position.set(0, 0.28, 0.42);
+  const muzzle = sphere(0.115, cream, {}, 7, 5);
+  muzzle.scale.set(0.9, 0.72, 1.15);
+  muzzle.position.set(0, 0.31, 0.48);
   head.add(muzzle);
-  for (const e of eyePair(0.115, 0.44, 0.38, 0.08, { irisR: 0.62 }, 0.16)) head.add(e);
-  // Plump soft ears.
+  for (const [i, e] of eyePair(0.115, 0.46, 0.43, 0.09, { iris: 0x45647c, irisR: 0.62 }, 0.08).entries()) {
+    const sx = i === 0 ? -1 : 1;
+    e.scale.y = 0.64;
+    e.rotation.z = sx * 0.045;
+    head.add(e);
+  }
+  const nose = blob(0.037, 0x566078);
+  nose.position.set(0, 0.3, 0.62);
+  head.add(nose);
   for (const sx of [-1, 1]) {
-    const ear = plumpEar(0.075, coat);
-    ear.position.set(sx * 0.15, 0.5, 0.18);
-    ear.rotation.z = sx * 0.6;
+    const ear = plumpEar(0.085, cream);
+    ear.position.set(sx * 0.17, 0.54, 0.19);
+    ear.rotation.z = sx * 0.74;
     head.add(ear);
   }
-  // GLOWING branched antlers — smooth organic tapered beams + rounded tines.
-  for (const sx of [-1, 1]) {
-    const beam = cyl(0.02, 0.045, 0.66, glow, 6, { emissive: glow, emissiveIntensity: 1.4 });
-    beam.position.set(sx * 0.12, 0.76, 0.16);
-    beam.rotation.z = sx * 0.3;
-    head.add(beam);
-    for (const [ty, tz, ta] of [
-      [0.68, 0.18, 0.9],
-      [0.92, 0.18, 1.1],
-      [1.14, 0.16, 1.3],
+
+  const glowOpts: MatOpts = { emissive: glow, emissiveIntensity: 1.4 };
+  for (const sx of [-1, 1] as const) {
+    head.add(segmentedHorn([
+      [sx * 0.1, 0.55, 0.18],
+      [sx * 0.16, 0.79, 0.15],
+      [sx * 0.24, 1.02, 0.12],
+      [sx * 0.35, 1.2, 0.08],
+    ], 0.045, 0.02, glow, glowOpts, 6));
+    for (const [x, y, rot] of [
+      [0.18, 0.81, 0.9],
+      [0.25, 1.03, 1.05],
+      [0.34, 1.19, 1.2],
     ] as const) {
-      const tine = capsule(0.022, 0.2, glow, { emissive: glow, emissiveIntensity: 1.4 }, 1, 4);
-      tine.position.set(sx * (0.2 + (ty - 0.68) * 0.4), ty, tz);
-      tine.rotation.z = sx * ta;
+      const tine = capsule(0.024, 0.2, glow, glowOpts, 1, 5);
+      tine.position.set(sx * x, y, 0.13);
+      tine.rotation.z = sx * rot;
       head.add(tine);
     }
   }
@@ -1187,13 +1240,22 @@ function buildLumenstag(rng: () => number): { group: THREE.Group; parts: Critter
 
   const legs: THREE.Object3D[] = [];
   for (const [sx, sz] of QUAD) {
-    const l = legGroup(sx * 0.22, 1.02, sz * 0.4, 0.055, 0.075, 1.02, shade, 0, 0xaeb8c6);
+    const legLen = 0.94;
+    const l = legGroup(sx * 0.18, legLen, sz * 0.41, 0.048, 0.065, legLen, shade);
+    // Keep each animated leg to one baked draw: the slim leg and brighter hoof
+    // share the same low cyan emissive class, with vertex colour separating them.
+    const hoofGlow: MatOpts = { emissive: glow, emissiveIntensity: 1.05 };
+    (l.children[0] as THREE.Mesh).material = mat(shade, hoofGlow);
+    const hoof = sphere(0.085, glow, hoofGlow, 6, 4);
+    hoof.scale.set(0.78, 0.58, 1.05);
+    hoof.position.set(0, -legLen + 0.035, 0.025);
+    l.add(hoof);
     legs.push(l);
     g.add(l);
   }
   const tail = new THREE.Group();
-  tail.position.set(0, 1.4, -0.56);
-  const tm = capsule(0.06, 0.2, coat, {}, 2, 6);
+  tail.position.set(0, 1.24, -0.58);
+  const tm = capsule(0.07, 0.23, cream, {}, 2, 6);
   tm.rotation.x = Math.PI / 2 - 0.3;
   tm.position.z = -0.13;
   tail.add(tm);
@@ -1201,9 +1263,8 @@ function buildLumenstag(rng: () => number): { group: THREE.Group; parts: Critter
 
   const wRoll = rng();
   if (wRoll < 0.3) {
-    // A faint extra glow-mote drifting near an antler on some stags.
     const mote = blob(0.03, 0xdff6ff, { emissive: glow, emissiveIntensity: 1.6 });
-    mote.position.set(0.34, 2.4, 0.5);
+    mote.position.set(0.4, 2.45, 0.55);
     g.add(mote);
   }
   return { group: g, parts: { legs, head, body, tail } };
@@ -1212,84 +1273,107 @@ function buildLumenstag(rng: () => number): { group: THREE.Group; parts: Critter
 // --- Haven Village whimsy pass (+4) ------------------------------------------
 
 /**
- * Prismhorse — THE mount. Horse-scaled beast of clustered translucent crystal
- * prisms (faceting KEPT — crystal is its material identity), SIXTEEN thin
- * crystalline stilt legs in two rows of eight (phase-offset skitter wave, see
- * animation.ts), two long antennae tipped with glowing bobbles that lag/spring,
- * and a small big-eyed head. Faces +Z; the leg rows run along Z so the wave
- * travels head→tail. Body envelope preserved for the mount camera
- * (MOUNT.rideForwardOffset).
+ * Prismhorse — the 16-legged crystal mount, now with a true horse-like face,
+ * crystal ears and a bold neck mane. All existing ride handles stay exact.
  */
 function buildPrismhorse(rng: () => number): { group: THREE.Group; parts: CritterParts } {
   const g = new THREE.Group();
-  const tint = jitterColor(0xcdeaff, rng, 0.05, 0.04); // pale iridescent
-  const deep = jitterColor(0x9fc8ff, rng, 0.05, 0.04);
-  const ice = jitterColor(0xdff2ff, rng, 0.04, 0.03); // bright icy legs
-  const glow = 0xaad4ff;
-  const crys: MatOpts = { opacity: 0.82, emissive: glow, emissiveIntensity: 0.4 };
+  const tint = jitterColor(0xcfe8ff, rng, 0.05, 0.04);
+  const deep = jitterColor(0x9b9ff5, rng, 0.06, 0.04);
+  const maneC = jitterColor(0xd99df4, rng, 0.07, 0.04);
+  const ice = jitterColor(0xe5f6ff, rng, 0.04, 0.03);
+  const glow = 0xb6d8ff;
+  const crys: MatOpts = { opacity: 0.84, emissive: glow, emissiveIntensity: 0.42 };
   const legCrys: MatOpts = { opacity: 0.8, emissive: glow, emissiveIntensity: 0.7, flat: true };
 
-  // Body: a clustered crystal core at horse height with faceted shoulders/rump
-  // and a jagged dorsal ridge of upward-jutting prisms. Envelope kept ~1.7 long,
-  // radius ~0.5, ridge at z −0.15..−0.62 to clear the rider camera.
   const bodyY = 1.35;
   const body = new THREE.Group();
   body.position.y = bodyY;
-  const core = crystal(0.62, tint, crys);
-  core.scale.set(0.85, 0.8, 1.5);
+  const core = crystal(0.64, tint, crys);
+  core.scale.set(0.78, 0.72, 1.42);
   body.add(core);
-  const chest = crystal(0.5, deep, crys); // faceted shoulders
-  chest.scale.set(0.72, 0.82, 0.72);
-  chest.position.set(0, 0.05, 0.55);
+  const chest = crystal(0.52, deep, crys);
+  chest.scale.set(0.7, 0.78, 0.75);
+  chest.position.set(0, 0.02, 0.56);
   body.add(chest);
   const rump = crystal(0.5, deep, crys);
-  rump.scale.set(0.72, 0.82, 0.72);
-  rump.position.set(0, 0.05, -0.6);
+  rump.scale.set(0.72, 0.76, 0.75);
+  rump.position.set(0, 0.02, -0.58);
   body.add(rump);
-  const ridge: ReadonlyArray<readonly [number, number]> = [
-    [0.6, 0.34], [0.35, 0.5], [0.1, 0.62], [-0.15, 0.56], [-0.4, 0.42], [-0.62, 0.28],
-  ];
-  for (const [sz, len] of ridge) {
-    const sh = crystal(len, tint, crys);
-    sh.scale.set(0.3, 1, 0.3);
-    sh.position.set((rng() - 0.5) * 0.12, 0.32 + len * 0.4, sz);
-    sh.rotation.z = (rng() - 0.5) * 0.3;
+  // A short saddle-safe dorsal crest leads the eye toward the real neck mane.
+  for (const [sz, len] of [[0.34, 0.28], [0.1, 0.34], [-0.16, 0.29]] as const) {
+    const sh = crystal(len, maneC, crys);
+    sh.scale.set(0.28, 1, 0.24);
+    sh.position.set((rng() - 0.5) * 0.06, 0.33 + len * 0.35, sz);
+    sh.rotation.z = (rng() - 0.5) * 0.18;
     body.add(sh);
   }
   g.add(body);
 
-  // Head: small faceted crystal skull on a short neck, big charming eyes.
+  // Defined head: a long neck, large skull, separate muzzle and ears. The eye
+  // mask is deliberately smooth against the crystalline planes.
   const head = new THREE.Group();
-  head.position.set(0, bodyY + 0.18, 0.86);
-  const neck = crystal(0.26, deep, crys);
-  neck.scale.set(0.55, 1.2, 0.55);
-  neck.rotation.x = -0.5;
-  neck.position.set(0, 0.06, 0.04);
+  head.position.set(0, bodyY + 0.05, 0.82);
+  const neck = crystal(0.38, deep, crys);
+  neck.scale.set(0.5, 1.35, 0.58);
+  neck.rotation.x = -0.36;
+  neck.position.set(0, 0.18, 0.02);
   head.add(neck);
-  const skull = crystal(0.3, tint, crys);
-  skull.scale.set(0.95, 0.85, 1.15);
-  skull.position.set(0, 0.36, 0.36);
+  const skull = crystal(0.39, tint, crys);
+  skull.scale.set(0.96, 0.88, 1.08);
+  skull.position.set(0, 0.56, 0.4);
   head.add(skull);
-  for (const e of eyePair(0.13, 0.36, 0.55, 0.095, { sclera: 0xeaf6ff, iris: 0x24506e, irisR: 0.62 }, 0.1)) head.add(e);
+  const muzzle = crystal(0.27, deep, crys);
+  muzzle.scale.set(0.92, 0.55, 1.2);
+  muzzle.position.set(0, 0.43, 0.72);
+  head.add(muzzle);
+  for (const e of eyePair(0.17, 0.6, 0.71, 0.13, { sclera: 0xf7fbff, iris: 0x315b88, irisR: 0.64 }, 0.06)) {
+    e.scale.y = 0.9;
+    head.add(e);
+  }
+  const smileM = smile(0.07, 0.013, 0x385076);
+  smileM.position.set(0, 0.35, 0.91);
+  head.add(smileM);
+  for (const sx of [-1, 1] as const) {
+    const ear = crystal(0.18, maneC, crys);
+    ear.scale.set(0.46, 1.05, 0.38);
+    ear.position.set(sx * 0.19, 0.86, 0.31);
+    ear.rotation.z = sx * -0.25;
+    head.add(ear);
+  }
+  // Crystal mane spikes step down the back of the neck, not over the saddle.
+  for (const [yy, zz, size] of [
+    [0.78, 0.16, 0.22],
+    [0.58, 0.02, 0.25],
+    [0.36, -0.09, 0.22],
+    [0.16, -0.15, 0.18],
+  ] as const) {
+    const mane = crystal(size, maneC, crys);
+    mane.scale.set(0.3, 1, 0.32);
+    mane.position.set(0, yy, zz);
+    mane.rotation.x = -0.18;
+    head.add(mane);
+  }
 
-  // Two long antennae with glowing bobbles (animated: lag/spring).
+  // Two long legacy spring handles remain, now styled as crystal feelers.
   const antennae: THREE.Object3D[] = [];
-  for (const sx of [-1, 1]) {
+  for (const sx of [-1, 1] as const) {
     const a = new THREE.Group();
-    a.position.set(sx * 0.12, 0.5, 0.36);
-    const stalk = cyl(0.02, 0.03, 0.7, deep, 5, { emissive: glow, emissiveIntensity: 0.4, flat: true });
-    stalk.position.y = 0.35;
+    a.position.set(sx * 0.12, 0.77, 0.42);
+    const stalk = cyl(0.018, 0.03, 0.62, deep, 5, legCrys);
+    stalk.position.y = 0.31;
     a.add(stalk);
-    const bob = sphere(0.1, 0xdff0ff, { emissive: glow, emissiveIntensity: 1.6 }, 8, 6);
-    bob.position.y = 0.72;
+    const bob = crystal(0.105, ice, legCrys);
+    bob.position.y = 0.65;
     a.add(bob);
-    a.rotation.x = -0.25;
+    a.rotation.x = -0.3;
+    a.rotation.z = sx * -0.12;
     head.add(a);
     antennae.push(a);
   }
   g.add(head);
 
-  // Sixteen thin crystalline stilt legs: two rows (left/right) of eight along Z.
+  // Sixteen handles stay in [left×8, right×8] order for the travelling wave.
   const legs: THREE.Object3D[] = [];
   const legLen = bodyY - 0.05;
   const zs = [0.66, 0.47, 0.28, 0.09, -0.1, -0.29, -0.48, -0.67];
@@ -1303,66 +1387,91 @@ function buildPrismhorse(rng: () => number): { group: THREE.Group; parts: Critte
     }
   }
 
-  // Slender crystal tail.
   const tail = new THREE.Group();
   tail.position.set(0, bodyY, -0.78);
-  const tm = crystal(0.32, tint, crys);
-  tm.scale.set(0.4, 0.4, 1.3);
-  tm.position.z = -0.22;
-  tail.add(tm);
+  for (const sx of [-1, 1]) {
+    const tm = crystal(0.3, sx < 0 ? tint : maneC, crys);
+    tm.scale.set(0.34, 0.42, 1.25);
+    tm.position.set(sx * 0.09, sx * 0.05, -0.23);
+    tm.rotation.z = sx * 0.22;
+    tail.add(tm);
+  }
   g.add(tail);
 
   return { group: g, parts: { legs, head, body, tail, antennae } };
 }
 
-/**
- * Bumblewhale — a rotund 2m whale-blimp that drifts. Fat smooth two-tone body,
- * tiny useless flippers (animated as slow "wings"), blunt rounded tail flukes,
- * and a dopey friendly face: huge close eyes and a wide upturned smile arc.
- */
+/** Bumblewhale — sky-blue whale blimp with toy wings and a cloud blowhole. */
 function buildBumblewhale(rng: () => number): { group: THREE.Group; parts: CritterParts } {
   const g = new THREE.Group();
-  const top = jitterColor(0x678aa8, rng, 0.04);
-  const belly = jitterColor(0xc6d8de, rng, 0.03);
+  const top = jitterColor(0x67b8e8, rng, 0.05);
+  const topDark = jitterColor(0x397cae, rng, 0.04);
+  const belly = jitterColor(0xe9f4e8, rng, 0.03);
+  const blushC = jitterColor(0xf4a4b5, rng, 0.03);
 
   const body = new THREE.Group();
-  body.position.y = 1.15;
+  body.position.y = 1.0;
   const hull = sphere(1.0, top, {}, 14, 10);
-  hull.scale.set(1.35, 0.92, 1.0); // fat blimp
+  hull.scale.set(0.86, 0.72, 1.28);
   body.add(hull);
-  // Soft lighter belly underside, sunk low so the two-tone boundary reads as a
-  // clean waterline (not a jagged intersection).
-  const under = sphere(0.96, belly, {}, 14, 9);
-  under.scale.set(1.24, 0.5, 0.9);
-  under.position.y = -0.42;
+  const under = sphere(0.94, belly, {}, 12, 8);
+  under.scale.set(0.78, 0.42, 1.18);
+  under.position.set(0, -0.38, 0.08);
   body.add(under);
-  // Blunt rounded tail flukes.
+  // Two plush belly bands wrap the front half of the blimp.
+  for (const z of [0.28, 0.68]) {
+    const band = new THREE.Mesh(new THREE.TorusGeometry(0.79, 0.07, 5, 12), mat(belly));
+    band.scale.y = 0.82;
+    band.position.z = z;
+    body.add(band);
+  }
   for (const sx of [-1, 1]) {
-    const fluke = sphere(0.3, top, {}, 8, 6);
-    fluke.scale.set(1.2, 0.3, 0.72);
-    fluke.position.set(sx * 0.34, 0.12, -1.28);
+    const fluke = sphere(0.32, topDark, {}, 8, 6);
+    fluke.scale.set(1.25, 0.34, 0.75);
+    fluke.position.set(sx * 0.35, 0.08, -1.28);
     fluke.rotation.y = sx * -0.4;
     body.add(fluke);
   }
+  // Blowhole and a three-blob cloud puff are permanently visible from above.
+  const hole = sphere(0.09, topDark, {}, 6, 4);
+  hole.scale.set(1.35, 0.28, 0.75);
+  hole.position.set(0, 0.72, 0.3);
+  body.add(hole);
+  for (const [x, y, r] of [[0, 0.85, 0.13], [-0.11, 0.97, 0.1], [0.11, 0.99, 0.105]] as const) {
+    const puff = sphere(r, belly, {}, 6, 4);
+    puff.position.set(x, y, 0.3);
+    body.add(puff);
+  }
+  if (rng() < 0.35) {
+    const puff = blob(0.07, belly);
+    puff.position.set(0.2, 1.08, 0.31);
+    body.add(puff);
+  }
   g.add(body);
 
-  // Dopey face: big close eyes + a wide upturned smile arc.
   const head = new THREE.Group();
-  head.position.set(0, 1.25, 0.9);
-  for (const e of eyePair(0.32, 0.22, 0.42, 0.17, { irisR: 0.6 }, 0.08)) head.add(e);
-  const mouth = smile(0.28, 0.038, 0x243038, 1.6);
-  mouth.position.set(0, -0.08, 0.44);
+  head.position.set(0, 1.02, 1.08);
+  for (const e of eyePair(0.27, 0.18, 0.34, 0.23, { iris: 0x1d4f78, irisR: 0.66 }, 0.04)) {
+    head.add(e);
+  }
+  const mouth = smile(0.27, 0.038, 0x23485e, 1.75);
+  mouth.position.set(0, -0.12, 0.42);
   head.add(mouth);
+  for (const sx of [-1, 1]) {
+    const cheek = blush(0.11, blushC);
+    cheek.position.set(sx * 0.5, -0.07, 0.25);
+    cheek.rotation.y = sx * 0.45;
+    head.add(cheek);
+  }
   g.add(head);
 
-  // Tiny useless flippers (flap slowly — reuse the wing channel).
   const wings: THREE.Object3D[] = [];
   for (const sx of [-1, 1]) {
     const w = new THREE.Group();
-    w.position.set(sx * 1.2, 1.05, 0.1);
-    const fin = sphere(0.26, top, {}, 8, 6);
-    fin.scale.set(1.4, 0.32, 0.9);
-    fin.position.x = sx * 0.22;
+    w.position.set(sx * 0.76, 0.98, 0.15);
+    const fin = sphere(0.22, topDark, {}, 8, 6);
+    fin.scale.set(1.2, 0.34, 0.78);
+    fin.position.x = sx * 0.16;
     fin.rotation.y = sx * -0.3;
     w.add(fin);
     wings.push(w);
@@ -1373,229 +1482,221 @@ function buildBumblewhale(rng: () => number): { group: THREE.Group; parts: Critt
 }
 
 /**
- * Snickerdoodle — a pancake-flat meadow cat: very wide, very thin, cookie
- * coloured with darker speckles. It moves by FLIPPING over itself (animation.ts
- * flops the whole body 180° each ~0.5s while moving). Flatness is its identity;
- * the edges are ROUNDED (a smooth squashed sphere, never a slab) and it has a
- * real little face: big eyes, a smile and blush pads. Ears + tail flip with it.
+ * Snickerdoodle — cookie-dough puppy who is still a rounded pancake flopper;
+ * floppy spaniel ears, chocolate chips and a tongue replace the old cat read.
  */
 function buildSnickerdoodle(rng: () => number): { group: THREE.Group; parts: CritterParts } {
   const g = new THREE.Group();
-  const dough = jitterColor(0xd4a86c, rng, 0.05);
-  const speck = jitterColor(0x7a4a26, rng, 0.05);
-  const blushC = jitterColor(0xdd9670, rng, 0.03);
+  const dough = jitterColor(0xdca76a, rng, 0.05);
+  const doughDark = jitterColor(0xaa6b3e, rng, 0.04);
+  const cream = jitterColor(0xffdfad, rng, 0.035);
+  const speck = jitterColor(0x65351f, rng, 0.05);
+  const tongueC = jitterColor(0xf58da8, rng, 0.03);
 
-  // Everything lives under `body` so the flip rotates the whole critter.
   const body = new THREE.Group();
-  body.position.y = 0.17; // pivot just above ground so the flop clears
-  // Rounded pancake: a smooth squashed sphere — wide, thin, soft rounded edges.
+  body.position.y = 0.18;
   const disc = sphere(0.5, dough, {}, 16, 10);
-  disc.scale.set(1.7, 0.32, 1.15);
+  disc.scale.set(1.5, 0.34, 1.08);
   body.add(disc);
-  // Cookie speckles scattered on the top face.
   const spots: ReadonlyArray<readonly [number, number]> = [
     [-0.3, 0.16], [0.28, -0.1], [0.05, 0.2], [-0.12, -0.2], [0.36, 0.14], [-0.36, -0.08],
   ];
   for (const [sx, sz] of spots) {
-    const sp = blob(0.045, speck);
-    sp.position.set(sx, 0.15, sz);
+    const sp = blob(0.05, speck);
+    sp.scale.set(1.1, 0.55, 1);
+    sp.position.set(sx, 0.165, sz);
     body.add(sp);
   }
-  // Plump rounded ears poking up from the front edge, plume tail at the back.
+
+  // Huge floppy dog ears hang off the front corners, giving the flat body a
+  // puppy silhouette from above and from the turntable's three-quarter view.
   for (const sx of [-1, 1]) {
-    const ear = plumpEar(0.085, dough);
-    ear.position.set(sx * 0.3, 0.19, 0.3);
-    ear.rotation.x = -0.35;
+    const ear = sphere(0.18, doughDark, {}, 8, 6);
+    ear.scale.set(0.85, 1.35, 0.36);
+    ear.position.set(sx * 0.5, 0.02, 0.3);
+    ear.rotation.z = sx * -0.72;
+    ear.rotation.x = -0.25;
     body.add(ear);
+    const inner = sphere(0.11, cream, {}, 6, 4);
+    inner.scale.set(0.7, 1.25, 0.22);
+    inner.position.set(sx * 0.5, 0.045, 0.36);
+    inner.rotation.z = sx * -0.72;
+    body.add(inner);
   }
-  const tail = capsule(0.05, 0.24, dough, {}, 2, 6);
+  const tail = capsule(0.065, 0.28, doughDark, {}, 2, 6);
   tail.rotation.x = Math.PI / 2 - 0.4;
-  tail.position.set(0, 0.06, -0.5);
+  tail.position.set(0.25, 0.05, -0.5);
+  tail.rotation.z = -0.5;
   body.add(tail);
-  // A real little face PROUD of the front edge (the disc is 0.575 deep — the
-  // features must poke past it or they vanish inside): eyes + nose + smile +
-  // blush pads.
-  for (const e of eyePair(0.15, 0.07, 0.55, 0.085, { irisR: 0.66 }, 0.12)) body.add(e);
-  const nose = blob(0.032, speck);
-  nose.position.set(0, 0.01, 0.59);
-  body.add(nose);
-  const mouth = smile(0.035, 0.009);
-  mouth.position.set(0, -0.045, 0.575);
-  body.add(mouth);
-  for (const sx of [-1, 1]) {
-    const b = blush(0.055, blushC);
-    b.position.set(sx * 0.33, 0.03, 0.52);
-    b.rotation.y = sx * 0.55;
-    body.add(b);
+
+  // Face sits proud of the 0.54-deep pancake edge.
+  for (const e of eyePair(0.16, 0.075, 0.53, 0.105, { iris: 0x4b2d22, irisR: 0.68 }, 0.06)) {
+    body.add(e);
   }
+  for (const sx of [-1, 1]) {
+    const muzzle = sphere(0.11, cream, {}, 6, 4);
+    muzzle.scale.set(1.05, 0.65, 0.5);
+    muzzle.position.set(sx * 0.07, -0.02, 0.58);
+    body.add(muzzle);
+  }
+  const nose = sphere(0.048, speck, {}, 6, 4);
+  nose.scale.set(1.25, 0.72, 0.55);
+  nose.position.set(0, 0.0, 0.66);
+  body.add(nose);
+  const mouth = smile(0.055, 0.011, speck);
+  mouth.position.set(0, -0.07, 0.64);
+  body.add(mouth);
+  const tongue = capsule(0.04, 0.055, tongueC, {}, 2, 6);
+  tongue.position.set(0, -0.125, 0.66);
+  body.add(tongue);
   g.add(body);
 
-  const wRoll = rng();
-  if (wRoll < 0.4) {
-    // An extra bite-mark speckle cluster on some individuals.
+  if (rng() < 0.4) {
     const bite = blob(0.05, speck);
-    bite.position.set(0.5, 0.14, -0.2);
+    bite.position.set(0.51, 0.15, -0.18);
     body.add(bite);
   }
 
-  // head handle points at the body too (no separate head anim for the flopper).
+  // Preserve the exact legacy alias: the bespoke flopper anim rotates `body`.
   return { group: g, parts: { legs: [], head: body, body } };
 }
 
-/**
- * Gloomgobbler — a round forest shadow-ball on two long stilt legs, with
- * enormous glowing lantern eyes, tiny fangs and a wide mouth line. The
- * shadow-ball stays SOFTLY FACETED (its billowing-smoke identity); legs are
- * smooth. Legs take exaggerated slow strides (animation.ts). Faces +Z.
- */
+/** Gloomgobbler — softly faceted shadow puff with lantern eyes and nub feet. */
 function buildGloomgobbler(rng: () => number): { group: THREE.Group; parts: CritterParts } {
   const g = new THREE.Group();
-  const shadow = jitterColor(0x241f30, rng, 0.03, 0.05);
-  const legc = jitterColor(0x15121c, rng, 0.02, 0.04);
+  const shadow = jitterColor(0x2d2349, rng, 0.04, 0.05);
+  const shadowLight = jitterColor(0x49376d, rng, 0.04, 0.05);
+  const legc = jitterColor(0x1b1529, rng, 0.02, 0.04);
   const lantern = 0xffd24a;
 
-  const bodyY = 1.0;
+  const bodyY = 0.52;
   const body = new THREE.Group();
   body.position.y = bodyY;
-  const ball = sphere(0.52, shadow, { flat: true }, 9, 7);
-  ball.scale.set(1.05, 1.12, 1.0);
+  const ball = sphere(0.5, shadow, { flat: true }, 10, 8);
+  ball.scale.set(1.06, 1.0, 1.0);
   body.add(ball);
-  // A couple of soft shadow lobes so the ball reads as billowing, not a globe.
   for (const sx of [-1, 1]) {
-    const lobe = sphere(0.25, shadow, { flat: true }, 7, 5);
-    lobe.position.set(sx * 0.4, -0.12, -0.1);
+    const lobe = sphere(0.23, shadowLight, { flat: true }, 7, 5);
+    lobe.position.set(sx * 0.4, -0.13, -0.06);
     body.add(lobe);
   }
   g.add(body);
 
-  // Head handle = face cluster on the front of the ball.
   const head = new THREE.Group();
-  head.position.set(0, bodyY + 0.06, 0.38);
-  // Enormous glowing lantern eyes (glowing sclera + dark pupil + highlight).
-  for (const e of eyePair(0.19, 0.08, 0.08, 0.18, {
+  head.position.set(0, bodyY + 0.02, 0.39);
+  for (const e of eyePair(0.205, 0.07, 0.08, 0.2, {
     sclera: 0xfff0b0,
     scleraEmissive: lantern,
-    scleraEmissiveIntensity: 1.7,
-    iris: 0x140f04,
-    irisR: 0.44,
-  }, 0.05)) head.add(e);
-  // Wide mouth line + tiny fangs.
-  const mouth = capsule(0.03, 0.3, 0x0c0a12, {}, 2, 6);
-  mouth.rotation.z = Math.PI / 2;
-  mouth.position.set(0, -0.2, 0.16);
-  head.add(mouth);
-  for (const sx of [-1, 1]) {
-    const fang = cone(0.025, 0.07, 0xf4ecd4, 5);
-    fang.rotation.x = Math.PI;
-    fang.position.set(sx * 0.1, -0.16, 0.18);
-    head.add(fang);
+    scleraEmissiveIntensity: 1.8,
+    iris: 0x211608,
+    irisR: 0.46,
+  }, 0.03)) {
+    head.add(e);
   }
+  const mouth = smile(0.07, 0.014, 0x110d19, 1.7);
+  mouth.position.set(0, -0.18, 0.17);
+  head.add(mouth);
   g.add(head);
 
-  // Two long stilt legs.
+  // Keep the two animated handles, but turn the old stilts into tiny nubs.
   const legs: THREE.Object3D[] = [];
-  const legLen = bodyY - 0.42;
   for (const sx of [-1, 1]) {
-    const l = legGroup(sx * 0.18, bodyY - 0.42, 0, 0.045, 0.06, legLen, legc, 0, 0x0c0a12);
+    const l = legGroup(sx * 0.18, 0.16, 0.02, 0.07, 0.1, 0.16, legc);
     legs.push(l);
     g.add(l);
   }
 
-  const wRoll = rng();
-  if (wRoll < 0.35) {
-    // A stray wisp curl on top of some gobblers.
-    const wisp = cone(0.06, 0.2, shadow, 7);
-    wisp.position.set(0.1, bodyY + 0.55, -0.05);
-    wisp.rotation.z = 0.4;
+  // A permanent three-bead cowlick makes the spooky ball read as a pet.
+  for (const [x, y, s, rz] of [[-0.03, 1.0, 1, -0.25], [0.07, 1.08, 0.82, -0.55]] as const) {
+    const wisp = sphere(0.1 * s, shadowLight, { flat: true }, 7, 5);
+    wisp.scale.set(0.62, 1.35, 0.6);
+    wisp.position.set(x, y, -0.03);
+    wisp.rotation.z = rz;
     g.add(wisp);
+  }
+  if (rng() < 0.35) {
+    const curl = blob(0.055, shadowLight, { flat: true });
+    curl.position.set(0.18, 1.09, -0.02);
+    g.add(curl);
   }
 
   return { group: g, parts: { legs, head, body } };
 }
 
-/**
- * Timberchomp — a plump beaver-like forest/wetland dam-builder (Inventory +
- * Building Task 1, produces wood). A bottom-heavy dam-brown egg body, a round
- * big-cheeked head with buck teeth and small round ears, stubby legs, and the
- * signature broad flat paddle tail (a squashed capsule) trailing behind.
- */
+/** Timberchomp — acorn-brown beaver plush with billboard teeth and paddle. */
 function buildTimberchomp(rng: () => number): { group: THREE.Group; parts: CritterParts } {
   const g = new THREE.Group();
-  const coat = jitterColor(0x6e4a2a, rng, 0.04);
-  const coatDark = jitterColor(0x4a3018, rng, 0.04);
-  const cream = jitterColor(0xd9b98a, rng, 0.04);
-  const toothC = 0xf4ecd4;
+  const coat = jitterColor(0x936036, rng, 0.04);
+  const coatDark = jitterColor(0x57341f, rng, 0.04);
+  const cream = jitterColor(0xf0cc91, rng, 0.04);
+  const toothC = 0xfff1cf;
 
-  // Body: plump bottom-heavy egg — the dam-builder's rounded belly.
   const body = new THREE.Group();
-  body.position.y = 0.32;
-  const torso = egg(0.32, 0.58, coat, {}, 0.34, 11);
+  body.position.y = 0.2;
+  const torso = egg(0.36, 0.64, coat, {}, 0.4, 12);
   body.add(torso);
-  const belly = sphere(0.2, cream, {}, 7, 5);
-  belly.scale.set(0.85, 0.9, 0.6);
-  belly.position.set(0, 0.02, 0.2);
+  const belly = sphere(0.23, cream, {}, 8, 6);
+  belly.scale.set(0.84, 1.05, 0.54);
+  belly.position.set(0, 0.2, 0.28);
   body.add(belly);
   g.add(body);
 
-  // Head: round cheeks, close-set eyes, button nose, tiny smile, buck teeth,
-  // small round ears.
   const head = new THREE.Group();
-  head.position.set(0, 0.6, 0.24);
-  const skull = sphere(0.23, coat, {}, 9, 7);
-  skull.scale.set(1, 0.94, 0.92);
+  head.position.set(0, 0.61, 0.27);
+  const skull = sphere(0.28, coat, {}, 10, 7);
+  skull.scale.set(1.04, 0.96, 0.94);
   head.add(skull);
-  const muzzle = sphere(0.13, cream, {}, 6, 4);
-  muzzle.scale.set(0.95, 0.8, 1.05);
-  muzzle.position.set(0, -0.07, 0.19);
-  head.add(muzzle);
-  for (const e of eyePair(0.115, 0.06, 0.2, 0.09, { irisR: 0.68 }, 0.1)) head.add(e);
-  const nose = blob(0.04, 0x2a1c14);
-  nose.position.set(0, -0.02, 0.31);
-  head.add(nose);
-  const mouth = smile(0.035, 0.009);
-  mouth.position.set(0, -0.15, 0.27);
-  head.add(mouth);
-  // Buck teeth — the one place a little box is on-brief (tooth accent).
   for (const sx of [-1, 1]) {
-    const tooth = box(0.032, 0.075, 0.02, toothC);
-    tooth.position.set(sx * 0.038, -0.12, 0.29);
+    const muzzle = sphere(0.13, cream, {}, 7, 5);
+    muzzle.scale.set(1.0, 0.78, 0.82);
+    muzzle.position.set(sx * 0.085, -0.08, 0.21);
+    head.add(muzzle);
+  }
+  for (const e of eyePair(0.14, 0.075, 0.23, 0.115, { iris: 0x453022, irisR: 0.68 }, 0.07)) {
+    head.add(e);
+  }
+  const nose = blob(0.05, coatDark);
+  nose.position.set(0, -0.02, 0.36);
+  head.add(nose);
+  const mouth = smile(0.055, 0.011, coatDark);
+  mouth.position.set(0, -0.12, 0.35);
+  head.add(mouth);
+  // The incisors are intentionally absurd: visible even before the face is.
+  for (const sx of [-1, 1]) {
+    const tooth = box(0.055, 0.135, 0.035, toothC);
+    tooth.position.set(sx * 0.045, -0.18, 0.37);
+    tooth.rotation.z = sx * 0.04;
     head.add(tooth);
   }
-  // Small round ears (flattened discs, never pointed).
   for (const sx of [-1, 1]) {
-    const ear = sphere(0.075, coat, {}, 5, 4);
+    const ear = sphere(0.09, coatDark, {}, 6, 4);
     ear.scale.set(1, 1, 0.5);
-    ear.position.set(sx * 0.19, 0.16, -0.02);
+    ear.position.set(sx * 0.22, 0.17, -0.01);
     head.add(ear);
   }
   g.add(head);
 
-  // Stubby legs.
   const legs: THREE.Object3D[] = [];
   for (const [sx, sz] of QUAD) {
-    const l = legGroup(sx * 0.17, 0.16, sz * 0.16, 0.075, 0.09, 0.16, coatDark);
+    const l = legGroup(sx * 0.19, 0.2, sz * 0.18, 0.08, 0.105, 0.2, coatDark);
     legs.push(l);
     g.add(l);
   }
 
-  // The signature broad flat tail — a squashed capsule laid on its side: local
-  // X (radius) shrinks to near-flat (world-Y after the Z rotation), local Y
-  // (length) becomes the world-X broadness, local Z stays the paddle's depth.
   const tail = new THREE.Group();
-  tail.position.set(0, 0.16, -0.34);
-  const paddle = capsule(0.24, 0.2, coatDark, {}, 2, 7);
-  paddle.scale.set(0.34, 1, 1.15);
+  tail.position.set(0, 0.15, -0.39);
+  const paddle = capsule(0.29, 0.27, coatDark, {}, 2, 8);
+  paddle.scale.set(0.28, 1.08, 1.28);
   paddle.rotation.z = Math.PI / 2;
   paddle.rotation.x = 0.08;
+  paddle.position.z = -0.14;
   tail.add(paddle);
   g.add(tail);
 
-  const wRoll = rng();
-  if (wRoll < 0.35) {
-    // A gnaw-notch scuff on the tail edge for some individuals.
-    const notch = blob(0.05, coatDark);
-    notch.position.set(0.3, 0.16, -0.4);
-    g.add(notch);
+  if (rng() < 0.35) {
+    const notch = blob(0.055, cream);
+    notch.position.set(0.32, 0.03, -0.15);
+    tail.add(notch);
   }
 
   return { group: g, parts: { legs, head, body, tail } };

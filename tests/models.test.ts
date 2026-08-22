@@ -4,12 +4,15 @@ import { buildCritterModel, isSharedCritterMaterial } from '../src/critters/mode
 import { SPECIES } from '../src/critters/species.ts';
 import { mulberry32 } from '../src/core/rng.ts';
 
-// Round-2 model budget + material-cache contract tests. Triangle budgets are
-// the fidelity-2 round-2 numbers: smooth-shaded organic forms at ≤1200 tris
-// per typical critter, ≤1800 for the 16-legged prismhorse.
+// Model budget + material-cache contract tests. Round 3 (fidelity-3 whimsy
+// pass, Spencer's Neopets directive) raised the round-2 1200-tri ceiling to
+// 1700: the per-species identity features (ear pairs, antenna paddles, fin
+// frills, iris+highlight eyes) cost real triangles, and critters are few and
+// individually built — ~30 active × ~1.6k tris is negligible next to the
+// terrain. The budget stays as a runaway-detail guard, not a perf gate.
 
-const TRI_BUDGET_DEFAULT = 1200;
-const TRI_BUDGET_PRISMHORSE = 1800;
+const TRI_BUDGET_DEFAULT = 1700;
+const TRI_BUDGET_PRISMHORSE = 2200;
 
 function triCount(group: THREE.Object3D): number {
   let tris = 0;
@@ -52,7 +55,10 @@ describe('critter draw-call baking', () => {
 
   it('merges each critter into a handful of meshes (draw-call budget)', () => {
     for (const sp of SPECIES) {
-      const cap = sp.id === 'prismhorse' ? 24 : 10; // 16 identity legs float prismhorse
+      // 16 identity legs float prismhorse; round 3 gave shardwing a second
+      // independently-flapping crystal wing pair (4 wing meshes, animatable
+      // Object3Ds — merging would freeze the flap).
+      const cap = sp.id === 'prismhorse' ? 24 : sp.id === 'shardwing' ? 12 : 10;
       let worst = 0;
       for (const seed of [1, 2, 3, 5, 8]) {
         const { group } = buildCritterModel(sp.id, mulberry32(seed));
