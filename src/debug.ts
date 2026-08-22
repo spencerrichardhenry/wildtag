@@ -9,7 +9,7 @@ import { speciesById } from './critters/species.ts';
 import type { ZiplineSystem } from './structures/ziplines.ts';
 import type { DroneSystem } from './structures/drones.ts';
 import { currentQuality } from './core/quality.ts';
-import { DAYLIGHT } from './core/constants.ts';
+import { DAYLIGHT, INPUT } from './core/constants.ts';
 
 // ---------------------------------------------------------------------------
 // window.__game (Task 14): the full debug handle backbone for Task 15's
@@ -183,6 +183,13 @@ export interface GameDebugHandle {
    */
   placePiece(kind: string, x: number, y: number, z: number, yaw: number): boolean;
   setTimeScale(f: number): void;
+  /**
+   * Debug-only: aim the camera (radians; yaw 0 faces -Z, pitch + looks up).
+   * Headless Playwright cannot acquire pointer lock, so e2e fidelity snips
+   * (e2e/fidelity.mjs) need a direct way to frame a shot. Pitch is clamped
+   * to the same INPUT.pitchClamp a real mouse is.
+   */
+  setLook(yaw: number, pitch: number): void;
   /**
    * Jump the day/night clock to a named phase's START, or to an absolute
    * seconds position within the cycle (Cursed Castle Task 5 e2e verification:
@@ -384,6 +391,13 @@ export function buildDebugHandle(deps: DebugDeps): GameDebugHandle {
     /** Multiply the fixed-step accumulator's dt feed (clamped 0.1..16). */
     setTimeScale(f: number): void {
       deps.setTimeScale(f);
+    },
+
+    /** Aim the camera directly (e2e fidelity snips; see interface doc). */
+    setLook(yaw: number, pitch: number): void {
+      deps.input.yaw = yaw;
+      const clamp = INPUT.pitchClamp;
+      deps.input.pitch = Math.max(-clamp, Math.min(clamp, pitch));
     },
 
     /**
