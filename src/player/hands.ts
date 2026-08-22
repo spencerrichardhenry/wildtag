@@ -135,6 +135,7 @@ function buildArm(
   group: THREE.Group,
   mirror: 1 | -1,
   skinMat: THREE.Material,
+  sleeveMat: THREE.Material,
   cuffMat: THREE.Material,
   ownGeometries: THREE.BufferGeometry[],
 ): void {
@@ -148,60 +149,81 @@ function buildArm(
     HANDS.forearmSegments,
   );
   forearmGeo.translate(0, HANDS.forearmLen / 2, 0); // near end (wrist) at the mesh's own origin
-  const forearm = tagMesh(new THREE.Mesh(forearmGeo, skinMat));
+  const forearm = tagMesh(new THREE.Mesh(forearmGeo, sleeveMat));
   forearm.quaternion.copy(q);
   forearm.position.copy(armDir).multiplyScalar(HANDS.mittenRadius * 0.55);
   group.add(forearm);
 
-  // Sits partway down the forearm (not at its far tip) so it stays inside the
-  // frame as a visible sleeve band rather than sliding off-screen with the
-  // (mostly off-screen) rest of the arm.
+  // The reference's dark band sits directly at the wrist. It overlays the
+  // sleeve's near end and tucks slightly into the palm so no skin/sleeve seam
+  // opens while the hands bob.
   const cuffGeo = new THREE.CylinderGeometry(HANDS.cuffRadii.top, HANDS.cuffRadii.bottom, HANDS.cuffLen, HANDS.forearmSegments);
   const cuff = tagMesh(new THREE.Mesh(cuffGeo, cuffMat));
   cuff.quaternion.copy(q);
-  cuff.position.copy(armDir).multiplyScalar(HANDS.mittenRadius * 0.55 + HANDS.forearmLen * 0.55);
+  cuff.position.copy(armDir).multiplyScalar(HANDS.mittenRadius * 0.55 + HANDS.cuffLen * 0.42);
   group.add(cuff);
 
-  // Fidelity-3: the mitten grew fingers — palm sphere + four curled capsule
-  // fingers fanned forward + an inward thumb, merged into ONE geometry (same
-  // single-draw-call budget as the old bare mitten).
+  // Palm + compact claw lobes + opposing thumb, merged into ONE geometry.
+  // The shallow seams suggest a hand while preserving the reference's cute,
+  // toy-like pincer silhouette instead of exposing anatomical fingers.
   const handGeo = buildHandGeometry(mirror);
   const hand = tagMesh(new THREE.Mesh(handGeo, skinMat));
+  hand.rotation.z = mirror * 0.18; // both claws lean gently toward screen-centre
   group.add(hand);
 
   ownGeometries.push(forearmGeo, cuffGeo, handGeo);
 }
 
-/** Palm + fingers + thumb as one merged geometry. `mirror` flips the thumb
- *  side so each hand reads correctly from behind (knuckles up, fingers curled
- *  away from the camera). Falls back to the bare palm if a merge ever fails. */
+/** Low-poly claw lobe whose local Y axis follows `dir`. */
+function clawLobe(
+  r: number,
+  len: number,
+  start: THREE.Vector3,
+  dir: THREE.Vector3,
+): THREE.BufferGeometry {
+  const unit = dir.clone().normalize();
+  const geometry = new THREE.CapsuleGeometry(r, len, 2, 5);
+  geometry.applyQuaternion(
+    new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), unit),
+  );
+  geometry.translate(
+    start.x + unit.x * len * 0.5,
+    start.y + unit.y * len * 0.5,
+    start.z + unit.z * len * 0.5,
+  );
+  return geometry;
+}
+
+/** Palm + three overlapping upper lobes + one opposing thumb as one merged
+ *  geometry. `mirror` flips the pincer so the pair reads as left/right hands.
+ *  Falls back to the bare palm if a merge ever fails. */
 function buildHandGeometry(mirror: 1 | -1): THREE.BufferGeometry {
   const R = HANDS.mittenRadius;
   const palm = new THREE.SphereGeometry(R, 8, 6);
   palm.scale(HANDS.mittenScale.x, HANDS.mittenScale.y, HANDS.mittenScale.z);
 
   const parts: THREE.BufferGeometry[] = [palm];
-  const F = HANDS.finger;
-  for (let i = 0; i < 4; i++) {
-    const finger = new THREE.CapsuleGeometry(F.r, F.len, 3, 6);
-    // Capsule axis is Y; pitch it forward (toward -Z) with a downward curl,
-    // then fan across the palm width.
-    finger.rotateX(-Math.PI / 2 + F.curl);
-    const fan = (i - 1.5) * F.spread;
-    finger.rotateY(fan);
-    finger.translate(
-      Math.sin(fan) * -R * 0.2 + (i - 1.5) * R * 0.42,
-      R * 0.18,
-      -R * HANDS.mittenScale.z - F.len * 0.35,
-    );
-    parts.push(finger);
+  const C = HANDS.claw;
+  for (let i = -1; i <= 1; i++) {
+    parts.push(clawLobe(
+      C.r * (i === 0 ? 1.04 : 1),
+      C.len * (i === 0 ? 1.05 : 0.94),
+      new THREE.Vector3(
+        i * C.spread + mirror * R * 0.08,
+        R * 0.34 - Math.abs(i) * R * 0.035,
+        -R * HANDS.mittenScale.z * 0.52,
+      ),
+      new THREE.Vector3(-mirror * 0.17, 0.78, -0.61),
+    ));
   }
+
   const T = HANDS.thumb;
-  const thumb = new THREE.CapsuleGeometry(T.r, T.len, 3, 6);
-  thumb.rotateX(-Math.PI / 2 + F.curl * 0.6);
-  thumb.rotateY(-mirror * T.yaw);
-  thumb.translate(-mirror * R * 0.95, R * 0.05, -R * 0.45);
-  parts.push(thumb);
+  parts.push(clawLobe(
+    T.r,
+    T.len,
+    new THREE.Vector3(-mirror * R * 0.78, -R * 0.08, -R * 0.14),
+    new THREE.Vector3(mirror * 0.38, 0.72, -0.58),
+  ));
 
   const merged = mergeGeometries(
     parts.map((g) => (g.index ? g.toNonIndexed() : g)),
@@ -290,11 +312,12 @@ export class HandsView {
     this.root.add(this.right, this.left);
 
     const skinMat = makeSurfaceMaterial({ color: HANDS.skinColor });
-    const cuffMat = makeSurfaceMaterial({ color: HANDS.sleeveColor });
-    this.ownMaterials.push(skinMat, cuffMat);
+    const sleeveMat = makeSurfaceMaterial({ color: HANDS.sleeveColor });
+    const cuffMat = makeSurfaceMaterial({ color: HANDS.cuffColor });
+    this.ownMaterials.push(skinMat, sleeveMat, cuffMat);
 
-    buildArm(this.right, 1, skinMat, cuffMat, this.ownGeometries);
-    buildArm(this.left, -1, skinMat, cuffMat, this.ownGeometries);
+    buildArm(this.right, 1, skinMat, sleeveMat, cuffMat, this.ownGeometries);
+    buildArm(this.left, -1, skinMat, sleeveMat, cuffMat, this.ownGeometries);
 
     const hookGeo = buildHookGeometry();
     const hookMat = makeSurfaceMaterial({ color: HANDS.hookColor, metalness: 0.6, roughness: 0.4 });

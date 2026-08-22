@@ -827,7 +827,10 @@ export const SCATTER = {
     windPine: 0x35825a,
     willowLeaf: 0x7fa25a,
     juniper: 0x40634a,
-    mesa: 0x9a8a72,
+    /** Wave-3: greyed toward the crag stone so formations blend, + a dark
+     *  strata tone the hoodoo/rib builders alternate with. */
+    mesa: 0x8f8471,
+    mesaDark: 0x776d5e,
     rib: 0x8f8778,
     boulder: 0x847c70,
     scree: 0x9c9284,
@@ -1956,9 +1959,9 @@ export const MOUNT = {
  */
 export const HANDS = {
   /** Camera-local rest position (m) of the right (grapple) hand — lower-right of view. */
-  rightOffset: { x: 0.62, y: -0.42, z: -0.82 },
+  rightOffset: { x: 0.61, y: -0.38, z: -0.82 },
   /** Camera-local rest position (m) of the left (item) hand — lower-left of view. */
-  leftOffset: { x: -0.62, y: -0.42, z: -0.82 },
+  leftOffset: { x: -0.61, y: -0.38, z: -0.82 },
   /** Idle sway: `sin(t*swayFreq + phase) * swayAmp` added to X/Y every frame,
    *  even standing still — a subtle "still breathing" drift. */
   swayFreq: 1.15,
@@ -1968,30 +1971,32 @@ export const HANDS = {
   bobFreq: 9,
   bobAmp: 0.045,
   bobSpeedCap: 7,
-  /** Forearm cylinder radii (top = wrist end, bottom = elbow/off-screen end) + length (m). */
-  forearmRadii: { top: 0.05, bottom: 0.066 },
-  forearmLen: 0.3,
+  /** Faceted sleeve radii (top = wrist end, bottom = elbow/off-screen end) +
+   *  length (m). The reference has substantial clothed arms, not long bare
+   *  skin cylinders, so the sleeve deliberately widens toward the camera. */
+  forearmRadii: { top: 0.082, bottom: 0.125 },
+  forearmLen: 0.34,
   forearmSegments: 6,
-  /** Sleeve cuff: a short wide cylinder at the forearm's off-screen (elbow) end. */
-  cuffRadii: { top: 0.08, bottom: 0.088 },
-  cuffLen: 0.065,
+  /** Dark wrist band laid over the sleeve immediately behind the hand. */
+  cuffRadii: { top: 0.094, bottom: 0.1 },
+  cuffLen: 0.06,
   /** Lateral tilt (unitless XZ mix, normalized internally) sending each forearm
    *  toward ITS OWN bottom screen corner rather than straight down. */
   armLateral: 0.35,
   armDown: 0.55,
   armBack: 0.85,
-  /** Mitten: base sphere radius (m) + non-uniform scale for a squashed paw silhouette. */
-  mittenRadius: 0.095,
-  mittenScale: { x: 1, y: 0.82, z: 1.2 },
+  /** Broad low-poly palm — large enough to read as the reference's chunky hand
+   *  rather than the previous narrow oval paw. */
+  mittenRadius: 0.108,
+  mittenScale: { x: 1.12, y: 0.94, z: 1.12 },
   /**
-   * Fidelity-3 fingers: the mitten grew four knuckle-forward fingers and an
-   * inward thumb (the reference hands read as hands, not paws). Capsule
-   * radius/length, fan spread (rad between fingers), forward curl (rad), and
-   * the thumb's inward yaw. All merged into the one hand mesh — no extra draw
-   * calls.
+   * Reference-style claw: three overlapping upper lobes imply a mitten's
+   * fingers without reading as an anatomical hand; one thick opposing thumb
+   * completes the cute pincer silhouette. Everything merges into the palm's
+   * single mesh, preserving the draw-call budget.
    */
-  finger: { r: 0.026, len: 0.075, spread: 0.16, curl: 0.55 },
-  thumb: { r: 0.028, len: 0.06, yaw: 0.9 },
+  claw: { r: 0.041, len: 0.082, spread: 0.032 },
+  thumb: { r: 0.044, len: 0.086 },
   /** Grapple-hook viewmodel: shaft (radii/len) + prongs (radius/len/count) fanned at the tip. */
   hookShaft: { topR: 0.015, bottomR: 0.02, len: 0.14 },
   hookProng: { r: 0.022, len: 0.06, count: 3, fanR: 0.03 },
@@ -2003,11 +2008,11 @@ export const HANDS = {
   rampWedge: { w: 0.17, run: 0.18, rise: 0.15 },
   /** Mini cube-block viewmodel: a small cube's side length (m). */
   cubeBlock: 0.22,
-  /** Skin-neutral warm hand/forearm tone + a darker sleeve-cuff tone
-   *  (Fidelity-3: brightened toward the reference's sunlit tan + warm-grey
-   *  sleeve instead of navy). */
-  skinColor: 0xe8b072,
-  sleeveColor: 0x4a423c,
+  /** Warm golden skin, taupe-brown sleeves, and a near-umber wrist band match
+   *  the reference's three clearly separated material zones. */
+  skinColor: 0xf0a44f,
+  sleeveColor: 0x6a5849,
+  cuffColor: 0x382f2a,
   hookColor: 0xb9c0c6,
   /** Held-item tints — mirrors `ITEM_COLOR` in `ui/screens.ts` so the same item
    *  reads as the same color in the inventory screen and in-hand. */

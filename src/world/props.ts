@@ -312,22 +312,55 @@ export function buildRock(): THREE.BufferGeometry {
 
 // initial draft via codex (buildMesa) — adapted: fixed layers, merged vertex-coloured geo
 /** Crag mesa: four flattened boxes of decreasing width, each yaw-jittered (~4.6m). */
+// Wave-3 fix (Spencer: the box towers read "stupid and out of place" against
+// the upgraded crags): a weathered HOODOO — irregular faceted slabs stacked on
+// a boulder base, alternating light/dark strata, slight tilts, ~5m at scale 1.
+// Same footprint/obstacle radius as the old box stack; PROP_TOP mesa 5 holds.
 function buildMesa(): THREE.BufferGeometry {
-  return merge([
-    box(4.2, 1.4, 2.9, C.mesa, 0, 0.7, 0, 0.1),
-    box(3.4, 1.2, 2.4, C.mesa, 0.15, 2.0, 0.1, -0.15),
-    box(2.6, 1.1, 1.9, C.mesa, -0.1, 3.1, 0.15, 0.2),
-    box(1.8, 1.0, 1.3, C.mesa, 0.2, 4.1, -0.1, -0.1),
-  ]);
+  const parts: THREE.BufferGeometry[] = [
+    // Skirt boulders grounding the formation into the slope.
+    ground(blob(0.9, C.mesaDark, -1.5, 0, 0.5, 1.2, 0.7, 1.0)),
+    ground(blob(0.75, C.mesa, 1.4, 0, -0.45, 1.1, 0.65, 1.05)),
+  ];
+  let y = 0;
+  for (const [r, sy, jx, jz, ry, tilt, dark] of [
+    [1.9, 0.42, 0, 0, 0.3, 0.04, false],
+    [1.6, 0.4, 0.22, -0.15, 1.35, -0.05, true],
+    [1.35, 0.38, -0.18, 0.2, 2.3, 0.06, false],
+    [1.05, 0.36, 0.15, 0.05, 0.8, -0.04, true],
+    [0.7, 0.42, -0.08, -0.1, 1.7, 0.05, false],
+  ] as const) {
+    const slab = new THREE.IcosahedronGeometry(r, 0);
+    slab.scale(1.2, sy, 1.0);
+    slab.rotateY(ry);
+    slab.rotateZ(tilt);
+    slab.computeBoundingBox();
+    const hgt = slab.boundingBox!.max.y - slab.boundingBox!.min.y;
+    slab.translate(jx, y - slab.boundingBox!.min.y, jz);
+    y += hgt * 0.85; // strata nest slightly
+    parts.push(colored(slab, dark ? C.mesaDark : C.mesa));
+  }
+  return merge(parts);
 }
 
-/** Highlands rock rib: a low elongated ridge of angled slabs. */
+/** Highlands rock rib — wave-3 fix: three faceted strata FINS leaning the same
+ *  way (an exposed rock seam), replacing the boxy slabs. */
 function buildRib(): THREE.BufferGeometry {
-  return merge([
-    box(1.3, 1.0, 3.6, C.rib, 0, 0.6, 0, 0.28),
-    box(1.0, 1.7, 2.3, C.rib, 0.35, 1.35, -0.2, 0.18),
-    box(0.8, 0.9, 1.5, C.rib, -0.25, 1.1, 0.45, -0.16),
-  ]);
+  const parts: THREE.BufferGeometry[] = [];
+  for (const [r, h, x, z, lean, ry, dark] of [
+    [0.75, 1.9, -0.9, 0.15, 0.32, 0.2, false],
+    [0.9, 2.4, 0, -0.1, 0.3, 0.05, true],
+    [0.65, 1.5, 0.95, 0.2, 0.34, -0.15, false],
+  ] as const) {
+    const fin = new THREE.OctahedronGeometry(r, 0);
+    fin.scale(0.55, h / r, 1.35);
+    fin.rotateZ(lean);
+    fin.rotateY(ry);
+    fin.computeBoundingBox();
+    fin.translate(x, -fin.boundingBox!.min.y - h * 0.28, z); // half-buried
+    parts.push(colored(fin, dark ? C.mesaDark : C.rib));
+  }
+  return merge(parts);
 }
 
 /** Boulder stack: composite of icosphere boulders + a wedged box (~2m). */
