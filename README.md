@@ -218,7 +218,7 @@ Append to `http://localhost:5199/`:
 | `?screen=guide`     | Open the Field Guide on boot |
 | `?screen=roster`    | Open the roster on boot (seeded with a few bonded critters for a screenshot) |
 | `?screen=help`      | Open the pause/help overlay on boot |
-| `?preview=critters` | Turntable showcase of all 17 species |
+| `?preview=critters` | Large, scrollable gallery of all 18 species; middle-drag to rotate |
 | `?debug=grapple`    | Drop into the crags, auto-fire a grapple and freeze for a static rope shot |
 | `?debug=structures` | Auto-place a zipline + drone and frame them |
 

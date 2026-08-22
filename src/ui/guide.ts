@@ -4,7 +4,7 @@ import { SPECIES } from '../critters/species.ts';
 import type { Biome, SpeciesDef } from '../core/types.ts';
 
 // ---------------------------------------------------------------------------
-// Field Guide (Task 10, Tab). A silhouette-style grid of all 17 species: each
+// Field Guide (Task 10, Tab). A silhouette-style grid of all 18 species: each
 // still-unknown critter shows a dark "???" card with only a biome hint, while
 // a Linked critter reveals its coloured name, tracking stats, biome, flee
 // style, a flavour line and a "Linked ✓" badge. Data comes from the static

@@ -1,7 +1,7 @@
-// The game's cast: 17 procedural critters (8 phase-1 + 4 Haven whimsy +
+// The game's cast: 18 procedural critters (8 phase-1 + 4 Haven whimsy +
 // 1 Cursed Castle gargoyle, the sole `biomes: []` fixed-slot-only species + 2
 // Inventory+Building farm-only-material producers: timberchomp/pebbleshrew +
-// 2 low-flying field species: Shardwing/Nectar Wisp).
+// 2 low-flying field species: Shardwing/Nectar Wisp + 1 Cragdrake).
 // This module is pure *content*
 // (data only) — the tracking params (trackRadius R / trackTime T, awareness,
 // fleeStyle) are binding per the design spec §4 and the Task 8 brief and are
@@ -11,7 +11,7 @@
 import type { SpeciesDef } from '../core/types.ts';
 
 /**
- * All 8 species, ordered by difficulty (meadow starters → endgame trophy).
+ * All species, ordered broadly by difficulty and release group.
  *
  * - `walkSpeed` / `fleeSpeed` (m/s): grazing wander vs. panic flight. The
  *   bellowbuck "never flees" — it just strides fast, so its flee == walk.

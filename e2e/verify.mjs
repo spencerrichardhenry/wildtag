@@ -1497,21 +1497,65 @@ async function checkMount() {
 }
 
 async function checkSpeciesPreview() {
-  await check('n. Species preview: ?preview=critters shows all 18, screenshot', async () => {
+  await check('n. Species preview: 18-model scroll gallery + middle-drag turntable', async () => {
     const page = await context.newPage();
     const errors = [];
     page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
     try {
       await page.goto(BASE + '?preview=critters', { waitUntil: 'load' });
-      await sleep(1500); // let the preview grid render
+      await page.waitForSelector('canvas[data-preview-columns]', { timeout: 30000 });
+      await sleep(1500); // let the preview gallery render
+      const initial = await page.evaluate(() => {
+        const canvas = document.querySelector('canvas');
+        return {
+          columns: Number(canvas.dataset.previewColumns),
+          rows: Number(canvas.dataset.previewRows),
+          yaw: Number(canvas.dataset.previewYaw),
+          manual: canvas.dataset.previewManual,
+          labels: document.querySelectorAll('[data-species-id]').length,
+          scrollHeight: document.documentElement.scrollHeight,
+          viewportHeight: window.innerHeight,
+        };
+      });
+      assert(initial.labels === 18, `preview has ${initial.labels} labels, expected 18`);
+      assert(initial.columns >= 2 && initial.columns <= 4, `preview uses ${initial.columns} columns, expected 2–4`);
+      assert(initial.rows === Math.ceil(18 / initial.columns), `preview rows ${initial.rows} do not fit 18 models in ${initial.columns} columns`);
+      assert(initial.scrollHeight > initial.viewportHeight * 2, `preview does not provide meaningful scrolling (${initial.scrollHeight}px document)`);
+
+      await page.mouse.wheel(0, 700);
+      await sleep(150);
+      const scrolled = await page.evaluate(() => ({
+        y: window.scrollY,
+        progress: Number(document.querySelector('canvas').dataset.previewScrollProgress),
+      }));
+      assert(scrolled.y > 0 && scrolled.progress > 0, `wheel did not scroll gallery (y=${scrolled.y}, progress=${scrolled.progress})`);
+
+      const yawBeforeDrag = await page.evaluate(() => Number(document.querySelector('canvas').dataset.previewYaw));
+      await page.mouse.move(480, 400);
+      await page.mouse.down({ button: 'middle' });
+      await page.mouse.move(700, 400, { steps: 6 });
+      await page.mouse.up({ button: 'middle' });
+      await sleep(80);
+      const yawAfterDrag = await page.evaluate(() => ({
+        yaw: Number(document.querySelector('canvas').dataset.previewYaw),
+        manual: document.querySelector('canvas').dataset.previewManual,
+      }));
+      assert(yawAfterDrag.manual === 'true', 'middle drag did not engage manual rotation');
+      assert(Math.abs(yawAfterDrag.yaw - yawBeforeDrag) > 1.5, `middle drag changed yaw by only ${Math.abs(yawAfterDrag.yaw - yawBeforeDrag).toFixed(2)}rad`);
+      await sleep(300);
+      const heldYaw = await page.evaluate(() => Number(document.querySelector('canvas').dataset.previewYaw));
+      assert(Math.abs(heldYaw - yawAfterDrag.yaw) < 0.02, 'preview kept auto-spinning after manual drag');
+
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await sleep(100);
       const buf = await page.screenshot();
       await shot(page, '20-species-preview.png');
       const png = decodePNG(buf);
       assert(png, 'could not decode preview screenshot PNG');
       const sd = luminanceStdDev(png);
       assert(sd > 8, `preview canvas appears blank (luminance stddev ${sd.toFixed(2)} <= 8)`);
-      console.log(`    preview canvas luminance stddev = ${sd.toFixed(1)}`);
+      console.log(`    ${initial.columns} columns × ${initial.rows} rows, scroll + ${Math.abs(yawAfterDrag.yaw - yawBeforeDrag).toFixed(2)}rad drag; luminance stddev = ${sd.toFixed(1)}`);
       assert(errors.length === 0, `console/page errors: ${errors.join(' | ')}`);
     } finally {
       await page.close();

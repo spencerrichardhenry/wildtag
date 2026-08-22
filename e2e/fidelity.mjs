@@ -254,7 +254,7 @@ const SNIPS = [
   },
   {
     name: 'critter-sheet',
-    note: 'All species turntable (?preview=critters) — chunky bodies, big eyes bar.',
+    note: 'Scrollable 18-species gallery (?preview=critters) — large readable models with manual turntable control.',
     query: `?preview=critters&quality=${QUALITY}`,
     waitForGame: false,
     run: async (page) => {
