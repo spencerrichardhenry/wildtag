@@ -10,6 +10,7 @@ import {
   type PropPlacement,
 } from './scatter.ts';
 import { hash2 } from '../core/rng.ts';
+import { currentQuality } from '../core/quality.ts';
 import type { GrappleCollider } from '../player/grapple.ts';
 import {
   harvest,
@@ -130,11 +131,14 @@ function oct(
   g.translate(x, y, z);
   return colored(g, hex);
 }
-/** A denser faceted blob (icosahedron detail 1) for canopy-crown silhouettes. */
+/** A denser faceted blob for canopy-crown silhouettes: icosahedron detail 1,
+ *  dropped to detail 0 on the `low` preset (trees can't be thinned — they're
+ *  collision obstacles — so their per-vertex cost shrinks instead; geometry
+ *  is chosen once at first bucket use, after boot quality resolves). */
 function blob1(
   r: number, hex: number, x: number, y: number, z: number, sx = 1, sy = 1, sz = 1,
 ): THREE.BufferGeometry {
-  const g = new THREE.IcosahedronGeometry(r, 1);
+  const g = new THREE.IcosahedronGeometry(r, currentQuality() === 'low' ? 0 : 1);
   g.scale(sx, sy, sz);
   g.translate(x, y, z);
   return colored(g, hex);
@@ -425,7 +429,9 @@ function tuftCone(
 
 function buildGrasstuft(): THREE.BufferGeometry {
   // Eight cones splayed like a fountain (~0.5m) — reads as a grass clump from
-  // 2m away instead of crossed cards.
+  // 2m away instead of crossed cards. The `low` preset builds only every
+  // other cone (geometry is chosen ONCE at first bucket use, after boot
+  // quality resolves — software renderers pay per-vertex).
   const cfg: ReadonlyArray<readonly [number, number, number, number, number, number]> = [
     [0.06, 0.5, 0, 0.08, 0, 0],
     [0.057, 0.43, 0.78, 0.25, 0.01, 0.015],
@@ -436,7 +442,8 @@ function buildGrasstuft(): THREE.BufferGeometry {
     [0.055, 0.44, 4.68, 0.23, 0, 0],
     [0.048, 0.29, 5.46, 0.38, 0.01, -0.01],
   ];
-  return merge(cfg.map(([r, hgt, az, lean, x, z]) => tuftCone(r, hgt, az, lean, x, z)));
+  const picked = currentQuality() === 'low' ? cfg.filter((_, i) => i % 2 === 0) : cfg;
+  return merge(picked.map(([r, hgt, az, lean, x, z]) => tuftCone(r, hgt, az, lean, x, z)));
 }
 
 // --- Fidelity-3 cluster set dressing (drafted via codex, adapted) -----------
@@ -463,13 +470,15 @@ function flowerHead(
   return parts;
 }
 
-/** Three chunky-petal flowers in a tight clump (~0.49m). */
+/** Three chunky-petal flowers in a tight clump (~0.49m); two on `low` (see
+ *  buildGrasstuft's note on boot-fixed geometry). */
 function buildFlowerPatch(color: number): THREE.BufferGeometry {
-  const specs = [
+  const allSpecs = [
     { x: -0.12, z: 0.04, height: 0.36, yaw: 0.18 },
     { x: 0.13, z: 0.07, height: 0.4, yaw: 1.05 },
     { x: 0.02, z: -0.13, height: 0.34, yaw: 2.2 },
   ];
+  const specs = currentQuality() === 'low' ? allSpecs.slice(0, 2) : allSpecs;
   const centerColor = color === C.flowerYellow ? C.flowerCenterAlt : C.flowerCenter;
   const parts: THREE.BufferGeometry[] = [];
   for (const f of specs) {
@@ -665,7 +674,13 @@ const EMISSIVE: Record<string, { hex: number; i: number }> = {
 };
 
 // Buckets whose quads need to be visible from both sides.
-const DOUBLE_SIDED = new Set<string>(['grasstuft', 'lilypad']);
+// Fidelity-3: EMPTY since the tuft rebuild — the old flat-blade tufts needed
+// DoubleSide, but the cone tufts and the lilypad (solid cylinder + blob) are
+// closed solids. Keeping the set (and its 'double' material group) so a future
+// flat-card bucket can opt back in; an empty set folds everything into the
+// 'standard' batch (-1 draw call, and HALVES the fill cost of the most
+// numerous instance kind on software rasterizers).
+const DOUBLE_SIDED = new Set<string>([]);
 
 // Per-bucket roughness for the Standard-material path (medium+). Rocks/mesas are
 // matte, trees a touch smoother, crystals slick; everything else is foliage.
@@ -995,11 +1010,29 @@ export class PropManager {
   private buildChunk(cx: number, cz: number, now: number): LoadedProps {
     const placements = scatterForChunk(cx, cz);
 
+    // Low-preset dressing thin-out (Fidelity-3): render only a deterministic
+    // fraction of the no-collision, non-resource dressing kinds — the density
+    // pass tripled instance counts, flooring software renderers. Applied
+    // while GROUPING (below) so surviving placements keep their ORIGINAL
+    // indices: resource registry keys (`cx,cz:index`) stay identical across
+    // presets, and `lowDetailKeep` lists only dressing kinds so no indexed
+    // resource is ever dropped. (Unit tests run on the module-default 'high'
+    // preset → no thinning there.)
+    const thinKeep =
+      currentQuality() === 'low' ? (SCATTER.lowDetailKeep as Record<string, number>) : null;
+    const thinned = (p: PropPlacement, index: number): boolean => {
+      if (!thinKeep) return false;
+      const frac = thinKeep[p.kind];
+      if (frac === undefined) return false;
+      return hash2((WORLD_SEED ^ 0x7411d) >>> 0, cx * 1000 + index, cz) >= frac;
+    };
+
     // Group placement indices by geometry bucket (`variant ?? kind`), so each
     // tree/crystal/mesa flavour instances its own registered geometry while
     // obstacle, grapple and resource logic still key off the gameplay `kind`.
     const byBucket = new Map<string, { p: PropPlacement; index: number }[]>();
     placements.forEach((p, index) => {
+      if (thinned(p, index)) return;
       const bucket = p.variant ?? p.kind;
       const list = byBucket.get(bucket) ?? [];
       list.push({ p, index });

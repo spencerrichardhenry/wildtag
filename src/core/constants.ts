@@ -672,6 +672,26 @@ export const SCATTER = {
     },
   },
 
+  /**
+   * Low-preset dressing thin-out (Fidelity-3): on the `low` quality preset the
+   * props layer keeps only this fraction of each NO-COLLISION, NON-RESOURCE
+   * dressing kind (deterministic per-placement hash — the same placements
+   * every boot). Placement/registry data is untouched, so saves, obstacles
+   * and resource nodes are identical across presets; this is rendering-only.
+   * Rationale: the density pass tripled instance counts, which floored
+   * software renderers (e2e fps gate) and low-end GPUs.
+   */
+  lowDetailKeep: {
+    grasstuft: 0.28,
+    flower: 0.34,
+    toadstool: 0.4,
+    pebbles: 0.3,
+    bush: 0.5,
+    log: 0.6,
+    scree: 0.4,
+    reed: 0.5,
+  },
+
   /** Chance a wetland-lake water sub-cell floats a lily pad. */
   lilypadChance: 0.5,
   /** Max shallow-water depth (m below sea) that still reads as a lily-pad lake. */
