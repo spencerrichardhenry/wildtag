@@ -160,15 +160,14 @@ function buildArm(
   const cuffGeo = new THREE.CylinderGeometry(HANDS.cuffRadii.top, HANDS.cuffRadii.bottom, HANDS.cuffLen, HANDS.forearmSegments);
   const cuff = tagMesh(new THREE.Mesh(cuffGeo, cuffMat));
   cuff.quaternion.copy(q);
-  cuff.position.copy(armDir).multiplyScalar(HANDS.mittenRadius * 0.55 + HANDS.cuffLen * 0.42);
+  cuff.position.copy(armDir).multiplyScalar(HANDS.mittenRadius * 0.75 + HANDS.cuffLen * 0.55);
   group.add(cuff);
 
-  // Palm + compact claw lobes + opposing thumb, merged into ONE geometry.
-  // The shallow seams suggest a hand while preserving the reference's cute,
-  // toy-like pincer silhouette instead of exposing anatomical fingers.
+  // Palm + one broad upper claw + opposing thumb, merged into ONE geometry.
+  // There are deliberately no individually readable fingers: the reference
+  // is a simple toy-like C-shaped pincer.
   const handGeo = buildHandGeometry(mirror);
   const hand = tagMesh(new THREE.Mesh(handGeo, skinMat));
-  hand.rotation.z = mirror * 0.18; // both claws lean gently toward screen-centre
   group.add(hand);
 
   ownGeometries.push(forearmGeo, cuffGeo, handGeo);
@@ -194,8 +193,8 @@ function clawLobe(
   return geometry;
 }
 
-/** Palm + three overlapping upper lobes + one opposing thumb as one merged
- *  geometry. `mirror` flips the pincer so the pair reads as left/right hands.
+/** Palm + one broad upper pad + one opposing thumb as one merged geometry.
+ *  `mirror` flips the pincer so the pair reads as left/right hands.
  *  Falls back to the bare palm if a merge ever fails. */
 function buildHandGeometry(mirror: 1 | -1): THREE.BufferGeometry {
   const R = HANDS.mittenRadius;
@@ -204,25 +203,19 @@ function buildHandGeometry(mirror: 1 | -1): THREE.BufferGeometry {
 
   const parts: THREE.BufferGeometry[] = [palm];
   const C = HANDS.claw;
-  for (let i = -1; i <= 1; i++) {
-    parts.push(clawLobe(
-      C.r * (i === 0 ? 1.04 : 1),
-      C.len * (i === 0 ? 1.05 : 0.94),
-      new THREE.Vector3(
-        i * C.spread + mirror * R * 0.08,
-        R * 0.34 - Math.abs(i) * R * 0.035,
-        -R * HANDS.mittenScale.z * 0.52,
-      ),
-      new THREE.Vector3(-mirror * 0.17, 0.78, -0.61),
-    ));
-  }
+  parts.push(clawLobe(
+    C.r,
+    C.len,
+    new THREE.Vector3(mirror * R * 0.18, R * 0.25, -R * 0.12),
+    new THREE.Vector3(-mirror * 0.44, 0.82, -0.36),
+  ));
 
   const T = HANDS.thumb;
   parts.push(clawLobe(
     T.r,
     T.len,
-    new THREE.Vector3(-mirror * R * 0.78, -R * 0.08, -R * 0.14),
-    new THREE.Vector3(mirror * 0.38, 0.72, -0.58),
+    new THREE.Vector3(-mirror * R * 0.72, -R * 0.15, R * 0.22),
+    new THREE.Vector3(-mirror * 0.5, 0.78, -0.36),
   ));
 
   const merged = mergeGeometries(
@@ -239,14 +232,18 @@ function buildHandGeometry(mirror: 1 | -1): THREE.BufferGeometry {
  *  each share one mesh, re-tinted on select), all parented to `group`, hidden
  *  until `setLeftItem` picks one. Returns the per-`ItemId` mesh lookup. */
 function buildItemMeshes(group: THREE.Group): Record<ItemId, THREE.Mesh> {
+  // The claw opens toward screen-centre; held objects sit in that gap and a
+  // little toward the camera so the palm cannot swallow them in silhouette.
+  const heldX = HANDS.mittenRadius * 0.85;
+  const heldZ = HANDS.mittenRadius * 0.62;
   const dartGeo = new THREE.CylinderGeometry(HANDS.dart.r, HANDS.dart.r, HANDS.dart.len, 6);
   dartGeo.rotateX(Math.PI / 2); // lie lengthwise, pointing away from the camera
   const dartMesh = new THREE.Mesh(dartGeo, makeSurfaceMaterial({ color: HANDS.itemColor.darts }));
-  dartMesh.position.set(0, HANDS.mittenRadius * 0.55, -HANDS.mittenRadius * 0.5);
+  dartMesh.position.set(heldX, HANDS.mittenRadius * 0.88, heldZ);
 
   const kitGeo = new THREE.BoxGeometry(HANDS.kitBox, HANDS.kitBox, HANDS.kitBox);
   const kitMesh = new THREE.Mesh(kitGeo, makeSurfaceMaterial({ color: HANDS.itemColor['kit:zipline'] }));
-  kitMesh.position.set(0, HANDS.mittenRadius * 0.65, -HANDS.mittenRadius * 0.4);
+  kitMesh.position.set(heldX, HANDS.mittenRadius * 0.82, heldZ);
 
   const charmGeo = new THREE.SphereGeometry(HANDS.charmRadius, 10, 8);
   const charmMesh = new THREE.Mesh(
@@ -257,21 +254,21 @@ function buildItemMeshes(group: THREE.Group): Record<ItemId, THREE.Mesh> {
       emissiveIntensity: 0.7,
     }),
   );
-  charmMesh.position.set(0, HANDS.mittenRadius * 0.7, -HANDS.mittenRadius * 0.4);
+  charmMesh.position.set(heldX, HANDS.mittenRadius * 0.86, heldZ);
 
   const wallGeo = new THREE.BoxGeometry(HANDS.wallSlab.w, HANDS.wallSlab.h, HANDS.wallSlab.t);
   const wallMesh = new THREE.Mesh(wallGeo, makeSurfaceMaterial({ color: HANDS.itemColor.wall }));
-  wallMesh.position.set(0, HANDS.mittenRadius * 0.75, -HANDS.mittenRadius * 0.35);
+  wallMesh.position.set(heldX, HANDS.mittenRadius * 0.9, heldZ);
 
   const rampMesh = new THREE.Mesh(buildRampGeometry(), makeSurfaceMaterial({ color: HANDS.itemColor.ramp }));
-  rampMesh.position.set(0, HANDS.mittenRadius * 0.55, -HANDS.mittenRadius * 0.3);
+  rampMesh.position.set(heldX, HANDS.mittenRadius * 0.78, heldZ);
   rampMesh.rotation.y = Math.PI / 5;
 
   // Mini cube-block viewmodel (playtest Task 8) — a small cube, same tint
   // family as the wall slab (both read as stone).
   const cubeGeo = new THREE.BoxGeometry(HANDS.cubeBlock, HANDS.cubeBlock, HANDS.cubeBlock);
   const cubeMesh = new THREE.Mesh(cubeGeo, makeSurfaceMaterial({ color: HANDS.itemColor.cube }));
-  cubeMesh.position.set(0, HANDS.mittenRadius * 0.75, -HANDS.mittenRadius * 0.35);
+  cubeMesh.position.set(heldX, HANDS.mittenRadius * 0.9, heldZ);
 
   for (const m of [dartMesh, kitMesh, charmMesh, wallMesh, rampMesh, cubeMesh]) {
     tagMesh(m);
@@ -311,9 +308,23 @@ export class HandsView {
     this.left.position.set(HANDS.leftOffset.x, HANDS.leftOffset.y, HANDS.leftOffset.z);
     this.root.add(this.right, this.left);
 
-    const skinMat = makeSurfaceMaterial({ color: HANDS.skinColor });
-    const sleeveMat = makeSurfaceMaterial({ color: HANDS.sleeveColor });
-    const cuffMat = makeSurfaceMaterial({ color: HANDS.cuffColor });
+    // A tiny self-fill keeps the camera-facing hand readable even when the
+    // world sun is behind it; low-poly facet shading remains clearly visible.
+    const skinMat = makeSurfaceMaterial({
+      color: HANDS.skinColor,
+      emissive: HANDS.skinColor,
+      emissiveIntensity: 0.08,
+    });
+    const sleeveMat = makeSurfaceMaterial({
+      color: HANDS.sleeveColor,
+      emissive: HANDS.sleeveColor,
+      emissiveIntensity: 0.035,
+    });
+    const cuffMat = makeSurfaceMaterial({
+      color: HANDS.cuffColor,
+      emissive: HANDS.cuffColor,
+      emissiveIntensity: 0.035,
+    });
     this.ownMaterials.push(skinMat, sleeveMat, cuffMat);
 
     buildArm(this.right, 1, skinMat, sleeveMat, cuffMat, this.ownGeometries);
@@ -324,7 +335,7 @@ export class HandsView {
     this.ownGeometries.push(hookGeo);
     this.ownMaterials.push(hookMat);
     this.hook = tagMesh(new THREE.Mesh(hookGeo, hookMat));
-    this.hook.position.set(0, HANDS.mittenRadius * 0.5, -HANDS.mittenRadius * 0.4);
+    this.hook.position.set(-HANDS.mittenRadius * 0.34, HANDS.mittenRadius * 0.7, HANDS.mittenRadius * 0.5);
     this.hook.rotation.x = -1.0; // tip pointing forward/up, resting in the mitten
     this.hook.visible = false;
     this.right.add(this.hook);

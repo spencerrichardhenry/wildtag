@@ -1990,13 +1990,12 @@ export const HANDS = {
   mittenRadius: 0.108,
   mittenScale: { x: 1.12, y: 0.94, z: 1.12 },
   /**
-   * Reference-style claw: three overlapping upper lobes imply a mitten's
-   * fingers without reading as an anatomical hand; one thick opposing thumb
-   * completes the cute pincer silhouette. Everything merges into the palm's
-   * single mesh, preserving the draw-call budget.
+   * Reference-style claw: one broad upper pad and one thick opposing thumb —
+   * no individually readable fingers. Together they form the reference's
+   * simple, cute C-shaped pincer and merge into the palm's single mesh.
    */
-  claw: { r: 0.041, len: 0.082, spread: 0.032 },
-  thumb: { r: 0.044, len: 0.086 },
+  claw: { r: 0.052, len: 0.105 },
+  thumb: { r: 0.047, len: 0.078 },
   /** Grapple-hook viewmodel: shaft (radii/len) + prongs (radius/len/count) fanned at the tip. */
   hookShaft: { topR: 0.015, bottomR: 0.02, len: 0.14 },
   hookProng: { r: 0.022, len: 0.06, count: 3, fanR: 0.03 },
