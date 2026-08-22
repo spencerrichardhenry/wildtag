@@ -2040,146 +2040,185 @@ function buildGargoyle(rng: () => number): { group: THREE.Group; parts: CritterP
 }
 
 
-/** Cragdrake — chibi mountain dragon (Spencer's fal.ai concept, 2026-08-22):
- *  slate-blue faceted body, cream belly plate, purple swept horns with white
- *  tips, stubby purple bat wings, spine spikes, thick spiked tail. Lives in
+/** Cragdrake — chibi mountain dragon (Spencer's fal.ai concept, 2026-08-22;
+ *  round-4 FACETED rebuild 2026-08-22: the concept is a flat-shaded figurine,
+ *  not a plush — every part except the glossy eyes uses the flat material
+ *  class with low-segment geometry so big planar facets catch the light like
+ *  the terrain/props do. This builder is the register PATTERN for the
+ *  round-4 roster pass.) Slate-blue faceted body, cream belly plate, purple
+ *  arm+membrane wings, white-tipped swept horns, haunch-back sit. Lives in
  *  the crags; flees by diving the crag faces in circles (fleeStyle 'dive'). */
 function buildCragdrake(rng: () => number): { group: THREE.Group; parts: CritterParts } {
   const g = new THREE.Group();
+  const F = { flat: true } as const;
   const scale = jitterColor(0x5f7fa4, rng, 0.04, 0.05);
   const scaleDark = jitterColor(0x47617f, rng, 0.03, 0.04);
   const belly = jitterColor(0xeadcae, rng, 0.03);
   const wingC = jitterColor(0x7a5fa8, rng, 0.04, 0.05);
   const tipC = 0xf2efe6;
 
+  // Faceted icosahedral volume: the workhorse of the round-4 register.
+  const chunk = (
+    r: number, color: number, sx: number, sy: number, sz: number, detail = 1,
+  ): THREE.Mesh => {
+    const m = new THREE.Mesh(new THREE.IcosahedronGeometry(r, detail), mat(color, F));
+    m.scale.set(sx, sy, sz);
+    return m;
+  };
+
   const body = new THREE.Group();
-  body.position.y = 0.52;
-  // Plump bottom-heavy torso, upright-leaning like the concept.
-  const torso = sphere(0.4, scale, {}, 10, 8);
-  torso.scale.set(0.95, 1.05, 0.9);
+  body.position.y = 0.5;
+  body.rotation.x = -0.16; // chest up, sitting back on the haunches
+  const torso = chunk(0.38, scale, 0.98, 1.12, 0.9);
   body.add(torso);
-  const hips = sphere(0.32, scale, {}, 8, 6);
-  hips.scale.set(1.05, 0.8, 1.0);
-  hips.position.set(0, -0.22, -0.06);
-  body.add(hips);
-  // Cream belly plate with a faint segment bulge.
-  const plate = sphere(0.3, belly, {}, 8, 6);
-  plate.scale.set(0.82, 0.98, 0.5);
-  plate.position.set(0, -0.06, 0.24);
+  // Haunches: two faceted lumps the figure sits back on.
+  for (const sx of [-1, 1]) {
+    const haunch = chunk(0.2, scale, 1.0, 0.95, 1.1, 0);
+    haunch.position.set(sx * 0.26, -0.3, -0.08);
+    body.add(haunch);
+  }
+  // Cream belly plate: a flattened faceted slab set into the chest.
+  const plate = chunk(0.28, belly, 0.8, 1.0, 0.42);
+  plate.position.set(0, -0.04, 0.26);
   body.add(plate);
-  const plate2 = sphere(0.2, belly, {}, 7, 5);
-  plate2.scale.set(0.75, 0.6, 0.45);
-  plate2.position.set(0, -0.3, 0.22);
+  const plate2 = chunk(0.17, belly, 0.78, 0.62, 0.4, 0);
+  plate2.position.set(0, -0.34, 0.24);
   body.add(plate2);
-  // Spine spike row (purple; smooth-shaded so it bakes into the body bucket
-  // — the faceted identity lives on the WINGS, see the bake-class budget).
+  // Spine ridge: faceted octahedron spikes.
   for (const [sy, sz, r] of [
-    [0.34, -0.2, 0.075],
-    [0.16, -0.33, 0.09],
-    [-0.06, -0.38, 0.08],
+    [0.36, -0.18, 0.08],
+    [0.18, -0.32, 0.095],
+    [-0.04, -0.38, 0.085],
   ] as const) {
-    const spike = cone(r, r * 2.6, wingC, 5);
+    const spike = new THREE.Mesh(new THREE.OctahedronGeometry(r, 0), mat(wingC, F));
+    spike.scale.set(0.7, 1.5, 0.7);
     spike.rotation.x = -0.5;
     spike.position.set(0, sy, sz);
     body.add(spike);
   }
   g.add(body);
 
-  // Head — big, with the concept's heavy squared muzzle.
+  // Head: faceted skull + brow shelf + squared planar muzzle wedge.
   const head = new THREE.Group();
-  head.position.set(0, 1.06, 0.16);
-  const skull = sphere(0.28, scale, {}, 10, 8);
-  skull.scale.set(1.0, 0.94, 0.98);
+  head.position.set(0, 1.04, 0.18);
+  const skull = chunk(0.27, scale, 1.02, 0.94, 0.98);
   head.add(skull);
-  const muzzle = sphere(0.17, scaleDark, {}, 8, 6);
-  muzzle.scale.set(1.05, 0.72, 0.95);
-  muzzle.position.set(0, -0.1, 0.22);
+  // Brow shelf over the eyes (the concept's determined look).
+  const brow = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.2, 0.07, 5), mat(scale, F));
+  brow.rotation.x = 0.35;
+  brow.rotation.y = Math.PI / 5;
+  brow.position.set(0, 0.17, 0.13);
+  head.add(brow);
+  // Muzzle: a 4-segment cylinder rotated 45° = a chamfered box wedge with a
+  // flat top plane, jutting forward like the figurine's.
+  const muzzle = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.14, 0.16, 4), mat(scaleDark, F));
+  muzzle.rotation.y = Math.PI / 4;
+  muzzle.rotation.x = Math.PI / 2 - 0.12;
+  muzzle.scale.set(1.2, 1, 0.58);
+  muzzle.position.set(0, -0.14, 0.31);
   head.add(muzzle);
   for (const sx of [-1, 1]) {
-    const nostril = blob(0.02, 0x2c3644);
-    nostril.position.set(sx * 0.06, -0.06, 0.38);
+    const nostril = new THREE.Mesh(new THREE.OctahedronGeometry(0.02, 0), mat(scaleDark, F));
+    nostril.position.set(sx * 0.06, -0.03, 0.41);
     head.add(nostril);
   }
-  for (const e of eyePair(0.14, 0.06, 0.21, 0.105, { iris: 0x4a2f8c, irisR: 0.62 }, 0.085)) {
+  // Eyes stay glossy-smooth — the single non-flat class in the register.
+  for (const e of eyePair(0.14, 0.06, 0.235, 0.1, { iris: 0x4a2f8c, irisR: 0.62 }, 0.085)) {
     head.add(e);
   }
-  // Two swept-back horns with white tips + two small nubs.
+  // Swept horns (5-seg flat cones) with white tip cones + nubs.
   for (const sx of [-1, 1] as const) {
-    const horn = cone(0.075, 0.3, wingC, 6);
+    const horn = cone(0.075, 0.28, wingC, 5, F);
     horn.rotation.x = -1.0;
-    horn.position.set(sx * 0.13, 0.22, -0.08);
+    horn.position.set(sx * 0.13, 0.2, -0.08);
     head.add(horn);
-    const tip = blob(0.045, tipC);
-    tip.position.set(sx * 0.13, 0.3, -0.16);
+    const tip = cone(0.04, 0.1, tipC, 5, F);
+    tip.rotation.x = -1.0;
+    tip.position.set(sx * 0.13, 0.31, -0.19);
     head.add(tip);
-    const nub = cone(0.04, 0.1, wingC, 5);
+    const nub = cone(0.04, 0.09, wingC, 5, F);
     nub.rotation.x = -0.9;
-    nub.position.set(sx * 0.05, 0.27, 0.05);
+    nub.position.set(sx * 0.05, 0.25, 0.05);
     head.add(nub);
   }
   g.add(head);
 
-  // Stubby bat wings — kite membranes on little arm struts; animatable pair.
+  // Wings: leading-edge arm strut + two overlapped flat membrane triangles
+  // whose stagger reads as a scalloped trailing edge.
   const wings: THREE.Object3D[] = [];
   for (const sx of [-1, 1] as const) {
     const wing = new THREE.Group();
-    wing.position.set(sx * 0.34, 0.78, -0.12); // shoulder pivot
-    const strut = capsule(0.035, 0.16, scaleDark, { flat: true }, 2, 6);
-    strut.rotation.z = sx * 1.25;
-    strut.position.set(sx * 0.1, 0.05, 0);
-    wing.add(strut);
-    const membrane = cone(0.24, 0.44, wingC, 4, { flat: true });
-    membrane.scale.z = 0.14;
-    membrane.rotation.z = sx * 1.9;
-    membrane.position.set(sx * 0.3, 0.06, -0.02);
-    wing.add(membrane);
-    const membrane2 = cone(0.16, 0.3, wingC, 4, { flat: true });
-    membrane2.scale.z = 0.14;
-    membrane2.rotation.z = sx * 2.3;
-    membrane2.position.set(sx * 0.34, -0.08, -0.02);
-    wing.add(membrane2);
+    wing.position.set(sx * 0.33, 0.8, -0.1);
+    const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.042, 0.3, 5), mat(scaleDark, F));
+    arm.rotation.z = sx * 1.9;
+    arm.position.set(sx * 0.14, 0.08, 0);
+    wing.add(arm);
+    const memA = cone(0.26, 0.46, wingC, 3, F);
+    memA.scale.z = 0.1;
+    memA.rotation.z = sx * 1.95;
+    memA.position.set(sx * 0.34, 0.02, -0.01);
+    wing.add(memA);
+    const memB = cone(0.18, 0.34, wingC, 3, F);
+    memB.scale.z = 0.1;
+    memB.rotation.z = sx * 2.45;
+    memB.position.set(sx * 0.36, -0.14, -0.02);
+    wing.add(memB);
+    const claw = cone(0.025, 0.06, tipC, 4, F);
+    claw.rotation.z = sx * 2.1;
+    claw.position.set(sx * 0.29, 0.22, 0);
+    wing.add(claw);
     wings.push(wing);
     g.add(wing);
   }
 
-  // Thick tapering tail with a purple spike pair; animatable.
+  // Tail: two tapered faceted segments + octahedron spikes, thick at the root.
   const tail = new THREE.Group();
-  tail.position.set(0, 0.38, -0.34);
-  const tail1 = capsule(0.13, 0.26, scale, {}, 2, 8);
-  tail1.rotation.x = Math.PI / 2 - 0.35;
-  tail1.position.set(0, -0.02, -0.16);
-  tail.add(tail1);
-  const tail2 = capsule(0.08, 0.2, scale, {}, 2, 7);
-  tail2.rotation.x = Math.PI / 2 - 0.2;
-  tail2.position.set(0, -0.1, -0.42);
-  tail.add(tail2);
+  tail.position.set(0, 0.36, -0.32);
+  const t1 = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.14, 0.3, 5), mat(scale, F));
+  t1.rotation.x = Math.PI / 2 - 0.35;
+  t1.position.set(0, -0.03, -0.16);
+  tail.add(t1);
+  const t2 = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.085, 0.26, 5), mat(scale, F));
+  t2.rotation.x = Math.PI / 2 - 0.15;
+  t2.position.set(0, -0.12, -0.42);
+  tail.add(t2);
   for (const [tz, r] of [
-    [-0.3, 0.06],
-    [-0.5, 0.05],
+    [-0.28, 0.055],
+    [-0.46, 0.048],
   ] as const) {
-    const spike = cone(r, r * 2.4, wingC, 5);
+    const spike = new THREE.Mesh(new THREE.OctahedronGeometry(r, 0), mat(wingC, F));
+    spike.scale.set(0.7, 1.6, 0.7);
     spike.rotation.x = -0.7;
-    spike.position.set(0, 0.02, tz);
+    spike.position.set(0, 0.03, tz);
     tail.add(spike);
   }
-  const tailTip = cone(0.05, 0.14, wingC, 5);
-  tailTip.rotation.x = Math.PI / 2 + 0.25;
-  tailTip.position.set(0, -0.16, -0.58);
+  const tailTip = cone(0.05, 0.13, wingC, 4, F);
+  tailTip.rotation.x = Math.PI / 2 + 0.3;
+  tailTip.position.set(0, -0.18, -0.56);
   tail.add(tailTip);
   g.add(tail);
 
-  // Four stubby legs with white claw toes.
+  // Stubby faceted forelegs (the haunches carry the rear) + white toe cones.
   const legs: THREE.Object3D[] = [];
   for (const [sx, sz] of QUAD) {
-    const l = legGroup(sx * 0.2, 0.34, sz * 0.16, 0.085, 0.105, 0.34, scale, 0, tipC);
+    const l = new THREE.Group();
+    l.position.set(sx * 0.2, 0.36, sz > 0 ? 0.16 : -0.1);
+    const limb = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.09, 0.34, 5), mat(scale, F));
+    limb.position.y = -0.17;
+    l.add(limb);
+    for (const tx of [-0.04, 0.04]) {
+      const toe = cone(0.028, 0.06, tipC, 4, F);
+      toe.rotation.x = Math.PI / 2 - 0.3;
+      toe.position.set(tx + sx * 0.01, -0.33, 0.07);
+      l.add(toe);
+    }
     legs.push(l);
     g.add(l);
   }
   if (rng() < 0.35) {
-    // Some individuals carry a chipped white fleck on one horn (weathering
-    // roll) — parented to the HEAD so it bakes into the head bucket.
-    const chip = blob(0.028, tipC);
-    chip.position.set(0.2, 0.26, -0.24);
+    // Chipped horn fleck on some individuals (weathering roll) — head bucket.
+    const chip = new THREE.Mesh(new THREE.OctahedronGeometry(0.026, 0), mat(tipC, F));
+    chip.position.set(0.2, 0.24, -0.22);
     head.add(chip);
   }
 
