@@ -162,7 +162,7 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 
 // Dev hook: `?preview=critters` takes over the renderer with the critter
-// showcase (all 13 species on a turntable) and skips the normal player spawn.
+// showcase (all 17 species on a turntable) and skips the normal player spawn.
 if (new URLSearchParams(window.location.search).get('preview') === 'critters') {
   runCritterPreview(renderer);
 } else {

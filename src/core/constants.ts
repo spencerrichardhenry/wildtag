@@ -564,15 +564,21 @@ export const SCATTER = {
       { kind: 'fiber', p: 0.5 },
       { kind: 'log', p: 0.53 },
     ],
+    // Wave-3 mountain vision: dense rock piles + cairns, green bushes tucked
+    // between stones, orange/violet flowers, big violet crystal clusters,
+    // conifers on the slopes. Deliberately NO mushrooms/toadstools here.
     crags: [
-      { kind: 'tree', p: 0.03 }, // rare gnarled juniper snag
-      { kind: 'boulder', p: 0.07 },
-      { kind: 'mesa', p: 0.09 }, // stacked slab formation
-      { kind: 'rock', p: 0.21 },
-      { kind: 'crystal', p: 0.31 },
-      { kind: 'shard', p: 0.37 },
-      { kind: 'scree', p: 0.47 },
-      { kind: 'pebbles', p: 0.55 },
+      { kind: 'tree', p: 0.05 }, // windpine / gnarled juniper
+      { kind: 'boulder', p: 0.1 },
+      { kind: 'mesa', p: 0.12 }, // stacked slab formation
+      { kind: 'rock', p: 0.26 },
+      { kind: 'cairn', p: 0.3 }, // stacked-stone stacks (vision image)
+      { kind: 'crystal', p: 0.4 },
+      { kind: 'shard', p: 0.46 },
+      { kind: 'scree', p: 0.56 },
+      { kind: 'pebbles', p: 0.64 },
+      { kind: 'bush', p: 0.72 },
+      { kind: 'flower', p: 0.8 },
     ],
     highlands: [
       { kind: 'tree', p: 0.07 }, // wind-bent pine / boulder-pine cluster
@@ -582,9 +588,10 @@ export const SCATTER = {
       { kind: 'crystal', p: 0.32 },
       { kind: 'shard', p: 0.38 },
       { kind: 'scree', p: 0.46 },
-      { kind: 'bush', p: 0.52 },
-      { kind: 'pebbles', p: 0.58 },
-      { kind: 'flower', p: 0.64 },
+      { kind: 'bush', p: 0.54 },
+      { kind: 'cairn', p: 0.57 },
+      { kind: 'pebbles', p: 0.63 },
+      { kind: 'flower', p: 0.7 },
     ],
   },
 
@@ -608,7 +615,10 @@ export const SCATTER = {
       { v: 'boulderpine', p: 1 },
     ],
     wetland: [{ v: 'willow', p: 1 }],
-    crags: [{ v: 'juniper', p: 1 }],
+    crags: [
+      { v: 'windpine', p: 0.55 },
+      { v: 'juniper', p: 1 },
+    ],
   },
 
   /** Crystal size/colour variants (crags/highlands crystal + shard fields). */
@@ -626,6 +636,11 @@ export const SCATTER = {
     { v: 'flowerPink', p: 0.45 },
     { v: 'flowerYellow', p: 0.75 },
     { v: 'flowerBlue', p: 1 },
+  ],
+  /** Mountain-biome flower palette (wave-3 vision: orange + violet). */
+  flowerVariantsMountain: [
+    { v: 'flowerOrange', p: 0.55 },
+    { v: 'flowerViolet', p: 1 },
   ],
   /** Toadstool cap variants. */
   toadstoolVariants: [
@@ -668,7 +683,10 @@ export const SCATTER = {
         { kind: 'pebbles', p: 0.14 },
         { kind: 'flower', p: 0.2 },
       ],
-      crags: [{ kind: 'pebbles', p: 0.16 }],
+      crags: [
+        { kind: 'pebbles', p: 0.2 },
+        { kind: 'flower', p: 0.32 },
+      ],
     },
   },
 
@@ -716,6 +734,7 @@ export const SCATTER = {
     log: 8,
     toadstool: 10,
     pebbles: 18,
+    cairn: 6,
   },
 
   /**
@@ -726,7 +745,7 @@ export const SCATTER = {
    */
   scale: {
     rock: [0.6, 1.5],
-    crystal: [0.5, 1.15],
+    crystal: [0.7, 1.6],
     flower: [0.9, 1.5],
     fiber: [0.7, 1.2],
     resin: [0.7, 1.1],
@@ -745,6 +764,7 @@ export const SCATTER = {
     log: [0.8, 1.3],
     toadstool: [0.8, 1.4],
     pebbles: [0.8, 1.5],
+    cairn: [0.9, 1.8],
   },
 
   /**
@@ -762,7 +782,7 @@ export const SCATTER = {
   /** Collision-cylinder radius factor (× scale) for blocking props. Wave 3:
    *  logs + bushes block (and grapple-anchor) like rocks — radii kept modest
    *  so path-adjacent clusters don't read as invisible walls. */
-  obstacleRadius: { tree: 0.5, rock: 0.9, mesa: 1.6, boulder: 1.1, log: 0.5, bush: 0.55 },
+  obstacleRadius: { tree: 0.5, rock: 0.9, mesa: 1.6, boulder: 1.1, log: 0.5, bush: 0.55, cairn: 0.55 },
 
   /** Per-kind base colours (hex) for flat-shaded instanced meshes. */
   colors: {
@@ -778,6 +798,8 @@ export const SCATTER = {
     flowerCenter: 0xf2c744,
     flowerCenterAlt: 0xe7842f,
     flowerStem: 0x3f7a35,
+    flowerOrange: 0xe8813a,
+    flowerViolet: 0xb06ef0,
     toadstoolRed: 0xd95f4c,
     toadstoolYellow: 0xe8a83c,
     toadstoolStem: 0xefe5d0,
@@ -793,7 +815,7 @@ export const SCATTER = {
     reed: 0x8aa15b,
     fiber: 0xbcae6b,
     resin: 0xe0932a,
-    shard: 0xb07fe0,
+    shard: 0xae7bf5,
     spark: 0xffe06a,
     // --- F2 scenery-variety palette ---
     pineFoliage: 0x2a7245,
@@ -819,9 +841,10 @@ export const SCATTER = {
     /** Darker + more saturated than the meadow ground so clumps READ against
      *  it (matching-green tufts camouflage into invisibility). */
     grassTuft: 0x4f9433,
-    crystalA: 0x7fb0d8,
-    crystalB: 0x9d86e0,
-    crystalC: 0x6fd8c0,
+    /** Wave-3 mountain vision: crystals go saturated violet/purple/blue. */
+    crystalA: 0xa06ef5,
+    crystalB: 0x7f4fe8,
+    crystalC: 0x5f8ff5,
   },
 } as const;
 
@@ -890,6 +913,15 @@ export const PATHS = {
       [-60, -140],
       [-170, -170],
       [-280, -190],
+    ],
+    // Into the W crags, skirting EAST/NORTH of the castle ward footprint
+    // (Chebyshev half+margin ≈ 95m around (-424.7, -176.6) — a straight line
+    // west would recolor a trail through the ward interior).
+    [
+      [-280, -190],
+      [-300, -90],
+      [-350, -10],
+      [-410, 60],
     ],
   ],
 } as const;
@@ -1846,7 +1878,7 @@ export const FARM = {
   cubeColors: {
     fiber: 0xbcae6b,
     resin: 0xe0932a,
-    shard: 0xb07fe0,
+    shard: 0xae7bf5,
     spark: 0xffe06a,
     honey: 0xe6a83c,
     // Mushrooms aren't farmable (forage-only) but ResourceKind is exhaustive

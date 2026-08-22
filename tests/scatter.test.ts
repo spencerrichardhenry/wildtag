@@ -47,6 +47,29 @@ describe('biome density sanity', () => {
     expect(shard.length).toBeGreaterThan(0);
   });
 
+  it('mountain scatter includes cairns and only orange/violet flowers, with no decorative toadstools', () => {
+    const cairns = [];
+    const flowers = [];
+    const toadstools = [];
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dz = -1; dz <= 1; dz++) {
+        for (const p of scatterForChunk(CRAGS.cx + dx, CRAGS.cz + dz)) {
+          const biome = biomeAt(p.x, p.z);
+          if (biome !== 'crags' && biome !== 'highlands') continue;
+          if (p.kind === 'cairn') cairns.push(p);
+          if (p.kind === 'flower') flowers.push(p);
+          if (p.kind === 'toadstool') toadstools.push(p);
+        }
+      }
+    }
+    expect(cairns.length).toBeGreaterThan(0);
+    expect(flowers.length).toBeGreaterThan(0);
+    for (const p of flowers) {
+      expect(['flowerOrange', 'flowerViolet']).toContain(p.variant);
+    }
+    expect(toadstools).toHaveLength(0);
+  });
+
   it('some forest trees carry a resin node', () => {
     const resin = scatterForChunk(FOREST.cx, FOREST.cz).filter((p) => p.kind === 'resin');
     expect(resin.length).toBeGreaterThan(0);
@@ -111,6 +134,19 @@ describe('obstacle emission', () => {
       const ob = placementObstacle({ kind, x: 2, z: 3, y: 5, scale: 1, rot: 0 });
       expect(ob).not.toBeNull();
       expect(ob!.r).toBe(SCATTER.obstacleRadius[kind]);
+    }
+  });
+
+  it('keeps logs, bushes, and cairns blocking and grappleable', () => {
+    for (const kind of ['log', 'bush', 'cairn'] as const) {
+      const placement = { kind, x: 2, z: 3, y: 5, scale: 1.5, rot: 0 };
+      const obstacle = placementObstacle(placement);
+      const grapple = placementGrappleCollider(placement);
+      expect(obstacle).not.toBeNull();
+      expect(grapple).not.toBeNull();
+      expect(obstacle!.r).toBeCloseTo(SCATTER.obstacleRadius[kind] * 1.5, 10);
+      expect(obstacle!.yTop).toBeGreaterThan(placement.y);
+      expect(obstacle!.yTop).toBeCloseTo(grapple!.yTop, 10);
     }
   });
 

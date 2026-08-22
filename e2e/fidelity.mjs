@@ -188,6 +188,16 @@ const SNIPS = [
     },
   },
   {
+    name: 'mountain-path',
+    note: 'Wave-3 mountain vision: trail winding through crags — cairns, violet crystals, bushes, orange/violet flowers, slope pines.',
+    run: async (page) => {
+      // Standing on the crags route's flattest stretch (a valley shelf E of
+      // the castle pad), looking along the trail toward (-300, -90).
+      await frame(page, { x: -290, z: -140, yaw: 2.94, pitch: -0.04 });
+      await shot(page, 'mountain-path');
+    },
+  },
+  {
     name: 'highlands',
     note: 'Highland rolling terrain + tree line.',
     run: async (page) => {

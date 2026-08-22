@@ -559,25 +559,76 @@ function buildPebbleCluster(): THREE.BufferGeometry {
 
 // --- Crystals (crag/highlands variants) ------------------------------------
 
+// Fidelity-3 wave 3 (Spencer's mountain-vision image): crystals redesigned as
+// chunky multi-spike clusters rising from a small rock collar — saturated
+// violet/purple/blue like the vision's crag crystals.
 /** Elongated octahedral crystal (fallback/tall single). */
 export function buildCrystal(): THREE.BufferGeometry {
   return buildCrystalA();
 }
+/** A rock collar the spikes grow out of (shared by all cluster variants). */
+function crystalCollar(): THREE.BufferGeometry[] {
+  return [
+    ground(blob(0.24, C.pebble, -0.1, 0, 0.06, 1.2, 0.6, 1.0)),
+    ground(blob(0.18, C.pebble, 0.18, 0, -0.08, 1.05, 0.55, 0.95)),
+  ];
+}
+function crystalSpike(
+  hex: number, x: number, z: number, h: number, r: number, tiltX: number, tiltZ: number,
+): THREE.BufferGeometry {
+  const g = new THREE.OctahedronGeometry(r, 0);
+  g.scale(1, h / r, 1);
+  g.rotateX(tiltX);
+  g.rotateZ(tiltZ);
+  g.translate(x, h * 0.62, z);
+  return colored(g, hex);
+}
 function buildCrystalA(): THREE.BufferGeometry {
-  return merge([oct(0.5, C.crystalA, 0, 0.7, 0, 0.7, 2.0, 0.7)]);
+  return merge([
+    ...crystalCollar(),
+    crystalSpike(C.crystalA, 0, 0, 1.05, 0.24, 0, 0.06),
+    crystalSpike(C.crystalA, 0.22, 0.1, 0.62, 0.17, 0.1, -0.3),
+    crystalSpike(C.crystalA, -0.2, -0.06, 0.5, 0.15, -0.12, 0.32),
+    crystalSpike(C.crystalA, 0.02, -0.22, 0.38, 0.12, -0.3, 0.05),
+  ]);
 }
 function buildCrystalB(): THREE.BufferGeometry {
   return merge([
-    oct(0.42, C.crystalB, 0, 0.6, 0, 0.7, 1.7, 0.7),
-    oct(0.3, C.crystalB, 0.3, 0.4, 0.15, 0.6, 1.3, 0.6),
+    ...crystalCollar(),
+    crystalSpike(C.crystalB, -0.06, 0.04, 0.85, 0.21, 0.05, 0.22),
+    crystalSpike(C.crystalB, 0.24, -0.08, 0.55, 0.16, -0.15, -0.28),
+    crystalSpike(C.crystalB, -0.26, -0.12, 0.42, 0.13, -0.2, 0.35),
   ]);
 }
 function buildCrystalC(): THREE.BufferGeometry {
   return merge([
-    oct(0.35, C.crystalC, 0, 0.4, 0, 0.9, 1.1, 0.9),
-    oct(0.28, C.crystalC, 0.28, 0.3, 0.1, 0.8, 1.0, 0.8),
-    oct(0.24, C.crystalC, -0.22, 0.28, -0.12, 0.8, 0.9, 0.8),
+    ...crystalCollar(),
+    crystalSpike(C.crystalC, 0, 0.06, 0.68, 0.19, 0.08, -0.05),
+    crystalSpike(C.crystalC, 0.2, -0.12, 0.5, 0.15, -0.18, -0.25),
+    crystalSpike(C.crystalC, -0.22, 0.02, 0.4, 0.13, 0.05, 0.3),
+    crystalSpike(C.crystalC, 0.04, 0.26, 0.3, 0.1, 0.28, 0.08),
   ]);
+}
+/** Stacked-stone cairn (vision image's rock stacks): 4 flattened stones. */
+function buildCairn(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  let y = 0;
+  for (const [r, sy, jx, jz, ry] of [
+    [0.42, 0.5, 0, 0, 0.3],
+    [0.34, 0.48, 0.05, -0.04, 1.2],
+    [0.26, 0.45, -0.04, 0.05, 2.1],
+    [0.17, 0.5, 0.03, 0.02, 0.7],
+  ] as const) {
+    const stone = new THREE.IcosahedronGeometry(r, 0);
+    stone.scale(1.15, sy, 1.0);
+    stone.rotateY(ry);
+    stone.computeBoundingBox();
+    const hgt = stone.boundingBox!.max.y - stone.boundingBox!.min.y;
+    stone.translate(jx, y - stone.boundingBox!.min.y, jz);
+    y += hgt * 0.82; // stones nest slightly
+    parts.push(colored(stone, C.pebble));
+  }
+  return merge(parts);
 }
 
 // --- Small props / resources -----------------------------------------------
@@ -599,11 +650,13 @@ function buildResin(): THREE.BufferGeometry {
   return merge([blob(0.18, C.resin, 0, 0.22, 0, 1, 1.3, 1)]);
 }
 
-/** Crystal-shard cluster (two crossed octahedra). */
+/** Crystal-shard cluster — redesigned (wave 3) to match the new multi-spike
+ *  crystal language (this is the HARVESTABLE one; kind stays 'shard'). */
 function buildShard(): THREE.BufferGeometry {
   return merge([
-    oct(0.35, C.shard, 0, 0.5, 0, 0.6, 2.2, 0.6),
-    oct(0.28, C.shard, 0.28, 0.35, 0.1, 0.5, 1.5, 0.5),
+    crystalSpike(C.shard, 0, 0, 0.78, 0.18, 0, 0.1),
+    crystalSpike(C.shard, 0.18, 0.08, 0.45, 0.13, 0.15, -0.3),
+    crystalSpike(C.shard, -0.16, -0.05, 0.34, 0.11, -0.2, 0.28),
   ]);
 }
 
@@ -659,6 +712,9 @@ const BUILDERS: Record<string, () => THREE.BufferGeometry> = {
   bushBerry: buildBushBerry,
   log: buildLog,
   pebbles: buildPebbleCluster,
+  cairn: buildCairn,
+  flowerOrange: () => buildFlowerPatch(C.flowerOrange),
+  flowerViolet: () => buildFlowerPatch(C.flowerViolet),
 };
 
 // Emissive buckets get a glow lift (color, intensity); the spark is fully unlit
@@ -684,7 +740,7 @@ const DOUBLE_SIDED = new Set<string>([]);
 
 // Per-bucket roughness for the Standard-material path (medium+). Rocks/mesas are
 // matte, trees a touch smoother, crystals slick; everything else is foliage.
-const ROCK_BUCKETS = new Set<string>(['rock', 'mesa', 'rib', 'boulder', 'scree', 'pebbles']);
+const ROCK_BUCKETS = new Set<string>(['rock', 'mesa', 'rib', 'boulder', 'scree', 'pebbles', 'cairn']);
 const TREE_BUCKETS = new Set<string>([
   'pine', 'broadleaf', 'snag', 'oak', 'shrub', 'windpine', 'boulderpine', 'willow', 'juniper', 'tree',
 ]);

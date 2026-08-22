@@ -694,20 +694,36 @@ function buildMirefin(rng: () => number): { group: THREE.Group; parts: CritterPa
 /** Craghorn — woolly tank with fat, fully curling faceted ram horns. */
 function buildCraghorn(rng: () => number): { group: THREE.Group; parts: CritterParts } {
   const g = new THREE.Group();
-  const wool = jitterColor(0xc9c7bc, rng, 0.02, 0.06);
-  const woolDark = jitterColor(0x666d7a, rng, 0.03, 0.05);
-  const muzzleC = jitterColor(0xeee0c2, rng, 0.03);
-  const hornC = jitterColor(0x9a764b, rng, 0.04, 0.05);
+  // Fidelity-3 wave 3 (Spencer's mountain-vision image): the craghorn became
+  // an ibex-style mountain goat — shaggy two-tone brown mantle, long ridged
+  // horns swept back over the body, cream muzzle, dark hooves.
+  const wool = jitterColor(0x8f5f36, rng, 0.03, 0.06);
+  const woolDark = jitterColor(0x6b4527, rng, 0.03, 0.05);
+  const muzzleC = jitterColor(0xecd9b4, rng, 0.03);
+  const hornC = jitterColor(0xa87e4e, rng, 0.04, 0.05);
 
   const body = new THREE.Group();
   body.position.y = 0.68;
   const barrel = capsule(0.4, 0.5, wool, {}, 3, 9);
   barrel.rotation.x = Math.PI / 2;
   body.add(barrel);
-  const woolLump = sphere(0.33, muzzleC, {}, 8, 6);
-  woolLump.scale.set(1.06, 0.9, 0.8);
-  woolLump.position.set(0, 0.08, 0.25);
-  body.add(woolLump);
+  // Shaggy shoulder mantle: overlapping squashed lobes draping the front half,
+  // darker than the barrel so the coat reads layered like the vision goat.
+  for (const [ly, lz, r, sxs] of [
+    [0.16, 0.18, 0.34, 1.12],
+    [0.1, -0.06, 0.31, 1.18],
+    [0.02, 0.36, 0.26, 1.0],
+  ] as const) {
+    const shag = sphere(r, woolDark, {}, 8, 6);
+    shag.scale.set(sxs, 0.72, 0.95);
+    shag.position.set(0, ly, lz);
+    body.add(shag);
+  }
+  // Cream chest bib + rump patch.
+  const bib = sphere(0.2, muzzleC, {}, 7, 5);
+  bib.scale.set(0.95, 0.9, 0.6);
+  bib.position.set(0, -0.08, 0.42);
+  body.add(bib);
   g.add(body);
 
   const head = new THREE.Group();
@@ -741,21 +757,23 @@ function buildCraghorn(rng: () => number): { group: THREE.Group; parts: CritterP
   beard.position.set(0, -0.22, 0.13);
   head.add(beard);
 
-  // Each thick ridge traces almost a complete spiral around the ear. The last
-  // segment comes forward again, making the curl legible even head-on.
+  // Ibex horns: long ridged arcs rising from the forehead and sweeping BACK
+  // over the mantle with a slight outward flare (the vision image's signature
+  // silhouette). Ridge segmentation keeps the craghorn's faceted-horn
+  // identity; an rng roll chips one tip on some individuals.
   const chipRoll = rng();
   for (const sx of [-1, 1] as const) {
     const chipped = chipRoll < 0.35 && sx === 1;
     const pts: ReadonlyArray<readonly [number, number, number]> = [
-      [sx * 0.13, 0.14, 0.02],
-      [sx * 0.3, 0.31, -0.03],
-      [sx * 0.48, 0.23, -0.16],
-      [sx * 0.52, 0.01, -0.2],
-      [sx * 0.44, -0.19, -0.1],
-      [sx * 0.28, -0.24, 0.05],
-      [sx * 0.19, -0.08, 0.17],
+      [sx * 0.1, 0.16, 0.06],
+      [sx * 0.15, 0.36, -0.06],
+      [sx * 0.19, 0.5, -0.24],
+      [sx * 0.22, 0.55, -0.46],
+      [sx * 0.24, 0.5, -0.68],
+      [sx * 0.25, 0.38, -0.86],
+      [sx * 0.25, 0.24, -0.98],
     ];
-    head.add(segmentedHorn(chipped ? pts.slice(0, 6) : pts, 0.115, 0.03, hornC, { flat: true }, 6));
+    head.add(segmentedHorn(chipped ? pts.slice(0, 5) : pts, 0.105, 0.028, hornC, { flat: true }, 6));
   }
   g.add(head);
 

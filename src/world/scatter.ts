@@ -39,7 +39,8 @@ export type PropKind =
   | 'bush' // faceted ground bush (plain / berry variant; collides like a rock)
   | 'log' // fallen two-log cluster w/ cut ends (collides like a rock)
   | 'toadstool' // red/yellow chunky toadstool (no collision)
-  | 'pebbles'; // small faceted pebble cluster (no collision)
+  | 'pebbles' // small faceted pebble cluster (no collision)
+  | 'cairn'; // stacked-stone stack (wave 3; collides like a boulder)
 
 /**
  * A single scattered prop: gameplay `kind` + world transform (y already
@@ -114,7 +115,15 @@ function variantFor(kind: PropKind, biome: Biome, gx: number, gz: number): strin
   }
   if (kind === 'crystal') return pickVariant(SCATTER.crystalVariants, roll);
   if (kind === 'mesa') return (SCATTER.mesaVariants as Record<string, string>)[biome];
-  if (kind === 'flower') return pickVariant(SCATTER.flowerVariants, roll);
+  if (kind === 'flower') {
+    // Mountain biomes bloom orange/violet (wave-3 vision); everywhere else
+    // keeps the meadow pink/yellow/blue trio.
+    const table =
+      biome === 'crags' || biome === 'highlands'
+        ? SCATTER.flowerVariantsMountain
+        : SCATTER.flowerVariants;
+    return pickVariant(table, roll);
+  }
   if (kind === 'toadstool') return pickVariant(SCATTER.toadstoolVariants, roll);
   if (kind === 'bush') return pickVariant(SCATTER.bushVariants, roll);
   return undefined;
@@ -438,6 +447,7 @@ const PROP_TOP: Partial<Record<PropKind, number>> = {
   // lobes ≈ 1.25m) — low enough that a glide clears them trivially.
   log: 0.75,
   bush: 1.25,
+  cairn: 1.7,
 };
 
 /**
