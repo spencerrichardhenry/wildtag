@@ -701,3 +701,71 @@ describe('CritterManager.addFixedSlots (Cursed Castle Task 10)', () => {
     expect(again!.trackProgress).toBe(0); // state reset — not registry-backed until set
   });
 });
+
+// --- Cragdrake 'dive' flee (fal.ai dragon, 2026-08-22) ----------------------
+
+describe("cragdrake 'dive' flee — orbits home with big vertical travel", () => {
+  it('stays leashed near home while fleeing (circles one area, never runs off)', () => {
+    let c = makeCritter('cragdrake', {
+      state: 'flee',
+      stateDur: 999,
+      pos: { x: AI.diveOrbitR, y: 8, z: 0 },
+      home: { x: 0, y: 4, z: 0 },
+    });
+    let maxHome = 0;
+    const player = { x: 2, y: 0, z: 2 }; // close → keeps it fleeing
+    for (let i = 0; i < 1200; i++) {
+      c = stepAI(c, ctx('cragdrake', player), 1 / 30);
+      maxHome = Math.max(maxHome, Math.hypot(c.pos.x - c.home.x, c.pos.z - c.home.z));
+    }
+    // A sprint/fly critter would be hundreds of metres away after 40s at
+    // fleeSpeed 8.5; the diver must stay on its orbit ring (+ turn slack).
+    expect(maxHome).toBeLessThanOrEqual(AI.diveOrbitR * 2.2);
+    expect(c.state).toBe('flee');
+  });
+
+  it('sweeps a large vertical band while fleeing (dives down and back up)', () => {
+    let c = makeCritter('cragdrake', {
+      state: 'flee',
+      stateDur: 999,
+      pos: { x: AI.diveOrbitR, y: 8, z: 0 },
+      home: { x: 0, y: 4, z: 0 },
+      flightHeight: 6,
+    });
+    let lo = Infinity;
+    let hi = -Infinity;
+    const player = { x: 2, y: 0, z: 2 };
+    for (let i = 0; i < 1200; i++) {
+      c = stepAI(c, ctx('cragdrake', player), 1 / 30);
+      lo = Math.min(lo, c.pos.y);
+      hi = Math.max(hi, c.pos.y);
+    }
+    // Flat ground fixture → the sweep comes from the dive sine alone; expect
+    // most of the ±diveAmp band and never below terrain + diveMinClear.
+    expect(hi - lo).toBeGreaterThanOrEqual(AI.diveAmp * 1.2);
+    expect(lo).toBeGreaterThanOrEqual(AI.diveMinClear - 1e-6);
+  });
+
+  it('orbit direction is stable and actually circles (accumulates winding angle)', () => {
+    let c = makeCritter('cragdrake', {
+      state: 'flee',
+      stateDur: 999,
+      pos: { x: AI.diveOrbitR, y: 8, z: 0 },
+      home: { x: 0, y: 4, z: 0 },
+    });
+    const player = { x: 2, y: 0, z: 2 };
+    let prevAng = Math.atan2(c.pos.z, c.pos.x);
+    let wound = 0;
+    for (let i = 0; i < 1500; i++) {
+      c = stepAI(c, ctx('cragdrake', player), 1 / 30);
+      const ang = Math.atan2(c.pos.z - c.home.z, c.pos.x - c.home.x);
+      let d = ang - prevAng;
+      while (d > Math.PI) d -= 2 * Math.PI;
+      while (d < -Math.PI) d += 2 * Math.PI;
+      wound += d;
+      prevAng = ang;
+    }
+    // ≥ one full lap around home over 50s of flee.
+    expect(Math.abs(wound)).toBeGreaterThanOrEqual(2 * Math.PI);
+  });
+});

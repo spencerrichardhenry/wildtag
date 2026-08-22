@@ -1296,6 +1296,18 @@ export const AI = {
   flyClimbRate: 1.5,
   /** Wide-arc yaw sweep rate while a flyer loops (rad/s). */
   flyArcRate: 0.55,
+  /**
+   * 'dive' flee (Cragdrake): orbit `diveOrbitR` m around home (direction by
+   * critter id parity), correcting toward the ring with `diveRadialGain`,
+   * while the altitude target swings ±`diveAmp` m around the cruise height at
+   * `diveRate` rad/s — down the crag faces and back up. Never below
+   * terrain + `diveMinClear`.
+   */
+  diveOrbitR: 13,
+  diveRadialGain: 0.09,
+  diveAmp: 7.5,
+  diveRate: 1.1,
+  diveMinClear: 1.2,
   /** Ledge flee: probe distance ahead (m) when sampling for higher ground. */
   ledgeProbe: 3,
   /** Swim flee: probe distance ahead (m) when steering toward water. */

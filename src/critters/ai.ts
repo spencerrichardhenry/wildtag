@@ -64,7 +64,8 @@ function isFlyer(sp: SpeciesDef): boolean {
     sp.fleeStyle === 'fly' ||
     sp.fleeStyle === 'flutter' ||
     sp.fleeStyle === 'sting' ||
-    sp.fleeStyle === 'perch'
+    sp.fleeStyle === 'perch' ||
+    sp.fleeStyle === 'dive'
   );
 }
 
@@ -306,6 +307,22 @@ function fleeYaw(
     }
     case 'sting':
       return towardYaw;
+    case 'dive': {
+      // Orbit home instead of escaping: tangent of the diveOrbitR circle
+      // (direction fixed per critter by id parity) plus a radial correction
+      // that spirals back onto the ring — the drake circles ONE area.
+      const rx = c.pos.x - c.home.x;
+      const rz = c.pos.z - c.home.z;
+      const r = Math.hypot(rx, rz) || 0.001;
+      const dir = c.id % 2 === 0 ? 1 : -1;
+      const tanX = (-rz / r) * dir;
+      const tanZ = (rx / r) * dir;
+      const err = Math.max(-0.9, Math.min(0.9, (AI.diveOrbitR - r) * AI.diveRadialGain));
+      // err > 0 → too close to home → push outward along +radial; else inward.
+      const vx = tanX + (rx / r) * err;
+      const vz = tanZ + (rz / r) * err;
+      return yawTo(vx, vz);
+    }
     case 'swim':
       return swimYaw(c, awayYaw, ctx);
     case 'ledge':
@@ -428,7 +445,15 @@ function locomote(
     out.pos.y = Math.min(y, prev.home.y + AI.perchAltClamp);
   } else if (flyer) {
     let target = terrainY + prev.flightHeight;
-    if (sp.fleeStyle === 'flutter') {
+    if (sp.fleeStyle === 'dive' && prev.state === 'flee') {
+      // Steep dives down the crag faces and back up: the sine swings the
+      // target through ±diveAmp while terrainY itself plunges along the orbit
+      // — but never into the ground.
+      target = Math.max(
+        terrainY + AI.diveMinClear,
+        target + Math.sin(out.stateTime * AI.diveRate + prev.id * 0.61) * AI.diveAmp,
+      );
+    } else if (sp.fleeStyle === 'flutter') {
       target += Math.sin(out.stateTime * AI.flutterBobRate + prev.id * 0.37) * AI.flutterBobAmp;
     } else if (sp.fleeStyle === 'sting' && prev.tagged && !prev.linked) {
       target = ctx.playerPos.y + AI.stingHoverAbovePlayer;

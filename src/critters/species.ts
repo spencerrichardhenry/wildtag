@@ -372,6 +372,29 @@ export const SPECIES: SpeciesDef[] = [
     rideable: false,
     farmRole: { kind: 'produce', resource: 'stone', amount: 2 },
   },
+  {
+    id: 'cragdrake',
+    bold: false,
+    name: 'Cragdrake',
+    biomes: ['crags'],
+    size: 1.15,
+    walkSpeed: 2.6,
+    fleeSpeed: 8.5,
+    awareness: 15,
+    // Spencer's spec (fal.ai concept, 2026-08-22): lives in the mountains,
+    // flees by diving down the crag faces and back up — lots of vertical
+    // travel, little horizontal — and circles one home area instead of
+    // fleeing endlessly (fleeStyle 'dive', ai.ts).
+    fleeStyle: 'dive',
+    trackRadius: 15,
+    trackTime: 17,
+    rarity: 0.35,
+    rewardSparks: 3,
+    rewardRP: 20,
+    rideable: false,
+    ringHeight: 1.7,
+    farmRole: { kind: 'produce', resource: 'spark', amount: 2 },
+  },
 ];
 
 const BY_ID: ReadonlyMap<string, SpeciesDef> = new Map(SPECIES.map((s) => [s.id, s]));

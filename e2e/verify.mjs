@@ -427,13 +427,14 @@ async function checkBoot() {
       assert(st.linkedSpeciesCount === 0, `linkedSpeciesCount ${st.linkedSpeciesCount} != 0`);
       console.log(`    state: stamina=${st.stamina} darts=${st.inventory.darts} rp=${st.inventory.rp} active=${st.activeCritters}`);
 
-      // 17 species (Haven added 4, Cursed Castle the gargoyle, Inventory+
-      // Building timberchomp + pebbleshrew, field-critters two more) — assert
+      // 18 species (Haven added 4, Cursed Castle the gargoyle, Inventory+
+      // Building timberchomp + pebbleshrew, field-critters two more, fal.ai
+      // Cragdrake) — assert
       // via the Field Guide denominator
       await page.keyboard.press('Tab');
       await sleep(400);
       const guideH1 = await page.evaluate(() => document.querySelector('.wt-panel h1')?.textContent ?? '');
-      assert(/\/17\b/.test(guideH1), `Field Guide does not show /17 species ("${guideH1}")`);
+      assert(/\/18\b/.test(guideH1), `Field Guide does not show /18 species ("${guideH1}")`);
       console.log(`    guide: "${guideH1.trim()}"`);
       await page.keyboard.press('Tab');
       await sleep(200);
@@ -508,7 +509,7 @@ async function checkMovement() {
 }
 
 async function checkTracking() {
-  await check('c. Tracking loop: spawn → track → ring → complete → link → guide 1/17', async () => {
+  await check('c. Tracking loop: spawn → track → ring → complete → link → guide 1/18', async () => {
     const page = await openPage('?fresh=1');
     try {
       await page.evaluate(() => window.__game.setTimeScale(1));
@@ -546,13 +547,13 @@ async function checkTracking() {
       assert(toast, 'no "Linked" toast appeared');
       await shot(page, '04-linked-toast.png');
 
-      // Field Guide shows 1/17 (field-critters raised the roster to 17)
+      // Field Guide shows 1/18 (the Cragdrake raised the roster to 18)
       await page.keyboard.press('Tab');
       const guide18 = await page.waitForFunction(
-        () => /\b1\/17\b/.test(document.querySelector('.wt-panel h1')?.textContent || ''),
+        () => /\b1\/18\b/.test(document.querySelector('.wt-panel h1')?.textContent || ''),
         { timeout: 3000 },
       ).then(() => true).catch(() => false);
-      assert(guide18, 'Field Guide did not show 1/17');
+      assert(guide18, 'Field Guide did not show 1/18');
       const guideH1 = await page.evaluate(() => document.querySelector('.wt-panel h1')?.textContent ?? '');
       console.log(`    guide: "${guideH1.trim()}"`);
       await page.keyboard.press('Tab');
@@ -1496,7 +1497,7 @@ async function checkMount() {
 }
 
 async function checkSpeciesPreview() {
-  await check('n. Species preview: ?preview=critters shows all 17, screenshot', async () => {
+  await check('n. Species preview: ?preview=critters shows all 18, screenshot', async () => {
     const page = await context.newPage();
     const errors = [];
     page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));

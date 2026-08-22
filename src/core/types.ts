@@ -142,6 +142,9 @@ export interface SpeciesDef {
     | 'swim'
     | 'ledge'
     | 'perch'
+    /** Orbits its home point while diving steeply down the crag faces and
+     *  back up — big vertical travel, little horizontal (Cragdrake). */
+    | 'dive'
     | 'none';
   /** Bold species ignore the player entirely until TAGGED — only a beacon on
    *  their back spooks them (e.g. birds). Skittish species (false) alert at

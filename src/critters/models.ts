@@ -2039,12 +2039,160 @@ function buildGargoyle(rng: () => number): { group: THREE.Group; parts: CritterP
   return { group: g, parts: { legs, wings, head, body } };
 }
 
+
+/** Cragdrake — chibi mountain dragon (Spencer's fal.ai concept, 2026-08-22):
+ *  slate-blue faceted body, cream belly plate, purple swept horns with white
+ *  tips, stubby purple bat wings, spine spikes, thick spiked tail. Lives in
+ *  the crags; flees by diving the crag faces in circles (fleeStyle 'dive'). */
+function buildCragdrake(rng: () => number): { group: THREE.Group; parts: CritterParts } {
+  const g = new THREE.Group();
+  const scale = jitterColor(0x5f7fa4, rng, 0.04, 0.05);
+  const scaleDark = jitterColor(0x47617f, rng, 0.03, 0.04);
+  const belly = jitterColor(0xeadcae, rng, 0.03);
+  const wingC = jitterColor(0x7a5fa8, rng, 0.04, 0.05);
+  const tipC = 0xf2efe6;
+
+  const body = new THREE.Group();
+  body.position.y = 0.52;
+  // Plump bottom-heavy torso, upright-leaning like the concept.
+  const torso = sphere(0.4, scale, {}, 10, 8);
+  torso.scale.set(0.95, 1.05, 0.9);
+  body.add(torso);
+  const hips = sphere(0.32, scale, {}, 8, 6);
+  hips.scale.set(1.05, 0.8, 1.0);
+  hips.position.set(0, -0.22, -0.06);
+  body.add(hips);
+  // Cream belly plate with a faint segment bulge.
+  const plate = sphere(0.3, belly, {}, 8, 6);
+  plate.scale.set(0.82, 0.98, 0.5);
+  plate.position.set(0, -0.06, 0.24);
+  body.add(plate);
+  const plate2 = sphere(0.2, belly, {}, 7, 5);
+  plate2.scale.set(0.75, 0.6, 0.45);
+  plate2.position.set(0, -0.3, 0.22);
+  body.add(plate2);
+  // Spine spike row (purple; smooth-shaded so it bakes into the body bucket
+  // — the faceted identity lives on the WINGS, see the bake-class budget).
+  for (const [sy, sz, r] of [
+    [0.34, -0.2, 0.075],
+    [0.16, -0.33, 0.09],
+    [-0.06, -0.38, 0.08],
+  ] as const) {
+    const spike = cone(r, r * 2.6, wingC, 5);
+    spike.rotation.x = -0.5;
+    spike.position.set(0, sy, sz);
+    body.add(spike);
+  }
+  g.add(body);
+
+  // Head — big, with the concept's heavy squared muzzle.
+  const head = new THREE.Group();
+  head.position.set(0, 1.06, 0.16);
+  const skull = sphere(0.28, scale, {}, 10, 8);
+  skull.scale.set(1.0, 0.94, 0.98);
+  head.add(skull);
+  const muzzle = sphere(0.17, scaleDark, {}, 8, 6);
+  muzzle.scale.set(1.05, 0.72, 0.95);
+  muzzle.position.set(0, -0.1, 0.22);
+  head.add(muzzle);
+  for (const sx of [-1, 1]) {
+    const nostril = blob(0.02, 0x2c3644);
+    nostril.position.set(sx * 0.06, -0.06, 0.38);
+    head.add(nostril);
+  }
+  for (const e of eyePair(0.14, 0.06, 0.21, 0.105, { iris: 0x4a2f8c, irisR: 0.62 }, 0.085)) {
+    head.add(e);
+  }
+  // Two swept-back horns with white tips + two small nubs.
+  for (const sx of [-1, 1] as const) {
+    const horn = cone(0.075, 0.3, wingC, 6);
+    horn.rotation.x = -1.0;
+    horn.position.set(sx * 0.13, 0.22, -0.08);
+    head.add(horn);
+    const tip = blob(0.045, tipC);
+    tip.position.set(sx * 0.13, 0.3, -0.16);
+    head.add(tip);
+    const nub = cone(0.04, 0.1, wingC, 5);
+    nub.rotation.x = -0.9;
+    nub.position.set(sx * 0.05, 0.27, 0.05);
+    head.add(nub);
+  }
+  g.add(head);
+
+  // Stubby bat wings — kite membranes on little arm struts; animatable pair.
+  const wings: THREE.Object3D[] = [];
+  for (const sx of [-1, 1] as const) {
+    const wing = new THREE.Group();
+    wing.position.set(sx * 0.34, 0.78, -0.12); // shoulder pivot
+    const strut = capsule(0.035, 0.16, scaleDark, { flat: true }, 2, 6);
+    strut.rotation.z = sx * 1.25;
+    strut.position.set(sx * 0.1, 0.05, 0);
+    wing.add(strut);
+    const membrane = cone(0.24, 0.44, wingC, 4, { flat: true });
+    membrane.scale.z = 0.14;
+    membrane.rotation.z = sx * 1.9;
+    membrane.position.set(sx * 0.3, 0.06, -0.02);
+    wing.add(membrane);
+    const membrane2 = cone(0.16, 0.3, wingC, 4, { flat: true });
+    membrane2.scale.z = 0.14;
+    membrane2.rotation.z = sx * 2.3;
+    membrane2.position.set(sx * 0.34, -0.08, -0.02);
+    wing.add(membrane2);
+    wings.push(wing);
+    g.add(wing);
+  }
+
+  // Thick tapering tail with a purple spike pair; animatable.
+  const tail = new THREE.Group();
+  tail.position.set(0, 0.38, -0.34);
+  const tail1 = capsule(0.13, 0.26, scale, {}, 2, 8);
+  tail1.rotation.x = Math.PI / 2 - 0.35;
+  tail1.position.set(0, -0.02, -0.16);
+  tail.add(tail1);
+  const tail2 = capsule(0.08, 0.2, scale, {}, 2, 7);
+  tail2.rotation.x = Math.PI / 2 - 0.2;
+  tail2.position.set(0, -0.1, -0.42);
+  tail.add(tail2);
+  for (const [tz, r] of [
+    [-0.3, 0.06],
+    [-0.5, 0.05],
+  ] as const) {
+    const spike = cone(r, r * 2.4, wingC, 5);
+    spike.rotation.x = -0.7;
+    spike.position.set(0, 0.02, tz);
+    tail.add(spike);
+  }
+  const tailTip = cone(0.05, 0.14, wingC, 5);
+  tailTip.rotation.x = Math.PI / 2 + 0.25;
+  tailTip.position.set(0, -0.16, -0.58);
+  tail.add(tailTip);
+  g.add(tail);
+
+  // Four stubby legs with white claw toes.
+  const legs: THREE.Object3D[] = [];
+  for (const [sx, sz] of QUAD) {
+    const l = legGroup(sx * 0.2, 0.34, sz * 0.16, 0.085, 0.105, 0.34, scale, 0, tipC);
+    legs.push(l);
+    g.add(l);
+  }
+  if (rng() < 0.35) {
+    // Some individuals carry a chipped white fleck on one horn (weathering
+    // roll) — parented to the HEAD so it bakes into the head bucket.
+    const chip = blob(0.028, tipC);
+    chip.position.set(0.2, 0.26, -0.24);
+    head.add(chip);
+  }
+
+  return { group: g, parts: { legs, wings, head, body, tail } };
+}
+
 const BUILDERS: Record<string, (rng: () => number) => { group: THREE.Group; parts: CritterParts }> = {
   puffle: buildPuffle,
   skitterling: buildSkitterling,
   bellowbuck: buildBellowbuck,
   mirefin: buildMirefin,
   craghorn: buildCraghorn,
+  cragdrake: buildCragdrake,
   zephyrfinch: buildZephyrfinch,
   shardwing: buildShardwing,
   nectarwisp: buildNectarWisp,
