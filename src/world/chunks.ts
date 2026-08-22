@@ -1,8 +1,9 @@
 import * as THREE from 'three';
-import { CHUNKS, ENV, WORLD_SEED } from '../core/constants.ts';
+import { CHUNKS, ENV, PATHS, WORLD_SEED } from '../core/constants.ts';
 import type { Biome } from '../core/types.ts';
 import { hash2 } from '../core/rng.ts';
 import { heightAt, biomeAt } from './terrain.ts';
+import { pathMask } from './paths.ts';
 import { qualityFlags } from '../core/quality.ts';
 import { applyTerrainDetail } from './terrainDetail.ts';
 
@@ -44,6 +45,7 @@ const BIOME_COLOR: Record<Biome, THREE.Color> = {
 const SAND_COLOR = new THREE.Color(ENV.biomeColors.sand);
 // Crag grey the steep-slope rock tint blends toward.
 const ROCK_COLOR = new THREE.Color(ENV.biomeColors.crags);
+const PATH_COLOR = new THREE.Color(PATHS.color);
 
 function chunkKey(cx: number, cz: number): string {
   return `${cx},${cz}`;
@@ -163,6 +165,10 @@ function colorFromSamples(
         Math.min(1, (ENV.slopeRockThreshold - ny) / ENV.slopeRockThreshold) * ENV.slopeRockMax;
       out.lerp(ROCK_COLOR, t);
     }
+    // Dirt-path corridors (Fidelity-3): packed-earth tan over the biome blend.
+    // pathMask is pure & position-only, so this stays seam-safe.
+    const pm = pathMask(x, z);
+    if (pm > 0) out.lerp(PATH_COLOR, pm * PATHS.colorStrength);
   }
   out.multiplyScalar(vertexLightnessJitter(x, z) * aoMul);
   return out;

@@ -1,1 +1,1892 @@
 Reading additional input from stdin...
+OpenAI Codex v0.147.0
+--------
+[1mworkdir:[0m /Users/spencerhenry/projects/wildtag
+[1mmodel:[0m gpt-5.6-sol
+[1mprovider:[0m openai
+[1mapproval:[0m on-request
+[1msandbox:[0m read-only
+[1mreasoning effort:[0m max
+[1mreasoning summaries:[0m none
+[1msession id:[0m 01a02761-1e51-7ce1-96c1-74de7170431b
+--------
+[36muser[0m
+Read .codex-drafts/PROMPT-props.md and do exactly that task.
+[35m[3mcodex[0m[0m
+I’ll read the task brief first, then inspect the relevant project files and carry it through to verification.
+[35m[3mexec[0m[0m
+[1m/bin/zsh -lc "sed -n '1,240p' .codex-drafts/PROMPT-props.md"[0m in /Users/spencerhenry/projects/wildtag
+[32m succeeded in 0ms:[0m
+# Task: draft upgraded low-poly prop builders (wildtag fidelity pass)
+
+You are drafting THREE.js procedural geometry builders for a stylized low-poly game.
+Study `src/world/props.ts` first — especially the helpers `colored()`, `merge()`,
+`cyl()`, `cone()`, `blob()`, `box()`, `oct()` and existing builders like
+`buildBroadleaf`, `buildTree`, `buildRock`, `buildMushroom`, `buildGrasstuft`.
+
+Write ONE file: `.codex-drafts/props-fidelity.ts` containing NEW builder functions
+in exactly the same style (same helpers copied into the file so it's self-contained,
+same `THREE.BufferGeometry` merged single-geometry return, vertex colors baked via
+`colored`, no materials, no rng — variety comes from instance scale/yaw).
+
+Style bar: dense saturated low-poly like Ghibli-meets-Crossy-Road. Chunky, faceted,
+readable silhouettes. Each prop stands on y=0.
+
+## Builders to draft (tri budget each ≈ 60–400; these get instanced hundreds of times)
+
+1. `buildBroadleaf2()` — deciduous tree ~5m: FAT tapered faceted trunk (radius ~0.35
+   at base), canopy of 4-6 overlapping icosphere lobes (detail 1) forming one big
+   blobby crown, slightly lighter green on upper lobes. Trunk `#6f4d2f`, canopy
+   `#4e8c3a` lower / `#669b45` upper.
+2. `buildOak2()` — like buildBroadleaf2 but squatter+wider, 6 lobes, giant-capable.
+3. `buildPine2()` — conifer ~5.5m: chunky trunk + 4 stacked faceted cone tiers with
+   visible gaps between tiers, tiers get smaller upward, dark green `#2e6b45` with
+   the top tier slightly lighter.
+4. `buildFlowerPatch(color: number)` — 3 flowers in a tight clump: each = thin stem
+   cyl `#3f7a35`, one small leaf, chunky head of 4-5 flat petal boxes/cones around a
+   yellow `#f2c744` center blob. ~0.45m tall. (Called with pink #ea5f77,
+   yellow #f2c744 w/ orange center, blue #5b7fe8.)
+5. `buildMushroomRed()` / `buildMushroomYellow()` — chunky toadstool ~0.5m: fat cream
+   `#efe5d0` stem, wide faceted cap (low-poly hemisphere, 7 segments) `#d95f4c` /
+   `#e8a83c`, cap has a visible underside rim.
+6. `buildBush()` — 2-3 overlapping faceted icosphere lobes, ~1.2m tall, mid-green
+   `#4e8c3a`, sits fat on the ground.
+7. `buildBushBerry()` — buildBush + 5-6 tiny red `#d95f4c` berry blobs on the surface.
+8. `buildLog()` — fallen log ~2.2m long, horizontal faceted cylinder (7 seg) radius
+   ~0.3 lying on ground (axis along X), bark `#795635`, both END CAPS lighter cut-wood
+   `#c9a876` discs inset slightly, plus 1 short stub branch. Include a
+   second smaller parallel log half-buried.
+9. `buildTuft2()` — grass clump: 6-8 chunky TAPERED CONES (4 segments, slightly
+   curved outward by tilting), NOT flat quads, heights 0.25-0.5m, splayed like a
+   fountain. Green `#5da03f` with tips slightly lighter (bake a two-tone: darker at
+   base). Must read as grass from 2m away.
+10. `buildPebbleCluster()` — 3-4 small faceted rocks `#7b828c` of varied size, ~0.3m.
+11. `buildWindmill()` — village windmill ~9m: tapered faceted tower (6-sided,
+    cream `#e8dcc8` walls, brown trim), small pitched cap roof `#8a4a3a`, 4 blades
+    (thin boxes w/ lattice feel via 2 crossed thinner boxes each) on a front hub,
+    blades as a SEPARATE returned geometry so the game can spin them:
+    return `{ tower: BufferGeometry, blades: BufferGeometry }` for this one only —
+    blades centered on origin, hub position documented in a comment.
+
+## Rules
+- Self-contained file: import only `three` + BufferGeometryUtils.mergeGeometries.
+- Every other builder returns a single merged `THREE.BufferGeometry` with vertex
+  colors, non-indexed (mirror `colored()`'s toNonIndexed + color attr approach).
+- Flat-shaded look comes from faceting (compute nothing; the game's materials use
+  flatShading where needed) — keep facets visible, no smooth high-seg spheres.
+- Comment each builder with its approx height and tri count.
+- TypeScript, no `any`. It must compile with `npx tsc --noEmit` given the repo's
+  tsconfig (you may run that to check, but do NOT modify any file outside
+  .codex-drafts/).
+
+[35m[3mcodex[0m[0m
+The brief is tightly scoped to a single draft file. I’m now matching the project’s existing geometry conventions and TypeScript settings; no available skill is a better fit because this is repo-native Three.js code in `wildtag`, not a raster asset or Dungeon Run model task.
+  [36m→[0m Inspect existing prop helpers/builders and TypeScript configuration
+  [2m•[0m [2mImplement all requested self-contained builders in .codex-drafts/props-fidelity.ts[0m
+  [2m•[0m [2mRun TypeScript checks and verify geometry constraints/scope[0m
+[35m[3mexec[0m[0m
+[1m/bin/zsh -lc "sed -n '321,760p' src/world/props.ts"[0m in /Users/spencerhenry/projects/wildtag
+[35m[3mexec[0m[0m
+[1m/bin/zsh -lc "sed -n '1,320p' src/world/props.ts"[0m in /Users/spencerhenry/projects/wildtag
+[32m succeeded in 0ms:[0m
+import * as THREE from 'three';
+import { CHUNKS, SCATTER, WORLD_SEED } from '../core/constants.ts';
+import type { Vec3 } from '../core/types.ts';
+import type { Obstacle } from '../player/collision.ts';
+import {
+  scatterForChunk,
+  placementObstacle,
+  placementGrappleCollider,
+  type PropKind,
+  type PropPlacement,
+} from './scatter.ts';
+import { hash2 } from '../core/rng.ts';
+import type { GrappleCollider } from '../player/grapple.ts';
+import {
+  harvest,
+  isAvailable,
+  makeNode,
+  withinHarvestCone,
+  type NodeState,
+} from './resources.ts';
+import { makeSurfaceMaterial, ROUGHNESS } from '../core/materials.ts';
+
+// ---------------------------------------------------------------------------
+// Prop mesh layer + streaming PropManager. Low-poly, flat-shaded primitives
+// (≤120 tris each) are built once per kind and shared, then drawn via one
+// THREE.BatchedMesh per MATERIAL GROUP (Fidelity-2 P1): chunks add/delete
+// instance ids into the batches on stream in/out, so the whole prop field
+// renders in ~9 multi-draw calls with per-instance frustum culling, instead of
+// one draw call per (chunk, kind). The manager streams prop chunks in a smaller
+// radius than terrain, emits collision cylinders for trees/rocks, and owns the
+// harvestable-resource node registry: harvesting dims/shrinks the depleted
+// instance until it respawns (SCATTER.respawnS). Pure placement/state logic
+// lives in scatter.ts / resources.ts — this module is the three.js bridge.
+// ---------------------------------------------------------------------------
+
+const C = SCATTER.colors;
+
+/** Bake a uniform vertex colour onto a geometry and drop its index (flat). */
+function colored(geo: THREE.BufferGeometry, hex: number): THREE.BufferGeometry {
+  const g = geo.index ? geo.toNonIndexed() : geo;
+  const pos = g.getAttribute('position');
+  const col = new Float32Array(pos.count * 3);
+  const c = new THREE.Color(hex);
+  for (let i = 0; i < pos.count; i++) {
+    col[i * 3] = c.r;
+    col[i * 3 + 1] = c.g;
+    col[i * 3 + 2] = c.b;
+  }
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  return g;
+}
+
+/** Concatenate coloured non-indexed parts into one BufferGeometry. */
+function merge(parts: THREE.BufferGeometry[]): THREE.BufferGeometry {
+  let total = 0;
+  for (const p of parts) total += p.getAttribute('position').count;
+  const pos = new Float32Array(total * 3);
+  const col = new Float32Array(total * 3);
+  let o = 0;
+  for (const p of parts) {
+    const pp = p.getAttribute('position');
+    const pc = p.getAttribute('color');
+    for (let i = 0; i < pp.count; i++) {
+      pos[o * 3] = pp.getX(i);
+      pos[o * 3 + 1] = pp.getY(i);
+      pos[o * 3 + 2] = pp.getZ(i);
+      col[o * 3] = pc.getX(i);
+      col[o * 3 + 1] = pc.getY(i);
+      col[o * 3 + 2] = pc.getZ(i);
+      o++;
+    }
+    p.dispose();
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  g.computeBoundingSphere();
+  return g;
+}
+
+// ---------------------------------------------------------------------------
+// Geometry builders (base at y=0; instance scale/rot applied per prop). Each
+// returns ONE merged, flat-shaded, vertex-coloured BufferGeometry shared across
+// every instance of its bucket, so builders are rng-free and deterministic —
+// per-instance variety comes from the scatter transform (scale+yaw) + which
+// variant is chosen. F2 adds a per-biome tree/crystal/mesa variant zoo, cliff
+// formations (mesa slabs, boulder stacks, scree, rock ribs), wetland reeds +
+// willows + lily pads, forest glow mushrooms and permanent meadow grass tufts.
+// ---------------------------------------------------------------------------
+
+const TAU = Math.PI * 2;
+const clamp01 = (v: number): number => (v < 0 ? 0 : v > 1 ? 1 : v);
+
+/** Coloured cylinder centred so its mid-height sits at `y`. */
+function cyl(rTop: number, rBot: number, h: number, seg: number, hex: number, y: number): THREE.BufferGeometry {
+  const g = new THREE.CylinderGeometry(rTop, rBot, h, seg);
+  g.translate(0, y, 0);
+  return colored(g, hex);
+}
+/** Coloured cone with its base at `y`. */
+function cone(r: number, h: number, seg: number, hex: number, y: number): THREE.BufferGeometry {
+  const g = new THREE.ConeGeometry(r, h, seg);
+  g.translate(0, y + h / 2, 0);
+  return colored(g, hex);
+}
+/** Coloured low-poly blob (icosahedron), optional non-uniform scale, at (x,y,z). */
+function blob(
+  r: number, hex: number, x: number, y: number, z: number, sx = 1, sy = 1, sz = 1,
+): THREE.BufferGeometry {
+  const g = new THREE.IcosahedronGeometry(r, 0);
+  g.scale(sx, sy, sz);
+  g.translate(x, y, z);
+  return colored(g, hex);
+}
+/** Coloured box centred at (x,y,z) with an optional Y rotation. */
+function box(
+  w: number, h: number, d: number, hex: number, x: number, y: number, z: number, ry = 0,
+): THREE.BufferGeometry {
+  const g = new THREE.BoxGeometry(w, h, d);
+  if (ry) g.rotateY(ry);
+  g.translate(x, y, z);
+  return colored(g, hex);
+}
+/** An octahedron shard/crystal, non-uniformly scaled, at (x,y,z). */
+function oct(
+  r: number, hex: number, x: number, y: number, z: number, sx: number, sy: number, sz: number,
+): THREE.BufferGeometry {
+  const g = new THREE.OctahedronGeometry(r, 0);
+  g.scale(sx, sy, sz);
+  g.translate(x, y, z);
+  return colored(g, hex);
+}
+
+// --- Trees -----------------------------------------------------------------
+
+/** Tall pine: trunk + three stacked cone tiers (~4.5m). Refined original. */
+export function buildTree(): THREE.BufferGeometry {
+  return merge([
+    cyl(0.12, 0.2, 1.4, 5, C.trunk, 0.7),
+    cone(1.2, 1.9, 7, C.pineFoliage, 1.1),
+    cone(0.9, 1.7, 7, C.pineFoliage, 2.2),
+    cone(0.55, 1.4, 7, C.pineFoliage, 3.2),
+  ]);
+}
+
+// initial draft via codex (buildBroadleaf) — adapted to merged vertex-coloured geo
+/** Broadleaf dome: trunk + three overlapping blobby canopy spheres (~4m). */
+function buildBroadleaf(): THREE.BufferGeometry {
+  return merge([
+    cyl(0.16, 0.26, 2.4, 6, C.trunk, 1.2),
+    blob(0.85, C.broadleaf, -0.45, 2.95, 0.05, 1.05, 0.95, 1.05),
+    blob(0.8, C.broadleaf, 0.42, 3.05, -0.08, 1, 1, 1),
+    blob(0.9, C.broadleaf, 0.02, 3.55, 0.12, 1, 1, 1),
+  ]);
+}
+
+/** Dead snag: bare tapering trunk + two broken angled branch stubs. */
+function buildSnag(): THREE.BufferGeometry {
+  const b1 = new THREE.CylinderGeometry(0.04, 0.07, 1.1, 4);
+  b1.rotateZ(0.9);
+  b1.translate(0.35, 2.2, 0);
+  const b2 = new THREE.CylinderGeometry(0.03, 0.06, 0.9, 4);
+  b2.rotateZ(-1.0);
+  b2.translate(-0.3, 2.5, 0.1);
+  return merge([cyl(0.1, 0.22, 2.6, 5, C.snag, 1.3), colored(b1, C.snag), colored(b2, C.snag)]);
+}
+
+/** Lone oak-ish: thick trunk + broad rounded canopy (built big; rare in meadow). */
+function buildOak(): THREE.BufferGeometry {
+  return merge([
+    cyl(0.28, 0.45, 2.2, 6, C.trunk, 1.1),
+    blob(1.5, C.oakLeaf, 0, 3.3, 0, 1.2, 0.9, 1.2),
+    blob(1.1, C.oakLeaf, -0.9, 3.0, 0.3, 1, 1, 1),
+    blob(1.1, C.oakLeaf, 0.9, 3.1, -0.3, 1, 1, 1),
+  ]);
+}
+
+/** Flowering shrub: low green mound dotted with pink blooms. */
+function buildShrub(): THREE.BufferGeometry {
+  return merge([
+    blob(0.7, C.shrub, 0, 0.55, 0, 1.2, 0.8, 1.2),
+    blob(0.5, C.shrub, 0.35, 0.7, 0.2, 1, 1, 1),
+    blob(0.5, C.shrub, -0.3, 0.65, -0.25, 1, 1, 1),
+    blob(0.1, C.shrubBloom, 0.4, 1.0, 0.1, 1, 1, 1),
+    blob(0.1, C.shrubBloom, -0.2, 1.05, 0.35, 1, 1, 1),
+    blob(0.1, C.shrubBloom, 0.05, 1.1, -0.3, 1, 1, 1),
+  ]);
+}
+
+/** Wind-bent pine: leaning trunk + cone tiers swept asymmetrically downwind. */
+function buildWindpine(): THREE.BufferGeometry {
+  const trunk = new THREE.CylinderGeometry(0.1, 0.18, 1.7, 5);
+  trunk.rotateZ(-0.16);
+  trunk.translate(0.12, 0.85, 0);
+  const c1 = new THREE.ConeGeometry(1.0, 1.6, 7);
+  c1.translate(0.25, 2.0, 0);
+  const c2 = new THREE.ConeGeometry(0.72, 1.4, 7);
+  c2.translate(0.5, 2.9, 0);
+  const c3 = new THREE.ConeGeometry(0.44, 1.2, 7);
+  c3.translate(0.82, 3.7, 0);
+  return merge([
+    colored(trunk, C.trunk),
+    colored(c1, C.windPine),
+    colored(c2, C.windPine),
+    colored(c3, C.windPine),
+  ]);
+}
+
+/** Boulder-pine cluster: a rocky mound with a small pine growing beside it. */
+function buildBoulderpine(): THREE.BufferGeometry {
+  const trunk = new THREE.CylinderGeometry(0.08, 0.13, 1.0, 5);
+  trunk.translate(-0.35, 0.9, 0.1);
+  const p1 = new THREE.ConeGeometry(0.6, 1.1, 6);
+  p1.translate(-0.35, 1.6, 0.1);
+  const p2 = new THREE.ConeGeometry(0.4, 0.9, 6);
+  p2.translate(-0.35, 2.2, 0.1);
+  return merge([
+    blob(0.95, C.boulder, 0.2, 0.55, 0, 1.2, 0.8, 1.1),
+    blob(0.6, C.boulder, 0.75, 0.45, 0.35, 1, 1, 1),
+    colored(trunk, C.trunk),
+    colored(p1, C.windPine),
+    colored(p2, C.windPine),
+  ]);
+}
+
+// initial draft via codex (buildWillow) — adapted: rng-free fixed strands, merged geo
+/** Drooping willow: trunk, two canopy blobs, and a fringe of hanging strand-cones. */
+function buildWillow(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [
+    cyl(0.16, 0.32, 3.9, 6, C.trunk, 1.95),
+    blob(1.0, C.willowLeaf, -0.38, 4.5, 0, 1.5, 1.05, 1.3),
+    blob(1.0, C.willowLeaf, 0.6, 4.4, 0.08, 1.2, 0.95, 1.15),
+  ];
+  const strands = 8;
+  const len = 3.0;
+  for (let i = 0; i < strands; i++) {
+    const a = (i / strands) * TAU;
+    const rad = 1.15;
+    const g = new THREE.ConeGeometry(0.08, len, 4);
+    g.rotateX(Math.PI); // flip so the tip droops downward
+    g.translate(Math.cos(a) * rad, 4.2 - len / 2, Math.sin(a) * rad * 0.85);
+    parts.push(colored(g, C.willowLeaf));
+  }
+  return merge(parts);
+}
+
+/** Gnarled juniper snag: twisted multi-segment trunk + sparse dark tufts (crags). */
+function buildJuniper(): THREE.BufferGeometry {
+  const t1 = new THREE.CylinderGeometry(0.12, 0.2, 1.2, 5);
+  t1.rotateZ(0.15);
+  t1.translate(0, 0.6, 0);
+  const t2 = new THREE.CylinderGeometry(0.08, 0.12, 1.1, 5);
+  t2.rotateZ(-0.4);
+  t2.translate(-0.25, 1.5, 0);
+  const t3 = new THREE.CylinderGeometry(0.06, 0.09, 0.9, 5);
+  t3.rotateZ(0.5);
+  t3.translate(0.2, 1.7, 0.1);
+  return merge([
+    colored(t1, C.snag),
+    colored(t2, C.snag),
+    colored(t3, C.snag),
+    blob(0.5, C.juniper, -0.5, 2.1, 0, 1.1, 0.6, 1.1),
+    blob(0.45, C.juniper, 0.45, 2.3, 0.1, 1, 1, 1),
+    blob(0.35, C.juniper, 0, 1.6, -0.3, 1, 1, 1),
+  ]);
+}
+
+// --- Rocks / cliff formations ----------------------------------------------
+
+/** Low-poly boulder (icosahedron). 20 tris. */
+export function buildRock(): THREE.BufferGeometry {
+  return merge([blob(0.9, C.rock, 0, 0.55, 0, 1, 0.8, 1)]);
+}
+
+// initial draft via codex (buildMesa) — adapted: fixed layers, merged vertex-coloured geo
+/** Crag mesa: four flattened boxes of decreasing width, each yaw-jittered (~4.6m). */
+function buildMesa(): THREE.BufferGeometry {
+  return merge([
+    box(4.2, 1.4, 2.9, C.mesa, 0, 0.7, 0, 0.1),
+    box(3.4, 1.2, 2.4, C.mesa, 0.15, 2.0, 0.1, -0.15),
+    box(2.6, 1.1, 1.9, C.mesa, -0.1, 3.1, 0.15, 0.2),
+    box(1.8, 1.0, 1.3, C.mesa, 0.2, 4.1, -0.1, -0.1),
+  ]);
+}
+
+/** Highlands rock rib: a low elongated ridge of angled slabs. */
+function buildRib(): THREE.BufferGeometry {
+  return merge([
+    box(1.3, 1.0, 3.6, C.rib, 0, 0.6, 0, 0.28),
+    box(1.0, 1.7, 2.3, C.rib, 0.35, 1.35, -0.2, 0.18),
+    box(0.8, 0.9, 1.5, C.rib, -0.25, 1.1, 0.45, -0.16),
+  ]);
+}
+
+/** Boulder stack: composite of icosphere boulders + a wedged box (~2m). */
+function buildBoulder(): THREE.BufferGeometry {
+  return merge([
+    blob(0.95, C.boulder, 0, 0.6, 0, 1.1, 0.85, 1.0),
+    blob(0.7, C.boulder, 0.5, 0.55, 0.4, 1.0, 0.9, 1.1),
+    blob(0.6, C.boulder, -0.2, 1.25, -0.1, 1, 1, 1),
+    box(0.7, 0.6, 0.7, C.boulder, -0.55, 0.45, -0.3, 0.4),
+  ]);
+}
+
+/** Scree patch: a scatter of tiny flattened pebbles (set dressing, no collision). */
+function buildScree(): THREE.BufferGeometry {
+  const pts: [number, number, number][] = [
+    [0, 0, 0.17], [0.6, 0.3, 0.14], [-0.5, 0.4, 0.15], [0.3, -0.6, 0.13],
+    [-0.6, -0.3, 0.16], [0.8, -0.2, 0.12], [-0.2, 0.7, 0.14], [0.15, 0.12, 0.18],
+  ];
+  return merge(pts.map(([x, z, r]) => blob(r, C.scree, x, r * 0.7, z, 1.1, 0.7, 1.1)));
+}
+
+// --- Wetland ---------------------------------------------------------------
+
+/** Reed cluster: a splay of thin tall cones (no collision). */
+function buildReed(): THREE.BufferGeometry {
+  const cfg: [number, number, number, number][] = [
+    [0, 0, 0, 0], [0.12, 0.1, 0.1, 0.05], [-0.1, -0.12, -0.12, -0.06],
+    [0.05, -0.08, 0.06, 0.03], [-0.08, 0.1, 0.1, -0.04], [0.14, -0.05, -0.05, 0.07],
+
+[32m succeeded in 0ms:[0m
+  ];
+  return merge(cfg.map(([x, z, lz, lx]) => {
+    const g = new THREE.ConeGeometry(0.05, 1.4, 4);
+    g.rotateZ(lz);
+    g.rotateX(lx);
+    g.translate(x, 0.7, z);
+    return colored(g, C.reed);
+  }));
+}
+
+/** Floating lily pad: flat disc + a small bloom (no collision, sits at water Y). */
+function buildLilypad(): THREE.BufferGeometry {
+  const pad = new THREE.CylinderGeometry(0.55, 0.55, 0.05, 9);
+  pad.translate(0, 0.025, 0);
+  return merge([colored(pad, C.lily), blob(0.12, C.lilyBloom, 0.12, 0.12, 0.05, 1, 0.6, 1)]);
+}
+
+// --- Forest floor / glow ---------------------------------------------------
+
+/** Glow-mushroom cluster: small emissive caps on cream stems (no collision). */
+function buildMushroom(): THREE.BufferGeometry {
+  const cfg: [number, number, number][] = [
+    [0, 0, 1], [0.22, 0.1, 0.75], [-0.18, -0.12, 0.7], [0.08, -0.2, 0.6],
+  ];
+  const parts: THREE.BufferGeometry[] = [];
+  for (const [x, z, s] of cfg) {
+    const stem = new THREE.CylinderGeometry(0.035 * s, 0.05 * s, 0.32 * s, 4);
+    stem.translate(x, 0.16 * s, z);
+    const cap = new THREE.SphereGeometry(0.15 * s, 6, 4, 0, TAU, 0, Math.PI * 0.6);
+    cap.translate(x, 0.32 * s, z);
+    parts.push(colored(stem, C.mushroomStem), colored(cap, C.mushroomCap));
+  }
+  return merge(parts);
+}
+
+/**
+ * Permanent meadow grass tuft: a small fan of three crossed TAPERED blades
+ * (trapezoid strips whose tips narrow to ~15% of the base width), each with a
+ * fixed height in a ±35% band and a slight outward lean, so the silhouette
+ * reads as a grass clump rather than crossed cards. The vertex colour bakes a
+ * GREYSCALE root→tip ramp (0.8 dark root → 1.1 bright tip); the actual green
+ * is supplied per instance by the batch colour (setColorAt), which multiplies
+ * the ramp — every tuft gets a hash-jittered meadow-green while keeping the
+ * darker-base/lighter-tip shading. Static (no wind shader); builder rng-free.
+ */
+function grasstuftBlade(rotY: number, h: number, lean: number): THREE.BufferGeometry {
+  const p = new THREE.PlaneGeometry(0.34, h, 1, 3);
+  p.translate(0, h / 2, 0); // base at y = 0
+  // Taper: narrow linearly toward the tip (tip width ≈ 15% of the base).
+  const raw = p.getAttribute('position');
+  for (let i = 0; i < raw.count; i++) {
+    const t = clamp01(raw.getY(i) / h);
+    raw.setX(i, raw.getX(i) * (1 - 0.85 * t));
+  }
+  p.rotateX(lean); // pivot at the base: the tip leans outward
+  p.rotateY(rotY);
+  const g = p.toNonIndexed();
+  const pos = g.getAttribute('position');
+  const col = new Float32Array(pos.count * 3);
+  for (let i = 0; i < pos.count; i++) {
+    // 0.95 (root) → 1.35 (tip): a grey ramp the per-instance green multiplies.
+    // Deliberately >1 toward the tip: near-vertical faces receive far less
+    // direct sun than the upward-facing terrain (and the back half of the
+    // double-sided blades none), so without this lift the tufts render as
+    // dark cutouts against the meadow instead of blending into it.
+    const v = 0.95 + clamp01(pos.getY(i) / h) * 0.4;
+    col[i * 3] = v;
+    col[i * 3 + 1] = v;
+    col[i * 3 + 2] = v;
+  }
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  return g;
+}
+function buildGrasstuft(): THREE.BufferGeometry {
+  // Three blades fanned at 60°, heights spanning ±35% about ~0.45 m, leans
+  // alternating so no two tips point the same way.
+  return merge([
+    grasstuftBlade(0, 0.46, 0.16),
+    grasstuftBlade(Math.PI / 3, 0.32, -0.22),
+    grasstuftBlade((2 * Math.PI) / 3, 0.58, 0.1),
+  ]);
+}
+
+// --- Crystals (crag/highlands variants) ------------------------------------
+
+/** Elongated octahedral crystal (fallback/tall single). */
+export function buildCrystal(): THREE.BufferGeometry {
+  return buildCrystalA();
+}
+function buildCrystalA(): THREE.BufferGeometry {
+  return merge([oct(0.5, C.crystalA, 0, 0.7, 0, 0.7, 2.0, 0.7)]);
+}
+function buildCrystalB(): THREE.BufferGeometry {
+  return merge([
+    oct(0.42, C.crystalB, 0, 0.6, 0, 0.7, 1.7, 0.7),
+    oct(0.3, C.crystalB, 0.3, 0.4, 0.15, 0.6, 1.3, 0.6),
+  ]);
+}
+function buildCrystalC(): THREE.BufferGeometry {
+  return merge([
+    oct(0.35, C.crystalC, 0, 0.4, 0, 0.9, 1.1, 0.9),
+    oct(0.28, C.crystalC, 0.28, 0.3, 0.1, 0.8, 1.0, 0.8),
+    oct(0.24, C.crystalC, -0.22, 0.28, -0.12, 0.8, 0.9, 0.8),
+  ]);
+}
+
+// --- Small props / resources -----------------------------------------------
+
+/** Thin stem + small head. */
+export function buildFlower(): THREE.BufferGeometry {
+  const stem = new THREE.CylinderGeometry(0.02, 0.03, 0.45, 4);
+  stem.translate(0, 0.22, 0);
+  return merge([colored(stem, C.reed), blob(0.13, C.flower, 0, 0.48, 0, 1, 1, 1)]);
+}
+
+/** Fiber tuft (short flattened cone). */
+function buildFiber(): THREE.BufferGeometry {
+  return merge([cone(0.2, 0.55, 5, C.fiber, 0)]);
+}
+
+/** Amber resin blob. */
+function buildResin(): THREE.BufferGeometry {
+  return merge([blob(0.18, C.resin, 0, 0.22, 0, 1, 1.3, 1)]);
+}
+
+/** Crystal-shard cluster (two crossed octahedra). */
+function buildShard(): THREE.BufferGeometry {
+  return merge([
+    oct(0.35, C.shard, 0, 0.5, 0, 0.6, 2.2, 0.6),
+    oct(0.28, C.shard, 0.28, 0.35, 0.1, 0.5, 1.5, 0.5),
+  ]);
+}
+
+/** Floating spark mote (small octahedron). */
+function buildSpark(): THREE.BufferGeometry {
+  return merge([oct(0.16, C.spark, 0, 0.9, 0, 1, 1, 1)]);
+}
+
+// Geometry buckets keyed by `variant ?? kind`. Trees/crystals/mesas resolve via
+// their variant; everything else via its gameplay kind.
+const BUILDERS: Record<string, () => THREE.BufferGeometry> = {
+  // trees
+  pine: buildTree,
+  broadleaf: buildBroadleaf,
+  snag: buildSnag,
+  oak: buildOak,
+  shrub: buildShrub,
+  windpine: buildWindpine,
+  boulderpine: buildBoulderpine,
+  willow: buildWillow,
+  juniper: buildJuniper,
+  tree: buildTree, // defensive fallback (variant always set in practice)
+  // rocks / formations
+  rock: buildRock,
+  mesa: buildMesa,
+  rib: buildRib,
+  boulder: buildBoulder,
+  scree: buildScree,
+  // wetland / floor
+  reed: buildReed,
+  lilypad: buildLilypad,
+  mushroom: buildMushroom,
+  grasstuft: buildGrasstuft,
+  // crystals
+  crystal: buildCrystal, // defensive fallback
+  crystalA: buildCrystalA,
+  crystalB: buildCrystalB,
+  crystalC: buildCrystalC,
+  // small props / resources
+  flower: buildFlower,
+  fiber: buildFiber,
+  resin: buildResin,
+  shard: buildShard,
+  spark: buildSpark,
+};
+
+// Emissive buckets get a glow lift (color, intensity); the spark is fully unlit
+// so it reads as a mote regardless of the sun angle.
+const EMISSIVE: Record<string, { hex: number; i: number }> = {
+  crystal: { hex: C.crystalA, i: 0.35 },
+  crystalA: { hex: C.crystalA, i: 0.35 },
+  crystalB: { hex: C.crystalB, i: 0.4 },
+  crystalC: { hex: C.crystalC, i: 0.4 },
+  shard: { hex: C.shard, i: 0.5 },
+  resin: { hex: C.resin, i: 0.3 },
+  mushroom: { hex: C.mushroomCap, i: 0.55 },
+};
+
+// Buckets whose quads need to be visible from both sides.
+const DOUBLE_SIDED = new Set<string>(['grasstuft', 'lilypad']);
+
+// Per-bucket roughness for the Standard-material path (medium+). Rocks/mesas are
+// matte, trees a touch smoother, crystals slick; everything else is foliage.
+const ROCK_BUCKETS = new Set<string>(['rock', 'mesa', 'rib', 'boulder', 'scree']);
+const TREE_BUCKETS = new Set<string>([
+  'pine', 'broadleaf', 'snag', 'oak', 'shrub', 'windpine', 'boulderpine', 'willow', 'juniper', 'tree',
+]);
+const CRYSTAL_BUCKETS = new Set<string>(['crystal', 'crystalA', 'crystalB', 'crystalC', 'shard']);
+
+function roughnessFor(bucket: string): number {
+  if (ROCK_BUCKETS.has(bucket)) return ROUGHNESS.rock;
+  if (TREE_BUCKETS.has(bucket)) return ROUGHNESS.tree;
+  if (CRYSTAL_BUCKETS.has(bucket)) return ROUGHNESS.crystal;
+  return ROUGHNESS.foliage;
+}
+
+function materialFor(bucket: string): THREE.Material {
+  if (bucket === 'spark') {
+    return new THREE.MeshBasicMaterial({ vertexColors: true });
+  }
+  const e = EMISSIVE[bucket];
+  // Quality-gated: MeshStandardMaterial (per-kind roughness) on medium+, the
+  // identical-look MeshLambertMaterial on low. flatShading + vertex colours +
+  // emissive glow carry across both paths.
+  const mat = makeSurfaceMaterial({
+    vertexColors: true,
+    flatShading: true,
+    side: DOUBLE_SIDED.has(bucket) ? THREE.DoubleSide : THREE.FrontSide,
+    roughness: roughnessFor(bucket),
+    ...(e ? { emissive: e.hex, emissiveIntensity: e.i } : {}),
+  }) as THREE.MeshStandardMaterial;
+  return mat;
+}
+
+// Shared geometry + material per bucket (built lazily, reused across all chunks).
+const geoCache = new Map<string, THREE.BufferGeometry>();
+const matCache = new Map<string, THREE.Material>();
+
+function sharedGeo(bucket: string): THREE.BufferGeometry {
+  let g = geoCache.get(bucket);
+  if (!g) {
+    const build = BUILDERS[bucket] ?? buildRock;
+    g = build();
+    geoCache.set(bucket, g);
+  }
+  return g;
+}
+function sharedMat(bucket: string): THREE.Material {
+  let m = matCache.get(bucket);
+  if (!m) {
+    m = materialFor(bucket);
+    matCache.set(bucket, m);
+  }
+  return m;
+}
+
+// Exported so tests can assert wood/stone (Task 1's farm-only materials —
+// never scattered/harvested in the world) are never treated as a scattered
+// resource node kind.
+export const RESOURCE_KINDS = new Set<PropKind>(['fiber', 'resin', 'shard', 'spark', 'mushroom']);
+
+interface NodeEntry {
+  node: NodeState;
+  batch: PropBatch;
+  index: number;
+  x: number;
+  y: number;
+  z: number;
+  rot: number;
+  scale: number;
+  lastAvailable: boolean;
+}
+
+/** One bucket's instance-id allocation within a resident chunk. */
+interface ChunkAlloc {
+  bucket: string;
+  batch: PropBatch;
+  indices: number[];
+}
+
+interface LoadedProps {
+  cx: number;
+  cz: number;
+  allocs: ChunkAlloc[];
+  obstacles: Obstacle[];
+  grappleColliders: GrappleCollider[];
+  nodes: NodeEntry[];
+}
+
+function chunkKey(cx: number, cz: number): string {
+  return `${cx},${cz}`;
+}
+
+// Scratch objects for allocation-free matrix composition.
+const _m = new THREE.Matrix4();
+const _q = new THREE.Quaternion();
+const _p = new THREE.Vector3();
+const _s = new THREE.Vector3();
+const _euler = new THREE.Euler();
+
+function compose(x: number, y: number, z: number, rot: number, scale: number): THREE.Matrix4 {
+  _euler.set(0, rot, 0);
+  _q.setFromEuler(_euler);
+  _p.set(x, y, z);
+  _s.set(scale, scale, scale);
+  return _m.compose(_p, _q, _s);
+}
+
+// ---------------------------------------------------------------------------
+// Batched prop pools (Fidelity-2 P1, revised P1.1). Replaces the old one-
+// InstancedMesh-per-(chunk,bucket) scheme with ONE THREE.BatchedMesh per
+// MATERIAL GROUP (standard / double-sided / each emissive tint / unlit spark):
+// every geometry bucket registers its shared geometry once, and every placement
+// is an addInstance() into its group's batch. This gets BOTH wins at once —
+// the whole prop field renders in ~9 draw calls (WEBGL_multi_draw) AND each
+// instance is individually frustum-culled (perObjectFrustumCulled), so off-
+// screen props never reach the vertex stage (a global unculled InstancedMesh
+// pool per kind had floored software rasterizers on vertex throughput; a
+// per-sector pool split kept culling but multiplied draw calls past budget).
+// Chunks add/delete instance ids on stream in/out; BatchedMesh recycles freed
+// ids internally, so capacity plateaus under streaming churn and grows
+// (doubling via setInstanceCount) only if a denser region overflows it.
+// ---------------------------------------------------------------------------
+const BATCH_INITIAL_INSTANCES = 512;
+/** Vertex storage per group: geometries are stored once (instances share them). */
+const BATCH_VERTS_STANDARD = 32768;
+const BATCH_VERTS_SMALL = 4096;
+
+/** Material-group key for a bucket (one BatchedMesh + material per key). */
+function materialGroup(bucket: string): string {
+  if (bucket === 'spark') return 'basic';
+  if (DOUBLE_SIDED.has(bucket)) return 'double';
+  const e = EMISSIVE[bucket];
+  if (e) return `emissive-${bucket}`;
+  return 'standard';
+}
+
+class PropBatch {
+  readonly mesh: THREE.BatchedMesh;
+  private readonly geoIds = new Map<string, number>();
+  /** Currently-allocated instance count (visibility gate + stats). */
+  live = 0;
+
+  constructor(
+    private readonly scene: THREE.Scene,
+    group: string,
+    firstBucket: string,
+  ) {
+    const verts = group === 'standard' ? BATCH_VERTS_STANDARD : BATCH_VERTS_SMALL;
+    // All bucket geometries are non-indexed (see merge()), so no index storage.
+    this.mesh = new THREE.BatchedMesh(BATCH_INITIAL_INSTANCES, verts, 0, sharedMat(firstBucket));
+    this.mesh.name = `props batch ${group}`;
+    // Whole-mesh culling off (the field straddles the camera); per-instance
+    // culling on — each instance is tested against the frustum individually.
+    this.mesh.frustumCulled = false;
+    this.mesh.perObjectFrustumCulled = true;
+    this.mesh.visible = false; // until the first live instance lands
+    this.scene.add(this.mesh);
+  }
+
+  /** The batch-local geometry id for `bucket`, registering it on first use. */
+  private geometryIdFor(bucket: string): number {
+    let id = this.geoIds.get(bucket);
+    if (id === undefined) {
+      id = this.mesh.addGeometry(sharedGeo(bucket));
+      this.geoIds.set(bucket, id);
+    }
+    return id;
+  }
+
+  /** Add an instance of `bucket`; returns its instance id. */
+  alloc(bucket: string): number {
+    const geoId = this.geometryIdFor(bucket);
+    let id: number;
+    try {
+      id = this.mesh.addInstance(geoId);
+    } catch {
+      // At capacity: double and retry (streamed into a denser region).
+      this.mesh.setInstanceCount(this.mesh.maxInstanceCount * 2);
+      id = this.mesh.addInstance(geoId);
+    }
+    this.live++;
+    this.mesh.visible = true;
+    return id;
+  }
+
+  /** Set the transform of a live instance. */
+  setMatrix(id: number, m: THREE.Matrix4): void {
+    this.mesh.setMatrixAt(id, m);
+  }
+
+  /**
+   * Set the per-instance colour of a live instance (BatchedMesh colours default
+   * to white on add, so instances that never call this render unmodified).
+   */
+  setColor(id: number, color: THREE.Color): void {
+    this.mesh.setColorAt(id, color);
+  }
+
+  /** Delete a live instance (its id is recycled internally). */
+  free(id: number): void {
+    this.mesh.deleteInstance(id);
+    this.live--;
+    if (this.live <= 0) this.mesh.visible = false; // nothing left to draw
+  }
+
+  /** Instance capacity (grows by doubling; plateaus under churn). */
+  get capacity(): number {
+    return this.mesh.maxInstanceCount;
+  }
+
+  dispose(): void {
+    this.scene.remove(this.mesh);
+    this.mesh.dispose(); // internal batch geometry + data textures
+  }
+}
+
+/**
+ * Streams instanced prop meshes around the player, supplies obstacles, and owns
+ * harvestable resource nodes. Node depletion state persists in a registry keyed
+ * by chunk+placement index, so leaving and re-entering a chunk keeps a harvested
+ * node depleted until its respawn time.
+ */
+// Independent hash channels for per-instance grass-tuft hue/lightness jitter
+// (deterministic from the tuft's quantised world position → same tuft, same
+// tint on every rebuild). The green base is C.grassTuft; setColorAt multiplies
+// the geometry's baked greyscale root→tip ramp.
+const GRASS_HUE = (WORLD_SEED ^ 0xa17f) >>> 0;
+const GRASS_LIT = (WORLD_SEED ^ 0xb28e) >>> 0;
+const _tuftColor = new THREE.Color();
+const _tuftHSL = { h: 0, s: 0, l: 0 };
+new THREE.Color(C.grassTuft).getHSL(_tuftHSL);
+
+/**
+ * Per-instance meadow-green tint for a grass tuft at world (x, z): the jitter
+ * spans slightly-YELLOWED (hue shifted down toward yellow) to slightly-DEEPER
+ * green (hue up a touch, lightness down), so the field reads as sun-varied
+ * meadow texture rather than uniform paint.
+ */
+function grasstuftColor(x: number, z: number): THREE.Color {
+  const qx = Math.round(x);
+  const qz = Math.round(z);
+  const hue = _tuftHSL.h + (hash2(GRASS_HUE, qx, qz) - 0.7) * 0.08; // −0.056 (yellowed) … +0.024 (deeper)
+  const lit = clamp01(_tuftHSL.l + (hash2(GRASS_LIT, qx, qz) - 0.55) * 0.16); // −0.088 … +0.072
+  return _tuftColor.setHSL(hue, _tuftHSL.s, lit);
+}
+
+export class PropManager {
+  private readonly scene: THREE.Scene;
+  private readonly loaded = new Map<string, LoadedProps>();
+
+[35m[3mexec[0m[0m
+[1m/bin/zsh -lc "sed -n '1,240p' tsconfig.json && sed -n '1,180p' package.json && rg -n \"mergeGeometries|buildBroadleaf|buildWindmill\" src .codex-drafts --glob '*.ts'"[0m in /Users/spencerhenry/projects/wildtag
+[32m succeeded in 0ms:[0m
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "useDefineForClassFields": true,
+    "module": "ESNext",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "skipLibCheck": true,
+
+    "moduleResolution": "Bundler",
+    "allowImportingTsExtensions": true,
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+
+    "composite": true,
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.tsbuildinfo"
+  },
+  "include": ["src"]
+}
+{
+  "name": "wildtag",
+  "version": "0.1.0",
+  "description": "First-person web exploration game — tag critters, high-fidelity movement.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "test": "vitest run --passWithNoTests",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "three": "^0.185.1"
+  },
+  "devDependencies": {
+    "@types/three": "^0.185.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.1.4",
+    "vitest": "^4.1.10"
+  }
+}
+src/castle/builders.ts:2:import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+src/castle/builders.ts:408:    const merged = mergeGeometries(bucket.geos);
+src/castle/builders.ts:410:    if (!merged) continue; // defensive: mergeGeometries returns null on mismatch
+src/player/hands.ts:2:import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+src/player/hands.ts:113:  const merged = mergeGeometries(parts, false);
+src/world/props.ts:146:// initial draft via codex (buildBroadleaf) — adapted to merged vertex-coloured geo
+src/world/props.ts:148:function buildBroadleaf(): THREE.BufferGeometry {
+src/world/props.ts:464:  broadleaf: buildBroadleaf,
+src/world/environment.ts:2:import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+src/world/environment.ts:142:  const geo = mergeGeometries(parts, false)!;
+src/critters/models.ts:2:import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+src/critters/models.ts:1754:    const merged = mergeGeometries(geos, false);
+src/village/buildings.ts:2:import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+src/village/buildings.ts:366:    const merged = mergeGeometries(bucket.geos);
+src/village/buildings.ts:368:    if (!merged) continue; // defensive: mergeGeometries returns null on mismatch
+
+[35m[3mcodex[0m[0m
+The geometry plan now fits the requested silhouettes and keeps the expensive crowns controlled: the broadleaf uses four detail-1 lobes, while the six-lobe oak mixes four detail-1 primary masses with two smaller coarse lobes to stay near the stated 400-triangle ceiling. I’m implementing the draft as a fully independent module with baked colors and non-indexed merged outputs.
+[1mapply patch[0m
+[1mpatch:[0m completed
+[2m/Users/spencerhenry/projects/wildtag/.codex-drafts/props-fidelity.ts[0m
+diff --git a/.codex-drafts/props-fidelity.ts b/.codex-drafts/props-fidelity.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..b6fb0c14818882971e58525386857169e7ebb50b
+--- /dev/null
++++ b/.codex-drafts/props-fidelity.ts
+@@ -0,0 +1,466 @@
++import * as THREE from 'three';
++import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
++
++// Standalone fidelity-pass prop builders. Every part is converted to non-indexed
++// geometry before merging so each returned mesh carries baked per-vertex colour.
++
++const TAU = Math.PI * 2;
++
++/** Bake a uniform vertex colour onto a geometry and drop its index (flat). */
++function colored(geo: THREE.BufferGeometry, hex: number): THREE.BufferGeometry {
++  const g = geo.index ? geo.toNonIndexed() : geo;
++  const pos = g.getAttribute('position');
++  const col = new Float32Array(pos.count * 3);
++  const c = new THREE.Color(hex);
++  for (let i = 0; i < pos.count; i++) {
++    col[i * 3] = c.r;
++    col[i * 3 + 1] = c.g;
++    col[i * 3 + 2] = c.b;
++  }
++  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
++  return g;
++}
++
++/** Concatenate coloured non-indexed parts into one BufferGeometry. */
++function merge(parts: THREE.BufferGeometry[]): THREE.BufferGeometry {
++  const g = mergeGeometries(parts, false);
++  if (!g) {
++    throw new Error('Unable to merge prop geometry');
++  }
++  for (const part of parts) part.dispose();
++  g.computeBoundingSphere();
++  return g;
++}
++
++/** Coloured cylinder centred so its mid-height sits at `y`. */
++function cyl(
++  rTop: number,
++  rBot: number,
++  h: number,
++  seg: number,
++  hex: number,
++  y: number,
++): THREE.BufferGeometry {
++  const g = new THREE.CylinderGeometry(rTop, rBot, h, seg);
++  g.translate(0, y, 0);
++  return colored(g, hex);
++}
++
++/** Coloured cone with its base at `y`. */
++function cone(
++  r: number,
++  h: number,
++  seg: number,
++  hex: number,
++  y: number,
++): THREE.BufferGeometry {
++  const g = new THREE.ConeGeometry(r, h, seg);
++  g.translate(0, y + h / 2, 0);
++  return colored(g, hex);
++}
++
++/** Coloured low-poly blob (icosahedron), optional non-uniform scale, at (x,y,z). */
++function blob(
++  r: number,
++  hex: number,
++  x: number,
++  y: number,
++  z: number,
++  sx = 1,
++  sy = 1,
++  sz = 1,
++): THREE.BufferGeometry {
++  const g = new THREE.IcosahedronGeometry(r, 0);
++  g.scale(sx, sy, sz);
++  g.translate(x, y, z);
++  return colored(g, hex);
++}
++
++/** A denser faceted blob used only where a detail-1 crown silhouette is wanted. */
++function blob1(
++  r: number,
++  hex: number,
++  x: number,
++  y: number,
++  z: number,
++  sx = 1,
++  sy = 1,
++  sz = 1,
++): THREE.BufferGeometry {
++  const g = new THREE.IcosahedronGeometry(r, 1);
++  g.scale(sx, sy, sz);
++  g.translate(x, y, z);
++  return colored(g, hex);
++}
++
++/** Coloured box centred at (x,y,z) with an optional Y rotation. */
++function box(
++  w: number,
++  h: number,
++  d: number,
++  hex: number,
++  x: number,
++  y: number,
++  z: number,
++  ry = 0,
++): THREE.BufferGeometry {
++  const g = new THREE.BoxGeometry(w, h, d);
++  if (ry) g.rotateY(ry);
++  g.translate(x, y, z);
++  return colored(g, hex);
++}
++
++/** An octahedron shard, non-uniformly scaled, at (x,y,z). */
++function oct(
++  r: number,
++  hex: number,
++  x: number,
++  y: number,
++  z: number,
++  sx: number,
++  sy: number,
++  sz: number,
++): THREE.BufferGeometry {
++  const g = new THREE.OctahedronGeometry(r, 0);
++  g.scale(sx, sy, sz);
++  g.translate(x, y, z);
++  return colored(g, hex);
++}
++
++/** Lift a geometry just enough for its lowest vertex to touch y=0. */
++function ground(g: THREE.BufferGeometry): THREE.BufferGeometry {
++  g.computeBoundingBox();
++  if (g.boundingBox) g.translate(0, -g.boundingBox.min.y, 0);
++  return g;
++}
++
++/** Horizontal faceted cylinder whose long axis follows X. */
++function logCylinder(
++  radius: number,
++  length: number,
++  segments: number,
++  hex: number,
++  x: number,
++  y: number,
++  z: number,
++): THREE.BufferGeometry {
++  const g = new THREE.CylinderGeometry(radius, radius, length, segments);
++  g.rotateZ(Math.PI / 2);
++  g.translate(x, y, z);
++  return colored(g, hex);
++}
++
++/** Thin horizontal cylinder used as an inset cut-wood end disc. */
++function logEnd(
++  radius: number,
++  thickness: number,
++  segments: number,
++  hex: number,
++  x: number,
++  y: number,
++  z: number,
++): THREE.BufferGeometry {
++  return logCylinder(radius, thickness, segments, hex, x, y, z);
++}
++
++/** Deciduous tree, ~5.1m tall, ~344 tris. */
++export function buildBroadleaf2(): THREE.BufferGeometry {
++  return merge([
++    cyl(0.23, 0.36, 2.75, 6, 0x6f4d2f, 1.375),
++    blob1(1.08, 0x4e8c3a, -0.62, 3.62, 0.18, 1.08, 0.88, 1.02),
++    blob1(1.02, 0x4e8c3a, 0.58, 3.68, -0.12, 1.08, 0.92, 1.08),
++    blob1(0.96, 0x4e8c3a, -0.02, 3.58, -0.68, 1.06, 0.9, 1.02),
++    blob1(1.08, 0x669b45, 0.04, 4.18, 0.1, 1.08, 0.96, 1.04),
++  ]);
++}
++
++/** Broad, squat oak, ~4.6m tall, ~384 tris; instance scaling supports giants. */
++export function buildOak2(): THREE.BufferGeometry {
++  return merge([
++    cyl(0.32, 0.5, 2.35, 6, 0x6f4d2f, 1.175),
++    blob1(1.28, 0x4e8c3a, -0.92, 3.02, 0.18, 1.15, 0.78, 1.08),
++    blob1(1.25, 0x4e8c3a, 0.9, 3.0, -0.18, 1.16, 0.8, 1.08),
++    blob1(1.2, 0x4e8c3a, 0.02, 3.1, 0.82, 1.1, 0.8, 1.12),
++    blob1(1.24, 0x4e8c3a, -0.02, 3.22, -0.72, 1.12, 0.82, 1.1),
++    blob(1.02, 0x669b45, -0.42, 3.78, -0.04, 1.12, 0.86, 1.05),
++    blob(0.98, 0x669b45, 0.48, 3.72, 0.1, 1.12, 0.86, 1.08),
++  ]);
++}
++
++/** Four-tier conifer with visible trunk gaps, ~5.5m tall, ~108 tris. */
++export function buildPine2(): THREE.BufferGeometry {
++  return merge([
++    cyl(0.1, 0.25, 4.75, 6, 0x6f4d2f, 2.375),
++    cone(1.34, 1.25, 7, 0x2e6b45, 0.9),
++    cone(1.08, 1.15, 7, 0x2e6b45, 2.25),
++    cone(0.79, 1.0, 7, 0x2e6b45, 3.5),
++    cone(0.52, 0.92, 7, 0x43815a, 4.6),
++  ]);
++}
++
++interface FlowerSpec {
++  x: number;
++  z: number;
++  height: number;
++  yaw: number;
++}
++
++function flowerLeaf(x: number, y: number, z: number, yaw: number): THREE.BufferGeometry {
++  const g = new THREE.BoxGeometry(0.15, 0.035, 0.075);
++  g.rotateZ(0.42);
++  g.rotateY(yaw);
++  g.translate(x + Math.cos(yaw) * 0.07, y, z - Math.sin(yaw) * 0.07);
++  return colored(g, 0x3f7a35);
++}
++
++function flowerHead(
++  color: number,
++  centerColor: number,
++  x: number,
++  y: number,
++  z: number,
++  yaw: number,
++): THREE.BufferGeometry[] {
++  const parts: THREE.BufferGeometry[] = [];
++  for (let i = 0; i < 5; i++) {
++    const a = yaw + (i / 5) * TAU;
++    parts.push(box(
++      0.18,
++      0.045,
++      0.085,
++      color,
++      x + Math.cos(a) * 0.095,
++      y,
++      z + Math.sin(a) * 0.095,
++      -a,
++    ));
++  }
++  parts.push(blob(0.07, centerColor, x, y + 0.035, z, 1, 0.72, 1));
++  return parts;
++}
++
++/** Three-flower patch, ~0.46m tall, ~324 tris. */
++export function buildFlowerPatch(color: number): THREE.BufferGeometry {
++  const specs: FlowerSpec[] = [
++    { x: -0.12, z: 0.04, height: 0.39, yaw: 0.18 },
++    { x: 0.13, z: 0.07, height: 0.43, yaw: 1.05 },
++    { x: 0.02, z: -0.13, height: 0.36, yaw: 2.2 },
++  ];
++  const centerColor = color === 0xf2c744 ? 0xe7842f : 0xf2c744;
++  const parts: THREE.BufferGeometry[] = [];
++  for (const flower of specs) {
++    parts.push(
++      cyl(0.014, 0.024, flower.height, 4, 0x3f7a35, flower.height / 2),
++      flowerLeaf(flower.x, flower.height * 0.5, flower.z, flower.yaw + 0.35),
++    );
++    const stem = parts[parts.length - 2];
++    if (stem) stem.translate(flower.x, 0, flower.z);
++    parts.push(...flowerHead(
++      color,
++      centerColor,
++      flower.x,
++      flower.height + 0.01,
++      flower.z,
++      flower.yaw,
++    ));
++  }
++  return merge(parts);
++}
++
++function mushroomCap(capColor: number): THREE.BufferGeometry {
++  const stem = cyl(0.085, 0.125, 0.31, 6, 0xefe5d0, 0.155);
++
++  const dome = new THREE.SphereGeometry(1, 7, 3, 0, TAU, 0, Math.PI / 2);
++  dome.scale(0.33, 0.19, 0.33);
++  dome.translate(0, 0.32, 0);
++
++  const rim = new THREE.CylinderGeometry(0.27, 0.31, 0.055, 7);
++  rim.translate(0, 0.3075, 0);
++
++  return merge([
++    stem,
++    colored(rim, 0xd5c6aa),
++    colored(dome, capColor),
++  ]);
++}
++
++/** Chunky red toadstool, ~0.51m tall, ~87 tris. */
++export function buildMushroomRed(): THREE.BufferGeometry {
++  return mushroomCap(0xd95f4c);
++}
++
++/** Chunky yellow toadstool, ~0.51m tall, ~87 tris. */
++export function buildMushroomYellow(): THREE.BufferGeometry {
++  return mushroomCap(0xe8a83c);
++}
++
++function bushLobes(): THREE.BufferGeometry[] {
++  return [
++    ground(blob(0.7, 0x4e8c3a, -0.2, 0, 0.02, 1.08, 0.76, 1.02)),
++    ground(blob(0.62, 0x4e8c3a, 0.42, 0, 0.08, 1, 0.82, 1.04)),
++    ground(blob(0.56, 0x5a9640, 0.06, 0, -0.4, 1.06, 0.88, 1)),
++  ];
++}
++
++/** Fat three-lobe ground bush, ~1.0m tall, ~60 tris. */
++export function buildBush(): THREE.BufferGeometry {
++  return merge(bushLobes());
++}
++
++/** Berry-dotted ground bush, ~1.1m tall, ~180 tris. */
++export function buildBushBerry(): THREE.BufferGeometry {
++  return merge([
++    ...bushLobes(),
++    blob(0.075, 0xd95f4c, -0.55, 0.67, 0.28),
++    blob(0.07, 0xd95f4c, -0.12, 0.91, 0.4),
++    blob(0.075, 0xd95f4c, 0.38, 0.77, 0.43),
++    blob(0.065, 0xd95f4c, 0.69, 0.55, 0.05),
++    blob(0.07, 0xd95f4c, 0.21, 0.93, -0.28),
++    blob(0.065, 0xd95f4c, -0.42, 0.72, -0.36),
++  ]);
++}
++
++/** Fallen two-log cluster, ~0.9m tall and 2.2m long, ~176 tris. */
++export function buildLog(): THREE.BufferGeometry {
++  const stub = new THREE.CylinderGeometry(0.065, 0.11, 0.48, 5);
++  stub.rotateZ(-0.48);
++  stub.rotateX(0.18);
++  stub.translate(0.23, 0.54, -0.03);
++
++  return merge([
++    logCylinder(0.3, 2.2, 7, 0x795635, 0, 0.3, 0),
++    logEnd(0.25, 0.026, 7, 0xc9a876, -1.106, 0.3, 0),
++    logEnd(0.25, 0.026, 7, 0xc9a876, 1.106, 0.3, 0),
++    colored(stub, 0x795635),
++    logCylinder(0.17, 1.24, 6, 0x795635, 0.18, 0.11, 0.52),
++    logEnd(0.135, 0.022, 6, 0xc9a876, -0.451, 0.11, 0.52),
++    logEnd(0.135, 0.022, 6, 0xc9a876, 0.811, 0.11, 0.52),
++  ]);
++}
++
++function tuftBlade(
++  radius: number,
++  height: number,
++  azimuth: number,
++  lean: number,
++  x: number,
++  z: number,
++): THREE.BufferGeometry {
++  const raw = new THREE.ConeGeometry(radius, height, 4, 2);
++  raw.translate(0, height / 2, 0);
++  const g = colored(raw, 0x4f8d37);
++  const pos = g.getAttribute('position');
++  const col = g.getAttribute('color');
++  const tip = new THREE.Color(0x73b84f);
++
++  // Non-indexed triangles get one colour per face: a dark lower band and a
++  // lighter upper band remain crisp instead of interpolating into a gradient.
++  for (let i = 0; i < pos.count; i += 3) {
++    const meanY = (pos.getY(i) + pos.getY(i + 1) + pos.getY(i + 2)) / 3;
++    if (meanY <= height * 0.5) continue;
++    for (let j = 0; j < 3; j++) {
++      col.setXYZ(i + j, tip.r, tip.g, tip.b);
++    }
++  }
++
++  g.rotateZ(lean);
++  g.rotateY(azimuth);
++  ground(g);
++  g.translate(x, 0, z);
++  return g;
++}
++
++/** Eight-cone fountain grass tuft, ~0.5m tall, ~160 tris. */
++export function buildTuft2(): THREE.BufferGeometry {
++  const cfg: ReadonlyArray<readonly [number, number, number, number, number, number]> = [
++    [0.06, 0.5, 0, 0.08, 0, 0],
++    [0.057, 0.43, 0.78, 0.25, 0.01, 0.015],
++    [0.052, 0.38, 1.56, 0.31, -0.01, 0],
++    [0.055, 0.46, 2.34, 0.22, 0, -0.015],
++    [0.06, 0.4, 3.12, 0.3, 0.015, 0],
++    [0.05, 0.34, 3.9, 0.35, -0.01, 0.01],
++    [0.055, 0.44, 4.68, 0.23, 0, 0],
++    [0.048, 0.29, 5.46, 0.38, 0.01, -0.01],
++  ];
++  return merge(cfg.map(([radius, height, azimuth, lean, x, z]) => (
++    tuftBlade(radius, height, azimuth, lean, x, z)
++  )));
++}
++
++/** Four-piece faceted pebble cluster, ~0.3m tall, ~68 tris. */
++export function buildPebbleCluster(): THREE.BufferGeometry {
++  return merge([
++    ground(blob(0.2, 0x7b828c, -0.18, 0, 0.02, 1.25, 0.62, 1.05)),
++    ground(blob(0.15, 0x7b828c, 0.18, 0, 0.09, 1.1, 0.72, 0.95)),
++    ground(blob(0.12, 0x7b828c, 0.04, 0, -0.2, 1.28, 0.65, 1.0)),
++    ground(oct(0.12, 0x7b828c, 0.31, 0, -0.13, 1.05, 0.7, 0.9)),
++  ]);
++}
++
++function axisZCylinder(
++  radius: number,
++  depth: number,
++  segments: number,
++  hex: number,
++  x: number,
++  y: number,
++  z: number,
++): THREE.BufferGeometry {
++  const g = new THREE.CylinderGeometry(radius, radius, depth, segments);
++  g.rotateX(Math.PI / 2);
++  g.translate(x, y, z);
++  return colored(g, hex);
++}
++
++function radialBladeBox(
++  width: number,
++  length: number,
++  depth: number,
++  hex: number,
++  radius: number,
++  bladeAngle: number,
++  braceAngle = 0,
++  z = 0,
++): THREE.BufferGeometry {
++  const g = new THREE.BoxGeometry(width, length, depth);
++  if (braceAngle) g.rotateZ(braceAngle);
++  g.translate(0, radius, z);
++  if (bladeAngle) g.rotateZ(bladeAngle);
++  return colored(g, hex);
++}
++
++export interface WindmillGeometry {
++  tower: THREE.BufferGeometry;
++  blades: THREE.BufferGeometry;
++}
++
++/** Village windmill, ~8.9m tall; tower ~150 tris, blade assembly ~168 tris. */
++export function buildWindmill(): WindmillGeometry {
++  const tower = merge([
++    cyl(1.08, 1.65, 6.65, 6, 0xe8dcc8, 3.325),
++    cyl(1.7, 1.72, 0.24, 6, 0x6f4d2f, 0.12),
++    cyl(1.13, 1.18, 0.22, 6, 0x6f4d2f, 6.54),
++    cone(1.56, 2.22, 6, 0x8a4a3a, 6.65),
++    box(0.72, 1.38, 0.1, 0x6f4d2f, 0, 0.69, 1.55),
++    box(0.52, 0.62, 0.09, 0x6f4d2f, -0.55, 3.4, 1.43),
++    box(0.52, 0.62, 0.09, 0x6f4d2f, 0.55, 4.62, 1.31),
++    axisZCylinder(0.29, 0.26, 8, 0x6f4d2f, 0, 6.3, 1.25),
++  ]);
++
++  const bladeParts: THREE.BufferGeometry[] = [
++    axisZCylinder(0.34, 0.34, 8, 0x6f4d2f, 0, 0, 0),
++  ];
++  for (let i = 0; i < 4; i++) {
++    const a = (i / 4) * TAU;
++    bladeParts.push(
++      radialBladeBox(0.46, 2.08, 0.095, 0xc9a876, 1.48, a),
++      radialBladeBox(0.065, 1.95, 0.05, 0x6f4d2f, 1.48, a, 0.13, 0.073),
++      radialBladeBox(0.065, 1.95, 0.05, 0x6f4d2f, 1.48, a, -0.13, 0.073),
++    );
++  }
++  const blades = merge(bladeParts);
++
++  // Blades are centred on local (0,0,0). Place that origin at the tower-local
++  // hub (0, 6.30, 1.43), then spin the assembly around its local Z axis.
++  return { tower, blades };
++}
+
+diff --git a/.codex-drafts/props-fidelity.ts b/.codex-drafts/props-fidelity.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..b6fb0c14818882971e58525386857169e7ebb50b
+--- /dev/null
++++ b/.codex-drafts/props-fidelity.ts
+@@ -0,0 +1,466 @@
++import * as THREE from 'three';
++import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
++
++// Standalone fidelity-pass prop builders. Every part is converted to non-indexed
++// geometry before merging so each returned mesh carries baked per-vertex colour.
++
++const TAU = Math.PI * 2;
++
++/** Bake a uniform vertex colour onto a geometry and drop its index (flat). */
++function colored(geo: THREE.BufferGeometry, hex: number): THREE.BufferGeometry {
++  const g = geo.index ? geo.toNonIndexed() : geo;
++  const pos = g.getAttribute('position');
++  const col = new Float32Array(pos.count * 3);
++  const c = new THREE.Color(hex);
++  for (let i = 0; i < pos.count; i++) {
++    col[i * 3] = c.r;
++    col[i * 3 + 1] = c.g;
++    col[i * 3 + 2] = c.b;
++  }
++  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
++  return g;
++}
++
++/** Concatenate coloured non-indexed parts into one BufferGeometry. */
++function merge(parts: THREE.BufferGeometry[]): THREE.BufferGeometry {
++  const g = mergeGeometries(parts, false);
++  if (!g) {
++    throw new Error('Unable to merge prop geometry');
++  }
++  for (const part of parts) part.dispose();
++  g.computeBoundingSphere();
++  return g;
++}
++
++/** Coloured cylinder centred so its mid-height sits at `y`. */
++function cyl(
++  rTop: number,
++  rBot: number,
++  h: number,
++  seg: number,
++  hex: number,
++  y: number,
++): THREE.BufferGeometry {
++  const g = new THREE.CylinderGeometry(rTop, rBot, h, seg);
++  g.translate(0, y, 0);
++  return colored(g, hex);
++}
++
++/** Coloured cone with its base at `y`. */
++function cone(
++  r: number,
++  h: number,
++  seg: number,
++  hex: number,
++  y: number,
++): THREE.BufferGeometry {
++  const g = new THREE.ConeGeometry(r, h, seg);
++  g.translate(0, y + h / 2, 0);
++  return colored(g, hex);
++}
++
++/** Coloured low-poly blob (icosahedron), optional non-uniform scale, at (x,y,z). */
++function blob(
++  r: number,
++  hex: number,
++  x: number,
++  y: number,
++  z: number,
++  sx = 1,
++  sy = 1,
++  sz = 1,
++): THREE.BufferGeometry {
++  const g = new THREE.IcosahedronGeometry(r, 0);
++  g.scale(sx, sy, sz);
++  g.translate(x, y, z);
++  return colored(g, hex);
++}
++
++/** A denser faceted blob used only where a detail-1 crown silhouette is wanted. */
++function blob1(
++  r: number,
++  hex: number,
++  x: number,
++  y: number,
++  z: number,
++  sx = 1,
++  sy = 1,
++  sz = 1,
++): THREE.BufferGeometry {
++  const g = new THREE.IcosahedronGeometry(r, 1);
++  g.scale(sx, sy, sz);
++  g.translate(x, y, z);
++  return colored(g, hex);
++}
++
++/** Coloured box centred at (x,y,z) with an optional Y rotation. */
++function box(
++  w: number,
++  h: number,
++  d: number,
++  hex: number,
++  x: number,
++  y: number,
++  z: number,
++  ry = 0,
++): THREE.BufferGeometry {
++  const g = new THREE.BoxGeometry(w, h, d);
++  if (ry) g.rotateY(ry);
++  g.translate(x, y, z);
++  return colored(g, hex);
++}
++
++/** An octahedron shard, non-uniformly scaled, at (x,y,z). */
++function oct(
++  r: number,
++  hex: number,
++  x: number,
++  y: number,
++  z: number,
++  sx: number,
++  sy: number,
++  sz: number,
++): THREE.BufferGeometry {
++  const g = new THREE.OctahedronGeometry(r, 0);
++  g.scale(sx, sy, sz);
++  g.translate(x, y, z);
++  return colored(g, hex);
++}
++
++/** Lift a geometry just enough for its lowest vertex to touch y=0. */
++function ground(g: THREE.BufferGeometry): THREE.BufferGeometry {
++  g.computeBoundingBox();
++  if (g.boundingBox) g.translate(0, -g.boundingBox.min.y, 0);
++  return g;
++}
++
++/** Horizontal faceted cylinder whose long axis follows X. */
++function logCylinder(
++  radius: number,
++  length: number,
++  segments: number,
++  hex: number,
++  x: number,
++  y: number,
++  z: number,
++): THREE.BufferGeometry {
++  const g = new THREE.CylinderGeometry(radius, radius, length, segments);
++  g.rotateZ(Math.PI / 2);
++  g.translate(x, y, z);
++  return colored(g, hex);
++}
++
++/** Thin horizontal cylinder used as an inset cut-wood end disc. */
++function logEnd(
++  radius: number,
++  thickness: number,
++  segments: number,
++  hex: number,
++  x: number,
++  y: number,
++  z: number,
++): THREE.BufferGeometry {
++  return logCylinder(radius, thickness, segments, hex, x, y, z);
++}
++
++/** Deciduous tree, ~5.1m tall, ~344 tris. */
++export function buildBroadleaf2(): THREE.BufferGeometry {
++  return merge([
++    cyl(0.23, 0.36, 2.75, 6, 0x6f4d2f, 1.375),
++    blob1(1.08, 0x4e8c3a, -0.62, 3.62, 0.18, 1.08, 0.88, 1.02),
++    blob1(1.02, 0x4e8c3a, 0.58, 3.68, -0.12, 1.08, 0.92, 1.08),
++    blob1(0.96, 0x4e8c3a, -0.02, 3.58, -0.68, 1.06, 0.9, 1.02),
++    blob1(1.08, 0x669b45, 0.04, 4.18, 0.1, 1.08, 0.96, 1.04),
++  ]);
++}
++
++/** Broad, squat oak, ~4.6m tall, ~384 tris; instance scaling supports giants. */
++export function buildOak2(): THREE.BufferGeometry {
++  return merge([
++    cyl(0.32, 0.5, 2.35, 6, 0x6f4d2f, 1.175),
++    blob1(1.28, 0x4e8c3a, -0.92, 3.02, 0.18, 1.15, 0.78, 1.08),
++    blob1(1.25, 0x4e8c3a, 0.9, 3.0, -0.18, 1.16, 0.8, 1.08),
++    blob1(1.2, 0x4e8c3a, 0.02, 3.1, 0.82, 1.1, 0.8, 1.12),
++    blob1(1.24, 0x4e8c3a, -0.02, 3.22, -0.72, 1.12, 0.82, 1.1),
++    blob(1.02, 0x669b45, -0.42, 3.78, -0.04, 1.12, 0.86, 1.05),
++    blob(0.98, 0x669b45, 0.48, 3.72, 0.1, 1.12, 0.86, 1.08),
++  ]);
++}
++
++/** Four-tier conifer with visible trunk gaps, ~5.5m tall, ~108 tris. */
++export function buildPine2(): THREE.BufferGeometry {
++  return merge([
++    cyl(0.1, 0.25, 4.75, 6, 0x6f4d2f, 2.375),
++    cone(1.34, 1.25, 7, 0x2e6b45, 0.9),
++    cone(1.08, 1.15, 7, 0x2e6b45, 2.25),
++    cone(0.79, 1.0, 7, 0x2e6b45, 3.5),
++    cone(0.52, 0.92, 7, 0x43815a, 4.6),
++  ]);
++}
++
++interface FlowerSpec {
++  x: number;
++  z: number;
++  height: number;
++  yaw: number;
++}
++
++function flowerLeaf(x: number, y: number, z: number, yaw: number): THREE.BufferGeometry {
++  const g = new THREE.BoxGeometry(0.15, 0.035, 0.075);
++  g.rotateZ(0.42);
++  g.rotateY(yaw);
++  g.translate(x + Math.cos(yaw) * 0.07, y, z - Math.sin(yaw) * 0.07);
++  return colored(g, 0x3f7a35);
++}
++
++function flowerHead(
++  color: number,
++  centerColor: number,
++  x: number,
++  y: number,
++  z: number,
++  yaw: number,
++): THREE.BufferGeometry[] {
++  const parts: THREE.BufferGeometry[] = [];
++  for (let i = 0; i < 5; i++) {
++    const a = yaw + (i / 5) * TAU;
++    parts.push(box(
++      0.18,
++      0.045,
++      0.085,
++      color,
++      x + Math.cos(a) * 0.095,
++      y,
++      z + Math.sin(a) * 0.095,
++      -a,
++    ));
++  }
++  parts.push(blob(0.07, centerColor, x, y + 0.035, z, 1, 0.72, 1));
++  return parts;
++}
++
++/** Three-flower patch, ~0.46m tall, ~324 tris. */
++export function buildFlowerPatch(color: number): THREE.BufferGeometry {
++  const specs: FlowerSpec[] = [
++    { x: -0.12, z: 0.04, height: 0.39, yaw: 0.18 },
++    { x: 0.13, z: 0.07, height: 0.43, yaw: 1.05 },
++    { x: 0.02, z: -0.13, height: 0.36, yaw: 2.2 },
++  ];
++  const centerColor = color === 0xf2c744 ? 0xe7842f : 0xf2c744;
++  const parts: THREE.BufferGeometry[] = [];
++  for (const flower of specs) {
++    parts.push(
++      cyl(0.014, 0.024, flower.height, 4, 0x3f7a35, flower.height / 2),
++      flowerLeaf(flower.x, flower.height * 0.5, flower.z, flower.yaw + 0.35),
++    );
++    const stem = parts[parts.length - 2];
++    if (stem) stem.translate(flower.x, 0, flower.z);
++    parts.push(...flowerHead(
++      color,
++      centerColor,
++      flower.x,
++      flower.height + 0.01,
++      flower.z,
++      flower.yaw,
++    ));
++  }
++  return merge(parts);
++}
++
++function mushroomCap(capColor: number): THREE.BufferGeometry {
++  const stem = cyl(0.085, 0.125, 0.31, 6, 0xefe5d0, 0.155);
++
++  const dome = new THREE.SphereGeometry(1, 7, 3, 0, TAU, 0, Math.PI / 2);
++  dome.scale(0.33, 0.19, 0.33);
++  dome.translate(0, 0.32, 0);
++
++  const rim = new THREE.CylinderGeometry(0.27, 0.31, 0.055, 7);
++  rim.translate(0, 0.3075, 0);
++
++  return merge([
++    stem,
++    colored(rim, 0xd5c6aa),
++    colored(dome, capColor),
++  ]);
++}
++
++/** Chunky red toadstool, ~0.51m tall, ~87 tris. */
++export function buildMushroomRed(): THREE.BufferGeometry {
++  return mushroomCap(0xd95f4c);
++}
++
++/** Chunky yellow toadstool, ~0.51m tall, ~87 tris. */
++export function buildMushroomYellow(): THREE.BufferGeometry {
++  return mushroomCap(0xe8a83c);
++}
++
++function bushLobes(): THREE.BufferGeometry[] {
++  return [
++    ground(blob(0.7, 0x4e8c3a, -0.2, 0, 0.02, 1.08, 0.76, 1.02)),
++    ground(blob(0.62, 0x4e8c3a, 0.42, 0, 0.08, 1, 0.82, 1.04)),
++    ground(blob(0.56, 0x5a9640, 0.06, 0, -0.4, 1.06, 0.88, 1)),
++  ];
++}
++
++/** Fat three-lobe ground bush, ~1.0m tall, ~60 tris. */
++export function buildBush(): THREE.BufferGeometry {
++  return merge(bushLobes());
++}
++
++/** Berry-dotted ground bush, ~1.1m tall, ~180 tris. */
++export function buildBushBerry(): THREE.BufferGeometry {
++  return merge([
++    ...bushLobes(),
++    blob(0.075, 0xd95f4c, -0.55, 0.67, 0.28),
++    blob(0.07, 0xd95f4c, -0.12, 0.91, 0.4),
++    blob(0.075, 0xd95f4c, 0.38, 0.77, 0.43),
++    blob(0.065, 0xd95f4c, 0.69, 0.55, 0.05),
++    blob(0.07, 0xd95f4c, 0.21, 0.93, -0.28),
++    blob(0.065, 0xd95f4c, -0.42, 0.72, -0.36),
++  ]);
++}
++
++/** Fallen two-log cluster, ~0.9m tall and 2.2m long, ~176 tris. */
++export function buildLog(): THREE.BufferGeometry {
++  const stub = new THREE.CylinderGeometry(0.065, 0.11, 0.48, 5);
++  stub.rotateZ(-0.48);
++  stub.rotateX(0.18);
++  stub.translate(0.23, 0.54, -0.03);
++
++  return merge([
++    logCylinder(0.3, 2.2, 7, 0x795635, 0, 0.3, 0),
++    logEnd(0.25, 0.026, 7, 0xc9a876, -1.106, 0.3, 0),
++    logEnd(0.25, 0.026, 7, 0xc9a876, 1.106, 0.3, 0),
++    colored(stub, 0x795635),
++    logCylinder(0.17, 1.24, 6, 0x795635, 0.18, 0.11, 0.52),
++    logEnd(0.135, 0.022, 6, 0xc9a876, -0.451, 0.11, 0.52),
++    logEnd(0.135, 0.022, 6, 0xc9a876, 0.811, 0.11, 0.52),
++  ]);
++}
++
++function tuftBlade(
++  radius: number,
++  height: number,
++  azimuth: number,
++  lean: number,
++  x: number,
++  z: number,
++): THREE.BufferGeometry {
++  const raw = new THREE.ConeGeometry(radius, height, 4, 2);
++  raw.translate(0, height / 2, 0);
++  const g = colored(raw, 0x4f8d37);
++  const pos = g.getAttribute('position');
++  const col = g.getAttribute('color');
++  const tip = new THREE.Color(0x73b84f);
++
++  // Non-indexed triangles get one colour per face: a dark lower band and a
++  // lighter upper band remain crisp instead of interpolating into a gradient.
++  for (let i = 0; i < pos.count; i += 3) {
++    const meanY = (pos.getY(i) + pos.getY(i + 1) + pos.getY(i + 2)) / 3;
++    if (meanY <= height * 0.5) continue;
++    for (let j = 0; j < 3; j++) {
++      col.setXYZ(i + j, tip.r, tip.g, tip.b);
++    }
++  }
++
++  g.rotateZ(lean);
++  g.rotateY(azimuth);
++  ground(g);
++  g.translate(x, 0, z);
++  return g;
++}
++
++/** Eight-cone fountain grass tuft, ~0.5m tall, ~160 tris. */
++export function buildTuft2(): THREE.BufferGeometry {
++  const cfg: ReadonlyArray<readonly [number, number, number, number, number, number]> = [
++    [0.06, 0.5, 0, 0.08, 0, 0],
++    [0.057, 0.43, 0.78, 0.25, 0.01, 0.015],
++    [0.052, 0.38, 1.56, 0.31, -0.01, 0],
++    [0.055, 0.46, 2.34, 0.22, 0, -0.015],
++    [0.06, 0.4, 3.12, 0.3, 0.015, 0],
++    [0.05, 0.34, 3.9, 0.35, -0.01, 0.01],
++    [0.055, 0.44, 4.68, 0.23, 0, 0],
++    [0.048, 0.29, 5.46, 0.38, 0.01, -0.01],
++  ];
++  return merge(cfg.map(([radius, height, azimuth, lean, x, z]) => (
++    tuftBlade(radius, height, azimuth, lean, x, z)
++  )));
++}
++
++/** Four-piece faceted pebble cluster, ~0.3m tall, ~68 tris. */
++export function buildPebbleCluster(): THREE.BufferGeometry {
++  return merge([
++    ground(blob(0.2, 0x7b828c, -0.18, 0, 0.02, 1.25, 0.62, 1.05)),
++    ground(blob(0.15, 0x7b828c, 0.18, 0, 0.09, 1.1, 0.72, 0.95)),
++    ground(blob(0.12, 0x7b828c, 0.04, 0, -0.2, 1.28, 0.65, 1.0)),
++    ground(oct(0.12, 0x7b828c, 0.31, 0, -0.13, 1.05, 0.7, 0.9)),
++  ]);
++}
++
++function axisZCylinder(
++  radius: number,
++  depth: number,
++  segments: number,
++  hex: number,
++  x: number,
++  y: number,
++  z: number,
++): THREE.BufferGeometry {
++  const g = new THREE.CylinderGeometry(radius, radius, depth, segments);
++  g.rotateX(Math.PI / 2);
++  g.translate(x, y, z);
++  return colored(g, hex);
++}
++
++function radialBladeBox(
++  width: number,
++  length: number,
++  depth: number,
++  hex: number,
++  radius: number,
++  bladeAngle: number,
++  braceAngle = 0,
++  z = 0,
++): THREE.BufferGeometry {
++  const g = new THREE.BoxGeometry(width, length, depth);
++  if (braceAngle) g.rotateZ(braceAngle);
++  g.translate(0, radius, z);
++  if (bladeAngle) g.rotateZ(bladeAngle);
++  return colored(g, hex);
++}
++
++export interface WindmillGeometry {
++  tower: THREE.BufferGeometry;
++  blades: THREE.BufferGeometry;
++}
++
++/** Village windmill, ~8.9m tall; tower ~150 tris, blade assembly ~168 tris. */
++export function buildWindmill(): WindmillGeometry {
++  const tower = merge([
++    cyl(1.08, 1.65, 6.65, 6, 0xe8dcc8, 3.325),
++    cyl(1.7, 1.72, 0.24, 6, 0x6f4d2f, 0.12),
++    cyl(1.13, 1.18, 0.22, 6, 0x6f4d2f, 6.54),
++    cone(1.56, 2.22, 6, 0x8a4a3a, 6.65),
++    box(0.72, 1.38, 0.1, 0x6f4d2f, 0, 0.69, 1.55),
++    box(0.52, 0.62, 0.09, 0x6f4d2f, -0.55, 3.4, 1.43),
++    box(0.52, 0.62, 0.09, 0x6f4d2f, 0.55, 4.62, 1.31),
++    axisZCylinder(0.29, 0.26, 8, 0x6f4d2f, 0, 6.3, 1.25),
++  ]);
++
++  const bladeParts: THREE.BufferGeometry[] = [
++    axisZCylinder(0.34, 0.34, 8, 0x6f4d2f, 0, 0, 0),
++  ];
++  for (let i = 0; i < 4; i++) {
++    const a = (i / 4) * TAU;
++    bladeParts.push(
++      radialBladeBox(0.46, 2.08, 0.095, 0xc9a876, 1.48, a),
++      radialBladeBox(0.065, 1.95, 0.05, 0x6f4d2f, 1.48, a, 0.13, 0.073),
++      radialBladeBox(0.065, 1.95, 0.05, 0x6f4d2f, 1.48, a, -0.13, 0.073),
++    );
++  }
++  const blades = merge(bladeParts);
++
++  // Blades are centred on local (0,0,0). Place that origin at the tower-local
++  // hub (0, 6.30, 1.43), then spin the assembly around its local Z axis.
++  return { tower, blades };
++}
+
+[35m[3mcodex[0m[0m
+The draft is in place. I’m checking it as its own strict TypeScript module (the repository’s `tsconfig` only includes `src`) and then I’ll instantiate every builder to verify non-indexed output, color attributes, ground contact, and actual triangle counts.
+[35m[3mexec[0m[0m
+[1m/bin/zsh -lc 'git status --short && git diff -- .codex-drafts/props-fidelity.ts'[0m in /Users/spencerhenry/projects/wildtag
+[32m succeeded in 0ms:[0m
+ M .codex-drafts/props-run.log
+ M docs/fidelity/compare.html
+ M docs/fidelity/meadow-vista.png
+ M docs/fidelity/village.png
+ M src/core/constants.ts
+ M src/world/chunks.ts
+ M src/world/scatter.ts
+?? .codex-drafts/props-fidelity.ts
+?? src/world/paths.ts
+?? tests/paths.test.ts
+
+[35m[3mexec[0m[0m
+[1m/bin/zsh -lc 'npx tsc --noEmit --target ES2022 --module ESNext --moduleResolution Bundler --strict --skipLibCheck --noUnusedLocals --noUnusedParameters --noUncheckedIndexedAccess .codex-drafts/props-fidelity.ts'[0m in /Users/spencerhenry/projects/wildtag
+[35m[3mexec[0m[0m
+[1m/bin/zsh -lc 'node --version && npx tsc --version'[0m in /Users/spencerhenry/projects/wildtag

@@ -1,4 +1,5 @@
-import { CASTLE, CHUNKS, ENV, SCATTER, TERRAIN, WORLD_SEED } from '../core/constants.ts';
+import { CASTLE, CHUNKS, ENV, PATHS, SCATTER, TERRAIN, WORLD_SEED } from '../core/constants.ts';
+import { pathMask } from './paths.ts';
 import type { Biome } from '../core/types.ts';
 import type { Obstacle } from '../player/collision.ts';
 import type { GrappleCollider } from '../player/grapple.ts';
@@ -343,11 +344,14 @@ export function scatterForChunk(cx: number, cz: number): PropPlacement[] {
     }
   }
 
-  // Castle exclusion (Task 8 review fix): drop every placement above that
-  // fell inside the walled footprint before adding the approach mushrooms
-  // below, so this single filter is the choke point for ALL prop kinds
-  // (including grass tufts) and can never touch the mushrooms themselves.
-  const cleared = out.filter((p) => !inCastleFootprint(p.x, p.z));
+  // Castle exclusion (Task 8 review fix) + dirt-path corridors (Fidelity-3):
+  // drop every placement above that fell inside the walled footprint or on a
+  // path, before adding the approach mushrooms below, so this single filter is
+  // the choke point for ALL prop kinds (including grass tufts) and can never
+  // touch the mushrooms themselves.
+  const cleared = out.filter(
+    (p) => !inCastleFootprint(p.x, p.z) && pathMask(p.x, p.z) < PATHS.scatterMaskThreshold,
+  );
 
   // Cursed Castle approach: mushroom clusters seeded along the ring around
   // CASTLE.center (independent of the sub-cell lattice — see the function doc).

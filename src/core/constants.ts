@@ -705,6 +705,71 @@ export const SCATTER = {
 } as const;
 
 /**
+ * Dirt-path network (Fidelity-3). Hand-authored waypoint routes are tessellated
+ * once at boot into short wobbled segments (a sine offset perpendicular to the
+ * leg, tapering to zero at route endpoints so they anchor exactly); a spatial
+ * hash makes `pathMask(x, z)` cheap everywhere. Paths only recolor terrain
+ * (world/chunks.ts) and suppress scatter (world/scatter.ts) — heightAt is
+ * untouched, so movement/physics are unaffected.
+ */
+export const PATHS = {
+  /** Tessellation step (m) along each route leg. */
+  tessStep: 6,
+  /** Peak perpendicular wobble (m) and its spatial frequency (rad per m). */
+  wobbleAmp: 7,
+  wobbleFreq: 0.021,
+  /** Full-strength corridor half-width (m) → mask = 1. */
+  coreWidth: 2.6,
+  /** Fade shoulder (m) beyond the core → mask 1 → 0. */
+  fadeWidth: 2.0,
+  /** Spatial-hash cell size (m) for segment lookup. */
+  cell: 16,
+  /** Terrain color lerps toward `color` by mask × this strength. */
+  colorStrength: 0.82,
+  color: 0xd3a668,
+  /** Scatter placements are dropped where mask ≥ this. */
+  scatterMaskThreshold: 0.25,
+  /**
+   * Waypoint routes ([x, z] world coords): spawn plaza → Haven village,
+   * village → the forest border, spawn → the east meadow, spawn → the
+   * wetland shore, village → the western highlands rise. The reference
+   * composition anchors on a path winding away from the player's feet.
+   */
+  routes: [
+    [
+      [0, 8],
+      [16, -30],
+      [24, -70],
+      [40, -104],
+    ],
+    [
+      [40, -104],
+      [80, -180],
+      [120, -280],
+      [161, -388],
+    ],
+    [
+      [0, 8],
+      [80, 40],
+      [170, 60],
+      [260, 90],
+    ],
+    [
+      [0, 8],
+      [-20, 120],
+      [-10, 230],
+      [0, 330],
+    ],
+    [
+      [40, -104],
+      [-60, -140],
+      [-170, -170],
+      [-280, -190],
+    ],
+  ],
+} as const;
+
+/**
  * Environment visuals: lighting, fog, sky dome and water plane. Colors are
  * hex ints. The per-biome ground palette (+ sand near the shore) lives with
  * the chunk mesh builder.
