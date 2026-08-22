@@ -63,7 +63,8 @@ function palette(b: BuildingPlacement): { wall: number; roof: number } {
   return { wall: C.homeWall, roof: variants[hash % variants.length]! };
 }
 
-/** A pyramid roof squared over a w×d footprint, sitting at wall-top `h`. */
+/** A pyramid roof squared over a w×d footprint, sitting at wall-top `h`.
+ *  (Still used by the barter stall — houses gained gables in Fidelity-3.) */
 function roof(w: number, d: number, h: number, color: number): THREE.Mesh {
   const radius = Math.hypot(w, d) / 2 + 0.15;
   const roofH = Math.max(w, d) * VILLAGE.roofPitch;
@@ -72,6 +73,42 @@ function roof(w: number, d: number, h: number, color: number): THREE.Mesh {
   mesh.rotation.y = Math.PI / 4; // square the 4-sided cone onto the walls
   mesh.position.y = h + roofH / 2 - 0.05;
   return mesh;
+}
+
+/**
+ * Fidelity-3 gable roof: two overhanging slope slabs meeting at a ridge along
+ * local Z, triangular gable infill panels closing the front/back, and a ridge
+ * beam. Apex height = w/2 × roofPitch × 2 stays under the obstacle model's
+ * `max(w, d) × roofPitch` allowance, so villageObstacles' yTop still clears it.
+ */
+function gableRoof(g: THREE.Group, w: number, d: number, h: number, roofColor: number, wallColor: number): void {
+  const halfW = w / 2;
+  const apexH = w * VILLAGE.roofPitch * 0.9;
+  const over = 0.35; // eave + gable overhang (m)
+  const slopeLen = Math.hypot(halfW + over, apexH) + 0.12;
+  const pitch = Math.atan2(apexH, halfW + over);
+  for (const sx of [-1, 1]) {
+    const slab = box(slopeLen, 0.14, d + over * 2, roofColor);
+    slab.position.set((sx * (halfW + over)) / 2, h + apexH / 2 + 0.04, 0);
+    slab.rotation.z = -sx * pitch;
+    g.add(slab);
+  }
+  // Ridge beam capping the seam.
+  const ridge = box(0.22, 0.16, d + over * 2 + 0.06, C.trim);
+  ridge.position.set(0, h + apexH + 0.06, 0);
+  g.add(ridge);
+  // Gable infill triangles (front/back): an extruded triangle in wall tone.
+  const tri = new THREE.Shape();
+  tri.moveTo(-halfW, 0);
+  tri.lineTo(halfW, 0);
+  tri.lineTo(0, apexH);
+  tri.closePath();
+  for (const sz of [-1, 1]) {
+    const geo = new THREE.ExtrudeGeometry(tri, { depth: WALL_T, bevelEnabled: false });
+    const panel = new THREE.Mesh(geo, mat(wallColor));
+    panel.position.set(0, h, sz * (d / 2) - WALL_T / 2);
+    g.add(panel);
+  }
 }
 
 /** A window box on a side wall (faint self-lit so it reads at distance). */
@@ -129,8 +166,47 @@ function buildHouse(b: BuildingPlacement): THREE.Group {
   const door = box(DOOR_W - 0.08, DOOR_H - 0.05, 0.1, C.door);
   door.position.set(0, DOOR_H / 2, -d / 2 - 0.02);
   g.add(door);
+  // Fidelity-3 door dressing: arched top + frame posts.
+  const arch = new THREE.Mesh(new THREE.CylinderGeometry(DOOR_W / 2, DOOR_W / 2, 0.12, 8, 1, false, 0, Math.PI), mat(C.trim));
+  arch.rotation.x = Math.PI / 2;
+  arch.position.set(0, DOOR_H, -d / 2 - 0.04);
+  g.add(arch);
+  for (const sx of [-1, 1]) {
+    const jamb = box(0.1, DOOR_H, 0.12, C.trim);
+    jamb.position.set(sx * (DOOR_W / 2 + 0.03), DOOR_H / 2, -d / 2 - 0.02);
+    g.add(jamb);
+  }
 
-  g.add(roof(w, d, h, roofColor));
+  // Fidelity-3 timber framing: corner posts + a wall-top beam ring.
+  for (const sx of [-1, 1]) {
+    for (const sz of [-1, 1]) {
+      const post = box(0.16, h, 0.16, C.trim);
+      post.position.set(sx * (w / 2 - 0.02), h / 2, sz * (d / 2 - 0.02));
+      g.add(post);
+    }
+  }
+  for (const sz of [-1, 1]) {
+    const beam = box(w + 0.08, 0.14, 0.18, C.trim);
+    beam.position.set(0, h - 0.08, sz * (d / 2));
+    g.add(beam);
+  }
+  for (const sx of [-1, 1]) {
+    const beam = box(0.18, 0.14, d + 0.08, C.trim);
+    beam.position.set(sx * (w / 2), h - 0.08, 0);
+    g.add(beam);
+    // Window shutters flanking each side window.
+    for (const so of [-1, 1]) {
+      const shutter = box(0.05, 0.7, 0.32, C.trim);
+      shutter.position.set(sx * (w / 2 + 0.02), h * 0.55, so * 0.58);
+      g.add(shutter);
+    }
+    // Window sill + flower box (ties into the meadow's flower palette).
+    const sill = box(0.14, 0.08, 0.9, C.trim);
+    sill.position.set(sx * (w / 2 + 0.04), h * 0.55 - 0.44, 0);
+    g.add(sill);
+  }
+
+  gableRoof(g, w, d, h, roofColor, wall);
   return g;
 }
 

@@ -62,88 +62,166 @@ function mat(color: number, opts: MatOpts = {}): THREE.Material {
 function box(w: number, h: number, d: number, color: number): THREE.Mesh {
   return new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(color));
 }
-function blob(r: number, color: number): THREE.Mesh {
-  return new THREE.Mesh(new THREE.SphereGeometry(r, 5, 4), mat(color));
+function blob(r: number, color: number, ws = 8, hs = 6): THREE.Mesh {
+  return new THREE.Mesh(new THREE.SphereGeometry(r, ws, hs), mat(color));
+}
+function capsule(r: number, len: number, color: number): THREE.Mesh {
+  return new THREE.Mesh(new THREE.CapsuleGeometry(r, len, 3, 8), mat(color));
+}
+
+const SKIN = 0xe8b985;
+
+/** Big round-3 face: sclera + iris + highlight eyes set forward on +Z, a
+ *  little nose, and optional cheek-blush pads (the same charm language as the
+ *  whimsical critters). */
+function addFace(
+  g: THREE.Group,
+  headY: number,
+  headR: number,
+  s: number,
+  opts: { blush?: boolean; irisColor?: number } = {},
+): void {
+  for (const sx of [-1, 1]) {
+    const sclera = blob(0.075 * s, 0xf6f2ea);
+    sclera.position.set(sx * 0.085 * s, headY + 0.03 * s, headR * 0.78);
+    sclera.scale.z = 0.55;
+    g.add(sclera);
+    const iris = blob(0.042 * s, opts.irisColor ?? 0x2c2126, 6, 5);
+    iris.position.set(sx * 0.085 * s, headY + 0.028 * s, headR * 0.78 + 0.045 * s);
+    g.add(iris);
+    const glint = blob(0.014 * s, 0xffffff, 5, 4);
+    glint.position.set(sx * 0.085 * s + 0.015 * s, headY + 0.05 * s, headR * 0.78 + 0.07 * s);
+    g.add(glint);
+    if (opts.blush) {
+      const cheek = blob(0.035 * s, 0xe89b93, 6, 5);
+      cheek.position.set(sx * 0.13 * s, headY - 0.05 * s, headR * 0.7);
+      cheek.scale.z = 0.4;
+      g.add(cheek);
+    }
+  }
+  const nose = blob(0.028 * s, 0xd9a06c, 6, 5);
+  nose.position.set(0, headY - 0.02 * s, headR * 0.95);
+  g.add(nose);
 }
 
 /**
- * Build a blocky villager for `def`. Model faces +Z, feet at y=0. Base is a
- * two-legged humanoid; the silhouette adds a distinguishing accessory. Returns
- * the group and its head height (for label projection).
+ * Build a plush round-3 villager for `def` (fidelity-3: same whimsical
+ * character language as the critters — big sclera+iris+highlight eyes, plump
+ * bottom-heavy bodies, stubby limbs). Model faces +Z, feet at y=0; each
+ * silhouette keeps its distinguishing accessory. Returns the group and its
+ * head height (for label projection).
  */
 function buildNpcModel(def: NpcDef): { group: THREE.Group; headY: number } {
   const g = new THREE.Group();
   const small = def.silhouette === 'small';
   const s = small ? 0.72 : 1;
-  const legH = 0.42 * s;
-  const torsoH = (def.silhouette === 'cane' ? 0.56 : 0.68) * s; // Bram hunches
-  const torsoW = 0.42 * s;
-  const torsoD = 0.26 * s;
+  const legH = 0.34 * s;
+  const torsoH = (def.silhouette === 'cane' ? 0.5 : 0.6) * s; // Bram hunches
 
   for (const sx of [-1, 1]) {
-    const leg = box(0.15 * s, legH, 0.16 * s, def.accent);
+    const leg = capsule(0.08 * s, legH * 0.55, def.accent);
     leg.position.set(sx * 0.11 * s, legH / 2, 0);
     g.add(leg);
   }
+  // Plump bottom-heavy tunic body: a squashed sphere, wider at the hips.
   const torsoY = legH + torsoH / 2;
-  const torso = box(torsoW, torsoH, torsoD, def.color);
+  const torso = blob(0.3 * s, def.color, 9, 7);
+  torso.scale.set(1, torsoH / (0.3 * s) / 2 + 0.35, 0.82);
   torso.position.set(0, torsoY, 0);
   g.add(torso);
   for (const sx of [-1, 1]) {
-    const arm = box(0.12 * s, torsoH * 0.9, 0.14 * s, def.color);
-    arm.position.set(sx * (torsoW / 2 + 0.07 * s), torsoY + 0.02, 0);
+    const arm = capsule(0.06 * s, torsoH * 0.5, def.color);
+    arm.position.set(sx * 0.32 * s, torsoY + 0.04 * s, 0.02);
+    arm.rotation.z = sx * 0.35;
     g.add(arm);
+    const hand = blob(0.055 * s, SKIN, 6, 5);
+    hand.position.set(sx * 0.38 * s, torsoY - torsoH * 0.32, 0.04);
+    g.add(hand);
   }
-  const headR = 0.19 * s;
-  const headY = legH + torsoH + headR;
-  const head = box(headR * 2, headR * 2, headR * 2, 0xd9b98f);
+  // Big plush head (~45% of the visual mass, like the critters).
+  const headR = 0.24 * s;
+  const headY = legH + torsoH + headR * 0.9;
+  const head = blob(headR, SKIN, 10, 8);
+  head.scale.y = 0.92;
   head.position.set(0, headY, 0);
   g.add(head);
+  addFace(g, headY, headR, s, {
+    blush: def.silhouette === 'small' || def.silhouette === 'apron',
+  });
   for (const sx of [-1, 1]) {
-    const eye = blob(0.035 * s, 0x161018);
-    eye.position.set(sx * 0.07 * s, headY + 0.02, headR);
-    g.add(eye);
+    const ear = blob(0.045 * s, SKIN, 6, 5);
+    ear.position.set(sx * headR * 0.95, headY, 0);
+    g.add(ear);
   }
 
-  // Silhouette accessories.
+  // Silhouette accessories (kept per-NPC identity, rounded up).
   if (def.silhouette === 'hat') {
-    const brim = box(0.5 * s, 0.05 * s, 0.5 * s, def.accent);
-    brim.position.set(0, headY + headR, 0);
+    // Mayor: grand round-brim hat with a band.
+    const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.3 * s, 0.32 * s, 0.04 * s, 10), mat(def.accent));
+    brim.position.set(0, headY + headR * 0.82, 0);
     g.add(brim);
-    const crown = box(0.28 * s, 0.26 * s, 0.28 * s, def.accent);
-    crown.position.set(0, headY + headR + 0.16 * s, 0);
+    const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.13 * s, 0.16 * s, 0.2 * s, 8), mat(def.accent));
+    crown.position.set(0, headY + headR * 0.82 + 0.12 * s, 0);
     g.add(crown);
+    const band = new THREE.Mesh(new THREE.CylinderGeometry(0.165 * s, 0.165 * s, 0.05 * s, 8), mat(def.color));
+    band.position.set(0, headY + headR * 0.82 + 0.05 * s, 0);
+    g.add(band);
   } else if (def.silhouette === 'apron') {
-    const apron = box(torsoW * 0.9, torsoH * 0.8, 0.05, def.accent);
-    apron.position.set(0, torsoY - 0.02, torsoD / 2 + 0.02);
+    const apron = box(0.4 * s, torsoH * 0.75, 0.05, def.accent);
+    apron.position.set(0, torsoY - 0.03 * s, 0.24 * s);
     g.add(apron);
-    // straw hat
-    const brim = box(0.46 * s, 0.04 * s, 0.46 * s, 0xcbb056);
-    brim.position.set(0, headY + headR, 0);
+    // Straw sun hat: wide disc + soft dome.
+    const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.34 * s, 0.36 * s, 0.035 * s, 10), mat(0xcbb056));
+    brim.position.set(0, headY + headR * 0.8, 0);
     g.add(brim);
+    const dome = blob(0.15 * s, 0xcbb056, 8, 5);
+    dome.scale.y = 0.6;
+    dome.position.set(0, headY + headR * 0.86, 0);
+    g.add(dome);
   } else if (def.silhouette === 'pack') {
-    const pack = box(torsoW * 0.8, torsoH * 0.85, 0.2, def.accent);
-    pack.position.set(0, torsoY + 0.05, -torsoD / 2 - 0.12);
+    const pack = blob(0.2 * s, def.accent, 7, 6);
+    pack.scale.set(0.9, 1.15, 0.7);
+    pack.position.set(0, torsoY + 0.08 * s, -0.28 * s);
     g.add(pack);
-    const cap = box(0.34 * s, 0.12 * s, 0.34 * s, def.accent);
-    cap.position.set(0, headY + headR + 0.02, 0);
+    const bedroll = new THREE.Mesh(new THREE.CylinderGeometry(0.06 * s, 0.06 * s, 0.34 * s, 7), mat(def.color));
+    bedroll.rotation.z = Math.PI / 2;
+    bedroll.position.set(0, torsoY + 0.28 * s, -0.26 * s);
+    g.add(bedroll);
+    const cap = blob(0.16 * s, def.accent, 8, 5);
+    cap.scale.y = 0.5;
+    cap.position.set(0, headY + headR * 0.85, 0);
     g.add(cap);
   } else if (def.silhouette === 'cane') {
-    const cane = box(0.05, legH + torsoH + 0.1, 0.05, def.accent);
-    cane.position.set(torsoW / 2 + 0.16, (legH + torsoH) / 2, 0.16);
+    const cane = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.028, legH + torsoH + 0.1, 6), mat(def.accent));
+    cane.position.set(0.36 * s, (legH + torsoH) / 2, 0.16);
     g.add(cane);
-    // grey tuft of hair
-    const hair = box(headR * 2.1, 0.08, headR * 2.1, 0xe8e4dd);
-    hair.position.set(0, headY + headR, 0);
+    const knob = blob(0.045, 0xd8b24a, 6, 5);
+    knob.position.set(0.36 * s, legH + torsoH + 0.08, 0.16);
+    g.add(knob);
+    // Grey hair wreath + bushy brows.
+    const hair = blob(headR * 0.95, 0xe8e4dd, 8, 5);
+    hair.scale.set(1.05, 0.45, 1.05);
+    hair.position.set(0, headY + headR * 0.62, -0.02);
     g.add(hair);
+    for (const sx of [-1, 1]) {
+      const brow = box(0.09 * s, 0.028 * s, 0.03 * s, 0xe8e4dd);
+      brow.position.set(sx * 0.085 * s, headY + 0.11 * s, headR * 0.85);
+      g.add(brow);
+    }
   } else {
-    // small kid: a little cowlick
-    const tuft = box(0.08, 0.14, 0.08, def.accent);
-    tuft.position.set(0, headY + headR + 0.05, 0);
-    g.add(tuft);
+    // Kit: a bouncy double cowlick + freckle band.
+    for (const [dx, h] of [
+      [-0.03, 0.16],
+      [0.045, 0.12],
+    ] as const) {
+      const tuft = capsule(0.03 * s, h * s * 0.5, def.accent);
+      tuft.position.set(dx * s, headY + headR * 0.95, 0);
+      tuft.rotation.z = dx * 6;
+      g.add(tuft);
+    }
   }
 
-  return { group: g, headY };
+  return { group: g, headY: headY + headR };
 }
 
 /** Public NPC anchor positions (Haven V4: the PenSystem places each NPC's
