@@ -350,3 +350,9 @@ block ship; listed here so they aren't lost.
   touch pinwheel-like. Chunkier petal wedges would soften this. (`world/props.ts`)
 - Cloud seed 0xc10ed puts one shard-like cloud near spawn's west view; a reroll
   or min-puff-overlap guard would kill the sliver. (`world/environment.ts`)
+- Future critter (Spencer, 2026-08-22): bring back the OLD round-3
+  snickerdoodle as its own new species — the "self-flipping cookie with legs"
+  (flat chocolate-chip cookie body that locomotes by flipping itself over,
+  floppy ears, tongue out). The round-4 snickerdoodle became a faceted
+  figurine pup; the flip-cookie deserves a distinct slot + a flip-gait in
+  animation.ts. Add AFTER the round-4 register pass settles.
