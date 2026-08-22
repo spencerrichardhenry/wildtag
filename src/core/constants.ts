@@ -1394,6 +1394,83 @@ export const PURIFIER = {
 } as const;
 
 /**
+ * Atlantis dive biome. The ordinary ocean remains surface-only; this authored
+ * turquoise reef shelf is the one clearly bounded place where the controller
+ * permits vertical swimming. World coordinates are metres.
+ */
+export const UNDERWATER = {
+  /** Offshore southeast lagoon, close enough to swim to from the meadow coast. */
+  center: { x: 590, z: 650 },
+  /** Player-visible/diveable circle and the wider terrain-blend shelf. */
+  diveRadius: 220,
+  // The whole marked circle is a playable shelf; the steep reef wall blends
+  // down into the generic deep ocean only OUTSIDE the no-dive boundary.
+  basinFlatRadius: 220,
+  basinBlendRadius: 245,
+  /** Authored Atlantis shelf elevation; terrain noise adds only a small ripple. */
+  floorY: -24,
+  floorNoise: 0.6,
+  floorClearance: 0.45,
+  surfaceY: 0.05,
+
+  /** Vertical swim controls and the passive Currentboard speed bonus. */
+  verticalSpeed: 5.5,
+  autoSurfaceSpeed: 8,
+  currentboardMultiplier: 1.75,
+  /** Camera must be this far below the surface before breath starts draining. */
+  submergeMargin: 0.08,
+
+  /** Breath economy: two freed-elf trades extend the initial short dive. */
+  breathBaseS: 18,
+  breathPerUpgradeS: 14,
+  breathUpgradeCount: 2,
+  breathRefillPerS: 12,
+  drownHitEveryS: 1.25,
+  drownDamage: 20,
+
+  /** Enemy population and combat cadence. */
+  clamCount: 8,
+  crocCount: 5,
+  clamHp: 3,
+  crocHp: 4,
+  clamNoticeR: 12,
+  clamWindupS: 0.55,
+  clamChompS: 0.25,
+  clamRecoverS: 1.2,
+  clamHitR: 2.1,
+  clamDamage: 18,
+  crocNoticeR: 24,
+  crocPatrolSpeed: 1.7,
+  crocChaseSpeed: 4.6,
+  crocBiteR: 2.25,
+  crocBiteCooldownS: 1.45,
+  crocDamage: 16,
+  enemyRespawnS: 45,
+  shellDrop: 2,
+  scaleDrop: 2,
+  /** Barnacles on a defeated croc keep an all-turtle save from losing the
+   * last renewable source of shell fragments. */
+  crocShellDrop: 1,
+
+  /** Tide darts trade ordinary ballistic drop for a flatter, harder shot. */
+  tideDartSpeed: 76,
+  tideDartGravity: -0.8,
+  tideDartDamage: 2,
+
+  /** Underwater atmosphere. */
+  fogColor: 0x0b6076,
+  fogNear: 6,
+  fogFar: 105,
+  lagoonColor: 0x29d9d2,
+  castleStone: 0x5f9e9b,
+  castleTrim: 0xd5c786,
+  coralPink: 0xef6b91,
+  coralOrange: 0xf08a4b,
+  coralPurple: 0x9b64d4,
+  coralYellow: 0xf1d365,
+} as const;
+
+/**
  * The dark crystal (Cursed Castle Task 14): the keep-centre corruption core
  * at `castleLayout().crystalPos`, built from two cones stacked apex-to-apex
  * (a hand-built octahedron/bipyramid — see `buildCrystal` in
@@ -1904,6 +1981,10 @@ export const FARM = {
     // mushroom's).
     wood: 0x8a5a35,
     stone: 0x8f8f92,
+    // Atlantis combat materials are not farm-produced, but the hopper map is
+    // intentionally exhaustive over ResourceKind for safe imported saves.
+    shell: 0xe7b9d6,
+    scale: 0x6fa76a,
   },
 } as const;
 
@@ -2032,6 +2113,7 @@ export const HANDS = {
   itemColor: {
     darts: 0x66e0ff,
     slowDarts: 0x77d6b2,
+    tideDarts: 0x4af5e8,
     purifiers: 0x8ef0c0,
     charms: 0xd98cff,
     'kit:zipline': 0xf0c058,

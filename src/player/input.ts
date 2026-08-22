@@ -375,6 +375,12 @@ export class Input {
     return this.held.has('ControlLeft') || this.held.has('ControlRight');
   }
 
+  /** Ctrl doubles as descend while swimming inside the marked dive lagoon.
+   * Context is resolved by PlayerController; Input only exposes the raw hold. */
+  get diveHeld(): boolean {
+    return this.snapHeld && this.locked;
+  }
+
   /** True while the right mouse button is held and the pointer is locked. */
   get rmbHeld(): boolean {
     return this.rmbDown && this.locked;

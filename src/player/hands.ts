@@ -80,6 +80,7 @@ function tagMesh<T extends THREE.Mesh>(mesh: T): T {
 const ITEM_IDS_WITH_MESH: readonly ItemId[] = [
   'darts',
   'slowDarts',
+  'tideDarts',
   'purifiers',
   'charms',
   'kit:zipline',
@@ -292,6 +293,7 @@ function buildItemMeshes(group: THREE.Group): Record<ItemId, THREE.Mesh> {
   return {
     darts: dartMesh,
     slowDarts: dartMesh,
+    tideDarts: dartMesh,
     purifiers: dartMesh,
     charms: charmMesh,
     'kit:zipline': kitMesh,
@@ -411,6 +413,7 @@ export class HandsView {
     if (
       item === 'darts' ||
       item === 'slowDarts' ||
+      item === 'tideDarts' ||
       item === 'purifiers' ||
       item === 'kit:zipline' ||
       item === 'kit:drone'

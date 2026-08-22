@@ -35,6 +35,16 @@ export const RECIPES: Recipe[] = [
     batch: 3,
     grants: 'slowDarts',
   },
+  {
+    id: 'tidedart',
+    name: 'Tide Dart',
+    tier: 0,
+    rpRequired: 0,
+    cost: { shell: 1, scale: 1 },
+    kind: 'consumable',
+    batch: 5,
+    grants: 'tideDarts',
+  },
   // --- Tier 1 (25 RP) --------------------------------------------------------
   {
     // Haven V2: sparks make Linking feed capturing — one charm bonds one
@@ -118,6 +128,14 @@ export const RECIPES: Recipe[] = [
     tier: 2,
     rpRequired: 75,
     cost: { fiber: 12, resin: 6, shard: 4, spark: 2 },
+    kind: 'unlock',
+  },
+  {
+    id: 'currentboard',
+    name: 'Currentboard',
+    tier: 2,
+    rpRequired: 75,
+    cost: { shell: 8, scale: 6, resin: 2 },
     kind: 'unlock',
   },
   {

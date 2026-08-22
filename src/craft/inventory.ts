@@ -22,12 +22,18 @@ export interface Inventory {
   wood: number;
   /** Farm-only material (Inventory+Building Task 1): pebbleshrew produce. */
   stone: number;
+  /** Shell fragments dropped by defeated clam guards. */
+  shell: number;
+  /** Crocodile scales dropped by defeated underwater crocodiles. */
+  scale: number;
   /** Research points (gates crafting tiers — never spent). */
   rp: number;
   /** Tracker darts on hand (Task 10). */
   darts: number;
   /** Slowing Darts on hand — reduce a hit critter's speed for 20 seconds. */
   slowDarts: number;
+  /** Tide Darts on hand — fast, nearly weightless, and stronger underwater. */
+  tideDarts: number;
   /** Bond Charms on hand (Haven V2) — consumed to bond a Linked critter. */
   charms: number;
   /** Purifying Darts on hand (Cursed Castle) — Task 12 spends them on fire. */
@@ -53,9 +59,12 @@ export function createInventory(): Inventory {
     mushroom: 0,
     wood: 0,
     stone: 0,
+    shell: 0,
+    scale: 0,
     rp: 0,
     darts: 0,
     slowDarts: 0,
+    tideDarts: 0,
     charms: 0,
     purifiers: 0,
     walls: 0,

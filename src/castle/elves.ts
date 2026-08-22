@@ -107,6 +107,23 @@ export class ElfSystem {
     return this.elves.length;
   }
 
+  /** Nearest freed elf within `maxDist`, for the post-castle breath trades. */
+  nearest(pos: Vec3, maxDist: number): Vec3 | null {
+    let best: Vec3 | null = null;
+    let bestD2 = maxDist * maxDist;
+    for (const elf of this.elves) {
+      const dx = elf.pos.x - pos.x;
+      const dy = elf.pos.y - pos.y;
+      const dz = elf.pos.z - pos.z;
+      const d2 = dx * dx + dy * dy + dz * dz;
+      if (d2 <= bestD2) {
+        bestD2 = d2;
+        best = { ...elf.pos };
+      }
+    }
+    return best;
+  }
+
   /**
    * Reconcile the live elf count to `n` (load restore, or a future purify
    * count): spawns missing indices at their deterministic home, removes

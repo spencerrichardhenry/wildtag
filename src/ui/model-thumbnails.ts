@@ -182,6 +182,9 @@ export function buildItemThumbnailModel(item: ItemId): THREE.Group {
     case 'slowDarts':
       root.add(buildDart(HANDS.itemColor.slowDarts, true));
       break;
+    case 'tideDarts':
+      root.add(buildDart(HANDS.itemColor.tideDarts, true));
+      break;
     case 'purifiers':
       root.add(buildDart(HANDS.itemColor.purifiers, true));
       break;

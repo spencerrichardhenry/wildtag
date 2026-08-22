@@ -113,7 +113,7 @@ export function stepMovement(s: MoveState, input: MoveInput, dt: number, g: Grou
   // --- Swim: halved target speeds, y held by the controller, no abilities --
   if (s.mode === 'swim') {
     const sprinting = input.sprint && !s.exhausted && hasIntent;
-    const target = (sprinting ? MOVE.sprint : MOVE.walk) / 2;
+    const target = ((sprinting ? MOVE.sprint : MOVE.walk) / 2) * (input.swimBoost ?? 1);
     drivePlanar(n.vel, ix * target, iz * target, MOVE.accelGround * dt);
     if (sprinting) drain(MOVE.sprintDrain * dt);
     n.vel.y = 0;

@@ -13,6 +13,7 @@ import type { Inventory } from './inventory.ts';
 export type ItemId =
   | 'darts'
   | 'slowDarts'
+  | 'tideDarts'
   | 'purifiers'
   | 'charms'
   | 'kit:zipline'
@@ -27,6 +28,7 @@ export type ItemId =
 export const ITEM_IDS: readonly ItemId[] = [
   'darts',
   'slowDarts',
+  'tideDarts',
   'purifiers',
   'charms',
   'kit:zipline',
@@ -112,6 +114,8 @@ export function itemCount(inv: Inventory, item: ItemId): number {
       return inv.darts;
     case 'slowDarts':
       return inv.slowDarts;
+    case 'tideDarts':
+      return inv.tideDarts;
     case 'purifiers':
       return inv.purifiers;
     case 'charms':

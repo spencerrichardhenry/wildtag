@@ -1,5 +1,5 @@
 import type { Vec3 } from './types.ts';
-import { PLAYER_START } from './constants.ts';
+import { PLAYER_START, UNDERWATER } from './constants.ts';
 import type { Inventory } from '../craft/inventory.ts';
 import { isItemId } from '../craft/hotbar.ts';
 import type { StructuresSave } from '../structures/placement.ts';
@@ -106,6 +106,9 @@ export interface SaveV3 {
    * migrate losslessly.
    */
   castlePurified?: boolean;
+  /** Atlantis progression: permanent turtle transformations and the two
+   * freed-elf breath upgrades. Optional for all pre-underwater saves. */
+  underwater?: { purifiedClams: number[]; breathLevel: number };
   /**
    * Inventory+Building Task 2: the 6-slot hotbar assignment + selection.
    * Optional + shape-guarded so pre-Task-2 saves round-trip to exactly their
@@ -402,6 +405,14 @@ export function decodeSave(json: string): SaveV3 | null {
     const wood = isCount(inv.wood) ? (inv.wood as number) : 0;
     if (inv.stone !== undefined && !isCount(inv.stone)) return null;
     const stone = isCount(inv.stone) ? (inv.stone as number) : 0;
+    // Atlantis materials/ammo are forward-compatible additions: absent means
+    // zero; present values use the same non-negative finite-count guard.
+    if (inv.shell !== undefined && !isCount(inv.shell)) return null;
+    const shell = isCount(inv.shell) ? (inv.shell as number) : 0;
+    if (inv.scale !== undefined && !isCount(inv.scale)) return null;
+    const scale = isCount(inv.scale) ? (inv.scale as number) : 0;
+    if (inv.tideDarts !== undefined && !isCount(inv.tideDarts)) return null;
+    const tideDarts = isCount(inv.tideDarts) ? (inv.tideDarts as number) : 0;
     // `walls`/`ramps` mirror `purifiers` (Inventory+Building Task 5): forward-
     // compat for pre-Task-5 saves (missing → defaults to 0), but a present
     // tampered/negative value rejects.
@@ -433,9 +444,12 @@ export function decodeSave(json: string): SaveV3 | null {
       rp: inv.rp as number,
       darts: inv.darts as number,
       slowDarts,
+      tideDarts,
       mushroom,
       wood,
       stone,
+      shell,
+      scale,
       charms,
       purifiers,
       walls,
@@ -519,6 +533,26 @@ export function decodeSave(json: string): SaveV3 | null {
     if (typeof o.castlePurified === 'boolean') {
       castlePurified = o.castlePurified;
     }
+    let underwater: { purifiedClams: number[]; breathLevel: number } | undefined;
+    if (o.underwater !== undefined && o.underwater !== null && typeof o.underwater === 'object') {
+      const u = o.underwater as Record<string, unknown>;
+      const hasClams = Array.isArray(u.purifiedClams);
+      const hasBreath = Number.isFinite(u.breathLevel);
+      // Preserve whichever half is still sound rather than reverting valid
+      // permanent turtles because an unrelated breath value was hand-corrupt.
+      if (hasClams || hasBreath) {
+        underwater = {
+          purifiedClams: hasClams
+            ? (u.purifiedClams as unknown[])
+                .filter((id): id is number => typeof id === 'number' && Number.isInteger(id) && id >= 0)
+            : [],
+          breathLevel: Math.min(
+            UNDERWATER.breathUpgradeCount,
+            Math.max(0, Math.floor(hasBreath ? (u.breathLevel as number) : 0)),
+          ),
+        };
+      }
+    }
     // Hotbar (Inventory+Building Task 2): optional, shape-guarded. `null`
     // means "no hotbar" and is treated the same as absent (mirrors `mount`).
     let hotbar: { slots: (string | null)[]; selected: number } | undefined;
@@ -561,6 +595,8 @@ export function decodeSave(json: string): SaveV3 | null {
     if (elves !== undefined) sanitized.elves = elves;
     delete sanitized.castlePurified;
     if (castlePurified !== undefined) sanitized.castlePurified = castlePurified;
+    delete sanitized.underwater;
+    if (underwater !== undefined) sanitized.underwater = underwater;
     delete sanitized.hotbar;
     if (hotbar !== undefined) sanitized.hotbar = hotbar;
     return sanitized as unknown as SaveV3;

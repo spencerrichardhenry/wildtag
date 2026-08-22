@@ -45,12 +45,18 @@ export interface HudFrame {
   hp: number;
   /** True while the post-death daze window is active (invulnerable). */
   dazed: boolean;
+  /** Atlantis breath timer, in seconds. */
+  breath: number;
+  breathMax: number;
+  underwater: boolean;
   inventory: Inventory;
   unlocks: ReadonlySet<string>;
   /** Live critters (for rings + compass pips). */
   critters: CritterView[];
   /** Harvestable kind currently under the aim (e.g. "fiber"), or null. */
   harvestPrompt: string | null;
+  /** Generic nearby F interaction (e.g. freed-elf breath trade). */
+  interactionPrompt: string | null;
   /**
    * Build-piece pickup prompt (Inventory+Building Task 5): aiming at a placed
    * wall/ramp within pickup range, with the live hold-F progress [0, 1] (0
@@ -115,8 +121,11 @@ const RES_COLOR: Record<string, string> = {
   mushroom: '#9c5bd0', // glow-mushroom cap colour
   wood: '#8a5a35', // timberchomp produce — dam-brown
   stone: '#8f8f92', // pebbleshrew produce — flint grey
+  shell: '#e7b9d6', // clam shell fragment
+  scale: '#6fa76a', // crocodile scale
   dart: '#66e0ff',
   slow: '#77d6b2', // honey-weighted Slowing Dart
+  tide: '#4af5e8', // fast underwater Tide Dart
   charm: '#d98cff', // Bond Charm — distinct violet
   purifier: '#8ef0c0', // Purifying Dart — pale minty green
   rp: '#9fd8b8',
@@ -126,6 +135,9 @@ const RES_TAG: Readonly<Record<string, string>> = {
   rp: 'RP',
   dart: 'darts',
   slow: 'slow',
+  tide: 'tide',
+  shell: 'shell',
+  scale: 'scales',
   honey: 'honey',
   charm: 'charms',
   purifier: 'purifiers',
@@ -183,6 +195,8 @@ export class HUD {
   private readonly staminaFill: HTMLDivElement;
   private readonly health: HTMLDivElement;
   private readonly healthFill: HTMLDivElement;
+  private readonly breath: HTMLDivElement;
+  private readonly breathFill: HTMLDivElement;
   private readonly resEls = new Map<string, { dot: HTMLElement; count: HTMLElement; last: number }>();
   private readonly slots: {
     root: HTMLDivElement;
@@ -209,6 +223,7 @@ export class HUD {
   private lastCycleT = -1;
   private lastDarkness = -1;
   private readonly dazeVeil: HTMLDivElement;
+  private readonly underwaterVeil: HTMLDivElement;
   private lastDazeVeil = false;
   /** Blackout-drag overlay (daze-eject-spires §1) — see `HudFrame.dazeBlack`. */
   private readonly blackoutVeil: HTMLDivElement;
@@ -261,7 +276,7 @@ export class HUD {
 
     // --- Resource strip (top-left) -----------------------------------------
     const res = el('div', 'wt-resources');
-    for (const kind of ['fiber', 'resin', 'shard', 'spark', 'honey', 'mushroom', 'wood', 'stone', 'dart', 'slow', 'charm', 'purifier', 'rp'] as const) {
+    for (const kind of ['fiber', 'resin', 'shard', 'spark', 'honey', 'mushroom', 'wood', 'stone', 'shell', 'scale', 'dart', 'slow', 'tide', 'charm', 'purifier', 'rp'] as const) {
       const item = el('div', 'wt-res');
       const dot = el('span', 'wt-res-dot');
       if (kind === 'rp') dot.classList.add('wt-res-rp');
@@ -322,6 +337,12 @@ export class HUD {
     this.health.appendChild(this.healthFill);
     this.root.appendChild(this.health);
 
+    // --- Breath (only while submerged / refilling after a dive) -----------
+    this.breath = el('div', 'wt-breath');
+    this.breathFill = el('div', 'wt-breath-fill');
+    this.breath.appendChild(this.breathFill);
+    this.root.appendChild(this.breath);
+
     // --- Hotbar (bottom-centre) — 6 assignable slots (Inventory+Building
     // Task 3): each renders whatever ItemId main.ts's HotbarState has
     // assigned (or empty), painted fresh every frame by `paintHotbar` off
@@ -345,6 +366,10 @@ export class HUD {
       this.slots.push({ root: slot, art, fallback, badge, item: null });
     }
     this.root.appendChild(hotbar);
+
+    // --- Underwater veil — soft cyan depth/vignette, beneath damage veils --
+    this.underwaterVeil = el('div', 'wt-underwater-veil');
+    this.root.appendChild(this.underwaterVeil);
 
     // --- Dazed daze veil (Cursed Castle Task 11) — a full-screen dim/red
     // vignette while the post-death daze window is active. Added last so it
@@ -404,6 +429,8 @@ export class HUD {
     this.paintCrosshair(frame);
     this.paintStamina(frame.stamina, frame.exhausted);
     this.paintHealth(frame.hp, frame.dazed, frame.dangerZone);
+    this.paintBreath(frame.breath, frame.breathMax, frame.underwater);
+    this.underwaterVeil.classList.toggle('wt-visible', frame.underwater);
     this.paintDazeVeil(frame.dazed);
     this.paintBlackout(frame.dazeBlack);
     this.paintResources(frame.inventory);
@@ -478,6 +505,7 @@ export class HUD {
     let mode = this.crosshairOverride;
     if (!mode) {
       if (frame.buildPickup) mode = 'harvest';
+      else if (frame.interactionPrompt) mode = 'harvest';
       else if (frame.harvestPrompt) mode = 'harvest';
       else if (frame.inventory.darts > 0) mode = 'dart';
       else mode = 'default';
@@ -488,6 +516,8 @@ export class HUD {
     }
     const label = frame.demolishTarget
       ? `Reclaim: ${frame.demolishTarget}`
+      : frame.interactionPrompt
+        ? `F — ${frame.interactionPrompt}`
       : frame.buildPickup
         ? `Hold F — Reclaim ${cap(frame.buildPickup.kind)} ${Math.round(frame.buildPickup.progress * 100)}%`
         : frame.harvestPrompt
@@ -556,6 +586,14 @@ export class HUD {
     }
   }
 
+  private paintBreath(remaining: number, max: number, underwater: boolean): void {
+    const safeMax = Math.max(0.001, max);
+    const pct = Math.max(0, Math.min(1, remaining / safeMax));
+    this.breathFill.style.width = `${(pct * 100).toFixed(1)}%`;
+    this.breath.classList.toggle('wt-visible', underwater || pct < 0.995);
+    this.breath.classList.toggle('wt-empty', remaining <= 0.001);
+  }
+
   // -------------------------------------------------------------------------
   // Dazed daze veil — full-screen dim/red vignette while HEALTH.isDazed
   // (Cursed Castle Task 11). Reuses the wt-flash pattern's spirit (CSS-driven,
@@ -607,8 +645,11 @@ export class HUD {
       mushroom: inv.mushroom,
       wood: inv.wood,
       stone: inv.stone,
+      shell: inv.shell,
+      scale: inv.scale,
       dart: inv.darts,
       slow: inv.slowDarts,
+      tide: inv.tideDarts,
       charm: inv.charms,
       purifier: inv.purifiers,
       rp: inv.rp,
@@ -1098,6 +1139,62 @@ const STYLE = `
 .wt-health.wt-dazed .wt-health-fill {
   animation: wt-flash 0.5s steps(2, start) infinite;
 }
+
+/* Breath — cyan bar above HP, visible for the whole dive/refill ------------ */
+.wt-breath {
+  position: fixed;
+  right: 24px;
+  bottom: 58px;
+  width: 170px;
+  height: 10px;
+  background: rgba(8, 32, 43, 0.78);
+  border: 1px solid rgba(134, 255, 247, 0.18);
+  border-radius: 6px;
+  overflow: visible;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+  z-index: 5;
+}
+.wt-breath::before {
+  content: 'AIR';
+  position: absolute;
+  right: 100%;
+  margin-right: 7px;
+  top: -3px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: #a8fff7;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.7);
+}
+.wt-breath.wt-visible { opacity: 1; }
+.wt-breath-fill {
+  height: 100%;
+  width: 100%;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #36d9dc, #a0fff1);
+  box-shadow: 0 0 8px rgba(74, 245, 232, 0.45);
+  transition: width 0.12s linear;
+}
+.wt-breath.wt-empty .wt-breath-fill {
+  background: #ef7b68;
+  animation: wt-flash 0.5s steps(2, start) infinite;
+}
+
+/* Underwater lens ---------------------------------------------------------- */
+.wt-underwater-veil {
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(ellipse at 50% 42%, rgba(23, 177, 185, 0.03) 18%, rgba(4, 69, 91, 0.25) 100%),
+    linear-gradient(rgba(37, 176, 184, 0.1), rgba(4, 45, 72, 0.16));
+  box-shadow: inset 0 0 110px rgba(0, 42, 68, 0.46);
+  opacity: 0;
+  transition: opacity 0.35s ease;
+  z-index: 3;
+  pointer-events: none;
+}
+.wt-underwater-veil.wt-visible { opacity: 1; }
 
 /* Dazed daze veil ----------------------------------------------------------- */
 .wt-daze-veil {

@@ -16,7 +16,11 @@ export type ResourceKind =
   // scattered/harvested in the world (see world/scatter.ts's PropKind, which
   // deliberately has no 'wood'/'stone' member).
   | 'wood'
-  | 'stone';
+  | 'stone'
+  /** Broken from hostile clam guards in the Atlantis dive zone. */
+  | 'shell'
+  /** Shed by underwater crocodiles in the Atlantis dive zone. */
+  | 'scale';
 
 // ---------------------------------------------------------------------------
 // Crafting tree (Task 7). Recipe ids/tiers/RP gates are exact per the design
@@ -28,11 +32,13 @@ export type ResourceKind =
 export type RecipeId =
   | 'dart'
   | 'slowdart'
+  | 'tidedart'
   | 'charm'
   | 'purifier'
   | 'grapple'
   | 'boots'
   | 'glider'
+  | 'currentboard'
   | 'zipline'
   | 'beacon'
   | 'rocket'
@@ -65,7 +71,15 @@ export interface Recipe {
    * Haven V2 so the Bond Charm recipe can stock `charms` through the same
    * path; Cursed Castle adds `purifiers` for the Purifying Dart.
    */
-  grants?: 'darts' | 'slowDarts' | 'charms' | 'purifiers' | 'walls' | 'ramps' | 'cubes';
+  grants?:
+    | 'darts'
+    | 'slowDarts'
+    | 'tideDarts'
+    | 'charms'
+    | 'purifiers'
+    | 'walls'
+    | 'ramps'
+    | 'cubes';
 }
 
 export interface MoveInput {
@@ -77,6 +91,8 @@ export interface MoveInput {
   jumpHeld: boolean;
   dash: boolean;
   rocket: boolean;
+  /** Optional passive multiplier applied only while surface-swimming/diving. */
+  swimBoost?: number;
 }
 
 export interface MoveState {

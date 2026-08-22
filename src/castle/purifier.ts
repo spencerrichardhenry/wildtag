@@ -94,6 +94,10 @@ export interface PurifierOpts {
   goblinTargets: () => { id: number; pos: Vec3; r: number }[];
   /** Called with the purified goblin's id on a hit. */
   onPurifyGoblin: (id: number) => void;
+  /** Optional cursed clam guards. Tested after goblins but before wildlife. */
+  clamTargets?: () => { id: number; pos: Vec3; r: number }[];
+  /** A clam hit permanently transforms that fixed guard id into a turtle. */
+  onPurifyClam?: (id: number) => void;
   /**
    * Live critter id/pos/radius (spec §5, final-review fix): tested after
    * goblins, before the crystal — a purifying dart landing on an ordinary
@@ -188,6 +192,17 @@ export class PurifierSystem {
         this.opts.onPurifyGoblin(hitGoblin);
         this.spawnBurst(target.pos);
         blip(1200, 0.08);
+        this.removeAt(i);
+        continue;
+      }
+
+      const clams = this.opts.clamTargets?.() ?? [];
+      const hitClam = dartHitTarget(dart.state, clams);
+      if (hitClam !== null) {
+        const target = clams.find((c) => c.id === hitClam)!;
+        this.opts.onPurifyClam?.(hitClam);
+        this.spawnBurst(target.pos);
+        blip(1320, 0.09);
         this.removeAt(i);
         continue;
       }

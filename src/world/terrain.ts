@@ -1,6 +1,7 @@
-import { WORLD_SEED, TERRAIN, CASTLE } from '../core/constants.ts';
+import { WORLD_SEED, TERRAIN, CASTLE, UNDERWATER } from '../core/constants.ts';
 import type { Biome, Vec3 } from '../core/types.ts';
 import { makeNoise2D } from './noise.ts';
+import { basinWeight } from '../underwater/layout.ts';
 
 // ---------------------------------------------------------------------------
 // The island height field. `heightAt(x, z)` is THE ground-truth used by mesh
@@ -168,6 +169,19 @@ export function heightAt(x: number, z: number): number {
       const w = 1 - smootherstep(CASTLE.padRadius, padOuter, d); // 1 inside, 0 at outer
       h = h + (CASTLE.padHeight - h) * w;
     }
+  }
+
+  // Atlantis shelf: the generic radial ocean drops to well below -100 m at
+  // this radius, which is neither readable nor playable on one breath. Raise
+  // one bounded offshore lagoon into an authored -24 m reef shelf and blend
+  // it smoothly back into the natural seabed. The dive permission itself is
+  // still a separate circle (`inDiveZone`) so ordinary ocean stays surface-
+  // only even though this height field remains the single collision truth.
+  const bw = basinWeight(x, z);
+  if (bw > 0) {
+    const ripple = heightNoise(x * 0.018 + 91, z * 0.018 - 47) * UNDERWATER.floorNoise;
+    const shelf = UNDERWATER.floorY + ripple;
+    h += (shelf - h) * bw;
   }
 
   return h;

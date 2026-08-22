@@ -859,3 +859,36 @@ describe('applyStartingLoadout', () => {
     expect(result.kits).toEqual(state.inventory.kits);
   });
 });
+
+describe('Atlantis save additions', () => {
+  it('round-trips materials, Tide Darts, turtle ids, and breath level', () => {
+    const state = sampleSave({ underwater: { purifiedClams: [2000, 2004], breathLevel: 2 } });
+    state.inventory.shell = 7;
+    state.inventory.scale = 5;
+    state.inventory.tideDarts = 11;
+    const decoded = decodeSave(encodeSave(state));
+    expect(decoded?.inventory.shell).toBe(7);
+    expect(decoded?.inventory.scale).toBe(5);
+    expect(decoded?.inventory.tideDarts).toBe(11);
+    expect(decoded?.underwater).toEqual({ purifiedClams: [2000, 2004], breathLevel: 2 });
+  });
+
+  it('defaults new inventory counters and preserves the sound half of underwater state', () => {
+    const state = sampleSave();
+    const { shell: _shell, scale: _scale, tideDarts: _tide, ...legacyInventory } = state.inventory;
+    const raw = { ...state, inventory: legacyInventory, underwater: { purifiedClams: 'all', breathLevel: 2 } };
+    const decoded = decodeSave(JSON.stringify(raw));
+    expect(decoded?.inventory.shell).toBe(0);
+    expect(decoded?.inventory.scale).toBe(0);
+    expect(decoded?.inventory.tideDarts).toBe(0);
+    expect(decoded?.underwater).toEqual({ purifiedClams: [], breathLevel: 2 });
+  });
+
+  it('rejects negative or non-numeric Atlantis inventory counts', () => {
+    const negative = sampleSave();
+    negative.inventory.shell = -1;
+    expect(decodeSave(encodeSave(negative))).toBeNull();
+    const bad = { ...sampleSave(), inventory: { ...sampleSave().inventory, tideDarts: 'many' } };
+    expect(decodeSave(JSON.stringify(bad))).toBeNull();
+  });
+});

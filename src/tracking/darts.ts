@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { DART, TRACKING } from '../core/constants.ts';
+import { DART, TRACKING, UNDERWATER } from '../core/constants.ts';
 import type { GroundQuery, Vec3 } from '../core/types.ts';
 import type { CritterManager } from '../critters/manager.ts';
 import type { Inventory } from '../craft/inventory.ts';
@@ -18,7 +18,13 @@ import { toast } from '../ui/toasts.ts';
 // `manager.setTagged` (tracker) or `manager.setSlowed` (honey Slowing Dart).
 // ---------------------------------------------------------------------------
 
-export type DartKind = 'tracker' | 'slowing';
+export type DartKind = 'tracker' | 'slowing' | 'tide';
+
+export interface DartTuning {
+  speed: number;
+  gravity: number;
+  maxLife: number;
+}
 
 /** Pure ballistic state of one dart in flight. */
 export interface DartState {
@@ -33,9 +39,9 @@ export interface DartState {
 }
 
 /** A dart just thrown from `origin` travelling `dir` (need not be unit). */
-export function spawnDart(origin: Vec3, dir: Vec3): DartState {
+export function spawnDart(origin: Vec3, dir: Vec3, tuning: DartTuning = DART): DartState {
   const len = Math.hypot(dir.x, dir.y, dir.z) || 1;
-  const s = DART.speed / len;
+  const s = tuning.speed / len;
   return {
     pos: { x: origin.x, y: origin.y, z: origin.z },
     prev: { x: origin.x, y: origin.y, z: origin.z },
@@ -50,9 +56,14 @@ export function spawnDart(origin: Vec3, dir: Vec3): DartState {
  * position, and marks the dart dead on ground contact or once it has lived
  * past DART.maxLife. Pure: returns a new DartState, never mutates the input.
  */
-export function stepDart(d: DartState, dt: number, g: GroundQuery): DartState {
+export function stepDart(
+  d: DartState,
+  dt: number,
+  g: GroundQuery,
+  tuning: DartTuning = DART,
+): DartState {
   if (d.dead) return d;
-  const vy = d.vel.y + DART.gravity * dt;
+  const vy = d.vel.y + tuning.gravity * dt;
   const pos: Vec3 = {
     x: d.pos.x + d.vel.x * dt,
     y: d.pos.y + vy * dt,
@@ -60,7 +71,7 @@ export function stepDart(d: DartState, dt: number, g: GroundQuery): DartState {
   };
   const age = d.age + dt;
   const groundY = g.heightAt(pos.x, pos.z);
-  const dead = pos.y <= groundY || age >= DART.maxLife;
+  const dead = pos.y <= groundY || age >= tuning.maxLife;
   return { pos, prev: { ...d.pos }, vel: { x: d.vel.x, y: vy, z: d.vel.z }, age, dead };
 }
 
@@ -116,6 +127,7 @@ export function dartHitCritter(
 interface LiveDart {
   state: DartState;
   kind: DartKind;
+  tuning: DartTuning;
   mesh: THREE.Mesh;
   trail: THREE.Line;
   positions: Vec3[];
@@ -123,6 +135,14 @@ interface LiveDart {
 
 const DART_COLOR = 0xffd24a;
 const SLOW_DART_COLOR = 0x77d6b2;
+const TIDE_DART_COLOR = 0x4af5e8;
+
+export interface DartSystemOpts {
+  /** Hostile underwater targets are tested before ordinary wildlife. */
+  hostileTargets?: () => { id: number; pos: Vec3; size: number }[];
+  /** Called once when any dart hits an underwater hostile. */
+  onHostileHit?: (id: number, kind: DartKind) => void;
+}
 
 export class DartSystem {
   private readonly scene: THREE.Scene;
@@ -139,6 +159,7 @@ export class DartSystem {
     manager: CritterManager,
     inventory: Inventory,
     ground: GroundQuery,
+    private readonly opts: DartSystemOpts = {},
   ) {
     this.scene = scene;
     this.camera = camera;
@@ -152,17 +173,21 @@ export class DartSystem {
    * inventory dart. No-op (returns false) when the player is out of darts.
    */
   tryThrow(kind: DartKind = 'tracker'): boolean {
-    const ammo = kind === 'slowing' ? 'slowDarts' : 'darts';
+    const ammo = kind === 'slowing' ? 'slowDarts' : kind === 'tide' ? 'tideDarts' : 'darts';
     if (this.inventory[ammo] <= 0) return false;
     this.inventory[ammo] -= 1;
     const cp = this.camera.position;
     this.camera.getWorldDirection(this._dir);
+    const tuning: DartTuning = kind === 'tide'
+      ? { speed: UNDERWATER.tideDartSpeed, gravity: UNDERWATER.tideDartGravity, maxLife: DART.maxLife }
+      : DART;
     const state = spawnDart(
       { x: cp.x, y: cp.y, z: cp.z },
       { x: this._dir.x, y: this._dir.y, z: this._dir.z },
+      tuning,
     );
 
-    const color = kind === 'slowing' ? SLOW_DART_COLOR : DART_COLOR;
+    const color = kind === 'slowing' ? SLOW_DART_COLOR : kind === 'tide' ? TIDE_DART_COLOR : DART_COLOR;
     const mesh = new THREE.Mesh(
       new THREE.CylinderGeometry(0.02, 0.02, 0.4, 6),
       new THREE.MeshBasicMaterial({ color }),
@@ -178,8 +203,8 @@ export class DartSystem {
     );
     this.scene.add(mesh);
     this.scene.add(trail);
-    this.live.push({ state, kind, mesh, trail, positions: [{ ...state.pos }] });
-    blip(kind === 'slowing' ? 540 : 660, 0.05);
+    this.live.push({ state, kind, tuning, mesh, trail, positions: [{ ...state.pos }] });
+    blip(kind === 'slowing' ? 540 : kind === 'tide' ? 760 : 660, 0.05);
     return true;
   }
 
@@ -187,15 +212,29 @@ export class DartSystem {
   update(dt: number): void {
     for (let i = this.live.length - 1; i >= 0; i--) {
       const dart = this.live[i]!;
-      dart.state = stepDart(dart.state, dt, this.ground);
+      dart.state = stepDart(dart.state, dt, this.ground, dart.tuning);
       const p = dart.state.pos;
 
+      // Atlantis enemies take priority over ordinary wildlife occupying the
+      // same swept segment. Tracker/slow darts deal one damage; Tide Darts
+      // deal two via the injected hostile system and never tag wildlife.
+      const hostileTargets = this.opts.hostileTargets?.() ?? [];
+      const hostileId = dartHitCritter(dart.state, hostileTargets);
+      if (hostileId !== null) {
+        this.opts.onHostileHit?.(hostileId, dart.kind);
+        blip(dart.kind === 'tide' ? 980 : 760, 0.07);
+        this.removeAt(i);
+        continue;
+      }
+
       // Critter hit test against the live view list (sphere = species.size).
-      const targets = this.manager.list().map((c) => ({
-        id: c.id,
-        pos: c.pos,
-        size: speciesById(c.species)?.size ?? 0.5,
-      }));
+      const targets = dart.kind === 'tide'
+        ? []
+        : this.manager.list().map((c) => ({
+            id: c.id,
+            pos: c.pos,
+            size: speciesById(c.species)?.size ?? 0.5,
+          }));
       const hitId = dartHitCritter(dart.state, targets);
       if (hitId !== null) {
         if (dart.kind === 'slowing') {

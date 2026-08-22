@@ -321,6 +321,8 @@ function makeWater(): THREE.Mesh {
     depthWrite: false,
     specular: new THREE.Color(ENV.waterSpecular),
     shininess: ENV.waterShininess,
+    // The surface is also the luminous ceiling when the camera dives below it.
+    side: THREE.DoubleSide,
   });
 
   mat.onBeforeCompile = (shader) => {

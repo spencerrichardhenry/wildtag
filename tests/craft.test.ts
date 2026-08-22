@@ -194,11 +194,13 @@ describe('full crafting tree — affordability walk', () => {
   it('every recipe is craftable in tier order once granted its resources + RP, and the final state matches every grant', () => {
     const inv = createInventory();
     inv.rp = 200; // clears every tier's RP gate up front
-    grant(inv, { fiber: 37, resin: 19, shard: 35, spark: 17 }); // sum of every recipe's cost below (incl. charm, purifier)
+    grant(inv, { fiber: 37, resin: 21, shard: 35, spark: 17 }); // sum of every recipe's cost below (incl. Atlantis gear)
     inv.mushroom = 3; // purifier's non-{fiber,resin,shard,spark} cost
     inv.honey = 1; // slowing dart's Nectar Wisp resource cost
     inv.wood = 7; // wall (2) + ramp (3) + cube (2)
     inv.stone = 6; // wall (3) + ramp (1) + cube (2)
+    inv.shell = 9; // Tide Dart (1) + Currentboard (8)
+    inv.scale = 7; // Tide Dart (1) + Currentboard (6)
 
     const unlocks = new Set<string>();
     const order: RecipeId[] = RECIPES
@@ -215,10 +217,11 @@ describe('full crafting tree — affordability walk', () => {
       if (result.unlocked) unlocks.add(result.unlocked);
     }
 
-    expect(unlocks).toEqual(new Set(['grapple', 'boots', 'glider', 'rocket']));
+    expect(unlocks).toEqual(new Set(['grapple', 'boots', 'glider', 'currentboard', 'rocket']));
     expect(working.kits).toEqual({ zipline: 1, beacon: 0, drone: 1 });
     expect(working.darts).toBe(10);
     expect(working.slowDarts).toBe(3);
+    expect(working.tideDarts).toBe(5);
     expect(working.charms).toBe(2);
     expect(working.purifiers).toBe(5);
     expect(working.walls).toBe(4);
@@ -232,6 +235,8 @@ describe('full crafting tree — affordability walk', () => {
     expect(working.honey).toBe(0);
     expect(working.wood).toBe(0);
     expect(working.stone).toBe(0);
+    expect(working.shell).toBe(0);
+    expect(working.scale).toBe(0);
   });
 });
 

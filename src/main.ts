@@ -13,6 +13,7 @@ import {
   MOUNT,
   SIM_DT,
   STRUCTURES,
+  UNDERWATER,
 } from './core/constants.ts';
 import { setupEnvironment, setupDaylight, updateWater, updateClouds } from './world/environment.ts';
 import { daylightAt } from './core/daylight.ts';
@@ -132,6 +133,15 @@ import {
   type FarmState,
 } from './farm/farm.ts';
 import { FarmVisuals } from './farm/visuals.ts';
+import { inDiveZone, diveEntryPoint } from './underwater/layout.ts';
+import { UnderwaterSystem } from './underwater/system.ts';
+import {
+  breathMax,
+  breathTradeCostText,
+  createBreath,
+  stepBreath,
+  tradeForBreath,
+} from './underwater/progression.ts';
 
 // ---------------------------------------------------------------------------
 // Boot scene: renderer, camera, environment (lighting/fog/sky/water) and the
@@ -407,6 +417,7 @@ function bootGame(): void {
 
   const input = new Input(canvas as HTMLCanvasElement);
   const player = new PlayerController(camera, input, ground, spawn, scene, anchors);
+  player.canDiveAt = inDiveZone;
   // First-person hands (Inventory+Building Task 6): a camera-child viewmodel,
   // purely cosmetic — constructed right after the camera/player so it's ready
   // for the very first render() call below.
@@ -584,7 +595,15 @@ function bootGame(): void {
   // critter, which the tracking loop below Links once the player has stayed in
   // range long enough. Reward chime + toast fire from the tracker's onLink.
   // -------------------------------------------------------------------------
-  const darts = new DartSystem(scene, camera, critters, inventory, ground);
+  // Assigned after save restore/castle wiring below. The dart callbacks close
+  // over it safely: no update/fire can run until boot has completed.
+  let underwater: UnderwaterSystem | null = null;
+  const darts = new DartSystem(scene, camera, critters, inventory, ground, {
+    hostileTargets: () => underwater?.dartTargets() ?? [],
+    onHostileHit: (id, kind) => {
+      underwater?.hitEnemy(id, kind);
+    },
+  });
 
   // -------------------------------------------------------------------------
   // Deployable structures (Task 13): ziplines + drones + their placement mode.
@@ -662,7 +681,19 @@ function bootGame(): void {
       // it's reshaped underneath an old save (e.g. the world grandeur rescale)
       // — otherwise the player could resurrect buried in or floating far above
       // the new ground.
-      const restoredPos = snapToGround(loaded.player.pos, ground.heightAt(loaded.player.pos.x, loaded.player.pos.z));
+      const savedPos = loaded.player.pos;
+      const savedGround = ground.heightAt(savedPos.x, savedPos.z);
+      // A legitimate saved dive position is intentionally several metres
+      // above its seabed, so the generic terrain-drift guard would mistake it
+      // for an old floating save and snap it to the floor. Preserve only a
+      // position inside the authored lagoon and between floor/surface; all
+      // other saves keep the existing defensive snap.
+      const restoredPos =
+        inDiveZone(savedPos.x, savedPos.z) &&
+        savedPos.y >= savedGround + UNDERWATER.floorClearance &&
+        savedPos.y <= UNDERWATER.surfaceY
+          ? { ...savedPos }
+          : snapToGround(savedPos, savedGround);
       player.teleport(restoredPos.x, restoredPos.y, restoredPos.z);
       input.yaw = loaded.player.yaw;
       hudUi.setHintFlags(loaded.hints);
@@ -699,6 +730,17 @@ function bootGame(): void {
     // inventory + the starting dart loadout.
     Object.assign(inventory, applyStartingLoadout(createInventory(), null));
   }
+
+  // Atlantis breath progression is separate from HP: air drains only once
+  // the camera is submerged, refills at the surface, and its max is extended
+  // by two post-castle elf trades. The current partial breath is session state;
+  // only the upgrade level needs persistence.
+  let breathLevel = loaded?.underwater?.breathLevel ?? 0;
+  let breath = createBreath(breathLevel);
+  let breathWarned = false;
+  let underwaterRecovery = false;
+  let diveHintShown = false;
+  let wasInDiveZone = false;
 
   // -------------------------------------------------------------------------
   // Hotbar (Inventory+Building Task 3): main.ts owns the live 6-slot
@@ -934,6 +976,10 @@ function bootGame(): void {
     },
     onPurified: () => {
       castlePurified = true;
+      if (elves.count === 0) {
+        elves.addAt({ x: CASTLE.center.x, y: CASTLE.padHeight, z: CASTLE.center.z });
+      }
+      toast('Freed elves can now trade you longer-breathing charms');
     },
     addElf: (pos) => elves.addAt(pos),
     flashPurify: () => hudUi.flash(),
@@ -954,6 +1000,10 @@ function bootGame(): void {
         toast('A goblin becomes a happy elf!');
       }
     },
+    clamTargets: () => underwater?.purifierTargets() ?? [],
+    onPurifyClam: (id) => {
+      if (underwater?.purifyClam(id)) toast('The clam becomes a happy little turtle! 🐢');
+    },
     // Spec §5 (final-review fix): a purifying dart on an ordinary critter
     // (e.g. a perched gargoyle) is a harmless sparkle — same target shape
     // DartSystem.update maps for its own critter hit test.
@@ -965,6 +1015,23 @@ function bootGame(): void {
       })),
     crystalTarget: () => castleSys.crystalTarget(),
     onPurifyCrystal: () => castleSys.purifyCastle(),
+  });
+
+  // Atlantis: one permanently-present authored reef shelf, palace, enemies,
+  // and saved clam→turtle transformations. Standard darts can bootstrap the
+  // first materials; crafted Tide Darts deal double enemy damage underwater.
+  underwater = new UnderwaterSystem(scene, ground, {
+    purifiedClams: loaded?.underwater?.purifiedClams ?? [],
+    onDrop: (kind, amount) => {
+      addResource(inventory, kind, amount);
+      toast(`+${amount} ${kind === 'shell' ? 'shell fragments' : 'croc scales'}`);
+    },
+    onPlayerHit: (dmg, from) => {
+      if (isDazed(health)) return;
+      health = applyHit(health, dmg);
+      player.applyImpulse(awayFrom(from, player.pos, 4.5));
+      blip(145, 0.11);
+    },
   });
 
   /**
@@ -993,6 +1060,9 @@ function bootGame(): void {
         return;
       case 'slowDarts':
         if (!darts.tryThrow('slowing')) hudUi.shake();
+        return;
+      case 'tideDarts':
+        if (!darts.tryThrow('tide')) hudUi.shake();
         return;
       case 'purifiers':
         if (!purifier.tryThrow()) hudUi.shake();
@@ -1045,9 +1115,12 @@ function bootGame(): void {
     // crafting more once the starting stock ran out was simply unreachable.
     inventory.wood = 9999;
     inventory.stone = 9999;
+    inventory.shell = 999;
+    inventory.scale = 999;
     inventory.rp = 999;
     inventory.darts = 999;
     inventory.slowDarts = 999;
+    inventory.tideDarts = 999;
     inventory.honey = 999;
     inventory.charms = 999;
     inventory.walls = 50;
@@ -1057,7 +1130,9 @@ function bootGame(): void {
     inventory.cubes = 50;
     inventory.kits.zipline = 9;
     inventory.kits.drone = 9;
-    for (const u of ['grapple', 'boots', 'glider', 'rocket']) player.unlocks.add(u);
+    for (const u of ['grapple', 'boots', 'glider', 'rocket', 'currentboard']) player.unlocks.add(u);
+    breathLevel = UNDERWATER.breathUpgradeCount;
+    breath = createBreath(breathLevel);
     toast('DEV MODE — all unlocks, 999 darts, deep material stacks (no saving)');
   }
 
@@ -1092,6 +1167,10 @@ function bootGame(): void {
       elves: elves.count,
       // Castle purified (Cursed Castle Task 14): permanent, round-trips a reload.
       castlePurified,
+      underwater: {
+        purifiedClams: underwater?.purifiedClamIds() ?? [],
+        breathLevel,
+      },
       // Mount (Haven V6): only surfaced when a mount is active, so pre-mount
       // saves round-trip to exactly their old shape.
       ...(mounts.saveState() ? { mount: mounts.saveState()! } : {}),
@@ -1532,16 +1611,25 @@ function bootGame(): void {
       }
 
       if (dazedNow && !wasDazed) {
-        // Rising edge: a fresh daze just started — (re)plan the corridor
-        // walk. Empty outside the castle region (no maze to navigate there —
-        // the radial-retreat fallback below applies) or if no BFS path exists
-        // (shouldn't happen; ward.test.ts enforces full connectivity).
-        stumbleWaypoints = inCastleRegion(prev.x, prev.z) ? retreatPath(prev.x, prev.z) : [];
+        // A knockout below the surface returns the player to the lagoon's
+        // island-facing buoy line, preventing an inescapable drown/revive loop.
+        underwaterRecovery = player.underwater;
+        if (underwaterRecovery) {
+          const entry = diveEntryPoint();
+          player.teleport(entry.x, entry.y, entry.z);
+          breath = createBreath(breathLevel);
+          stumbleWaypoints = [];
+        } else {
+          // Rising edge: a fresh land daze plans the castle corridor walk.
+          stumbleWaypoints = inCastleRegion(prev.x, prev.z) ? retreatPath(prev.x, prev.z) : [];
+        }
         stumbleWaypointIdx = 0;
       }
 
       if (dazedNow) {
-        if (stumbleWaypoints.length > 0) {
+        if (underwaterRecovery) {
+          player.setStumble({ x: 0, y: 0, z: 0 });
+        } else if (stumbleWaypoints.length > 0) {
           // Steer toward the current waypoint at HEALTH.stumbleSpeed,
           // advancing to the next one once within 1 m of it.
           let target = stumbleWaypoints[stumbleWaypointIdx]!;
@@ -1576,6 +1664,7 @@ function bootGame(): void {
         // still (the player can't see anything anyway) until it clears.
         player.setStumble({ x: 0, y: 0, z: 0 });
       } else {
+        underwaterRecovery = false;
         player.setStumble(null);
       }
       wasDazed = dazedNow;
@@ -1602,6 +1691,18 @@ function bootGame(): void {
       // ghost. Force a full re-sync the instant riding ends so a selected
       // wall/ramp/cube/kit slot gets its ghost back immediately on dismount.
       if (wasMounted && !player.mounted) syncHotbarPlacement(true);
+
+      const breathStep = stepBreath(breath, player.underwater, dt, breathLevel);
+      breath = breathStep.state;
+      if (player.underwater && breath.remaining <= 5 && breath.remaining > 0 && !breathWarned) {
+        breathWarned = true;
+        toast('Air is running low — Space to rise!');
+        blip(310, 0.08);
+      }
+      if (!player.underwater && breath.remaining > 5) breathWarned = false;
+      for (let i = 0; i < breathStep.drownHits; i++) {
+        if (!isDazed(health)) health = applyHit(health, UNDERWATER.drownDamage);
+      }
     }
 
     // Structure cosmetics + placement ghost always tick (drones bob/spin even
@@ -1643,6 +1744,12 @@ function bootGame(): void {
     }
 
     const p = player.pos;
+    const inLagoon = inDiveZone(p.x, p.z);
+    if (inLagoon && !wasInDiveZone && !diveHintShown) {
+      diveHintShown = true;
+      toast('Turquoise water is diveable — Ctrl down, Space up');
+    }
+    wasInDiveZone = inLagoon;
     chunks.update(p.x, p.z);
     props.update(p.x, p.z, worldTime);
     critters.update(dt, p);
@@ -1653,6 +1760,7 @@ function bootGame(): void {
     // Elves (Task 12): ambient wander/dance, frozen while a screen is open
     // (parity with the rest of the world sim above).
     if (!paused) elves.update(dt, p);
+    if (!paused) underwater?.update(dt, p, player.underwater);
     pens.update(dt, worldTime);
 
     // Farm production (Haven V5): assigned critters accrue toward their hoppers.
@@ -1769,6 +1877,22 @@ function bootGame(): void {
           openDialog(screens, npc.def);
           continue;
         }
+        // Once the goblin curse is lifted, any nearby elf offers the next
+        // deterministic breath upgrade for Atlantis materials.
+        if (castlePurified && elves.nearest(player.pos, 3)) {
+          const trade = tradeForBreath(inventory, breathLevel, castlePurified);
+          if (trade.ok) {
+            Object.assign(inventory, trade.inventory);
+            breathLevel = trade.level;
+            breath = createBreath(breathLevel);
+            toast(`${trade.trade.name} acquired — air now lasts ${breathMax(breathLevel)} seconds`);
+          } else if (trade.reason === 'complete') {
+            toast('Your breathing gear is fully upgraded');
+          } else if (trade.trade) {
+            toast(`${trade.trade.name} costs ${breathTradeCostText(trade.trade)}`);
+          }
+          continue;
+        }
         // BOND: aiming at a Linked critter (within trackRadius) with a charm.
         if (tryBondInteract()) continue;
         // FARM: standing by a plot whose hopper holds something → collect it.
@@ -1854,6 +1978,7 @@ function bootGame(): void {
     // night dimming survives a shadow re-plan (quality change / fps gate).
     const daylightSample = daylightAt(worldClock);
     daylight.update(daylightSample);
+    underwater?.applyView(player.underwater, daylightSample.darkness);
     shadowRig.setSunScale(daylight.sunScale);
     updateShadowFollow();
     // Water 1.5: advance the shader ripple/shimmer clock (one uniform write).
@@ -1911,11 +2036,20 @@ function bootGame(): void {
       exhausted: player.exhausted,
       hp: health.hp,
       dazed: isDazed(health),
+      breath: breath.remaining,
+      breathMax: breathMax(breathLevel),
+      underwater: player.underwater,
       dazeBlack: ejectPhase === 'blackout',
       inventory,
       unlocks: player.unlocks,
       critters: critters.list(),
       harvestPrompt: aimed ? aimed.kind : null,
+      interactionPrompt:
+        castlePurified && elves.nearest(p, 3)
+          ? breathLevel >= UNDERWATER.breathUpgradeCount
+            ? 'Talk to elf (breathing gear complete)'
+            : 'Trade with elf for longer breath'
+          : null,
       buildPickup: aimedPieceForPrompt
         ? { kind: aimedPieceForPrompt.kind, progress: build.pickupProgress() }
         : null,
@@ -2220,6 +2354,35 @@ function bootGame(): void {
         input.yaw = Math.atan2(-dx, -dz);
         input.pitch = Math.atan2(dy, Math.hypot(dx, dz));
       },
+    };
+    (window as unknown as { __underwater: unknown }).__underwater = {
+      center: { ...UNDERWATER.center, y: UNDERWATER.floorY },
+      /** Jump to the marked buoy line, ready to press Ctrl and descend. */
+      surface(): void {
+        const p = diveEntryPoint();
+        player.teleport(p.x, p.y, p.z);
+      },
+      /** Jump directly into the water column facing the sunken palace. */
+      dive(): void {
+        player.teleport(
+          UNDERWATER.center.x,
+          UNDERWATER.floorY + 9,
+          UNDERWATER.center.z - 58,
+        );
+        input.yaw = Math.PI;
+        input.pitch = -0.08;
+      },
+      state: () => ({
+        underwater: player.underwater,
+        breath: breath.remaining,
+        breathMax: breathMax(breathLevel),
+        breathLevel,
+        targets: underwater?.dartTargets().length ?? 0,
+        purifiedClams: underwater?.purifiedClamIds() ?? [],
+        shell: inventory.shell,
+        scale: inventory.scale,
+        tideDarts: inventory.tideDarts,
+      }),
     };
   }
 

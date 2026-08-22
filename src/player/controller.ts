@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GRAPPLE, INPUT, MOUNT, MOVE, TERRAIN } from '../core/constants.ts';
+import { GRAPPLE, INPUT, MOUNT, MOVE, TERRAIN, UNDERWATER } from '../core/constants.ts';
 import type { GroundQuery, MoveInput, MoveState, Vec3 } from '../core/types.ts';
 import { initialMoveState, stepMovement } from './movement.ts';
 import { dismountEyeOffset, mountStep } from './mount.ts';
@@ -65,6 +65,35 @@ export function landedDuringStep(prev: MoveState, next: MoveState): boolean {
 export function isGrappleFireAttempt(hook: HookState | null): boolean {
   if (!hook) return true;
   return hook.phase === 'latched' && hook.hang;
+}
+
+/** Pure vertical-swim resolver used by the controller and unit tests. */
+export function stepSwimDepth(
+  y: number,
+  groundY: number,
+  canDive: boolean,
+  verticalIntent: -1 | 0 | 1,
+  dt: number,
+): { y: number; vy: number } {
+  const floor = groundY + UNDERWATER.floorClearance;
+  if (canDive) {
+    const nextY = Math.max(
+      floor,
+      Math.min(TERRAIN.seaLevel, y + verticalIntent * UNDERWATER.verticalSpeed * dt),
+    );
+    const blocked =
+      (nextY <= floor && verticalIntent < 0) ||
+      (nextY >= TERRAIN.seaLevel && verticalIntent > 0);
+    return { y: nextY, vy: blocked ? 0 : verticalIntent * UNDERWATER.verticalSpeed };
+  }
+  if (y < TERRAIN.seaLevel) {
+    const nextY = Math.min(
+      TERRAIN.seaLevel,
+      Math.max(floor, y + UNDERWATER.autoSurfaceSpeed * dt),
+    );
+    return { y: nextY, vy: nextY < TERRAIN.seaLevel ? UNDERWATER.autoSurfaceSpeed : 0 };
+  }
+  return { y: TERRAIN.seaLevel, vy: 0 };
 }
 
 export class PlayerController {
@@ -144,6 +173,9 @@ export class PlayerController {
    * deps; `main.ts` injects `inHallBelowRoof` directly.
    */
   movementCeiling: (x: number, z: number, y: number) => boolean = () => false;
+  /** True only in the visibly marked Atlantis lagoon. Surface swimming still
+   * works in every submerged terrain column; this seam gates vertical diving. */
+  canDiveAt: (x: number, z: number) => boolean = () => false;
   /**
    * Optional: called at most once per hall stay when a grapple FIRE attempt
    * (see `isGrappleFireAttempt`) is suppressed by `movementCeiling`. Surfaced
@@ -374,6 +406,7 @@ export class PlayerController {
     const masked: MoveInput = { ...raw };
     if (!this.unlocks.has('glider')) masked.jumpHeld = false;
     if (!this.unlocks.has('rocket')) masked.rocket = false;
+    if (this.unlocks.has('currentboard')) masked.swimBoost = UNDERWATER.currentboardMultiplier;
 
     // --- Roofed-hall ceiling (Castle Ward Task 5): "No sky in here!" -------
     // While the player's feet are under a hall roof, glide is forced off
@@ -496,9 +529,19 @@ export class PlayerController {
     // false for the step.
     if (landedDuringStep(prev, next)) this.usedAirJump = false;
 
-    // --- Surface swimming holds the player at the water line ---------------
+    // --- Swimming: surface everywhere, 3D only in the marked dive lagoon ---
     if (next.mode === 'swim') {
-      next.pos.y = TERRAIN.seaLevel;
+      const vertical = ((this.input.spaceHeld ? 1 : 0) - (this.input.diveHeld ? 1 : 0)) as -1 | 0 | 1;
+      const startY = prev.mode === 'swim' ? prev.pos.y : TERRAIN.seaLevel;
+      const depth = stepSwimDepth(
+        startY,
+        this.ground.heightAt(next.pos.x, next.pos.z),
+        this.canDiveAt(next.pos.x, next.pos.z),
+        vertical,
+        dt,
+      );
+      next.pos.y = depth.y;
+      next.vel.y = depth.vy;
     }
 
     // --- Dazed stumble override (horizontal only; see the field doc above) --
@@ -647,6 +690,13 @@ export class PlayerController {
   }
   get mode(): MoveState['mode'] {
     return this.state.mode;
+  }
+  /** True once the first-person camera—not merely the feet—is below water. */
+  get underwater(): boolean {
+    return (
+      this.canDiveAt(this.state.pos.x, this.state.pos.z) &&
+      this.state.pos.y + INPUT.eyeHeight < UNDERWATER.surfaceY - UNDERWATER.submergeMargin
+    );
   }
 
   /**

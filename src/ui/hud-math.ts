@@ -46,6 +46,7 @@ export function clamp(v: number, lo: number, hi: number): number {
 const ITEM_LABELS: Record<ItemId, string> = {
   darts: 'Darts',
   slowDarts: 'Slow Darts',
+  tideDarts: 'Tide Darts',
   purifiers: 'Purify',
   charms: 'Charm',
   'kit:zipline': 'Zipline',

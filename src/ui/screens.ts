@@ -297,6 +297,8 @@ const RESOURCE_LABEL: Record<ResourceKind, string> = {
   mushroom: 'Mushroom',
   wood: 'Wood',
   stone: 'Stone',
+  shell: 'Shell Fragment',
+  scale: 'Croc Scale',
 };
 
 function applyCraft(inventory: Inventory, unlocks: Set<string>, recipeId: RecipeId): void {
@@ -371,6 +373,21 @@ function renderRecipeCard(
     hint.textContent = 'Link Nectar Wisps to gather honey';
     card.appendChild(hint);
   }
+  if (recipe.cost.shell != null || recipe.cost.scale != null) {
+    const hint = document.createElement('div');
+    hint.className = 'wt-recipe-hint';
+    hint.textContent =
+      recipe.id === 'tidedart'
+        ? 'Flat underwater shot; deals double damage to clam guards & crocodiles'
+        : recipe.id === 'currentboard'
+          ? 'Strap-on current board: swim 75% faster'
+          : 'Clam guards drop shell; underwater crocodiles drop scales';
+    card.appendChild(hint);
+    const source = document.createElement('div');
+    source.className = 'wt-recipe-hint';
+    source.textContent = 'Clam guards drop shell; underwater crocodiles drop scales';
+    card.appendChild(source);
+  }
 
   const button = document.createElement('button');
   button.className = 'wt-craft-btn';
@@ -403,10 +420,11 @@ function renderRecipeCard(
 const KEYBINDS: [string, string][] = [
   ['W A S D', 'Move'],
   ['Shift', 'Sprint'],
-  ['Space', 'Jump  (hold to Glide — when crafted)'],
+  ['Space', 'Jump / hold to Glide — underwater: rise'],
   ['Q', 'Dash'],
   ['R', 'Rocket  (when crafted) — rotates the build ghost +90° while placing'],
-  ['Ctrl', 'Hold while placing to snap to nearby pieces (freeform otherwise)'],
+  ['Ctrl', 'Build snap — underwater: dive'],
+  ['AIR', 'Only the turquoise Atlantis lagoon is diveable; surface to refill'],
   ['RMB', 'Fire Grapple — auto-zips on latch  (when crafted)'],
   ['F', 'Harvest / Interact'],
   ['LMB', 'Use the selected hotbar item (throw / confirm placement)'],
@@ -684,6 +702,7 @@ export function createCraftScreen(
 const ITEM_COLOR: Record<ItemId, string> = {
   darts: '#66e0ff',
   slowDarts: '#77d6b2',
+  tideDarts: '#4af5e8',
   purifiers: '#8ef0c0',
   charms: '#d98cff',
   'kit:zipline': '#f0c058',
@@ -702,6 +721,8 @@ const RESOURCE_COLOR: Record<ResourceKind, string> = {
   mushroom: '#9c5bd0',
   wood: '#8a5a35',
   stone: '#8f8f92',
+  shell: '#e7b9d6',
+  scale: '#6fa76a',
 };
 
 let inventoryStylesInjected = false;
@@ -937,6 +958,8 @@ const RESOURCE_KINDS: readonly ResourceKind[] = [
   'mushroom',
   'wood',
   'stone',
+  'shell',
+  'scale',
 ];
 
 /** Build the ScreenDef for the inventory screen (Esc, when nothing else is open). */
