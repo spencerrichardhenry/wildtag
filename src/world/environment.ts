@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { ENV, DAYLIGHT, WORLD_SEED } from '../core/constants.ts';
 import { heightAt } from './terrain.ts';
 import { lerpColorHex, type DaylightSample } from '../core/daylight.ts';
@@ -81,7 +82,150 @@ function makeSkyDome(): THREE.Object3D {
   const at = dir.multiplyScalar(ENV.skyRadius * 0.92);
   dome.add(makeSunSprite(ENV.sunGlowColor, ENV.sunGlowSize, at, 0.55, 'sunGlowSprite')); // broad glow
   dome.add(makeSunSprite(ENV.sunDiscColor, ENV.sunDiscSize, at, 0.95, 'sunDiscSprite')); // tight disc
+  // Fidelity-3: clouds + mountain ring ride the dome (no parallax, fog-exempt).
+  dome.add(makeMountains());
+  dome.add(makeClouds());
   return dome;
+}
+
+/**
+ * Fidelity-3: one merged low-poly cloud layer. Each cloud is a cluster of
+ * squashed icosahedron puffs whose vertices are clamped flat at the cluster
+ * base (the flat-bottomed cumulus read); vertex colors bake a white top →
+ * blue-grey underside. Deterministic off WORLD_SEED. Unlit (MeshBasicMaterial,
+ * vertexColors) so the day look is exactly the baked palette; the daylight rig
+ * lerps the material's multiplier color toward DAYLIGHT.night.cloudColor after
+ * dark. Parented under the camera-following sky dome → no parallax; the whole
+ * layer yaw-drifts slowly (updateClouds).
+ */
+function makeClouds(): THREE.Mesh {
+  const C = ENV.clouds;
+  const rand = mulberry32(WORLD_SEED ^ 0xc10ed);
+  const parts: THREE.BufferGeometry[] = [];
+  const white = new THREE.Color(0xffffff);
+  const tint = new THREE.Color(C.bottomTint);
+  for (let i = 0; i < C.count; i++) {
+    const az = rand() * Math.PI * 2;
+    const r = C.minR + rand() * (C.maxR - C.minR);
+    const cx = Math.cos(az) * r;
+    const cz = Math.sin(az) * r;
+    const cy = C.minY + rand() * (C.maxY - C.minY);
+    const s = C.minScale + rand() * (C.maxScale - C.minScale);
+    const puffs = 4 + Math.floor(rand() * 3);
+    for (let p = 0; p < puffs; p++) {
+      const puff = new THREE.IcosahedronGeometry(s * (0.48 + rand() * 0.26), 0).toNonIndexed();
+      puff.scale(1.15 + rand() * 0.45, 0.55 + rand() * 0.15, 1.0 + rand() * 0.3);
+      puff.rotateY(rand() * Math.PI);
+      puff.translate(
+        cx + (p - (puffs - 1) / 2) * s * 0.55 + (rand() - 0.5) * s * 0.3,
+        cy + (rand() - 0.3) * s * 0.16,
+        cz + (rand() - 0.5) * s * 0.5,
+      );
+      // Flat bottom: clamp everything below the cluster's base plane.
+      const pos = puff.getAttribute('position') as THREE.BufferAttribute;
+      const base = cy - s * 0.16;
+      const colors = new Float32Array(pos.count * 3);
+      const c = new THREE.Color();
+      for (let v = 0; v < pos.count; v++) {
+        if (pos.getY(v) < base) pos.setY(v, base);
+        // White top → tinted underside over the cloud's own height.
+        const t = THREE.MathUtils.clamp((pos.getY(v) - base) / (s * 0.5), 0, 1);
+        c.copy(tint).lerp(white, t);
+        colors[v * 3] = c.r;
+        colors[v * 3 + 1] = c.g;
+        colors[v * 3 + 2] = c.b;
+      }
+      puff.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+      parts.push(puff);
+    }
+  }
+  const geo = mergeGeometries(parts, false)!;
+  for (const p of parts) p.dispose();
+  const mat = new THREE.MeshBasicMaterial({ vertexColors: true, fog: false });
+  const clouds = new THREE.Mesh(geo, mat);
+  clouds.name = 'clouds';
+  return clouds;
+}
+
+/** Advance the cloud layer's slow yaw drift (called each frame from main). */
+export function updateClouds(scene: THREE.Scene, time: number): void {
+  const clouds = scene.getObjectByName('clouds');
+  if (clouds) clouds.rotation.y = time * ENV.clouds.driftRadPerS;
+}
+
+/**
+ * Fidelity-3: distant faceted mountain ring just inside the sky dome. A
+ * closed triangle loop around the horizon: jagged ridge heights from seeded
+ * fbm-ish stacked sines, vertex-colored base→peak (lighter at the base so it
+ * melts into the horizon), fog-exempt, unlit. Night darkening is a material
+ * color lerp in the daylight rig (same pattern as the clouds).
+ */
+function makeMountains(): THREE.Mesh {
+  const M = ENV.mountains;
+  const positions: number[] = [];
+  const colors: number[] = [];
+  const low = new THREE.Color(M.colorLow);
+  const high = new THREE.Color(M.colorHigh);
+  const c = new THREE.Color();
+  const push = (x: number, y: number, z: number, t: number) => {
+    positions.push(x, y, z);
+    c.copy(low).lerp(high, THREE.MathUtils.clamp(t, 0, 1));
+    colors.push(c.r, c.g, c.b);
+  };
+  // Connected jagged ridge: per-boundary heights are a seeded random walk with
+  // occasional near-zero saddles, so the range reads as clustered irregular
+  // massifs instead of a row of identical teeth. Two rows (far slightly taller
+  // and lighter, offset half a step) fake overlapping ranges for depth.
+  // tint < 0 pulls toward colorLow → the taller back row reads hazier/lighter.
+  const rows = [
+    { radius: M.radius, seed: 0x30047, hScale: 1.05, tint: -0.4 },
+    { radius: M.radius * 0.94, seed: 0x7715b, hScale: 0.7, tint: 0 },
+  ];
+  for (const row of rows) {
+    const rand = mulberry32(WORLD_SEED ^ row.seed);
+    // Ridge heights at segment boundaries.
+    const hs: number[] = [];
+    let h = M.minH + rand() * (M.maxH - M.minH) * 0.5;
+    for (let i = 0; i < M.segments; i++) {
+      // Random walk with soft pull toward the mid-band, plus saddle drops.
+      const mid = (M.minH + M.maxH) / 2;
+      h += (rand() - 0.5) * (M.maxH - M.minH) * 0.9 + (mid - h) * 0.25;
+      if (rand() < 0.14) h = M.minH * (0.2 + rand() * 0.5); // valley saddle
+      h = THREE.MathUtils.clamp(h, M.minH * 0.15, M.maxH);
+      hs.push(h);
+    }
+    const phase = row.tint < 0 ? Math.PI / M.segments : 0; // offset far row
+    for (let i = 0; i < M.segments; i++) {
+      const a0 = (i / M.segments) * Math.PI * 2 + phase;
+      const a1 = ((i + 1) / M.segments) * Math.PI * 2 + phase;
+      const h0 = hs[i]! * row.hScale;
+      const h1 = hs[(i + 1) % M.segments]! * row.hScale;
+      const x0 = Math.cos(a0) * row.radius;
+      const z0 = Math.sin(a0) * row.radius;
+      const x1 = Math.cos(a1) * row.radius;
+      const z1 = Math.sin(a1) * row.radius;
+      const t0 = h0 / M.maxH + row.tint;
+      const t1 = h1 / M.maxH + row.tint;
+      // Quad (base0, ridge0, ridge1, base1) as two triangles.
+      push(x0, M.baseY, z0, Math.max(0, row.tint));
+      push(x0, h0, z0, t0);
+      push(x1, h1, z1, t1);
+      push(x0, M.baseY, z0, Math.max(0, row.tint));
+      push(x1, h1, z1, t1);
+      push(x1, M.baseY, z1, Math.max(0, row.tint));
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  const mat = new THREE.MeshBasicMaterial({
+    vertexColors: true,
+    fog: false,
+    side: THREE.DoubleSide,
+  });
+  const mountains = new THREE.Mesh(geo, mat);
+  mountains.name = 'mountains';
+  return mountains;
 }
 
 /** A soft radial billboard (additive) for the sun disc / glow / moon. */
@@ -326,6 +470,12 @@ export function setupDaylight(scene: THREE.Scene): DaylightRig {
 
   const sunDisc = dome?.getObjectByName('sunDiscSprite') as THREE.Sprite | undefined;
   const sunGlow = dome?.getObjectByName('sunGlowSprite') as THREE.Sprite | undefined;
+  // Clouds/mountains carry their day look in vertex colors; night is a cheap
+  // multiplier-color lerp (white → the night tint) on their shared materials.
+  const cloudMat = (dome?.getObjectByName('clouds') as THREE.Mesh | undefined)
+    ?.material as THREE.MeshBasicMaterial | undefined;
+  const mountainMat = (dome?.getObjectByName('mountains') as THREE.Mesh | undefined)
+    ?.material as THREE.MeshBasicMaterial | undefined;
   const sunDiscBaseAlpha = (sunDisc?.material as THREE.SpriteMaterial | undefined)?.opacity ?? 0.95;
   const sunGlowBaseAlpha = (sunGlow?.material as THREE.SpriteMaterial | undefined)?.opacity ?? 0.55;
 
@@ -408,6 +558,8 @@ export function setupDaylight(scene: THREE.Scene): DaylightRig {
 
       if (sunDisc) (sunDisc.material as THREE.SpriteMaterial).opacity = sunDiscBaseAlpha * (1 - k);
       if (sunGlow) (sunGlow.material as THREE.SpriteMaterial).opacity = sunGlowBaseAlpha * (1 - k);
+      if (cloudMat) cloudMat.color.setHex(lerpColorHex(0xffffff, N.cloudColor, k));
+      if (mountainMat) mountainMat.color.setHex(lerpColorHex(0xffffff, N.mountainColor, k));
       (moon.material as THREE.SpriteMaterial).opacity = k * 0.95;
       starMat.opacity = k;
     },

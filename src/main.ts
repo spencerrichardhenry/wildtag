@@ -14,7 +14,7 @@ import {
   SIM_DT,
   STRUCTURES,
 } from './core/constants.ts';
-import { setupEnvironment, setupDaylight, updateWater } from './world/environment.ts';
+import { setupEnvironment, setupDaylight, updateWater, updateClouds } from './world/environment.ts';
 import { daylightAt } from './core/daylight.ts';
 import { ChunkManager } from './world/chunks.ts';
 import { PropManager } from './world/props.ts';
@@ -296,7 +296,14 @@ function bootGame(): void {
     scene.traverse((obj) => {
       const mesh = obj as THREE.Mesh;
       if (!(mesh as unknown as { isMesh?: boolean }).isMesh) return;
-      if (mesh.name === 'skyDome' || mesh.name === 'water' || mesh.name === 'handsView') return;
+      if (
+        mesh.name === 'skyDome' ||
+        mesh.name === 'water' ||
+        mesh.name === 'handsView' ||
+        mesh.name === 'clouds' ||
+        mesh.name === 'mountains'
+      )
+        return;
       mesh.castShadow = true;
       // Terrain chunks already receive in chunks.ts; broad ground props too.
       if (mesh.name.startsWith('chunk ')) mesh.receiveShadow = true;
@@ -1850,6 +1857,8 @@ function bootGame(): void {
     updateShadowFollow();
     // Water 1.5: advance the shader ripple/shimmer clock (one uniform write).
     updateWater(scene, worldTime);
+    // Fidelity-3: slow cloud-layer drift (one rotation write).
+    updateClouds(scene, worldTime);
 
     // First-person hands (Inventory+Building Task 6) — must run before the
     // render call below since the view model is a camera child. Hidden while

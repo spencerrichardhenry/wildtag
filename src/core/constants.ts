@@ -735,8 +735,13 @@ export const ENV = {
   sunDiscSize: 62,
   sunGlowSize: 260,
 
-  /** Linear fog: color, near and far distances (m). Warm golden-hour haze. */
-  fogColor: 0xe0d6c2,
+  /**
+   * Linear fog: color, near and far distances (m). Fidelity-3 moved the haze
+   * from warm sepia to a light blue — the reference's distant hills fade
+   * toward atmosphere-blue, and the old cream tint was the single biggest
+   * cause of the "washed out" read.
+   */
+  fogColor: 0xbcd8ec,
   fogNear: 190,
   fogFar: 1080,
 
@@ -748,19 +753,62 @@ export const ENV = {
    * horizon colour.
    */
   skyRadius: 1150,
-  skyTop: 0x3f6fbe,
-  skyMid: 0x93b6e0,
-  skyHorizon: 0xf0dcc0,
+  /** Fidelity-3: saturated blue day sky (was a paler blue over a cream horizon). */
+  skyTop: 0x2f80ea,
+  skyMid: 0x63aaf2,
+  skyHorizon: 0xbfe2f8,
   /** Height fraction [0,1] of the mid gradient stop over the dome. */
   skyMidStop: 0.3,
 
-  /** Per-biome ground vertex colors + shore sand. */
+  /**
+   * Low-poly cloud layer (Fidelity-3): one merged faceted mesh of `count`
+   * clouds parented under the camera-following sky dome (no parallax), each a
+   * cluster of squashed icosahedron puffs with vertices clamped flat at the
+   * cluster's base (the reference's flat-bottomed cumulus read). Vertex colors
+   * bake a white top → `bottomTint` underside; the whole layer drifts by slow
+   * yaw. Scale/height ranges are world metres.
+   */
+  clouds: {
+    count: 14,
+    minR: 140,
+    maxR: 880,
+    minY: 210,
+    maxY: 340,
+    minScale: 26,
+    maxScale: 52,
+    bottomTint: 0xd8e4ef,
+    driftRadPerS: 0.0032,
+  },
+
+  /**
+   * Distant mountain silhouette ring (Fidelity-3): a faceted ridge loop just
+   * inside the sky dome, fog-exempt with a baked base→peak vertex gradient so
+   * it reads as flat atmospheric shapes (the reference horizon). Parented to
+   * the dome → follows the camera like the sky. `baseY` sits below the sea
+   * horizon so no gap opens over water.
+   */
+  mountains: {
+    radius: 1005,
+    /** Ridge sample count around the full circle (2 verts per sample). */
+    segments: 96,
+    minH: 60,
+    maxH: 200,
+    baseY: -40,
+    colorLow: 0x8fc0cc,
+    colorHigh: 0x5f9cb4,
+  },
+
+  /**
+   * Per-biome ground vertex colors + shore sand. Fidelity-3 pushed the greens
+   * toward the reference's saturated meadow (ACES desaturates midtones, so
+   * these read ~15% duller in-game than raw hex).
+   */
   biomeColors: {
-    meadow: 0x7fb069,
-    forest: 0x3e7d4f,
-    wetland: 0x6d8a5b,
+    meadow: 0x6dbb4d,
+    forest: 0x3d8a46,
+    wetland: 0x5f9a52,
     crags: 0x8d8577,
-    highlands: 0xa8b6a0,
+    highlands: 0x96b585,
     water: 0x4a6b7a,
     sand: 0xdccba0,
   },
@@ -866,6 +914,13 @@ export const DAYLIGHT = {
     moonSize: 46,
     starCount: 350,
     starSize: 1.5,
+    /**
+     * Night multiplier tints for the cloud layer / mountain ring (their
+     * materials' base color lerps day-white → these; vertex colors carry the
+     * day look, so the multiply darkens without a per-vertex rewrite).
+     */
+    cloudColor: 0x27324a,
+    mountainColor: 0x1a2534,
   },
 } as const;
 
