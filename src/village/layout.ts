@@ -71,6 +71,8 @@ export interface VillageLayout {
   paths: Path[];
   lamps: Point2[];
   fences: FenceSeg[];
+  /** Fidelity-3: windmill landmark position + yaw (blades face the meadow). */
+  windmill: Point2 & { rot: number };
 }
 
 /** Height range (max − min) over a square window sampled on a coarse stencil. */
@@ -220,7 +222,19 @@ export function computeVillageLayout(): VillageLayout {
     });
   }
 
-  return { center, plaza, buildings, pens, farm: { origin, plots }, paths, lamps, fences };
+  // Windmill landmark outward of the ring on the spawn-facing side; its front
+  // (+Z after yaw, where the blades hang) turns back toward the plaza-opposite
+  // direction so the blade disc faces the open meadow.
+  const wmAngle = VILLAGE.windmill.angle;
+  const wmR = VILLAGE.ringRadius + VILLAGE.windmill.ringOffset;
+  const windmill = {
+    x: center.x + Math.cos(wmAngle) * wmR,
+    z: center.z + Math.sin(wmAngle) * wmR,
+    rot: 0,
+  };
+  windmill.rot = faceYaw(windmill, plaza) + Math.PI;
+
+  return { center, plaza, buildings, pens, farm: { origin, plots }, paths, lamps, fences, windmill };
 }
 
 let _cached: VillageLayout | null = null;

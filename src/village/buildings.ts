@@ -51,11 +51,16 @@ const DOOR_W = 1.2;
 const DOOR_H = 2.0;
 const WALL_T = 0.22;
 
-/** Warm wall/roof colour pair for a building kind. */
-function palette(kind: BuildingPlacement['kind']): { wall: number; roof: number } {
-  if (kind === 'farmhouse') return { wall: C.farmhouseWall, roof: C.roofFarmhouse };
-  if (kind === 'barter') return { wall: C.barterWall, roof: C.roofBarter };
-  return { wall: C.homeWall, roof: C.roofHome };
+/** Warm wall/roof colour pair for a building. Homes rotate through the
+ *  Fidelity-3 roof variants (red/orange/blue, like the reference vignette) by
+ *  a stable per-id index so the trio reads varied but deterministic. */
+function palette(b: BuildingPlacement): { wall: number; roof: number } {
+  if (b.kind === 'farmhouse') return { wall: C.farmhouseWall, roof: C.roofFarmhouse };
+  if (b.kind === 'barter') return { wall: C.barterWall, roof: C.roofBarter };
+  let hash = 0;
+  for (let i = 0; i < b.id.length; i++) hash = (hash * 31 + b.id.charCodeAt(i)) >>> 0;
+  const variants = C.roofHomeVariants;
+  return { wall: C.homeWall, roof: variants[hash % variants.length]! };
 }
 
 /** A pyramid roof squared over a w×d footprint, sitting at wall-top `h`. */
@@ -81,13 +86,22 @@ function plinth(w: number, d: number): THREE.Mesh {
   return p;
 }
 
-/** Build a closed house (farmhouse / home): 4 walls, door gap, windows, roof. */
+/** Build a closed house (farmhouse / home): 4 walls, door gap, windows, roof,
+ *  and a Fidelity-3 stone chimney poking through the roof skirt. */
 function buildHouse(b: BuildingPlacement): THREE.Group {
   const g = new THREE.Group();
-  const { wall, roof: roofColor } = palette(b.kind);
+  const { wall, roof: roofColor } = palette(b);
   const h = VILLAGE.wallHeight[b.kind];
   const { w, d } = b;
   g.add(plinth(w, d));
+
+  // Chimney: a stone stack off one roof corner with a slightly wider cap.
+  const chimney = box(0.45, 1.6, 0.45, C.chimney);
+  chimney.position.set(w * 0.28, h + 0.55, d * 0.2);
+  g.add(chimney);
+  const cap = box(0.6, 0.16, 0.6, C.trim);
+  cap.position.set(w * 0.28, h + 1.4, d * 0.2);
+  g.add(cap);
 
   // Back + side walls (front is local −Z, toward the plaza — it gets the door).
   const back = box(w, h, WALL_T, wall);
@@ -123,7 +137,7 @@ function buildHouse(b: BuildingPlacement): THREE.Group {
 /** Build the open-front barter stall: back+side walls, a counter and a canopy. */
 function buildBarter(b: BuildingPlacement): THREE.Group {
   const g = new THREE.Group();
-  const { wall, roof: roofColor } = palette(b.kind);
+  const { wall, roof: roofColor } = palette(b);
   const h = VILLAGE.wallHeight.barter;
   const { w, d } = b;
   g.add(plinth(w, d));
@@ -159,6 +173,115 @@ function buildBuilding(b: BuildingPlacement): THREE.Group {
   g.rotation.y = b.rot;
   g.name = `village-building ${b.id}`;
   return g;
+}
+
+// --- Windmill (Fidelity-3, drafted via codex, adapted) -----------------------
+// Static tower parts go through the normal build→merge path (free draw-call-
+// wise); the blade assembly is built separately AFTER the merge as one live
+// mesh under a `windmillHub` group so main's updateWindmill can spin it.
+
+/** Local hub position on the tower (blades bolt on here), pre-scale. */
+const MILL_HUB = { y: 6.3, z: 1.43 };
+
+/** Static windmill tower: tapered 6-sided body, cap roof, door + brace boards. */
+function buildWindmillTower(p: { x: number; z: number; rot: number }): THREE.Group {
+  const g = new THREE.Group();
+  const s = VILLAGE.windmill.scale;
+  const part = (geo: THREE.BufferGeometry, color: number, x: number, y: number, z: number): void => {
+    const m = new THREE.Mesh(geo, mat(color));
+    m.position.set(x * s, y * s, z * s);
+    m.scale.setScalar(s);
+    g.add(m);
+  };
+  part(new THREE.CylinderGeometry(1.08, 1.65, 6.65, 6), C.millWall, 0, 3.325, 0);
+  part(new THREE.CylinderGeometry(1.7, 1.72, 0.24, 6), C.millTrim, 0, 0.12, 0);
+  part(new THREE.CylinderGeometry(1.13, 1.18, 0.22, 6), C.millTrim, 0, 6.54, 0);
+  const capGeo = new THREE.ConeGeometry(1.56, 2.22, 6);
+  part(capGeo, C.millRoof, 0, 6.65 + 1.11, 0);
+  part(new THREE.BoxGeometry(0.72, 1.38, 0.1), C.millTrim, 0, 0.69, 1.55);
+  part(new THREE.BoxGeometry(0.52, 0.62, 0.09), C.millTrim, -0.55, 3.4, 1.43);
+  part(new THREE.BoxGeometry(0.52, 0.62, 0.09), C.millTrim, 0.55, 4.62, 1.31);
+  const axle = new THREE.Mesh(new THREE.CylinderGeometry(0.29, 0.29, 0.26, 8), mat(C.millTrim));
+  axle.rotation.x = Math.PI / 2;
+  axle.position.set(0, MILL_HUB.y * s, 1.25 * s);
+  axle.scale.setScalar(s);
+  g.add(axle);
+
+  g.position.set(p.x, heightAt(p.x, p.z), p.z);
+  g.rotation.y = p.rot;
+  g.name = 'village-windmill-tower';
+  return g;
+}
+
+/**
+ * The live blade assembly: 4 sail boxes + lattice braces merged into ONE
+ * vertex-coloured mesh, childed to a world-positioned `windmillHub` group.
+ * Spin = hub.children[0].rotation.z (see main's updateWindmill).
+ */
+export function buildWindmillBlades(p: { x: number; z: number; rot: number }): THREE.Group {
+  const s = VILLAGE.windmill.scale;
+  const parts: THREE.BufferGeometry[] = [];
+  const bake = (geo: THREE.BufferGeometry, color: number): THREE.BufferGeometry => {
+    const g = geo.toNonIndexed();
+    const count = g.getAttribute('position').count;
+    const col = new Float32Array(count * 3);
+    const c = new THREE.Color(color);
+    for (let i = 0; i < count; i++) {
+      col[i * 3] = c.r;
+      col[i * 3 + 1] = c.g;
+      col[i * 3 + 2] = c.b;
+    }
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    return g;
+  };
+  const hubGeo = new THREE.CylinderGeometry(0.34, 0.34, 0.34, 8);
+  hubGeo.rotateX(Math.PI / 2);
+  parts.push(bake(hubGeo, C.millTrim));
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2;
+    const sail = new THREE.BoxGeometry(0.46, 2.08, 0.095);
+    sail.translate(0, 1.48, 0);
+    sail.rotateZ(a);
+    parts.push(bake(sail, C.millBlade));
+    for (const off of [0.13, -0.13]) {
+      const brace = new THREE.BoxGeometry(0.065, 1.95, 0.05);
+      brace.rotateZ(off);
+      brace.translate(0, 1.48, 0.073);
+      brace.rotateZ(a);
+      parts.push(bake(brace, C.millTrim));
+    }
+  }
+  const merged = mergeGeometries(parts, false)!;
+  for (const g of parts) g.dispose();
+  merged.scale(s, s, s);
+  merged.computeBoundingSphere();
+  const blades = new THREE.Mesh(
+    merged,
+    makeSurfaceMaterial({ vertexColors: true, flatShading: true, roughness: ROUGHNESS.village }),
+  );
+  blades.name = 'windmillBlades';
+
+  const hub = new THREE.Group();
+  hub.name = 'windmillHub';
+  const groundY = heightAt(p.x, p.z);
+  // Hub sits at the tower-local (0, MILL_HUB.y, MILL_HUB.z)·scale, yawed by rot.
+  const lx = 0;
+  const lz = MILL_HUB.z * s;
+  hub.position.set(
+    p.x + lx * Math.cos(p.rot) + lz * Math.sin(p.rot),
+    groundY + MILL_HUB.y * s,
+    p.z - lx * Math.sin(p.rot) + lz * Math.cos(p.rot),
+  );
+  hub.rotation.y = p.rot;
+  hub.add(blades);
+  return hub;
+}
+
+/** Advance the windmill blade spin (called each frame from main). */
+export function updateWindmill(scene: THREE.Scene, time: number): void {
+  const hub = scene.getObjectByName('windmillHub');
+  const blades = hub?.children[0];
+  if (blades) blades.rotation.z = -time * VILLAGE.windmill.spinRadPerS;
 }
 
 /** Lamp post: dark pole + emissive head + a warm point light. */
@@ -290,6 +413,15 @@ export function villageObstacles(): Obstacle[] {
   for (const l of layout.lamps) {
     out.push({ x: l.x, z: l.z, r: 0.25, yTop: heightAt(l.x, l.z) + VILLAGE.lampHeight });
   }
+  // Windmill tower (Fidelity-3): base radius 1.65·scale, top at cap apex.
+  const wm = layout.windmill;
+  const ws = VILLAGE.windmill.scale;
+  out.push({
+    x: wm.x,
+    z: wm.z,
+    r: 1.65 * ws * 1.1,
+    yTop: heightAt(wm.x, wm.z) + (6.65 + 2.22) * ws,
+  });
   _obstacles = out;
   return out;
 }
@@ -409,6 +541,7 @@ export function buildVillage(scene: THREE.Scene): THREE.Group {
 
   for (const path of layout.paths) root.add(buildPath(path));
   for (const b of layout.buildings) root.add(buildBuilding(b));
+  root.add(buildWindmillTower(layout.windmill));
   for (const l of layout.lamps) root.add(buildLamp(l));
   for (const seg of layout.fences) root.add(buildFence(seg));
 
@@ -441,8 +574,11 @@ export function buildVillage(scene: THREE.Scene): THREE.Group {
   }
 
   // Collapse the ~189 static part-meshes into a handful of merged vertex-
-  // coloured meshes (draw-call consolidation — see header note).
+  // coloured meshes (draw-call consolidation — see header note). The live
+  // windmill blade hub is added AFTER the merge (one extra draw call) so it
+  // can keep spinning.
   const merged = mergeVillage(root);
+  merged.add(buildWindmillBlades(layout.windmill));
   scene.add(merged);
   return merged;
 }

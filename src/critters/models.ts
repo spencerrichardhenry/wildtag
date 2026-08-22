@@ -3,13 +3,12 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { CRITTER_VARIATION } from '../core/constants.ts';
 import { makeSurfaceMaterial, ROUGHNESS } from '../core/materials.ts';
 
-// Procedural critter models — "Neopets released a Valheim competitor", round 2.
-// Round 1 read as faceted polyhedra ("still too boxy"); round 2's ingredient is
-// SMOOTHNESS and PLUMPNESS. Bodies/heads/limbs are now SMOOTH-SHADED organic
-// volumes at 8-16 segments (soft-toy read): squashed spheres, capsules and
-// bottom-heavy egg/pear LatheGeometry profiles. Flat faceting survives ONLY
-// where it is material identity — prismhorse crystal, craghorn horn ridges,
-// the gloomgobbler's softly-faceted shadow-ball.
+// Procedural critter models — "Neopets released a Valheim competitor", round 3.
+// Round 3 keeps round 2's smooth plush construction, then pushes the character
+// design: candy two-tone palettes, face-front eye masks, and one enormous
+// silhouette signature per species. Flat faceting survives ONLY where it is
+// material identity — prismhorse/shardwing crystal, craghorn horn ridges,
+// gloomgobbler shadow-smoke, pebbleshrew stones and gargoyle masonry.
 //
 // Proportions are squashed cuter: heads up to ~45-50% of visual mass on the
 // small critters, plump bottom-heavy bellies, stubby limbs, rounded plump
@@ -195,6 +194,8 @@ interface EyeOpts {
   scleraEmissiveIntensity?: number;
   /** Iris radius as a fraction of the eye radius (bigger = cuter/dopier). */
   irisR?: number;
+  /** Horizontal highlight direction in eye-local space (−1 left, +1 right). */
+  highlightSide?: number;
 }
 
 /**
@@ -221,8 +222,8 @@ function eye(r: number, o: EyeOpts = {}): THREE.Group {
   ir.position.z = r * 0.5;
   ir.scale.z = 0.42;
   g.add(ir);
-  const hi = new THREE.Mesh(new THREE.SphereGeometry(r * 0.22, 4, 3), mat(0xffffff));
-  hi.position.set(-r * 0.22, r * 0.26, r * 0.56);
+  const hi = new THREE.Mesh(new THREE.SphereGeometry(r * 0.25, 4, 3), mat(0xffffff));
+  hi.position.set((o.highlightSide ?? -1) * r * 0.24, r * 0.28, r * 0.57);
   g.add(hi);
   return g;
 }
@@ -232,7 +233,8 @@ function eye(r: number, o: EyeOpts = {}): THREE.Group {
 function eyePair(sep: number, y: number, z: number, r: number, o: EyeOpts = {}, toe = 0.12): THREE.Group[] {
   const out: THREE.Group[] = [];
   for (const sx of [-1, 1]) {
-    const e = eye(r, o);
+    // Highlights sit up-and-OUTWARD on the pair, like painted plush eyes.
+    const e = eye(r, { ...o, highlightSide: sx });
     e.position.set(sx * sep, y, z);
     e.rotation.y = sx * toe;
     out.push(e);
@@ -344,138 +346,163 @@ function jitterColor(
 // looks cloned. Palette is muted-but-rich; a separate tinted belly part gives
 // the darker/lighter underside.
 
-/**
- * Puffle — a marquee face. A bottom-heavy cream egg-fluffball: the whole
- * critter is basically head. Huge close-set friendly eyes, a tiny nose over a
- * little smile, soft cheek-blush pads, a plump two-lobe tuft and stubby feet.
- */
+/** Puffle — sandy pear plush with billboard-sized rabbit ears. */
 function buildPuffle(rng: () => number): { group: THREE.Group; parts: CritterParts } {
   const g = new THREE.Group();
-  const fur = jitterColor(0xdcc99a, rng, 0.06);
-  const furDark = jitterColor(0xc4ad7d, rng, 0.05);
-  const noseC = jitterColor(0xb87a5a, rng, 0.04);
-  const blushC = jitterColor(0xdfa183, rng, 0.03);
+  const fur = jitterColor(0xe2bd77, rng, 0.06);
+  const cream = jitterColor(0xffe3ad, rng, 0.04);
+  const furDark = jitterColor(0xc68e51, rng, 0.05);
+  const pink = jitterColor(0xf39ab5, rng, 0.04);
+  const noseC = jitterColor(0xb96870, rng, 0.03);
 
-  // Body: one plump bottom-heavy egg — pure Neopets silhouette.
   const body = new THREE.Group();
-  const shell = egg(0.44, 0.92, fur, {}, 0.32);
+  const shell = egg(0.45, 0.9, fur, {}, 0.38, 14);
   body.add(shell);
-  // Soft jowl cheeks low on the sides of the face, tucked into the egg.
+  // Cream bib and tiny toy arms break up the pear without changing its mass.
+  const bib = sphere(0.25, cream, {}, 8, 6);
+  bib.scale.set(0.9, 1.05, 0.42);
+  bib.position.set(0, 0.27, 0.36);
+  body.add(bib);
   for (const sx of [-1, 1]) {
-    const cheek = sphere(0.115, fur, {}, 7, 5);
-    cheek.position.set(sx * 0.26, 0.35, 0.21);
-    body.add(cheek);
+    const arm = capsule(0.055, 0.12, furDark, {}, 2, 6);
+    arm.position.set(sx * 0.4, 0.38, 0.15);
+    arm.rotation.z = sx * -0.95;
+    body.add(arm);
   }
   g.add(body);
 
-  // Head handle — big close-set eyes on the upper-front face, nose + smile +
-  // blush below. Parented to root so body bob never distorts the features.
+  // The face is a plush applique proud of the pear front. The eyes occupy
+  // nearly the full face height and remain visible from the roster camera.
   const head = new THREE.Group();
-  head.position.set(0, 0.56, 0.2);
-  for (const e of eyePair(0.145, 0.04, 0.15, 0.14, { irisR: 0.74 }, 0.08)) head.add(e);
-  const nose = blob(0.045, noseC);
-  nose.position.set(0, -0.1, 0.26);
+  head.position.set(0, 0.56, 0.16);
+  const mask = sphere(0.26, cream, {}, 9, 7);
+  mask.scale.set(1.25, 0.9, 0.46);
+  mask.position.set(0, -0.02, 0.17);
+  head.add(mask);
+  for (const e of eyePair(0.15, 0.08, 0.28, 0.15, { iris: 0x4d342c, irisR: 0.72 }, 0.06)) {
+    head.add(e);
+  }
+  const nose = blob(0.052, noseC);
+  nose.scale.set(1.05, 0.75, 0.7);
+  nose.position.set(0, -0.08, 0.42);
   head.add(nose);
-  const mouth = smile(0.05, 0.011);
-  mouth.position.set(0, -0.16, 0.25);
+  const mouth = smile(0.06, 0.012);
+  mouth.position.set(0, -0.16, 0.41);
   head.add(mouth);
   for (const sx of [-1, 1]) {
-    const b = blush(0.075, blushC);
-    b.position.set(sx * 0.27, -0.1, 0.17);
-    b.rotation.y = sx * 0.55;
+    const b = blush(0.078, pink);
+    b.position.set(sx * 0.27, -0.08, 0.32);
+    b.rotation.y = sx * 0.4;
     head.add(b);
+  }
+
+  // Giant teardrop rabbit ears: the puffle's read-at-30m feature. Inner pink
+  // inserts sit forward so they survive both front and three-quarter views.
+  const notchRoll = rng();
+  for (const sx of [-1, 1]) {
+    const short = notchRoll < 0.28 && sx === -1;
+    const ear = sphere(0.17, fur, {}, 8, 6);
+    ear.scale.set(0.78, short ? 1.72 : 2.12, 0.58);
+    ear.position.set(sx * 0.2, short ? 0.43 : 0.5, -0.02);
+    ear.rotation.z = sx * -0.16;
+    head.add(ear);
+    const inner = sphere(0.105, pink, {}, 7, 5);
+    inner.scale.set(0.68, short ? 1.58 : 1.95, 0.32);
+    inner.position.set(sx * 0.2, short ? 0.43 : 0.5, 0.09);
+    inner.rotation.z = sx * -0.16;
+    head.add(inner);
   }
   g.add(head);
 
-  // Plump two-lobe tuft on top.
-  const tuft = new THREE.Group();
-  tuft.position.set(0, 0.9, 0.0);
-  const t1 = sphere(0.12, furDark, {}, 8, 6);
-  t1.scale.set(1, 0.85, 1);
-  tuft.add(t1);
-  const t2 = sphere(0.08, fur, {}, 7, 5);
-  t2.position.set(0.02, 0.1, 0.01);
-  tuft.add(t2);
-  g.add(tuft);
-
-  // Stubby rounded feet peeking out under the egg rim.
+  // Four animation handles stay intact; visually they are tiny plush paws.
   const legs: THREE.Object3D[] = [];
   for (const [sx, sz] of QUAD) {
-    const l = legGroup(sx * 0.18, 0.14, sz * 0.14, 0.08, 0.09, 0.14, furDark);
+    const l = legGroup(sx * 0.19, 0.14, sz * 0.15, 0.075, 0.095, 0.14, furDark);
     legs.push(l);
     g.add(l);
   }
 
-  // Weathering: an off-centre extra fluff-cowlick on some individuals.
-  const wRoll = rng();
-  if (wRoll < 0.4) {
-    const cow = sphere(0.06, furDark, {}, 6, 4);
-    cow.position.set(0.14, 0.84, -0.05);
-    g.add(cow);
+  if (rng() < 0.4) {
+    const freckle = blob(0.045, furDark);
+    freckle.position.set(0.27, 0.34, 0.39);
+    body.add(freckle);
   }
   return { group: g, parts: { legs, head, body } };
 }
 
-/**
- * Skitterling — a plump rounded beetle-bug. Smooth domed two-tone shell, a
- * round head with big eyes, a tiny smile and springy bobble antennae, six
- * stubby splayed legs.
- */
+/** Skitterling — jewel beetle with unmistakable Aisha-like paddle antennae. */
 function buildSkitterling(rng: () => number): { group: THREE.Group; parts: CritterParts } {
   const g = new THREE.Group();
-  const shell = jitterColor(0x8a6d4a, rng, 0.05);
-  const shellDark = jitterColor(0x5f4a30, rng, 0.04);
+  const shell = jitterColor(0x6658c9, rng, 0.07);
+  const shellDark = jitterColor(0x33266f, rng, 0.05);
+  const shellLight = jitterColor(0x9b8df0, rng, 0.06);
+  const paddleC = jitterColor(0xf18bb9, rng, 0.05);
+  const cream = jitterColor(0xffe5c4, rng, 0.03);
 
   const body = new THREE.Group();
-  body.position.y = 0.22;
-  // Smooth plump carapace: a squashed dome, elongated along Z.
-  const carapace = sphere(0.3, shell, {}, 12, 8);
-  carapace.scale.set(1.08, 0.78, 1.5);
+  body.position.y = 0.28;
+  const carapace = sphere(0.32, shell, {}, 11, 8);
+  carapace.scale.set(1.08, 0.82, 1.38);
   body.add(carapace);
-  // Darker smooth dome ridge on top.
-  const dome = sphere(0.22, shellDark, {}, 11, 8);
-  dome.scale.set(0.92, 0.7, 1.1);
-  dome.position.set(0, 0.09, -0.04);
+  const dome = sphere(0.22, shellLight, {}, 8, 6);
+  dome.scale.set(0.94, 0.62, 1.25);
+  dome.position.set(0, 0.17, -0.07);
   body.add(dome);
+  // Plush seam down the wing-cases.
+  const seam = capsule(0.018, 0.46, cream, {}, 1, 5);
+  seam.rotation.x = Math.PI / 2;
+  seam.position.set(0, 0.25, -0.06);
+  body.add(seam);
   g.add(body);
 
   const head = new THREE.Group();
-  head.position.set(0, 0.26, 0.4);
-  const hb = sphere(0.17, shellDark, {}, 9, 7);
-  hb.scale.set(1, 0.92, 0.92);
+  head.position.set(0, 0.34, 0.42);
+  const hb = sphere(0.23, shellDark, {}, 10, 7);
+  hb.scale.set(1.04, 0.94, 0.96);
   head.add(hb);
-  for (const e of eyePair(0.085, 0.04, 0.12, 0.07, { irisR: 0.62 }, 0.16)) head.add(e);
-  const mouth = smile(0.03, 0.008, 0x241b12);
-  mouth.position.set(0, -0.05, 0.155);
+  const muzzle = sphere(0.12, cream, {}, 7, 5);
+  muzzle.scale.set(1.15, 0.7, 0.58);
+  muzzle.position.set(0, -0.08, 0.18);
+  head.add(muzzle);
+  for (const e of eyePair(0.12, 0.045, 0.19, 0.115, { iris: 0x20265e, irisR: 0.7 }, 0.08)) {
+    head.add(e);
+  }
+  const mouth = smile(0.045, 0.01, 0x24173b);
+  mouth.position.set(0, -0.13, 0.29);
   head.add(mouth);
-  // Curved antennae (thin tapered cyls) with plump bobble tips.
+
+  // Enormous springy stems terminate in flattened candy paddles. They remain
+  // inside `head` (not a new animation handle) to preserve the parts contract.
   for (const sx of [-1, 1]) {
-    const a = cyl(0.008, 0.02, 0.26, shellDark, 4);
-    a.position.set(sx * 0.07, 0.16, 0.04);
-    a.rotation.set(-0.6, 0, sx * 0.4);
-    head.add(a);
-    const tip = blob(0.035, shell);
-    tip.position.set(sx * 0.13, 0.32, 0.14);
-    head.add(tip);
+    head.add(segmentedHorn([
+      [sx * 0.07, 0.13, 0.0],
+      [sx * 0.12, 0.29, 0.03],
+      [sx * 0.22, 0.43, 0.1],
+    ], 0.026, 0.017, shellDark, {}, 6));
+    const pad = sphere(0.105, paddleC, {}, 7, 5);
+    pad.scale.set(0.78, 1.28, 0.5);
+    pad.position.set(sx * 0.25, 0.48, 0.12);
+    pad.rotation.z = sx * -0.26;
+    head.add(pad);
+    const dot = blob(0.035, cream);
+    dot.position.set(sx * 0.26, 0.52, 0.175);
+    head.add(dot);
   }
   g.add(head);
 
-  // Six low stubby legs, splayed outward.
   const legs: THREE.Object3D[] = [];
   for (const sz of [0.2, 0, -0.2]) {
     for (const sx of [-1, 1]) {
-      const l = legGroup(sx * 0.2, 0.16, sz, 0.03, 0.045, 0.17, shellDark, sx * 0.55);
+      const l = legGroup(sx * 0.22, 0.16, sz, 0.035, 0.05, 0.16, shellDark, sx * 0.62);
       legs.push(l);
       g.add(l);
     }
   }
 
-  const wRoll = rng();
-  if (wRoll < 0.35) {
-    // Chipped shell edge — a small notch dome pushed in.
-    const notch = sphere(0.06, shellDark, {}, 5, 4);
-    notch.position.set(0.16, 0.28, -0.18);
-    g.add(notch);
+  if (rng() < 0.35) {
+    const spot = blob(0.05, paddleC);
+    spot.position.set(0.18, 0.46, -0.12);
+    body.add(spot);
   }
   return { group: g, parts: { legs, head, body } };
 }

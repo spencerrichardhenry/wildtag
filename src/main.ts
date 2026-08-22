@@ -78,7 +78,7 @@ import {
 } from './core/quality.ts';
 import { ShadowRig, planShadows } from './world/lighting.ts';
 import { buildPostPipeline, type PostPipeline } from './world/post.ts';
-import { buildVillage, villageObstacles } from './village/buildings.ts';
+import { buildVillage, villageObstacles, updateWindmill } from './village/buildings.ts';
 import { buildCastle } from './castle/builders.ts';
 import {
   castleLayout,
@@ -1859,6 +1859,8 @@ function bootGame(): void {
     updateWater(scene, worldTime);
     // Fidelity-3: slow cloud-layer drift (one rotation write).
     updateClouds(scene, worldTime);
+    // Fidelity-3: windmill blade spin (one rotation write).
+    updateWindmill(scene, worldTime);
 
     // First-person hands (Inventory+Building Task 6) — must run before the
     // render call below since the view model is a camera child. Hidden while

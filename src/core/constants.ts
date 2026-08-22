@@ -1442,6 +1442,21 @@ export const VILLAGE = {
   },
   /** Pen beside each home (traded critters live here — Task V4). */
   pen: { w: 4, d: 3, gap: 1.4 },
+  /**
+   * Windmill (Fidelity-3): a tall landmark on the village's spawn-facing side,
+   * visible across the meadow like the reference's horizon vignette. Static
+   * tower merges with the village; the blade assembly stays one live mesh
+   * (`windmillHub`) spun by main's updateWindmill.
+   */
+  windmill: {
+    /** Distance (m) outward of the building ring. */
+    ringOffset: 14,
+    /** World angle (rad) from the village centre — ENE, toward spawn/meadow. */
+    angle: -0.55,
+    scale: 1.6,
+    /** Blade spin speed (rad/s). */
+    spinRadPerS: 0.55,
+  },
   /** Warm procedural building palette (hex) — flat-shaded Lambert. */
   colors: {
     farmhouseWall: 0xcaa87a,
@@ -1450,6 +1465,13 @@ export const VILLAGE = {
     roofFarmhouse: 0x9c4b34,
     roofBarter: 0x7a5a3a,
     roofHome: 0x8a5230,
+    /** Fidelity-3: per-home roof variety (reference vignette: red/orange/blue). */
+    roofHomeVariants: [0xb5533c, 0xd07a3f, 0x5b7fb5],
+    chimney: 0x8d8577,
+    millWall: 0xe8dcc8,
+    millRoof: 0x8a4a3a,
+    millTrim: 0x6f4d2f,
+    millBlade: 0xc9a876,
     door: 0x5a3b26,
     window: 0x8fd0e0,
     trim: 0x6b4a2f,
