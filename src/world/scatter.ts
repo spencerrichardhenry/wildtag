@@ -34,7 +34,12 @@ export type PropKind =
   | 'reed' // wetland reed cluster (no collision)
   | 'lilypad' // floating lake lily pad (no collision)
   | 'mushroom' // forest glow-mushroom cluster (no collision)
-  | 'grasstuft'; // permanent meadow ground-cover tuft (no collision; static)
+  | 'grasstuft' // permanent meadow ground-cover tuft (no collision; static)
+  // --- Fidelity-3 cluster set dressing (no collision, not harvestable) ---
+  | 'bush' // faceted ground bush (plain / berry variant)
+  | 'log' // fallen two-log cluster w/ cut-wood end caps
+  | 'toadstool' // red/yellow chunky toadstool (distinct from glow 'mushroom')
+  | 'pebbles'; // small faceted pebble cluster
 
 /**
  * A single scattered prop: gameplay `kind` + world transform (y already
@@ -74,6 +79,13 @@ const S_GRASS_ROT = 0xdddd;
 // Tree tier roll (Task 7 grandeur rescale): a second, independent channel
 // picks which tier's scale band a tree's S_SCALE roll lands in.
 const S_TIER = 0xeeee;
+// Fidelity-3 ground-cover pass: per-roll channel BASES (the roll index r is
+// added to each base — rollsPerCell is small, so the bases are spaced ≥ 16
+// apart and can never collide).
+const S_GC_ROLL = 0xc010;
+const S_GC_JX = 0xc030;
+const S_GC_JZ = 0xc050;
+const S_GC_ROT = 0xc070;
 // Cursed Castle approach mushrooms (Task 9): independent channels keyed by a
 // fixed candidate index (not a chunk grid cell — see approachMushroomsFor).
 const S_APPROACH_ANGLE = 0xf001;
@@ -102,6 +114,9 @@ function variantFor(kind: PropKind, biome: Biome, gx: number, gz: number): strin
   }
   if (kind === 'crystal') return pickVariant(SCATTER.crystalVariants, roll);
   if (kind === 'mesa') return (SCATTER.mesaVariants as Record<string, string>)[biome];
+  if (kind === 'flower') return pickVariant(SCATTER.flowerVariants, roll);
+  if (kind === 'toadstool') return pickVariant(SCATTER.toadstoolVariants, roll);
+  if (kind === 'bush') return pickVariant(SCATTER.bushVariants, roll);
   return undefined;
 }
 
@@ -341,6 +356,54 @@ export function scatterForChunk(cx: number, cz: number): PropPlacement[] {
         scale: scaleFor('grasstuft', gx, gz),
         rot: h(S_GRASS_ROT, gx, gz) * Math.PI * 2,
       });
+    }
+  }
+
+  // Fidelity-3 ground-cover pass: extra small-prop rolls per sub-cell (no
+  // collision, non-resource kinds only), appended AFTER the main/grass passes
+  // for the same index-stability reason as the tufts. Shares the per-chunk
+  // caps `counts` so `SCATTER.caps` stays the single density ceiling.
+  const gcTables = SCATTER.groundCover.tables as Record<
+    string,
+    readonly { kind: string; p: number }[]
+  >;
+  for (let r = 0; r < SCATTER.groundCover.rollsPerCell; r++) {
+    for (let j = 0; j < GRID; j++) {
+      for (let i = 0; i < GRID; i++) {
+        const gx = cx * GRID + i;
+        const gz = cz * GRID + j;
+        const jx = (h(S_GC_JX + r, gx, gz) - 0.5) * 2 * SCATTER.jitter;
+        const jz = (h(S_GC_JZ + r, gx, gz) - 0.5) * 2 * SCATTER.jitter;
+        const x = originX + (i + 0.5 + jx) * CELL;
+        const z = originZ + (j + 0.5 + jz) * CELL;
+        const biome = biomeAt(x, z);
+        const table = gcTables[biome];
+        if (!table) continue;
+        const roll = h(S_GC_ROLL + r, gx, gz);
+        let kind: PropKind | null = null;
+        for (const entry of table) {
+          if (roll < entry.p) {
+            kind = entry.kind as PropKind;
+            break;
+          }
+        }
+        if (!kind || capped(kind)) continue;
+        const y = heightAt(x, z);
+        if (y < SCATTER.minPlacementY) continue;
+        // Salted pseudo-coords give each roll its own variant/scale stream
+        // (variantFor/scaleFor hash fixed channels on their grid coords).
+        const sgx = gx + (r + 1) * 1000003;
+        out.push({
+          kind,
+          variant: variantFor(kind, biome, sgx, gz),
+          x,
+          z,
+          y,
+          scale: scaleFor(kind, sgx, gz),
+          rot: h(S_GC_ROT + r, gx, gz) * Math.PI * 2,
+        });
+        counts[kind] = (counts[kind] ?? 0) + 1;
+      }
     }
   }
 

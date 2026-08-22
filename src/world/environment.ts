@@ -176,10 +176,11 @@ function makeMountains(): THREE.Mesh {
   // occasional near-zero saddles, so the range reads as clustered irregular
   // massifs instead of a row of identical teeth. Two rows (far slightly taller
   // and lighter, offset half a step) fake overlapping ranges for depth.
-  // tint < 0 pulls toward colorLow → the taller back row reads hazier/lighter.
+  // tint < 0 pulls toward colorLow → the hazier back row; it is also SHORTER
+  // than the front row so the ring hugs the horizon instead of walling it.
   const rows = [
-    { radius: M.radius, seed: 0x30047, hScale: 1.05, tint: -0.4 },
-    { radius: M.radius * 0.94, seed: 0x7715b, hScale: 0.7, tint: 0 },
+    { radius: M.radius, seed: 0x30047, hScale: 0.62, tint: -0.5 },
+    { radius: M.radius * 0.94, seed: 0x7715b, hScale: 1.0, tint: 0 },
   ];
   for (const row of rows) {
     const rand = mulberry32(WORLD_SEED ^ row.seed);

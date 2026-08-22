@@ -151,25 +151,27 @@ describe('meadow grass tufts', () => {
     expect(a.length).toBeGreaterThan(0);
   });
 
-  it('emits grass tufts ONLY on meadow sub-cells', () => {
+  it('emits grass tufts ONLY on meadow/forest sub-cells (F3: forest floor tufts via ground cover)', () => {
     for (const c of [MEADOW, FOREST, CRAGS, { cx: 20, cz: 0 }]) {
       for (const p of scatterForChunk(c.cx, c.cz)) {
-        if (p.kind === 'grasstuft') expect(biomeAt(p.x, p.z)).toBe('meadow');
+        if (p.kind === 'grasstuft') expect(['meadow', 'forest']).toContain(biomeAt(p.x, p.z));
       }
     }
   });
 
-  it('never emits grass tufts in a forest or crags chunk', () => {
-    for (const c of [FOREST, CRAGS]) {
-      const tufts = scatterForChunk(c.cx, c.cz).filter((p) => p.kind === 'grasstuft');
-      expect(tufts.length).toBe(0);
-    }
+  it('never emits grass tufts in a crags chunk', () => {
+    const tufts = scatterForChunk(CRAGS.cx, CRAGS.cz).filter((p) => p.kind === 'grasstuft');
+    expect(tufts.length).toBe(0);
   });
 
-  it('yields ~1 tuft per meadow sub-cell (per-chunk count in the 45-64 band)', () => {
+  it('yields dense meadow tufts (dedicated pass + F3 ground-cover extras)', () => {
+    // Dedicated pass ≈ grasstuftChance × grid² (≈ 60) + ground cover ≈
+    // rollsPerCell × grid² × 0.15 (≈ 19). Hard cap: (1 + rollsPerCell) × grid².
     const tufts = scatterForChunk(MEADOW.cx, MEADOW.cz).filter((p) => p.kind === 'grasstuft');
-    expect(tufts.length).toBeGreaterThanOrEqual(45);
-    expect(tufts.length).toBeLessThanOrEqual(64); // grid² sub-cells is the hard cap
+    expect(tufts.length).toBeGreaterThanOrEqual(55);
+    expect(tufts.length).toBeLessThanOrEqual(
+      (1 + SCATTER.groundCover.rollsPerCell) * SCATTER.grid * SCATTER.grid,
+    );
   });
 
   it('grass tufts are neither obstacles nor grapple anchors nor above minPlacementY-violating', () => {

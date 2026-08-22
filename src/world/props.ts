@@ -130,27 +130,56 @@ function oct(
   g.translate(x, y, z);
   return colored(g, hex);
 }
+/** A denser faceted blob (icosahedron detail 1) for canopy-crown silhouettes. */
+function blob1(
+  r: number, hex: number, x: number, y: number, z: number, sx = 1, sy = 1, sz = 1,
+): THREE.BufferGeometry {
+  const g = new THREE.IcosahedronGeometry(r, 1);
+  g.scale(sx, sy, sz);
+  g.translate(x, y, z);
+  return colored(g, hex);
+}
+/** Lift a geometry just enough for its lowest vertex to touch y = 0. */
+function ground(g: THREE.BufferGeometry): THREE.BufferGeometry {
+  g.computeBoundingBox();
+  if (g.boundingBox) g.translate(0, -g.boundingBox.min.y, 0);
+  return g;
+}
+/** Horizontal faceted cylinder whose long axis follows X (logs / cut ends). */
+function logCyl(
+  radius: number, length: number, seg: number, hex: number, x: number, y: number, z: number,
+): THREE.BufferGeometry {
+  const g = new THREE.CylinderGeometry(radius, radius, length, seg);
+  g.rotateZ(Math.PI / 2);
+  g.translate(x, y, z);
+  return colored(g, hex);
+}
 
 // --- Trees -----------------------------------------------------------------
 
-/** Tall pine: trunk + three stacked cone tiers (~4.5m). Refined original. */
+// Fidelity-3 (drafted via codex, adapted): a chunky four-tier conifer with
+// visible trunk gaps between tiers and a lighter crown tier.
+/** Tall pine: fat trunk + four stacked cone tiers (~5.5m). */
 export function buildTree(): THREE.BufferGeometry {
   return merge([
-    cyl(0.12, 0.2, 1.4, 5, C.trunk, 0.7),
-    cone(1.2, 1.9, 7, C.pineFoliage, 1.1),
-    cone(0.9, 1.7, 7, C.pineFoliage, 2.2),
-    cone(0.55, 1.4, 7, C.pineFoliage, 3.2),
+    cyl(0.1, 0.25, 4.75, 6, C.trunk, 2.375),
+    cone(1.34, 1.25, 7, C.pineFoliage, 0.9),
+    cone(1.08, 1.15, 7, C.pineFoliage, 2.25),
+    cone(0.79, 1.0, 7, C.pineFoliage, 3.5),
+    cone(0.52, 0.92, 7, C.pineTop, 4.6),
   ]);
 }
 
-// initial draft via codex (buildBroadleaf) — adapted to merged vertex-coloured geo
-/** Broadleaf dome: trunk + three overlapping blobby canopy spheres (~4m). */
+// Fidelity-3 (drafted via codex, adapted): fat tapered trunk + a 5-lobe blobby
+// crown at icosahedron detail 1, lighter on the top lobe.
+/** Broadleaf dome: trunk + overlapping faceted canopy lobes (~5.1m). */
 function buildBroadleaf(): THREE.BufferGeometry {
   return merge([
-    cyl(0.16, 0.26, 2.4, 6, C.trunk, 1.2),
-    blob(0.85, C.broadleaf, -0.45, 2.95, 0.05, 1.05, 0.95, 1.05),
-    blob(0.8, C.broadleaf, 0.42, 3.05, -0.08, 1, 1, 1),
-    blob(0.9, C.broadleaf, 0.02, 3.55, 0.12, 1, 1, 1),
+    cyl(0.23, 0.36, 2.75, 6, C.trunk, 1.375),
+    blob1(1.08, C.canopyLow, -0.62, 3.62, 0.18, 1.08, 0.88, 1.02),
+    blob1(1.02, C.canopyLow, 0.58, 3.68, -0.12, 1.08, 0.92, 1.08),
+    blob1(0.96, C.canopyLow, -0.02, 3.58, -0.68, 1.06, 0.9, 1.02),
+    blob1(1.08, C.canopyHigh, 0.04, 4.18, 0.1, 1.08, 0.96, 1.04),
   ]);
 }
 
@@ -165,13 +194,18 @@ function buildSnag(): THREE.BufferGeometry {
   return merge([cyl(0.1, 0.22, 2.6, 5, C.snag, 1.3), colored(b1, C.snag), colored(b2, C.snag)]);
 }
 
-/** Lone oak-ish: thick trunk + broad rounded canopy (built big; rare in meadow). */
+// Fidelity-3 (drafted via codex, adapted): squat & wide, 6 lobes; instance
+// scaling carries the giant tier.
+/** Lone oak-ish: thick trunk + broad multi-lobe canopy (~4.6m; rare in meadow). */
 function buildOak(): THREE.BufferGeometry {
   return merge([
-    cyl(0.28, 0.45, 2.2, 6, C.trunk, 1.1),
-    blob(1.5, C.oakLeaf, 0, 3.3, 0, 1.2, 0.9, 1.2),
-    blob(1.1, C.oakLeaf, -0.9, 3.0, 0.3, 1, 1, 1),
-    blob(1.1, C.oakLeaf, 0.9, 3.1, -0.3, 1, 1, 1),
+    cyl(0.32, 0.5, 2.35, 6, C.trunk, 1.175),
+    blob1(1.28, C.canopyLow, -0.92, 3.02, 0.18, 1.15, 0.78, 1.08),
+    blob1(1.25, C.canopyLow, 0.9, 3.0, -0.18, 1.16, 0.8, 1.08),
+    blob1(1.2, C.canopyLow, 0.02, 3.1, 0.82, 1.1, 0.8, 1.12),
+    blob1(1.24, C.canopyLow, -0.02, 3.22, -0.72, 1.12, 0.82, 1.1),
+    blob(1.02, C.canopyHigh, -0.42, 3.78, -0.04, 1.12, 0.86, 1.05),
+    blob(0.98, C.canopyHigh, 0.48, 3.72, 0.1, 1.12, 0.86, 1.08),
   ]);
 }
 
@@ -354,50 +388,163 @@ function buildMushroom(): THREE.BufferGeometry {
 }
 
 /**
- * Permanent meadow grass tuft: a small fan of three crossed TAPERED blades
- * (trapezoid strips whose tips narrow to ~15% of the base width), each with a
- * fixed height in a ±35% band and a slight outward lean, so the silhouette
- * reads as a grass clump rather than crossed cards. The vertex colour bakes a
- * GREYSCALE root→tip ramp (0.8 dark root → 1.1 bright tip); the actual green
- * is supplied per instance by the batch colour (setColorAt), which multiplies
- * the ramp — every tuft gets a hash-jittered meadow-green while keeping the
- * darker-base/lighter-tip shading. Static (no wind shader); builder rng-free.
+ * Fidelity-3: a solid CONE blade for the fountain tuft below — the flat
+ * crossed-quad blades read as slabs up close (known F2 followup). Bakes the
+ * greyscale root→tip ramp contract the old blade tuft established (the
+ * per-instance batch green multiplies it — see grasstuftColor), at face
+ * granularity so the two-tone stays crisp. Tips bake >1 deliberately:
+ * near-vertical faces receive far less direct sun than the terrain, so
+ * without the lift tufts render as dark cutouts against the meadow.
  */
-function grasstuftBlade(rotY: number, h: number, lean: number): THREE.BufferGeometry {
-  const p = new THREE.PlaneGeometry(0.34, h, 1, 3);
-  p.translate(0, h / 2, 0); // base at y = 0
-  // Taper: narrow linearly toward the tip (tip width ≈ 15% of the base).
-  const raw = p.getAttribute('position');
-  for (let i = 0; i < raw.count; i++) {
-    const t = clamp01(raw.getY(i) / h);
-    raw.setX(i, raw.getX(i) * (1 - 0.85 * t));
-  }
-  p.rotateX(lean); // pivot at the base: the tip leans outward
-  p.rotateY(rotY);
-  const g = p.toNonIndexed();
+function tuftCone(
+  radius: number, height: number, azimuth: number, lean: number, x: number, z: number,
+): THREE.BufferGeometry {
+  const raw = new THREE.ConeGeometry(radius, height, 4, 2);
+  raw.translate(0, height / 2, 0);
+  const g = raw.toNonIndexed();
   const pos = g.getAttribute('position');
   const col = new Float32Array(pos.count * 3);
-  for (let i = 0; i < pos.count; i++) {
-    // 0.95 (root) → 1.35 (tip): a grey ramp the per-instance green multiplies.
-    // Deliberately >1 toward the tip: near-vertical faces receive far less
-    // direct sun than the upward-facing terrain (and the back half of the
-    // double-sided blades none), so without this lift the tufts render as
-    // dark cutouts against the meadow instead of blending into it.
-    const v = 0.95 + clamp01(pos.getY(i) / h) * 0.4;
-    col[i * 3] = v;
-    col[i * 3 + 1] = v;
-    col[i * 3 + 2] = v;
+  for (let i = 0; i < pos.count; i += 3) {
+    const meanY = (pos.getY(i)! + pos.getY(i + 1)! + pos.getY(i + 2)!) / 3;
+    // Root band 0.95 → tip band 1.3 (same "lift the tips" rationale as the
+    // old blade ramp — see grasstuftBlade's comment).
+    const v = meanY <= height * 0.5 ? 0.95 : 1.3;
+    for (let j = 0; j < 3; j++) {
+      col[(i + j) * 3] = v;
+      col[(i + j) * 3 + 1] = v;
+      col[(i + j) * 3 + 2] = v;
+    }
   }
   g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  g.rotateZ(lean);
+  g.rotateY(azimuth);
+  ground(g);
+  g.translate(x, 0, z);
   return g;
 }
+
 function buildGrasstuft(): THREE.BufferGeometry {
-  // Three blades fanned at 60°, heights spanning ±35% about ~0.45 m, leans
-  // alternating so no two tips point the same way.
+  // Eight cones splayed like a fountain (~0.5m) — reads as a grass clump from
+  // 2m away instead of crossed cards.
+  const cfg: ReadonlyArray<readonly [number, number, number, number, number, number]> = [
+    [0.06, 0.5, 0, 0.08, 0, 0],
+    [0.057, 0.43, 0.78, 0.25, 0.01, 0.015],
+    [0.052, 0.38, 1.56, 0.31, -0.01, 0],
+    [0.055, 0.46, 2.34, 0.22, 0, -0.015],
+    [0.06, 0.4, 3.12, 0.3, 0.015, 0],
+    [0.05, 0.34, 3.9, 0.35, -0.01, 0.01],
+    [0.055, 0.44, 4.68, 0.23, 0, 0],
+    [0.048, 0.29, 5.46, 0.38, 0.01, -0.01],
+  ];
+  return merge(cfg.map(([r, hgt, az, lean, x, z]) => tuftCone(r, hgt, az, lean, x, z)));
+}
+
+// --- Fidelity-3 cluster set dressing (drafted via codex, adapted) -----------
+
+function flowerLeaf(x: number, y: number, z: number, yaw: number): THREE.BufferGeometry {
+  const g = new THREE.BoxGeometry(0.15, 0.035, 0.075);
+  g.rotateZ(0.42);
+  g.rotateY(yaw);
+  g.translate(x + Math.cos(yaw) * 0.07, y, z - Math.sin(yaw) * 0.07);
+  return colored(g, C.flowerStem);
+}
+
+function flowerHead(
+  color: number, centerColor: number, x: number, y: number, z: number, yaw: number,
+): THREE.BufferGeometry[] {
+  const parts: THREE.BufferGeometry[] = [];
+  for (let i = 0; i < 5; i++) {
+    const a = yaw + (i / 5) * TAU;
+    parts.push(
+      box(0.18, 0.045, 0.085, color, x + Math.cos(a) * 0.095, y, z + Math.sin(a) * 0.095, -a),
+    );
+  }
+  parts.push(blob(0.07, centerColor, x, y + 0.035, z, 1, 0.72, 1));
+  return parts;
+}
+
+/** Three chunky-petal flowers in a tight clump (~0.49m). */
+function buildFlowerPatch(color: number): THREE.BufferGeometry {
+  const specs = [
+    { x: -0.12, z: 0.04, height: 0.36, yaw: 0.18 },
+    { x: 0.13, z: 0.07, height: 0.4, yaw: 1.05 },
+    { x: 0.02, z: -0.13, height: 0.34, yaw: 2.2 },
+  ];
+  const centerColor = color === C.flowerYellow ? C.flowerCenterAlt : C.flowerCenter;
+  const parts: THREE.BufferGeometry[] = [];
+  for (const f of specs) {
+    const stem = new THREE.CylinderGeometry(0.014, 0.024, f.height, 4);
+    stem.translate(f.x, f.height / 2, f.z);
+    parts.push(colored(stem, C.flowerStem), flowerLeaf(f.x, f.height * 0.5, f.z, f.yaw + 0.35));
+    parts.push(...flowerHead(color, centerColor, f.x, f.height + 0.01, f.z, f.yaw));
+  }
+  return merge(parts);
+}
+
+/** Chunky toadstool: fat cream stem, wide faceted cap with an underside rim (~0.51m). */
+function buildToadstool(capColor: number): THREE.BufferGeometry {
+  const dome = new THREE.SphereGeometry(1, 7, 3, 0, TAU, 0, Math.PI / 2);
+  dome.scale(0.33, 0.19, 0.33);
+  dome.translate(0, 0.32, 0);
+  const rim = new THREE.CylinderGeometry(0.27, 0.31, 0.055, 7);
+  rim.translate(0, 0.3075, 0);
   return merge([
-    grasstuftBlade(0, 0.46, 0.16),
-    grasstuftBlade(Math.PI / 3, 0.32, -0.22),
-    grasstuftBlade((2 * Math.PI) / 3, 0.58, 0.1),
+    cyl(0.085, 0.125, 0.31, 6, C.toadstoolStem, 0.155),
+    colored(rim, C.toadstoolRim),
+    colored(dome, capColor),
+  ]);
+}
+
+function bushLobes(): THREE.BufferGeometry[] {
+  return [
+    ground(blob(0.7, C.bush, -0.2, 0, 0.02, 1.08, 1, 1.02)),
+    ground(blob(0.62, C.bush, 0.42, 0, 0.08, 1, 0.9, 1.04)),
+    ground(blob(0.56, C.bush, 0.06, 0, -0.4, 1.06, 0.95, 1)),
+  ];
+}
+
+/** Fat three-lobe ground bush (~1.2m). */
+function buildBush(): THREE.BufferGeometry {
+  return merge(bushLobes());
+}
+
+/** Berry-dotted ground bush (~1.2m). */
+function buildBushBerry(): THREE.BufferGeometry {
+  return merge([
+    ...bushLobes(),
+    blob(0.075, C.bushBerry, -0.55, 0.67, 0.28),
+    blob(0.07, C.bushBerry, -0.12, 0.91, 0.4),
+    blob(0.075, C.bushBerry, 0.38, 0.77, 0.43),
+    blob(0.065, C.bushBerry, 0.69, 0.55, 0.05),
+    blob(0.07, C.bushBerry, 0.21, 0.93, -0.28),
+    blob(0.065, C.bushBerry, -0.42, 0.72, -0.36),
+  ]);
+}
+
+/** Fallen two-log cluster with lighter cut-wood end caps (~2.2m long). */
+function buildLog(): THREE.BufferGeometry {
+  const stub = new THREE.CylinderGeometry(0.065, 0.11, 0.48, 5);
+  stub.rotateZ(-0.48);
+  stub.rotateX(0.18);
+  stub.translate(0.23, 0.54, -0.03);
+  return merge([
+    logCyl(0.3, 2.2, 7, C.logBark, 0, 0.3, 0),
+    logCyl(0.25, 0.026, 7, C.logCut, -1.106, 0.3, 0),
+    logCyl(0.25, 0.026, 7, C.logCut, 1.106, 0.3, 0),
+    colored(stub, C.logBark),
+    logCyl(0.17, 1.24, 6, C.logBark, 0.18, 0.11, 0.52),
+    logCyl(0.135, 0.022, 6, C.logCut, -0.451, 0.11, 0.52),
+    logCyl(0.135, 0.022, 6, C.logCut, 0.811, 0.11, 0.52),
+  ]);
+}
+
+/** Four-piece faceted pebble cluster (~0.3m). */
+function buildPebbleCluster(): THREE.BufferGeometry {
+  return merge([
+    ground(blob(0.2, C.pebble, -0.18, 0, 0.02, 1.25, 0.85, 1.05)),
+    ground(blob(0.15, C.pebble, 0.18, 0, 0.09, 1.1, 0.78, 0.95)),
+    ground(blob(0.12, C.pebble, 0.04, 0, -0.2, 1.28, 0.74, 1.0)),
+    ground(oct(0.12, C.pebble, 0.31, 0, -0.13, 1.05, 0.7, 0.9)),
   ]);
 }
 
@@ -487,11 +634,22 @@ const BUILDERS: Record<string, () => THREE.BufferGeometry> = {
   crystalB: buildCrystalB,
   crystalC: buildCrystalC,
   // small props / resources
-  flower: buildFlower,
+  flower: buildFlower, // defensive fallback (flower variants below)
   fiber: buildFiber,
   resin: buildResin,
   shard: buildShard,
   spark: buildSpark,
+  // Fidelity-3 cluster set dressing
+  flowerPink: () => buildFlowerPatch(C.flowerPink),
+  flowerYellow: () => buildFlowerPatch(C.flowerYellow),
+  flowerBlue: () => buildFlowerPatch(C.flowerBlue),
+  toadstool: () => buildToadstool(C.toadstoolRed), // defensive fallback
+  toadstoolRed: () => buildToadstool(C.toadstoolRed),
+  toadstoolYellow: () => buildToadstool(C.toadstoolYellow),
+  bush: buildBush,
+  bushBerry: buildBushBerry,
+  log: buildLog,
+  pebbles: buildPebbleCluster,
 };
 
 // Emissive buckets get a glow lift (color, intensity); the spark is fully unlit
@@ -511,7 +669,7 @@ const DOUBLE_SIDED = new Set<string>(['grasstuft', 'lilypad']);
 
 // Per-bucket roughness for the Standard-material path (medium+). Rocks/mesas are
 // matte, trees a touch smoother, crystals slick; everything else is foliage.
-const ROCK_BUCKETS = new Set<string>(['rock', 'mesa', 'rib', 'boulder', 'scree']);
+const ROCK_BUCKETS = new Set<string>(['rock', 'mesa', 'rib', 'boulder', 'scree', 'pebbles']);
 const TREE_BUCKETS = new Set<string>([
   'pine', 'broadleaf', 'snag', 'oak', 'shrub', 'windpine', 'boulderpine', 'willow', 'juniper', 'tree',
 ]);
@@ -632,9 +790,12 @@ function compose(x: number, y: number, z: number, rot: number, scale: number): T
 // (doubling via setInstanceCount) only if a denser region overflows it.
 // ---------------------------------------------------------------------------
 const BATCH_INITIAL_INSTANCES = 512;
-/** Vertex storage per group: geometries are stored once (instances share them). */
-const BATCH_VERTS_STANDARD = 32768;
-const BATCH_VERTS_SMALL = 4096;
+/** Vertex storage per group: geometries are stored once (instances share them).
+ *  Fidelity-3 doubled the standard store — the cluster props (flower patches ×3
+ *  colours, bushes, logs, pebbles, toadstools ×2) plus the detail-1 canopy
+ *  lobes add ~9k shared verts, overflowing the old 32768 budget's headroom. */
+const BATCH_VERTS_STANDARD = 65536;
+const BATCH_VERTS_SMALL = 8192;
 
 /** Material-group key for a bucket (one BatchedMesh + material per key). */
 function materialGroup(bucket: string): string {

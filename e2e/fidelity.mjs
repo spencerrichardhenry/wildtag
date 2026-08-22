@@ -128,18 +128,22 @@ async function openPage(query, { waitForGame = true } = {}) {
   return page;
 }
 
-/** Teleport, settle onto real ground (timeScale-boosted), then aim. */
+/** Teleport straight to ground height (+eye) via __game.groundY — exact and
+ *  immune to the SwiftShader stalls that made fall-and-settle flaky. Gravity
+ *  keeps acting after a teleport, so elevated (`eye`) poses are re-pinned
+ *  right before the caller screenshots (the player would otherwise have
+ *  fallen to the ground during the streaming wait — a probe artifact that
+ *  once masqueraded as a rendering bug). */
 async function frame(page, { x, z, yaw = 0, pitch = 0, eye = 0 }) {
-  await page.evaluate(([xx, zz]) => window.__game.player.teleport(xx, 250, zz), [x, z]);
-  await page.evaluate(() => window.__game.setTimeScale(8));
-  await sleep(1400);
-  await page.evaluate(() => window.__game.setTimeScale(1));
-  if (eye > 0) {
-    const p = await page.evaluate(() => window.__game.player.pos());
-    await page.evaluate(([xx, yy, zz]) => window.__game.player.teleport(xx, yy, zz), [x, p.y + eye, z]);
-  }
+  const place = () =>
+    page.evaluate(([xx, zz, ee]) => {
+      const y = window.__game.groundY(xx, zz);
+      window.__game.player.teleport(xx, y + 0.1 + ee, zz);
+    }, [x, z, eye]);
+  await place();
   await page.evaluate(([yw, pt]) => window.__game.setLook(yw, pt), [yaw, pitch]);
-  await sleep(1800); // stream chunks/props at the new spot
+  await sleep(2400); // stream chunks/props at the new spot
+  if (eye > 0) await place(); // re-pin: the wait let gravity pull the pose down
 }
 
 const shot = (page, name) => page.screenshot({ path: join(SHOT_DIR, `${name}.png`) });
@@ -161,7 +165,9 @@ const SNIPS = [
     name: 'meadow-ground',
     note: 'Near-field scatter density: grass tufts, flowers, mushrooms, small rocks.',
     run: async (page) => {
-      await frame(page, { x: 150, z: 60, yaw: 0.6, pitch: -0.42 });
+      // Off-path pose (route 3 passes ~(150, 57)) — standing ON a corridor
+      // reads as an empty ring since scatter is path-suppressed by design.
+      await frame(page, { x: 140, z: 34, yaw: 0.6, pitch: -0.3 });
       await shot(page, 'meadow-ground');
     },
   },

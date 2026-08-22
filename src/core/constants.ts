@@ -534,22 +534,35 @@ export const SCATTER = {
    * add) so a spawn-area sample stays within ~1.5× the pre-F2 instance total.
    */
   biomeScatter: {
+    // Fidelity-3 density pass: the reference meadow reads BUSY — most sub-cells
+    // occupied, and the small props are pre-built CLUSTERS (a 3-flower patch,
+    // a 4-pebble cluster, a 2-log pile) so per-slot density multiplies.
     meadow: [
-      { kind: 'tree', p: 0.03 }, // rare lone oak / flowering shrub
-      { kind: 'boulder', p: 0.045 }, // rare glacial erratic
-      { kind: 'flower', p: 0.25 },
-      { kind: 'fiber', p: 0.4 },
+      { kind: 'tree', p: 0.06 }, // broadleaf / lone oak
+      { kind: 'boulder', p: 0.075 }, // rare glacial erratic
+      { kind: 'bush', p: 0.17 }, // faceted green lobes (+ berry variant)
+      { kind: 'log', p: 0.195 }, // fallen two-log cluster
+      { kind: 'toadstool', p: 0.225 }, // red/yellow set-dressing caps
+      { kind: 'pebbles', p: 0.295 }, // small faceted rock clusters
+      { kind: 'flower', p: 0.58 }, // pink/yellow/blue patch clusters
+      { kind: 'fiber', p: 0.7 },
     ],
     forest: [
-      { kind: 'tree', p: 0.22 }, // pine / broadleaf dome / dead snag
-      { kind: 'mushroom', p: 0.25 }, // glow-mushroom clusters
-      { kind: 'flower', p: 0.3 },
+      { kind: 'tree', p: 0.3 }, // pine / broadleaf dome / dead snag
+      { kind: 'mushroom', p: 0.33 }, // glow-mushroom clusters (harvestable)
+      { kind: 'bush', p: 0.4 },
+      { kind: 'log', p: 0.44 },
+      { kind: 'toadstool', p: 0.47 },
+      { kind: 'flower', p: 0.58 },
+      { kind: 'pebbles', p: 0.62 },
     ],
     wetland: [
-      { kind: 'reed', p: 0.14 },
-      { kind: 'tree', p: 0.17 }, // drooping willow
-      { kind: 'flower', p: 0.32 },
-      { kind: 'fiber', p: 0.46 },
+      { kind: 'reed', p: 0.16 },
+      { kind: 'tree', p: 0.19 }, // drooping willow
+      { kind: 'bush', p: 0.24 },
+      { kind: 'flower', p: 0.38 },
+      { kind: 'fiber', p: 0.5 },
+      { kind: 'log', p: 0.53 },
     ],
     crags: [
       { kind: 'tree', p: 0.03 }, // rare gnarled juniper snag
@@ -559,15 +572,19 @@ export const SCATTER = {
       { kind: 'crystal', p: 0.31 },
       { kind: 'shard', p: 0.37 },
       { kind: 'scree', p: 0.47 },
+      { kind: 'pebbles', p: 0.55 },
     ],
     highlands: [
-      { kind: 'tree', p: 0.05 }, // wind-bent pine / boulder-pine cluster
-      { kind: 'boulder', p: 0.09 },
-      { kind: 'mesa', p: 0.12 }, // elongated rock ribs
-      { kind: 'rock', p: 0.22 },
-      { kind: 'crystal', p: 0.3 },
-      { kind: 'shard', p: 0.36 },
-      { kind: 'scree', p: 0.44 },
+      { kind: 'tree', p: 0.07 }, // wind-bent pine / boulder-pine cluster
+      { kind: 'boulder', p: 0.11 },
+      { kind: 'mesa', p: 0.14 }, // elongated rock ribs
+      { kind: 'rock', p: 0.24 },
+      { kind: 'crystal', p: 0.32 },
+      { kind: 'shard', p: 0.38 },
+      { kind: 'scree', p: 0.46 },
+      { kind: 'bush', p: 0.52 },
+      { kind: 'pebbles', p: 0.58 },
+      { kind: 'flower', p: 0.64 },
     ],
   },
 
@@ -583,7 +600,7 @@ export const SCATTER = {
       { v: 'snag', p: 1 },
     ],
     meadow: [
-      { v: 'shrub', p: 0.7 },
+      { v: 'broadleaf', p: 0.55 },
       { v: 'oak', p: 1 },
     ],
     highlands: [
@@ -604,6 +621,57 @@ export const SCATTER = {
   /** Mesa formation flavour per biome: crag slab mesa vs highlands rock rib. */
   mesaVariants: { crags: 'mesa', highlands: 'rib' },
 
+  /** Flower patch colour variants (cumulative roll on S_VARIANT). */
+  flowerVariants: [
+    { v: 'flowerPink', p: 0.45 },
+    { v: 'flowerYellow', p: 0.75 },
+    { v: 'flowerBlue', p: 1 },
+  ],
+  /** Toadstool cap variants. */
+  toadstoolVariants: [
+    { v: 'toadstoolRed', p: 0.7 },
+    { v: 'toadstoolYellow', p: 1 },
+  ],
+  /** Ground-bush variants (plain vs berry-dotted). */
+  bushVariants: [
+    { v: 'bush', p: 0.72 },
+    { v: 'bushBerry', p: 1 },
+  ],
+
+  /**
+   * Fidelity-3 ground-cover pass: EXTRA small-prop rolls per sub-cell, on top
+   * of the main one-prop-per-cell lattice, so the near field reads as busy as
+   * the style reference. Independent hash channels, appended after the grass
+   * pass (same index-stability rationale); only no-collision, non-resource
+   * kinds are allowed here, and the shared per-chunk caps still apply.
+   */
+  groundCover: {
+    rollsPerCell: 3,
+    tables: {
+      meadow: [
+        { kind: 'grasstuft', p: 0.25 },
+        { kind: 'flower', p: 0.5 },
+        { kind: 'toadstool', p: 0.56 },
+        { kind: 'pebbles', p: 0.64 },
+      ],
+      forest: [
+        { kind: 'grasstuft', p: 0.16 },
+        { kind: 'toadstool', p: 0.26 },
+        { kind: 'flower', p: 0.36 },
+        { kind: 'pebbles', p: 0.44 },
+      ],
+      wetland: [
+        { kind: 'reed', p: 0.14 },
+        { kind: 'flower', p: 0.24 },
+      ],
+      highlands: [
+        { kind: 'pebbles', p: 0.14 },
+        { kind: 'flower', p: 0.2 },
+      ],
+      crags: [{ kind: 'pebbles', p: 0.16 }],
+    },
+  },
+
   /** Chance a wetland-lake water sub-cell floats a lily pad. */
   lilypadChance: 0.5,
   /** Max shallow-water depth (m below sea) that still reads as a lily-pad lake. */
@@ -611,10 +679,10 @@ export const SCATTER = {
 
   /** Hard per-chunk instance cap per kind — variety over density. */
   caps: {
-    tree: 16,
+    tree: 20,
     rock: 30,
     crystal: 20,
-    flower: 28,
+    flower: 40,
     fiber: 28,
     mesa: 4,
     boulder: 8,
@@ -623,6 +691,11 @@ export const SCATTER = {
     lilypad: 18,
     mushroom: 8,
     shard: 18,
+    // Fidelity-3 cluster props (all capped so the perf liveBound covers them).
+    bush: 16,
+    log: 8,
+    toadstool: 10,
+    pebbles: 18,
   },
 
   /**
@@ -634,7 +707,7 @@ export const SCATTER = {
   scale: {
     rock: [0.6, 1.5],
     crystal: [0.5, 1.15],
-    flower: [0.7, 1.3],
+    flower: [0.9, 1.5],
     fiber: [0.7, 1.2],
     resin: [0.7, 1.1],
     shard: [0.7, 1.35],
@@ -645,8 +718,13 @@ export const SCATTER = {
     reed: [0.8, 1.3],
     lilypad: [0.7, 1.4],
     mushroom: [0.7, 1.2],
-    /** Grass tufts: ±25% scale jitter about 1.0. */
-    grasstuft: [0.75, 1.25],
+    /** Grass tufts: Fidelity-3 sized up — clumps must read from eye level. */
+    grasstuft: [1.05, 1.7],
+    // Fidelity-3 cluster props.
+    bush: [0.8, 1.45],
+    log: [0.8, 1.3],
+    toadstool: [0.8, 1.4],
+    pebbles: [0.8, 1.5],
   },
 
   /**
@@ -666,8 +744,27 @@ export const SCATTER = {
 
   /** Per-kind base colours (hex) for flat-shaded instanced meshes. */
   colors: {
-    trunk: 0x6b4a2f,
+    trunk: 0x6f4d2f,
     foliage: 0x2f6d3a,
+    // --- Fidelity-3 palette (sampled off the style reference) ---
+    canopyLow: 0x4e8c3a,
+    canopyHigh: 0x669b45,
+    pineTop: 0x43815a,
+    flowerPink: 0xea5f77,
+    flowerYellow: 0xf2c744,
+    flowerBlue: 0x5b7fe8,
+    flowerCenter: 0xf2c744,
+    flowerCenterAlt: 0xe7842f,
+    flowerStem: 0x3f7a35,
+    toadstoolRed: 0xd95f4c,
+    toadstoolYellow: 0xe8a83c,
+    toadstoolStem: 0xefe5d0,
+    toadstoolRim: 0xd5c6aa,
+    bush: 0x4e8c3a,
+    bushBerry: 0xd95f4c,
+    logBark: 0x795635,
+    logCut: 0xc9a876,
+    pebble: 0x7b828c,
     rock: 0x8b8378,
     crystal: 0x7fb0d8,
     flower: 0xe27ba8,
@@ -697,7 +794,9 @@ export const SCATTER = {
     /** Meadow grass-tuft base green: ENV.biomeColors.meadow (0x7fb069) darkened
      *  ~8% so tufts blend into the terrain as texture (per-instance yellowed→
      *  deeper-green jitter applied in props). */
-    grassTuft: 0x75a261,
+    /** Darker + more saturated than the meadow ground so clumps READ against
+     *  it (matching-green tufts camouflage into invisibility). */
+    grassTuft: 0x4f9433,
     crystalA: 0x7fb0d8,
     crystalB: 0x9d86e0,
     crystalC: 0x6fd8c0,
@@ -727,8 +826,9 @@ export const PATHS = {
   /** Terrain color lerps toward `color` by mask × this strength. */
   colorStrength: 0.82,
   color: 0xd3a668,
-  /** Scatter placements are dropped where mask ≥ this. */
-  scatterMaskThreshold: 0.25,
+  /** Scatter placements are dropped where mask ≥ this (higher = props hug
+   *  the trail edge more closely, like the reference's flower-lined path). */
+  scatterMaskThreshold: 0.55,
   /**
    * Waypoint routes ([x, z] world coords): spawn plaza → Haven village,
    * village → the forest border, spawn → the east meadow, spawn → the
@@ -856,11 +956,11 @@ export const ENV = {
     radius: 1005,
     /** Ridge sample count around the full circle (2 verts per sample). */
     segments: 96,
-    minH: 60,
-    maxH: 200,
+    minH: 45,
+    maxH: 150,
     baseY: -40,
-    colorLow: 0x8fc0cc,
-    colorHigh: 0x5f9cb4,
+    colorLow: 0x9fccd6,
+    colorHigh: 0x679fb6,
   },
 
   /**

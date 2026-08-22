@@ -131,21 +131,31 @@ describe('perf: instance-pool alloc/free churn', () => {
     // would keep doubling the buffers far past this.
     const span = 2 * SCATTER.radius + 1;
     const residentChunks = span * span; // ≤ 81 chunks ever resident at once
-    // Per-chunk instance ceiling: the densest capped prop, OR — for the 'double'
-    // batch (grass tufts + lily pads) — the uncapped meadow grass tufts, which
-    // place up to one per sub-cell (grid²). Bound live count against whichever
-    // is larger so uncapped ground cover doesn't false-trip the leak guard.
-    const perChunkMax = Math.max(...Object.values(SCATTER.caps), SCATTER.grid * SCATTER.grid);
+    // Per-chunk instance ceiling for ONE BATCH. The 'standard' batch aggregates
+    // every non-emissive kind, so its worst case is the full main lattice
+    // (grid² sub-cells, one prop each) plus the Fidelity-3 ground-cover pass
+    // (rollsPerCell more per sub-cell); the 'double' batch's worst case is the
+    // uncapped one-tuft-per-sub-cell grass pass (grid²). The leak guard proper
+    // is the statsA === statsB plateau above — these are scale sanity bounds.
+    const cells = SCATTER.grid * SCATTER.grid;
+    const perChunkMax = Math.max(
+      ...Object.values(SCATTER.caps),
+      cells * (1 + SCATTER.groundCover.rollsPerCell),
+    );
     const liveBound = perChunkMax * residentChunks;
     for (const [key, s] of Object.entries(statsB)) {
       expect(
         s.live,
         `batch "${key}" live count ${s.live} exceeds one-neighborhood scale (${liveBound})`,
       ).toBeLessThanOrEqual(liveBound);
+      // Doubling growth from 512 can land one power of two above peak live
+      // (Fidelity-3's ground-cover pass puts the meadow 'standard' batch's
+      // realistic peak just under 8192 → capacity 8192; the next doubling —
+      // 16384 — would indicate roam-distance growth, i.e. a leak).
       expect(
         s.capacity,
         `batch "${key}" capacity ${s.capacity} scales with roam distance`,
-      ).toBeLessThanOrEqual(8192);
+      ).toBeLessThanOrEqual(16384);
     }
     // Sanity: the walk actually placed props (the assertions above aren't vacuous).
     expect(Math.max(...Object.values(statsB).map((s) => s.live))).toBeGreaterThan(0);

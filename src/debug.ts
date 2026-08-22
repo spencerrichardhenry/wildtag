@@ -191,6 +191,12 @@ export interface GameDebugHandle {
    */
   setLook(yaw: number, pitch: number): void;
   /**
+   * Debug-only: the composed ground height (terrain ∨ build tops) at (x, z) —
+   * lets e2e place the camera at an exact eye height instead of the flaky
+   * teleport-and-settle fall (SwiftShader freezes false-trigger settle polls).
+   */
+  groundY(x: number, z: number): number;
+  /**
    * Jump the day/night clock to a named phase's START, or to an absolute
    * seconds position within the cycle (Cursed Castle Task 5 e2e verification:
    * `__game.setTimeOfDay('night')` should immediately read as dark).
@@ -398,6 +404,11 @@ export function buildDebugHandle(deps: DebugDeps): GameDebugHandle {
       deps.input.yaw = yaw;
       const clamp = INPUT.pitchClamp;
       deps.input.pitch = Math.max(-clamp, Math.min(clamp, pitch));
+    },
+
+    /** Composed ground height at (x, z) (e2e fidelity snips). */
+    groundY(x: number, z: number): number {
+      return deps.ground.heightAt(x, z);
     },
 
     /**
