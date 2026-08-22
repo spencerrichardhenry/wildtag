@@ -94,6 +94,10 @@ describe.skipIf(Boolean(process.env.CI))('perf: chunk-build benchmark', () => {
 });
 
 describe('perf: instance-pool alloc/free churn', () => {
+  // This is a deterministic leak/correctness simulation, not a wall-clock
+  // benchmark, so it still belongs in CI. It deliberately streams hundreds
+  // of chunk neighborhoods and needs more than Vitest's 5 s default on a
+  // shared runner (the deployment runner measured about 9 s).
   it('walks ~80 chunk neighborhoods and back: pools plateau, re-entered chunks render', () => {
     const scene = new THREE.Scene();
     const props = new PropManager(scene);
@@ -178,5 +182,5 @@ describe('perf: instance-pool alloc/free churn', () => {
     }
 
     props.dispose();
-  });
+  }, 30_000);
 });
