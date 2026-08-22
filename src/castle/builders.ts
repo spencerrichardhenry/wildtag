@@ -50,6 +50,126 @@ function cone(r: number, h: number, color: number, opts: MatOpts = {}): THREE.Me
   return mesh;
 }
 
+/** A double-sided, slightly folded cloth pennant. Castle meshes are merged
+ * into a front-sided material, so both windings are authored explicitly. */
+function clothPennant(w: number, h: number, color: number, torn: boolean): THREE.Mesh {
+  const bottom = torn
+    ? [
+        [-w / 2, -h * 0.34, 0],
+        [-w * 0.2, -h / 2, 0.035],
+        [0.02, -h * 0.31, -0.025],
+        [w * 0.25, -h * 0.47, 0.025],
+        [w / 2, -h * 0.29, 0],
+      ]
+    : [
+        [-w / 2, -h * 0.4, 0],
+        [0, -h / 2, 0.04],
+        [w / 2, -h * 0.4, 0],
+      ];
+  const polygon = [
+    [-w / 2, h / 2, 0],
+    [w / 2, h / 2, 0],
+    ...bottom.slice().reverse(),
+  ];
+  const positions: number[] = [];
+  const uvs: number[] = [];
+  for (let i = 1; i < polygon.length - 1; i++) {
+    const tri = [polygon[0]!, polygon[i]!, polygon[i + 1]!];
+    for (const p of tri) {
+      positions.push(p[0]!, p[1]!, p[2]!);
+      uvs.push(p[0]! / w + 0.5, p[1]! / h + 0.5);
+    }
+    for (const p of tri.slice().reverse()) {
+      positions.push(p[0]!, p[1]!, p[2]!);
+      uvs.push(p[0]! / w + 0.5, p[1]! / h + 0.5);
+    }
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  geometry.computeVertexNormals();
+  return new THREE.Mesh(geometry, mat(color));
+}
+
+interface StoneRunOpts {
+  /** Chunky horizontal courses; 2 is enough for low ward walls, 4+ for keeps. */
+  courses?: number;
+  /** Alternating corner blocks at each end of the run. */
+  quoins?: boolean;
+}
+
+/** Storybook masonry over an unchanged wall footprint: stacked two-tone
+ * courses, shallow shadow joints, a foundation/cap course and optional
+ * endpoint quoins. All pieces still collapse into the castle's static bucket. */
+function addStoneRun(
+  root: THREE.Group,
+  x1: number,
+  z1: number,
+  x2: number,
+  z2: number,
+  thickness: number,
+  height: number,
+  baseY: number,
+  colors: Colors,
+  opts: StoneRunOpts = {},
+): void {
+  const dx = x2 - x1;
+  const dz = z2 - z1;
+  const len = Math.hypot(dx, dz);
+  if (len <= 0.01) return;
+  const ux = dx / len;
+  const uz = dz / len;
+  const angle = Math.atan2(dx, dz);
+  const cx = (x1 + x2) / 2;
+  const cz = (z1 + z2) / 2;
+  const courseCount = opts.courses ?? Math.max(3, Math.round(height / 1.8));
+  const courseH = height / courseCount;
+
+  for (let i = 0; i < courseCount; i++) {
+    const color = i % 2 === 0 ? colors.stone : colors.stoneLight;
+    const course = box(thickness, courseH + 0.025, len, color);
+    course.position.set(cx, baseY + courseH * (i + 0.5), cz);
+    course.rotation.y = angle;
+    root.add(course);
+  }
+
+  // Thin recessed-looking joints make the courses survive the broad daylight
+  // fill light without turning the wall into a stripy barcode.
+  const jointH = Math.min(0.14, courseH * 0.1);
+  for (let i = 1; i < courseCount; i++) {
+    const joint = box(thickness * 1.025, jointH, len + 0.025, colors.stoneDark);
+    joint.position.set(cx, baseY + courseH * i, cz);
+    joint.rotation.y = angle;
+    root.add(joint);
+  }
+
+  const foundation = box(thickness * 1.1, Math.min(0.42, courseH * 0.32), len + 0.08, colors.stoneDark);
+  foundation.position.set(cx, baseY + Math.min(0.42, courseH * 0.32) / 2, cz);
+  foundation.rotation.y = angle;
+  root.add(foundation);
+  const cap = box(thickness * 1.12, 0.24, len + 0.1, colors.stoneLight);
+  cap.position.set(cx, baseY + height - 0.12, cz);
+  cap.rotation.y = angle;
+  root.add(cap);
+
+  if (!opts.quoins) return;
+  const quoinH = Math.min(0.78, courseH * 0.62);
+  const quoinW = Math.min(1.15, Math.max(0.72, thickness * 0.42));
+  for (const end of [0, len] as const) {
+    for (let i = 0; i < courseCount; i++) {
+      const inward = end === 0 ? quoinW * 0.46 : -quoinW * 0.46;
+      const q = box(thickness * 1.2, quoinH, quoinW, i % 2 === 0 ? colors.stoneLight : colors.stoneDark);
+      q.position.set(
+        x1 + ux * (end + inward),
+        baseY + courseH * (i + 0.5),
+        z1 + uz * (end + inward),
+      );
+      q.rotation.y = angle;
+      root.add(q);
+    }
+  }
+}
+
 /** The wall whose midpoint matches the gate (i.e. the gated wall). */
 function findGateWall(l: CastleLayout) {
   return l.walls.find(
@@ -81,10 +201,10 @@ function wallRunSegments(
   ];
 }
 
-/** Small crenellation teeth spaced ~3 m apart along a straight run. */
-const TOOTH_SPACING = 3;
-const TOOTH_W = 1.5;
-const TOOTH_H = 0.9;
+/** Chunky merlons: broad enough to read from the highlands approach. */
+const TOOTH_SPACING = 4.5;
+const TOOTH_W = 2.55;
+const TOOTH_H = 1.25;
 
 function addCrenellations(
   root: THREE.Group,
@@ -101,11 +221,13 @@ function addCrenellations(
 ): void {
   const segLen = b - a;
   if (segLen <= 0.01) return;
-  for (let s = TOOTH_SPACING / 2; s < segLen; s += TOOTH_SPACING) {
-    const arc = a + s;
+  const count = Math.max(1, Math.floor(segLen / TOOTH_SPACING));
+  const step = segLen / count;
+  for (let i = 0; i < count; i++) {
+    const arc = a + step * (i + 0.5);
     const tx = x1 + ux * arc;
     const tz = z1 + uz * arc;
-    const tooth = box(thickness * 1.05, TOOTH_H, Math.min(TOOTH_W, segLen), color);
+    const tooth = box(thickness * 1.12, TOOTH_H, Math.min(TOOTH_W, step * 0.7), color);
     tooth.position.set(tx, topY + TOOTH_H / 2, tz);
     tooth.rotation.y = angle;
     root.add(tooth);
@@ -132,14 +254,19 @@ function buildWall(
   for (const [a, b] of wallRunSegments(w, gate)) {
     const segLen = b - a;
     if (segLen <= 0.01) continue;
-    const midS = (a + b) / 2;
-    const cx = w.x1 + ux * midS;
-    const cz = w.z1 + uz * midS;
 
-    const run = box(w.t, w.h, segLen, colors.stone);
-    run.position.set(cx, baseY + w.h / 2, cz);
-    run.rotation.y = angle;
-    root.add(run);
+    addStoneRun(
+      root,
+      w.x1 + ux * a,
+      w.z1 + uz * a,
+      w.x1 + ux * b,
+      w.z1 + uz * b,
+      w.t,
+      w.h,
+      baseY,
+      colors,
+      { courses: 4, quoins: true },
+    );
 
     addCrenellations(root, w.x1, w.z1, angle, ux, uz, a, b, topY, w.t, colors.stoneDark);
 
@@ -157,7 +284,8 @@ function buildWall(
   }
 }
 
-/** A corner tower: cylinder body + cone roof, ember slits or a banner. */
+/** A corner tower: banded drum, crown merlons, overhung cone roof, finial,
+ * lantern slits and a cloth pennant in both dressings. */
 function buildTower(
   root: THREE.Group,
   t: CastleLayout['towers'][number],
@@ -165,14 +293,53 @@ function buildTower(
   purified: boolean,
   baseY: number,
 ): void {
-  const body = cylinder(t.r, t.r * 1.05, t.h, colors.stone);
-  body.position.set(t.x, baseY + t.h / 2, t.z);
-  root.add(body);
+  const courseCount = 6;
+  const courseH = t.h / courseCount;
+  for (let i = 0; i < courseCount; i++) {
+    const body = cylinder(t.r, t.r * (1.035 + (courseCount - i) * 0.004), courseH + 0.03, i % 2 === 0 ? colors.stone : colors.stoneLight);
+    body.position.set(t.x, baseY + courseH * (i + 0.5), t.z);
+    root.add(body);
+    if (i > 0) {
+      const courseBand = cylinder(t.r * 1.035, t.r * 1.035, 0.16, colors.stoneDark);
+      courseBand.position.set(t.x, baseY + courseH * i, t.z);
+      root.add(courseBand);
+    }
+  }
+  const baseRing = cylinder(t.r * 1.1, t.r * 1.13, 0.5, colors.stoneDark);
+  baseRing.position.set(t.x, baseY + 0.25, t.z);
+  root.add(baseRing);
+  const crownBand = cylinder(t.r * 1.08, t.r * 1.06, 0.42, colors.stoneLight);
+  crownBand.position.set(t.x, baseY + t.h - 0.16, t.z);
+  root.add(crownBand);
 
-  const roofH = t.r * 1.7;
-  const roofMesh = cone(t.r * 1.15, roofH, colors.roof);
-  roofMesh.position.set(t.x, baseY + t.h + roofH / 2 - 0.1, t.z);
+  const merlonCount = 12;
+  for (let i = 0; i < merlonCount; i++) {
+    const ang = (i / merlonCount) * Math.PI * 2;
+    const merlon = box(1.05, 1.15, 0.9, i % 2 === 0 ? colors.stoneDark : colors.stone);
+    merlon.position.set(
+      t.x + Math.sin(ang) * t.r * 0.96,
+      baseY + t.h + 0.48,
+      t.z + Math.cos(ang) * t.r * 0.96,
+    );
+    merlon.rotation.y = ang;
+    root.add(merlon);
+  }
+
+  const roofH = t.r * 1.62;
+  const eave = cylinder(t.r * 1.2, t.r * 1.2, 0.42, colors.stoneDark);
+  eave.position.set(t.x, baseY + t.h + 0.54, t.z);
+  root.add(eave);
+  const roofMesh = cone(t.r * 1.18, roofH, colors.roof);
+  roofMesh.position.set(t.x, baseY + t.h + 0.55 + roofH / 2, t.z);
   root.add(roofMesh);
+
+  const roofTopY = baseY + t.h + 0.55 + roofH;
+  const finialBall = sphere(0.3, colors.stoneLight);
+  finialBall.position.set(t.x, roofTopY + 0.17, t.z);
+  root.add(finialBall);
+  const finial = cone(0.18, 0.8, colors.stoneDark);
+  finial.position.set(t.x, roofTopY + 0.7, t.z);
+  root.add(finial);
 
   if (!purified) {
     const c = colors as typeof CASTLE_COLORS.cursed;
@@ -187,15 +354,19 @@ function buildTower(
       slit.position.set(sx, baseY + t.h * 0.55, sz);
       root.add(slit);
     }
-  } else {
-    const outAng = Math.atan2(t.x - CASTLE.center.x, t.z - CASTLE.center.z);
-    const bx = t.x + Math.sin(outAng) * (t.r + 0.05);
-    const bz = t.z + Math.cos(outAng) * (t.r + 0.05);
-    const banner = box(1.4, 2.6, 0.08, (colors as typeof CASTLE_COLORS.purified).banner);
-    banner.position.set(bx, baseY + t.h * 0.58, bz);
-    banner.rotation.y = outAng;
-    root.add(banner);
   }
+
+  const outAng = Math.atan2(t.x - CASTLE.center.x, t.z - CASTLE.center.z);
+  const bx = t.x + Math.sin(outAng) * (t.r + 0.12);
+  const bz = t.z + Math.cos(outAng) * (t.r + 0.12);
+  const crossbar = box(2.05, 0.12, 0.12, colors.stoneDark);
+  crossbar.position.set(bx, baseY + t.h * 0.72 + 1.25, bz);
+  crossbar.rotation.y = outAng;
+  root.add(crossbar);
+  const banner = clothPennant(1.65, 2.75, colors.banner, !purified);
+  banner.position.set(bx, baseY + t.h * 0.72, bz);
+  banner.rotation.y = outAng;
+  root.add(banner);
 }
 
 /**
@@ -243,14 +414,19 @@ function buildKeep(
     for (const [a, b] of wallRunSegments(w, keep.entrance)) {
       const segLen = b - a;
       if (segLen <= 0.01) continue;
-      const midS = (a + b) / 2;
-      const cx = w.x1 + ux * midS;
-      const cz = w.z1 + uz * midS;
 
-      const run = box(w.t, w.h, segLen, colors.stone);
-      run.position.set(cx, baseY + w.h / 2, cz);
-      run.rotation.y = angle;
-      root.add(run);
+      addStoneRun(
+        root,
+        w.x1 + ux * a,
+        w.z1 + uz * a,
+        w.x1 + ux * b,
+        w.z1 + uz * b,
+        w.t,
+        w.h,
+        baseY,
+        colors,
+        { courses: 8, quoins: true },
+      );
 
       addCrenellations(root, w.x1, w.z1, angle, ux, uz, a, b, topY, w.t, colors.stoneDark);
     }
@@ -277,12 +453,14 @@ function buildKeep(
   root.add(lintel);
 }
 
-/** Gatehouse arch over the real gate gap: two pillars + a lintel bridging above. */
+/** Gatehouse over the real gate gap: masonry shoulders and arch stones, two
+ * opened timber doors, a raised portcullis and readable torch flames. */
 function buildGatehouse(
   root: THREE.Group,
   gateWall: CastleLayout['walls'][number],
   gate: CastleLayout['gate'],
   colors: Colors,
+  purified: boolean,
   baseY: number,
 ): void {
   const dx = gateWall.x2 - gateWall.x1;
@@ -301,6 +479,13 @@ function buildGatehouse(
     pillar.position.set(px, baseY + CASTLE.gateH / 2, pz);
     pillar.rotation.y = angle;
     root.add(pillar);
+
+    for (let i = 0; i < 4; i++) {
+      const quoin = box(pillarSize * 1.12, 0.78, pillarSize * 1.12, i % 2 === 0 ? colors.stoneLight : colors.stone);
+      quoin.position.set(px, baseY + 0.9 + i * 1.65, pz);
+      quoin.rotation.y = angle;
+      root.add(quoin);
+    }
   }
 
   const lintelH = Math.max(0.4, CASTLE.wallH - CASTLE.gateH);
@@ -308,6 +493,81 @@ function buildGatehouse(
   lintel.position.set(gate.x, baseY + CASTLE.gateH + lintelH / 2, gate.z);
   lintel.rotation.y = angle;
   root.add(lintel);
+
+  const portal = new THREE.Group();
+  portal.position.set(gate.x, baseY, gate.z);
+  portal.rotation.y = angle;
+
+  // A shallow semicircle of chunky voussoirs leaves the physical gate gap
+  // unchanged while making the opening read as an arch from either side.
+  const archR = gate.w * 0.36;
+  const springY = CASTLE.gateH - archR + 0.18;
+  const archBlocks = 9;
+  for (let i = 0; i < archBlocks; i++) {
+    const theta = (i / (archBlocks - 1)) * Math.PI;
+    const voussoir = box(CASTLE.wallT * 1.34, 0.84, 1.15, i % 2 === 0 ? colors.stoneLight : colors.stoneDark);
+    voussoir.position.set(0, springY + Math.sin(theta) * archR, Math.cos(theta) * archR);
+    voussoir.rotation.x = theta - Math.PI / 2;
+    portal.add(voussoir);
+  }
+
+  // The two leaves are visibly open against the returns: presence without a
+  // fake visual barrier across a collision opening the player can traverse.
+  const doorH = springY + 0.18;
+  const doorW = gate.w * 0.41;
+  for (const side of [-1, 1] as const) {
+    const hinge = new THREE.Group();
+    hinge.position.set(0, 0, side * gateHalf);
+    hinge.rotation.y = side * 0.98;
+    const door = box(0.2, doorH, doorW, colors.wood);
+    door.position.set(0, doorH / 2, -side * doorW / 2);
+    hinge.add(door);
+    for (const y of [doorH * 0.27, doorH * 0.72]) {
+      const strap = box(0.25, 0.13, doorW * 0.9, colors.stoneDark);
+      strap.position.set(0.12, y, -side * doorW / 2);
+      hinge.add(strap);
+    }
+    portal.add(hinge);
+  }
+
+  // Raised bars and dangling teeth make the portcullis readable but retain
+  // more than five metres of clear traversal space beneath it.
+  const portcullisH = 1.35;
+  for (let i = 0; i < 7; i++) {
+    const z = THREE.MathUtils.lerp(-gateHalf * 0.76, gateHalf * 0.76, i / 6);
+    const bar = cylinder(0.07, 0.08, portcullisH, colors.stoneDark);
+    bar.position.set(-0.18, CASTLE.gateH - portcullisH / 2, z);
+    portal.add(bar);
+    const tooth = cone(0.12, 0.34, colors.stoneDark);
+    tooth.rotation.x = Math.PI;
+    tooth.position.set(-0.18, CASTLE.gateH - portcullisH - 0.17, z);
+    portal.add(tooth);
+  }
+  const portcullisRail = box(0.16, 0.16, gate.w * 0.82, colors.stoneDark);
+  portcullisRail.position.set(-0.18, CASTLE.gateH - 0.35, 0);
+  portal.add(portcullisRail);
+
+  // Existing hall-flame emissive signature is deliberately reused, so the
+  // gate adds no new castle material bucket/draw call.
+  for (const side of [-1, 1] as const) {
+    const z = side * (gateHalf + pillarSize * 0.72);
+    const bracket = box(0.58, 0.16, 0.16, colors.stoneDark);
+    bracket.position.set(CASTLE.wallT * 0.66, CASTLE.gateH * 0.57, z);
+    portal.add(bracket);
+    const flame = cone(0.22, 0.58, WARD_COLORS.torchFlame, {
+      emissive: WARD_COLORS.torchFlame,
+      emissiveIntensity: 1.6,
+    });
+    flame.position.set(CASTLE.wallT * 0.84, CASTLE.gateH * 0.57 + 0.42, z);
+    portal.add(flame);
+  }
+
+  // A bright purified keystone is a tiny readable state-change cue; cursed
+  // keeps the same silhouette in the darker shadow stone.
+  const keystone = box(CASTLE.wallT * 1.42, 1.08, 1.0, purified ? colors.stoneLight : colors.stoneDark);
+  keystone.position.set(0, springY + archR + 0.02, 0);
+  portal.add(keystone);
+  root.add(portal);
 }
 
 /** Warm point lights at the gate + keep (purified only), ≤6 total (village-lamp style). */
@@ -465,9 +725,20 @@ function buildWardWallRun(root: THREE.Group, run: WallRun, colors: Colors, baseY
   const span = extendedWallSpan(run);
 
   if (span.isPillar) {
-    const post = box(WARD.wallT * 2, WARD.wallH, WARD.wallT * 2, colors.stone);
-    post.position.set(span.x1, baseY + WARD.wallH / 2, span.z1);
-    root.add(post);
+    const courseH = WARD.wallH / 3;
+    for (let i = 0; i < 3; i++) {
+      const post = box(
+        WARD.wallT * 2,
+        courseH + 0.02,
+        WARD.wallT * 2,
+        i % 2 === 0 ? colors.stone : colors.stoneLight,
+      );
+      post.position.set(span.x1, baseY + courseH * (i + 0.5), span.z1);
+      root.add(post);
+    }
+    const cap = box(WARD.wallT * 2.25, 0.24, WARD.wallT * 2.25, colors.stoneDark);
+    cap.position.set(span.x1, baseY + WARD.wallH - 0.12, span.z1);
+    root.add(cap);
     return;
   }
 
@@ -477,13 +748,9 @@ function buildWardWallRun(root: THREE.Group, run: WallRun, colors: Colors, baseY
   const ux = dx / len;
   const uz = dz / len;
   const angle = Math.atan2(dx, dz);
-  const midx = (span.x1 + span.x2) / 2;
-  const midz = (span.z1 + span.z2) / 2;
-
-  const wall = box(WARD.wallT, WARD.wallH, len, colors.stone);
-  wall.position.set(midx, baseY + WARD.wallH / 2, midz);
-  wall.rotation.y = angle;
-  root.add(wall);
+  addStoneRun(root, span.x1, span.z1, span.x2, span.z2, WARD.wallT, WARD.wallH, baseY, colors, {
+    courses: 3,
+  });
 
   // A run's RAW (unextended) length is (cellCount - 1) * cellSize, since its
   // x1/z1..x2/z2 endpoints are the first/last member CELL CENTERS.
@@ -541,7 +808,7 @@ function buildPlaza(
 
     // Banner faces toward the plaza's center so it reads while walking in.
     const angle = Math.atan2(plaza.center.x - x, plaza.center.z - z);
-    const banner = box(0.9, bannerH, 0.05, colors.banner);
+    const banner = clothPennant(0.95, bannerH, colors.banner, !purified);
     banner.position.set(x, baseY + poleH - bannerH / 2 - 0.15, z);
     banner.rotation.y = angle;
     root.add(banner);
@@ -627,6 +894,21 @@ function buildHallRoof(
   const mesh = new THREE.Mesh(geo, mat(colors.roof));
   mesh.position.set(cx, baseYWorld, cz);
   root.add(mesh);
+
+  const eaveX = box(maxX - minX + 0.18, 0.2, 0.28, colors.stoneDark);
+  eaveX.position.set(cx, baseYWorld + 0.02, minZ);
+  root.add(eaveX);
+  const eaveX2 = eaveX.clone();
+  eaveX2.material = mat(colors.stoneDark);
+  eaveX2.position.z = maxZ;
+  root.add(eaveX2);
+  const eaveZ = box(0.28, 0.2, maxZ - minZ + 0.18, colors.stoneDark);
+  eaveZ.position.set(minX, baseYWorld + 0.02, cz);
+  root.add(eaveZ);
+  const eaveZ2 = eaveZ.clone();
+  eaveZ2.material = mat(colors.stoneDark);
+  eaveZ2.position.x = maxX;
+  root.add(eaveZ2);
 }
 
 /**
@@ -725,9 +1007,14 @@ function buildSpire(
     const nextR = r * (0.62 + rng() * 0.08); // ~35-45% taper per segment
     const jitterX = (rng() - 0.5) * 0.35;
     const jitterZ = (rng() - 0.5) * 0.35;
-    const seg = cylinder(nextR, r, segH, colors.stone);
+    const seg = cylinder(nextR, r, segH, i % 2 === 0 ? colors.stone : colors.stoneLight);
     seg.position.set(spire.x + leanX * i + jitterX, y + segH / 2, spire.z + leanZ * i + jitterZ);
     root.add(seg);
+    if (i > 0) {
+      const collar = cylinder(r * 1.08, r * 1.08, 0.18, colors.stoneDark);
+      collar.position.set(spire.x + leanX * i, y, spire.z + leanZ * i);
+      root.add(collar);
+    }
     y += segH;
     r = nextR;
   }
@@ -743,7 +1030,7 @@ function buildSpire(
     root.add(slit);
   } else {
     const bannerColor = (colors as typeof CASTLE_COLORS.purified).banner;
-    const banner = box(1.0, 1.8, 0.06, bannerColor);
+    const banner = clothPennant(1.05, 1.85, bannerColor, false);
     const outAng = rng() * Math.PI * 2;
     banner.position.set(
       spire.x + Math.sin(outAng) * (SPIRES.baseR * 0.4 + 0.2),
@@ -785,7 +1072,7 @@ export function buildCastle(scene: THREE.Scene, purified: boolean): THREE.Group 
   for (const w of layout.walls) buildWall(built, w, layout.gate, colors, purified, baseY);
   for (const t of layout.towers) buildTower(built, t, colors, purified, baseY);
   buildKeep(built, layout, colors, purified, baseY);
-  buildGatehouse(built, gateWall, layout.gate, colors, baseY);
+  buildGatehouse(built, gateWall, layout.gate, colors, purified, baseY);
   if (purified) addPurifiedLights(built, layout, baseY);
   buildWard(built, purified);
   buildSpires(built, purified);
@@ -878,41 +1165,190 @@ export function removeCrystal(scene: THREE.Scene, crystal: CrystalMesh): void {
 // ---------------------------------------------------------------------------
 
 const GOBLIN_COLORS = {
-  skin: 0x4f7a3d,
-  skinDark: 0x3d5f2e,
-  hood: 0x5a4a3a,
-  hoodDark: 0x463824,
-  eye: 0xe8d84a,
+  skin: 0x6e9a48,
+  skinDark: 0x426832,
+  belly: 0x8caf5d,
+  hood: 0x513653,
+  hoodDark: 0x35263f,
+  eye: 0xffdf62,
+  iris: 0x6c1744,
+  mouth: 0x35232e,
+  tooth: 0xffedc7,
 } as const;
 
+function softMat(color: number, opts: MatOpts = {}): THREE.Material {
+  return makeSurfaceMaterial({
+    color,
+    flatShading: false,
+    roughness: ROUGHNESS.critter,
+    ...(opts.emissive !== undefined
+      ? { emissive: opts.emissive, emissiveIntensity: opts.emissiveIntensity ?? 1 }
+      : {}),
+  });
+}
+
 function sphere(r: number, color: number, opts: MatOpts = {}): THREE.Mesh {
-  return new THREE.Mesh(new THREE.SphereGeometry(r, 8, 6), mat(color, opts));
+  return new THREE.Mesh(new THREE.SphereGeometry(r, 10, 8), softMat(color, opts));
 }
 
-/** One flared ear: a squashed sphere angled outward from the head. */
-function goblinEar(r: number, color: number, side: -1 | 1): THREE.Group {
-  const g = new THREE.Group();
-  const e = sphere(r, color);
-  e.scale.set(0.55, 1.5, 0.4);
-  g.add(e);
-  g.rotation.z = side * 0.55;
-  g.rotation.y = side * 0.3;
-  return g;
+function blob(r: number, color: number, opts: MatOpts = {}): THREE.Mesh {
+  return new THREE.Mesh(new THREE.SphereGeometry(r, 7, 5), softMat(color, opts));
 }
 
-/** Ragged flap teeth around the hood's rim — a handful of tiny cones. */
-function hoodTatters(rimR: number, y: number, color: number, rng: () => number): THREE.Group {
-  const g = new THREE.Group();
-  const n = 5 + Math.floor(rng() * 3);
-  for (let i = 0; i < n; i++) {
-    const ang = (i / n) * Math.PI * 2 + rng() * 0.3;
-    const len = 0.08 + rng() * 0.08;
-    const flap = cone(0.05, len, color);
-    flap.position.set(Math.sin(ang) * rimR, y - len / 2, Math.cos(ang) * rimR);
-    flap.rotation.x = Math.PI; // apex points down — a hanging tatter
-    g.add(flap);
+function capsule(r: number, length: number, color: number): THREE.Mesh {
+  return new THREE.Mesh(new THREE.CapsuleGeometry(r, length, 3, 8), softMat(color));
+}
+
+function softCone(r: number, h: number, color: number, segments = 9): THREE.Mesh {
+  return new THREE.Mesh(new THREE.ConeGeometry(r, h, segments), softMat(color));
+}
+
+/** Bottom-heavy pear silhouette matching the round-3 critter language. */
+function egg(r: number, h: number, color: number, bulge = 0.34): THREE.Mesh {
+  const points: THREE.Vector2[] = [];
+  for (let i = 0; i <= 10; i++) {
+    const t = i / 10;
+    const x = Math.sin(Math.PI * Math.pow(t, 1 - bulge)) * r;
+    points.push(new THREE.Vector2(Math.max(0.001, x), t * h));
   }
+  return new THREE.Mesh(new THREE.LatheGeometry(points, 14), softMat(color));
+}
+
+function smileArc(r: number, tube: number, color: number, arc = 1.75): THREE.Mesh {
+  const smile = new THREE.Mesh(new THREE.TorusGeometry(r, tube, 5, 10, arc), softMat(color));
+  smile.rotation.z = -Math.PI / 2 - arc / 2;
+  return smile;
+}
+
+interface CharacterEyeOpts {
+  sclera: number;
+  iris: number;
+  glow?: number;
+  glowIntensity?: number;
+}
+
+/** Glossy plush eye: sclera dome, oversized iris and a white catchlight. */
+function characterEye(r: number, side: -1 | 1, opts: CharacterEyeOpts): THREE.Group {
+  const g = new THREE.Group();
+  const sclera = sphere(
+    r,
+    opts.sclera,
+    opts.glow !== undefined ? { emissive: opts.glow, emissiveIntensity: opts.glowIntensity ?? 1.2 } : {},
+  );
+  sclera.scale.set(1, 1.08, 0.66);
+  g.add(sclera);
+  const iris = sphere(r * 0.68, opts.iris);
+  iris.scale.z = 0.38;
+  iris.position.z = r * 0.53;
+  g.add(iris);
+  const highlight = blob(r * 0.24, 0xffffff);
+  highlight.position.set(side * r * 0.24, r * 0.28, r * 0.61);
+  g.add(highlight);
   return g;
+}
+
+function addEyePair(
+  root: THREE.Group,
+  sep: number,
+  y: number,
+  z: number,
+  r: number,
+  opts: CharacterEyeOpts,
+): void {
+  for (const side of [-1, 1] as const) {
+    const eye = characterEye(r, side, opts);
+    eye.position.set(side * sep, y, z);
+    eye.rotation.y = side * 0.08;
+    root.add(eye);
+  }
+}
+
+/** A soft base plus a short conical point: readable pointy ear without a
+ * knife-like silhouette. Inner-ear applique sits proud on the +Z face. */
+function characterEar(
+  size: number,
+  skin: number,
+  inner: number,
+  side: -1 | 1,
+  goblin: boolean,
+): THREE.Group {
+  const g = new THREE.Group();
+  const base = sphere(size, skin);
+  base.scale.set(goblin ? 1.25 : 1.02, goblin ? 0.78 : 0.72, 0.42);
+  base.position.x = side * size * 0.25;
+  g.add(base);
+  const point = softCone(size * (goblin ? 0.82 : 0.72), size * (goblin ? 2.25 : 1.8), skin, 8);
+  point.rotation.z = side * -Math.PI / 2;
+  point.position.x = side * size * (goblin ? 1.27 : 1.05);
+  g.add(point);
+  const inset = sphere(size * 0.66, inner);
+  inset.scale.set(goblin ? 1.25 : 1.0, 0.58, 0.2);
+  inset.position.set(side * size * 0.3, 0, size * 0.42);
+  g.add(inset);
+  return g;
+}
+
+/** Hue/lightness jitter copied in spirit from the critter builders. */
+function jitterColor(hex: number, rng: () => number, hue = 0.045, lightness = 0.05): number {
+  const color = new THREE.Color(hex);
+  const hsl = { h: 0, s: 0, l: 0 };
+  color.getHSL(hsl);
+  color.setHSL(
+    (hsl.h + (rng() - 0.5) * hue + 1) % 1,
+    hsl.s,
+    THREE.MathUtils.clamp(hsl.l + (rng() - 0.5) * lightness, 0.05, 0.95),
+  );
+  return color.getHex();
+}
+
+/** Merge a richer character puppet back down to one static draw plus one
+ * optional glow draw. Geometry remains in the caller's inner scale group. */
+function mergeCharacter(built: THREE.Group): THREE.Group {
+  built.updateMatrixWorld(true);
+  interface Bucket {
+    geometries: THREE.BufferGeometry[];
+    emissive: THREE.Color | null;
+    emissiveIntensity: number;
+  }
+  const buckets = new Map<string, Bucket>();
+  built.traverse((o) => {
+    if (!(o instanceof THREE.Mesh)) return;
+    const material = o.material as THREE.MeshLambertMaterial | THREE.MeshStandardMaterial;
+    const glowing = material.emissive && material.emissiveIntensity > 0 && material.emissive.getHex() !== 0;
+    const key = glowing ? `glow:${material.emissive.getHex()}:${material.emissiveIntensity}` : 'static';
+    let bucket = buckets.get(key);
+    if (!bucket) {
+      bucket = {
+        geometries: [],
+        emissive: glowing ? material.emissive.clone() : null,
+        emissiveIntensity: glowing ? material.emissiveIntensity : 0,
+      };
+      buckets.set(key, bucket);
+    }
+    bucket.geometries.push(bakeMeshGeometry(o));
+    o.geometry.dispose();
+    material.dispose();
+  });
+
+  const mergedRoot = new THREE.Group();
+  for (const [key, bucket] of buckets) {
+    const geometry = mergeGeometries(bucket.geometries);
+    for (const source of bucket.geometries) source.dispose();
+    if (!geometry) continue;
+    geometry.computeBoundingSphere();
+    const material = makeSurfaceMaterial({
+      vertexColors: true,
+      flatShading: false,
+      roughness: ROUGHNESS.critter,
+      ...(bucket.emissive
+        ? { emissive: bucket.emissive.getHex(), emissiveIntensity: bucket.emissiveIntensity }
+        : {}),
+    });
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.name = `character-merged ${key}`;
+    mergedRoot.add(mesh);
+  }
+  return mergedRoot;
 }
 
 /**
@@ -925,45 +1361,122 @@ function hoodTatters(rimR: number, y: number, color: number, rng: () => number):
  * otherwise clobber this jitter every frame if they shared one transform.
  */
 export function buildGoblin(rng: () => number): THREE.Group {
-  const scale = 0.85 + rng() * 0.3;
-  const skinJitter = rng() > 0.5 ? GOBLIN_COLORS.skin : GOBLIN_COLORS.skinDark;
+  // Fixed-count upfront rolls keep model variation deterministic even when a
+  // cosmetic branch (hood / loincloth / tooth side) changes.
+  const scale = 0.9 + rng() * 0.2;
+  const skin = jitterColor(GOBLIN_COLORS.skin, rng, 0.06, 0.06);
+  const skinDark = jitterColor(GOBLIN_COLORS.skinDark, rng, 0.05, 0.04);
+  const belly = jitterColor(GOBLIN_COLORS.belly, rng, 0.04, 0.05);
+  const hoodColor = jitterColor(GOBLIN_COLORS.hood, rng, 0.05, 0.04);
+  const hoodRoll = rng();
+  const loinRoll = rng();
+  const toothSide = rng() < 0.5 ? -1 : 1;
+  const hoodLean = (rng() - 0.5) * 0.34;
+
+  const puppet = new THREE.Group();
+
+  // Stubby legs and broad plush feet ground the silhouette before the pear
+  // body is layered over them.
+  for (const side of [-1, 1] as const) {
+    const leg = capsule(0.075, 0.055, skinDark);
+    leg.position.set(side * 0.15, 0.15, -0.015);
+    puppet.add(leg);
+    const foot = sphere(0.085, skinDark);
+    foot.scale.set(1.02, 0.62, 1.28);
+    foot.position.set(side * 0.15, 0.06, 0.075);
+    puppet.add(foot);
+  }
+
+  const body = egg(0.32, 0.53, skin, 0.4);
+  body.position.set(0, 0.105, -0.045);
+  puppet.add(body);
+  const bellyPatch = sphere(0.245, belly);
+  bellyPatch.scale.set(0.88, 0.96, 0.34);
+  bellyPatch.position.set(0, 0.37, 0.235);
+  puppet.add(bellyPatch);
+
+  // Hunched shoulders and little forward-reaching mitts add minion energy.
+  for (const side of [-1, 1] as const) {
+    const arm = capsule(0.06, 0.12, skinDark);
+    arm.position.set(side * 0.31, 0.38, 0.035);
+    arm.rotation.z = side * 0.55;
+    arm.rotation.x = -0.28;
+    puppet.add(arm);
+    const hand = sphere(0.072, skin);
+    hand.position.set(side * 0.36, 0.28, 0.11);
+    puppet.add(hand);
+  }
+
+  const head = sphere(0.275, skin);
+  head.scale.set(1.05, 0.94, 0.96);
+  head.position.set(0, 0.64, 0.105);
+  puppet.add(head);
+  const faceMask = sphere(0.235, belly);
+  faceMask.scale.set(1.02, 0.8, 0.38);
+  faceMask.position.set(0, 0.615, 0.305);
+  puppet.add(faceMask);
+
+  for (const side of [-1, 1] as const) {
+    const ear = characterEar(0.16, skin, skinDark, side, true);
+    ear.position.set(side * 0.245, 0.69, 0.085);
+    ear.rotation.z = side * 0.16;
+    puppet.add(ear);
+  }
+
+  addEyePair(puppet, 0.11, 0.69, 0.405, 0.105, {
+    sclera: GOBLIN_COLORS.eye,
+    iris: GOBLIN_COLORS.iris,
+    glow: GOBLIN_COLORS.eye,
+    glowIntensity: 1.22,
+  });
+  const nose = blob(0.047, skinDark);
+  nose.scale.set(1.08, 0.76, 0.7);
+  nose.position.set(0, 0.59, 0.525);
+  puppet.add(nose);
+
+  // A round underbite keeps the fang funny rather than frightening.
+  const jaw = sphere(0.15, skinDark);
+  jaw.scale.set(1.08, 0.46, 0.63);
+  jaw.position.set(0, 0.51, 0.405);
+  puppet.add(jaw);
+  const mouth = smileArc(0.075, 0.014, GOBLIN_COLORS.mouth, 1.55);
+  mouth.position.set(0, 0.5, 0.51);
+  puppet.add(mouth);
+  const tooth = softCone(0.035, 0.105, GOBLIN_COLORS.tooth, 7);
+  tooth.position.set(toothSide * 0.073, 0.555, 0.525);
+  tooth.rotation.z = toothSide * 0.08;
+  puppet.add(tooth);
+
+  if (loinRoll < 0.68) {
+    const loincloth = clothPennant(0.34, 0.27, hoodColor, true);
+    loincloth.position.set(0, 0.265, 0.323);
+    puppet.add(loincloth);
+    const belt = new THREE.Mesh(new THREE.TorusGeometry(0.255, 0.035, 5, 12), softMat(GOBLIN_COLORS.hoodDark));
+    belt.rotation.x = Math.PI / 2;
+    belt.scale.z = 0.86;
+    belt.position.set(0, 0.335, -0.01);
+    puppet.add(belt);
+  }
+
+  if (hoodRoll < 0.62) {
+    const cowl = new THREE.Mesh(new THREE.TorusGeometry(0.255, 0.058, 6, 14), softMat(GOBLIN_COLORS.hoodDark));
+    cowl.rotation.x = Math.PI / 2;
+    cowl.scale.z = 0.9;
+    cowl.position.set(0, 0.765, 0.055);
+    puppet.add(cowl);
+    const hood = softCone(0.275, 0.34, hoodColor, 10);
+    hood.position.set(0, 0.91, 0.045);
+    hood.rotation.z = hoodLean;
+    puppet.add(hood);
+    for (const x of [-0.14, 0, 0.14]) {
+      const tatter = clothPennant(0.12, 0.17, GOBLIN_COLORS.hoodDark, true);
+      tatter.position.set(x, 0.75 - Math.abs(x) * 0.18, 0.285);
+      puppet.add(tatter);
+    }
+  }
 
   const inner = new THREE.Group();
-
-  // Chunky egg body (a squashed, slightly bottom-heavy sphere).
-  const bodyR = 0.32;
-  const body = sphere(bodyR, skinJitter);
-  body.scale.set(1, 1.25, 0.92);
-  body.position.y = bodyR * 1.15;
-  inner.add(body);
-
-  // Big flared ears, set on the upper body/head area.
-  const earY = bodyR * 1.85;
-  for (const side of [-1, 1] as const) {
-    const ear = goblinEar(0.16, GOBLIN_COLORS.skinDark, side);
-    ear.position.set(side * bodyR * 0.75, earY, -bodyR * 0.1);
-    inner.add(ear);
-  }
-
-  // Tattered hood: a cone over the head + a ring of small hanging tatters.
-  const hoodY = bodyR * 1.55;
-  const hood = cone(bodyR * 0.85, bodyR * 1.1, GOBLIN_COLORS.hood);
-  hood.position.y = hoodY + (bodyR * 1.1) / 2 - 0.02;
-  inner.add(hood);
-  const tatters = hoodTatters(bodyR * 0.62, hoodY + 0.05, GOBLIN_COLORS.hoodDark, rng);
-  inner.add(tatters);
-
-  // Glowing yellow eyes, low on the face under the hood's brim.
-  const eyeY = bodyR * 1.05;
-  for (const side of [-1, 1] as const) {
-    const eye = sphere(0.045, GOBLIN_COLORS.eye, {
-      emissive: GOBLIN_COLORS.eye,
-      emissiveIntensity: 1.6,
-    });
-    eye.position.set(side * 0.09, eyeY, bodyR * 0.92);
-    inner.add(eye);
-  }
-
+  inner.add(mergeCharacter(puppet));
   inner.scale.setScalar(scale);
   const root = new THREE.Group();
   root.add(inner);
@@ -979,34 +1492,21 @@ export function buildGoblin(rng: () => number): THREE.Group {
 // ---------------------------------------------------------------------------
 
 const ELF_COLORS = {
-  tunic: 0x2f8f4a,
-  tunicDark: 0x24703a,
-  skin: 0xf3dab3,
-  hat: 0xc23f4a,
-  hatDark: 0x9c2f3a,
-  ear: 0xe8c79a,
-  eye: 0x2a2018,
-  grin: 0x7a2f2f,
-  shoe: 0x5a3b26,
+  tunic: 0x3fae73,
+  tunicLight: 0x8bd89a,
+  tunicDark: 0x247555,
+  skin: 0xf4d4a9,
+  ear: 0xeebc9b,
+  iris: 0x704331,
+  grin: 0x8d4050,
+  blush: 0xee93a0,
+  shoe: 0x6a4130,
+  leaf: 0x68a94b,
+  leafDark: 0x397b42,
+  acorn: 0x9a663b,
+  acornDark: 0x65432e,
+  hair: 0xe7a846,
 } as const;
-
-/** One small pointy ear, angled outward from the head. */
-function elfEar(r: number, color: number, side: -1 | 1): THREE.Group {
-  const g = new THREE.Group();
-  const e = cone(r, r * 2.2, color);
-  e.rotation.x = -Math.PI / 2.4;
-  g.add(e);
-  g.rotation.z = side * 0.7;
-  g.rotation.y = side * 0.5;
-  return g;
-}
-
-/** A thin upward-curving arc mesh — the permanent happy grin. */
-function elfGrin(r: number, color: number): THREE.Mesh {
-  const mesh = new THREE.Mesh(new THREE.TorusGeometry(r, r * 0.22, 4, 10, Math.PI * 0.8), mat(color));
-  mesh.rotation.z = Math.PI + (Math.PI - Math.PI * 0.8) / 2; // open edge faces up → a smile
-  return mesh;
-}
 
 /**
  * Build one elf model from a seeded per-individual `rng` (scale + slight
@@ -1017,59 +1517,115 @@ function elfGrin(r: number, color: number): THREE.Mesh {
  * root's own transform never clobbers it.
  */
 export function buildElf(rng: () => number): THREE.Group {
-  const scale = 0.8 + rng() * 0.3;
-  const tunicJitter = rng() > 0.5 ? ELF_COLORS.tunic : ELF_COLORS.tunicDark;
+  const scale = 0.92 + rng() * 0.16;
+  const tunic = jitterColor(ELF_COLORS.tunic, rng, 0.05, 0.05);
+  const tunicLight = jitterColor(ELF_COLORS.tunicLight, rng, 0.04, 0.04);
+  const skin = jitterColor(ELF_COLORS.skin, rng, 0.025, 0.035);
+  const capRoll = rng();
+  const iris = rng() < 0.45 ? ELF_COLORS.iris : ELF_COLORS.leafDark;
+  const capLean = (rng() - 0.5) * 0.3;
+
+  const puppet = new THREE.Group();
+  for (const side of [-1, 1] as const) {
+    const foot = sphere(0.078, ELF_COLORS.shoe);
+    foot.scale.set(1.08, 0.62, 1.32);
+    foot.position.set(side * 0.105, 0.055, 0.07);
+    puppet.add(foot);
+  }
+
+  const body = egg(0.245, 0.45, tunic, 0.38);
+  body.position.set(0, 0.095, -0.025);
+  puppet.add(body);
+  const bib = sphere(0.19, tunicLight);
+  bib.scale.set(0.86, 1.02, 0.34);
+  bib.position.set(0, 0.34, 0.19);
+  puppet.add(bib);
+  const hem = new THREE.Mesh(new THREE.TorusGeometry(0.205, 0.035, 5, 13), softMat(ELF_COLORS.tunicDark));
+  hem.rotation.x = Math.PI / 2;
+  hem.scale.z = 0.88;
+  hem.position.set(0, 0.18, -0.005);
+  puppet.add(hem);
+
+  for (const side of [-1, 1] as const) {
+    const arm = capsule(0.045, 0.12, tunic);
+    arm.position.set(side * 0.235, 0.35, 0.035);
+    arm.rotation.z = side * 0.63;
+    puppet.add(arm);
+    const hand = sphere(0.052, skin);
+    hand.position.set(side * 0.275, 0.25, 0.085);
+    puppet.add(hand);
+  }
+
+  const head = sphere(0.205, skin);
+  head.scale.set(1.02, 0.98, 0.96);
+  head.position.set(0, 0.625, 0.055);
+  puppet.add(head);
+  for (const side of [-1, 1] as const) {
+    const ear = characterEar(0.105, skin, ELF_COLORS.ear, side, false);
+    ear.position.set(side * 0.18, 0.63, 0.055);
+    ear.rotation.z = side * 0.08;
+    puppet.add(ear);
+  }
+  addEyePair(puppet, 0.082, 0.655, 0.25, 0.073, {
+    sclera: 0xfff5df,
+    iris,
+  });
+  const nose = blob(0.027, ELF_COLORS.ear);
+  nose.position.set(0, 0.59, 0.282);
+  puppet.add(nose);
+  const grin = smileArc(0.057, 0.011, ELF_COLORS.grin, 1.7);
+  grin.position.set(0, 0.545, 0.267);
+  puppet.add(grin);
+  for (const side of [-1, 1] as const) {
+    const cheek = sphere(0.042, ELF_COLORS.blush);
+    cheek.scale.set(1, 0.62, 0.24);
+    cheek.position.set(side * 0.145, 0.57, 0.245);
+    puppet.add(cheek);
+  }
+
+  if (capRoll < 0.38) {
+    // Leaf cap: a soft green skull-cap with two jaunty leaves.
+    const cap = sphere(0.205, ELF_COLORS.leafDark);
+    cap.scale.set(1.04, 0.38, 1.0);
+    cap.position.set(0, 0.79, 0.025);
+    puppet.add(cap);
+    for (const side of [-1, 1] as const) {
+      const leaf = sphere(0.09, side < 0 ? ELF_COLORS.leaf : tunicLight);
+      leaf.scale.set(0.55, 1.42, 0.3);
+      leaf.position.set(side * 0.07, 0.9, 0.03);
+      leaf.rotation.z = side * (0.55 + capLean);
+      puppet.add(leaf);
+    }
+  } else if (capRoll < 0.72) {
+    // Acorn cap: warm woodland brown, squashed broad with a tiny stem.
+    const cap = sphere(0.215, ELF_COLORS.acorn);
+    cap.scale.set(1.06, 0.38, 1.02);
+    cap.position.set(0, 0.795, 0.018);
+    puppet.add(cap);
+    const capBand = new THREE.Mesh(new THREE.TorusGeometry(0.175, 0.03, 5, 12), softMat(ELF_COLORS.acornDark));
+    capBand.rotation.x = Math.PI / 2;
+    capBand.position.set(0, 0.755, 0.015);
+    puppet.add(capBand);
+    const stem = capsule(0.025, 0.075, ELF_COLORS.acornDark);
+    stem.position.set(capLean * 0.08, 0.9, 0);
+    stem.rotation.z = capLean;
+    puppet.add(stem);
+  } else {
+    // Three soft golden spikes read as a toy-like hair tuft, not a helmet.
+    for (const [x, lean] of [
+      [-0.075, -0.45],
+      [0, capLean],
+      [0.075, 0.45],
+    ] as const) {
+      const tuft = softCone(0.065, 0.19, ELF_COLORS.hair, 8);
+      tuft.position.set(x, 0.86 + (x === 0 ? 0.03 : 0), 0.015);
+      tuft.rotation.z = lean;
+      puppet.add(tuft);
+    }
+  }
 
   const inner = new THREE.Group();
-
-  // Plump egg-shaped tunic body.
-  const bodyR = 0.22;
-  const body = sphere(bodyR, tunicJitter);
-  body.scale.set(1, 1.3, 0.92);
-  const bodyY = bodyR * 1.3;
-  body.position.y = bodyY;
-  inner.add(body);
-
-  // Tiny feet peeking out from under the tunic hem.
-  for (const side of [-1, 1] as const) {
-    const foot = box(0.1, 0.08, 0.14, ELF_COLORS.shoe);
-    foot.position.set(side * 0.08, 0.04, 0.03);
-    inner.add(foot);
-  }
-
-  // Cream head.
-  const headR = 0.14;
-  const headY = bodyY + bodyR * 1.3 + headR * 0.9;
-  const head = sphere(headR, ELF_COLORS.skin);
-  head.position.y = headY;
-  inner.add(head);
-
-  // Small pointy ears, flared out to the sides of the head.
-  for (const side of [-1, 1] as const) {
-    const ear = elfEar(0.045, ELF_COLORS.ear, side);
-    ear.position.set(side * headR * 0.85, headY + 0.01, -headR * 0.1);
-    inner.add(ear);
-  }
-
-  // Dark friendly eyes.
-  for (const side of [-1, 1] as const) {
-    const eye = sphere(0.022, ELF_COLORS.eye);
-    eye.position.set(side * 0.055, headY + 0.01, headR * 0.92);
-    inner.add(eye);
-  }
-
-  // Permanent happy grin.
-  const grin = elfGrin(0.055, ELF_COLORS.grin);
-  grin.position.set(0, headY - 0.05, headR * 0.88);
-  inner.add(grin);
-
-  // Jaunty pointy hat, tipped slightly.
-  const hatColor = rng() > 0.5 ? ELF_COLORS.hat : ELF_COLORS.hatDark;
-  const hat = cone(headR * 0.95, headR * 1.7, hatColor);
-  hat.position.y = headY + headR * 0.75 + (headR * 1.7) / 2;
-  hat.rotation.z = (rng() - 0.5) * 0.3;
-  inner.add(hat);
-
+  inner.add(mergeCharacter(puppet));
   inner.scale.setScalar(scale);
   const root = new THREE.Group();
   root.add(inner);

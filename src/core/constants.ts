@@ -832,8 +832,11 @@ export const SCATTER = {
  * untouched, so movement/physics are unaffected.
  */
 export const PATHS = {
-  /** Tessellation step (m) along each route leg. */
-  tessStep: 6,
+  /** Tessellation step (m) along each route leg. 12m chords are visually
+   *  identical (the wobble wavelength is ~300m) and HALVE the per-cell segment
+   *  count pathMask scans — chunk-color builds near route junctions were the
+   *  chunk-build perf test's hottest path. */
+  tessStep: 12,
   /** Peak perpendicular wobble (m) and its spatial frequency (rad per m). */
   wobbleAmp: 7,
   wobbleFreq: 0.021,
@@ -1588,16 +1591,27 @@ export const CASTLE = {
  */
 export const CASTLE_COLORS = {
   cursed: {
-    stone: 0x4a4652,
-    stoneDark: 0x37343f,
-    roof: 0x2b2833,
-    ember: 0xb4432a,
+    stone: 0x554e63,
+    stoneLight: 0x6b6278,
+    stoneDark: 0x302a3b,
+    roof: 0x2b2142,
+    ember: 0xe15d3e,
     crystal: 0x6e2bb0,
+    wood: 0x432c35,
     /** Tattered banner cloth (Castle Ward Task 4 plaza dressing) — a drab,
      *  desaturated cousin of `purified.banner` for the cursed dressing. */
-    banner: 0x5a3742,
+    banner: 0x642f4e,
   },
-  purified: { stone: 0xcfc6b4, stoneDark: 0xa89e8a, roof: 0x7fb0d8, ivy: 0x4a8f52, banner: 0xd8608a, lamp: 0xffd9a0 },
+  purified: {
+    stone: 0xd4c49f,
+    stoneLight: 0xeadfbd,
+    stoneDark: 0x9b8067,
+    roof: 0x718dc5,
+    ivy: 0x4f9858,
+    banner: 0xe76687,
+    lamp: 0xffd9a0,
+    wood: 0x87583e,
+  },
 } as const;
 
 /**
