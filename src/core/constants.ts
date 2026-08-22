@@ -759,8 +759,10 @@ export const SCATTER = {
     { p: 1.0, scale: [5.0, 7.0] }, // giants ≈ 20–28 m (10–15× player)
   ],
 
-  /** Collision-cylinder radius factor (× scale) for blocking props. */
-  obstacleRadius: { tree: 0.5, rock: 0.9, mesa: 1.6, boulder: 1.1 },
+  /** Collision-cylinder radius factor (× scale) for blocking props. Wave 3:
+   *  logs + bushes block (and grapple-anchor) like rocks — radii kept modest
+   *  so path-adjacent clusters don't read as invisible walls. */
+  obstacleRadius: { tree: 0.5, rock: 0.9, mesa: 1.6, boulder: 1.1, log: 0.5, bush: 0.55 },
 
   /** Per-kind base colours (hex) for flat-shaded instanced meshes. */
   colors: {

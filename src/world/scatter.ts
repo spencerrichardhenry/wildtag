@@ -35,11 +35,11 @@ export type PropKind =
   | 'lilypad' // floating lake lily pad (no collision)
   | 'mushroom' // forest glow-mushroom cluster (no collision)
   | 'grasstuft' // permanent meadow ground-cover tuft (no collision; static)
-  // --- Fidelity-3 cluster set dressing (no collision, not harvestable) ---
-  | 'bush' // faceted ground bush (plain / berry variant)
-  | 'log' // fallen two-log cluster w/ cut-wood end caps
-  | 'toadstool' // red/yellow chunky toadstool (distinct from glow 'mushroom')
-  | 'pebbles'; // small faceted pebble cluster
+  // --- Fidelity-3 cluster set dressing (not harvestable) ---
+  | 'bush' // faceted ground bush (plain / berry variant; collides like a rock)
+  | 'log' // fallen two-log cluster w/ cut ends (collides like a rock)
+  | 'toadstool' // red/yellow chunky toadstool (no collision)
+  | 'pebbles'; // small faceted pebble cluster (no collision)
 
 /**
  * A single scattered prop: gameplay `kind` + world transform (y already
@@ -433,6 +433,11 @@ const PROP_TOP: Partial<Record<PropKind, number>> = {
   rock: 1.6,
   mesa: 5,
   boulder: 2,
+  // Fidelity-3 wave 3 (Spencer): logs + bushes collide like rocks. Tops are
+  // the approx mesh heights (log cluster ≈ 0.75m incl. the stub branch, bush
+  // lobes ≈ 1.25m) — low enough that a glide clears them trivially.
+  log: 0.75,
+  bush: 1.25,
 };
 
 /**
