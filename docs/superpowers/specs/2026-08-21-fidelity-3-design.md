@@ -55,7 +55,14 @@ Workstreams (mostly independent, verified by fidelity snips):
 6. **HUD reskin**: CSS overhaul to dark-panel style; compass gets tick marks + diamond; hotbar slots restyled; counters consolidated visually (same elements/handlers).
 7. **Hands**: finger/thumb geometry + sleeve cuffs; held-item scale check.
 8. **Village/windmill**: roof color variety, windmill prop on meadow-visible hill, house trim.
-9. **Critters**: per-species fidelity rebuild toward Mossbun bar (chunky bodies, big eyes) — drafted via codex (solo MCP) where efficient, adapted into `src/critters/models.ts` builders, verified in `?preview=critters`.
+9. **Critters** (scope expanded mid-session by Spencer): full whimsical
+   redesign — "more whimsical and varied, kinda like Neopets vibes", with four
+   Neopets/plushie inspiration images provided. Round-3 rework of
+   `src/critters/models.ts` (executed by codex gpt-5.6-sol with the images
+   attached): bigger sclera+iris+highlight eyes, one unmistakable silhouette
+   feature per species (ears/antennae/frills/plumes/wings), two-tone plush
+   palettes, plump proportions. `CritterParts` animation contract and tri
+   budgets preserved; verified in `?preview=critters`.
 10. **Final sweep**: all biome snips + critter sheet vs reference; 936-test suite + e2e verify green; draw-call/fps sanity on medium.
 
 ## Verification

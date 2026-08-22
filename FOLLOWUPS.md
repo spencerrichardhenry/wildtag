@@ -330,3 +330,23 @@ block ship; listed here so they aren't lost.
 - Pen rendering capped at 8 models per pen with a `+N` marker (`village/pens.ts`).
 - Static farm plot tiles recolour from live unlocks (`farm/visuals.ts`).
 - Spires: the 26 m NE spire visually near-ties the corner tower's decorative roof apex (~26.4 m); gargoyle-perch clearance (18 m) is what matters and holds. Bump to ~28 m if the silhouette should unambiguously win.
+
+## Fidelity-3 fast-follows (2026-08-21)
+
+- Steep-slope prop overhang — mesas/boulders whose origin sits on the analytic
+  surface can cantilever past a crest and read as floating from below (seen in
+  a highlands snip, NE of (-297,-297)). A groundNormalAt gate (like the castle
+  approach mushrooms' `APPROACH_STEEP_NORMAL_Y`) on mesa/boulder placement
+  would fix it. (`world/scatter.ts`)
+- Willow strand stretch — the drooping strand cones read leggy at tall tree-
+  tier scales; consider capping willow scale or thickening strands.
+  (`world/props.ts`)
+- Crags scatter reads sparse vs the other biomes post-density-pass; the biome
+  is stark by design but could take a scree/pebble bump. (`core/constants.ts`)
+- Windmill blade disc faces away from some meadow approaches; if it reads
+  edge-on from spawn, flip `VILLAGE.windmill.angle` or the rot offset.
+  (`village/layout.ts`)
+- Flower-patch petals are flat crossed boxes; at very close range they read a
+  touch pinwheel-like. Chunkier petal wedges would soften this. (`world/props.ts`)
+- Cloud seed 0xc10ed puts one shard-like cloud near spawn's west view; a reroll
+  or min-puff-overlap guard would kill the sliver. (`world/environment.ts`)
