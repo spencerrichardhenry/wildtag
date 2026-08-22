@@ -163,9 +163,8 @@ function buildArm(
   cuff.position.copy(armDir).multiplyScalar(HANDS.mittenRadius * 0.75 + HANDS.cuffLen * 0.55);
   group.add(cuff);
 
-  // Palm + one broad upper claw + opposing thumb, merged into ONE geometry.
-  // There are deliberately no individually readable fingers: the reference
-  // is a simple toy-like C-shaped pincer.
+  // Palm + three stubby claw digits + a thumb nub, merged into ONE geometry —
+  // deliberately toy-like ("cutesy little claw"), not anatomical fingers.
   const handGeo = buildHandGeometry(mirror);
   const hand = tagMesh(new THREE.Mesh(handGeo, skinMat));
   group.add(hand);
@@ -173,50 +172,64 @@ function buildArm(
   ownGeometries.push(forearmGeo, cuffGeo, handGeo);
 }
 
-/** Low-poly claw lobe whose local Y axis follows `dir`. */
-function clawLobe(
-  r: number,
-  len: number,
-  start: THREE.Vector3,
-  dir: THREE.Vector3,
-): THREE.BufferGeometry {
-  const unit = dir.clone().normalize();
-  const geometry = new THREE.CapsuleGeometry(r, len, 2, 5);
-  geometry.applyQuaternion(
-    new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), unit),
-  );
-  geometry.translate(
-    start.x + unit.x * len * 0.5,
-    start.y + unit.y * len * 0.5,
-    start.z + unit.z * len * 0.5,
-  );
-  return geometry;
-}
+
 
 /** Palm + one broad upper pad + one opposing thumb as one merged geometry.
  *  `mirror` flips the pincer so the pair reads as left/right hands.
  *  Falls back to the bare palm if a merge ever fails. */
 function buildHandGeometry(mirror: 1 | -1): THREE.BufferGeometry {
   const R = HANDS.mittenRadius;
-  const palm = new THREE.SphereGeometry(R, 8, 6);
+  const palm = new THREE.SphereGeometry(R, 9, 7);
   palm.scale(HANDS.mittenScale.x, HANDS.mittenScale.y, HANDS.mittenScale.z);
 
   const parts: THREE.BufferGeometry[] = [palm];
-  const C = HANDS.claw;
-  parts.push(clawLobe(
-    C.r,
-    C.len,
-    new THREE.Vector3(mirror * R * 0.18, R * 0.25, -R * 0.12),
-    new THREE.Vector3(-mirror * 0.44, 0.82, -0.36),
-  ));
 
+  // Three stubby claw digits curling over the palm's top-front rim — small,
+  // rounded, toy-like (Spencer: "cutesy little claw", not fingers, not the
+  // previous oversized flat petals).
+  const C = HANDS.claw;
+  for (const [i, fanStep] of [-1, 0, 1].entries()) {
+    void i;
+    const digit = new THREE.CapsuleGeometry(C.r, C.len, 3, 7);
+    digit.scale(1, 1, 0.82);
+    // Taper: shrink the top hemisphere toward tipR so the digit softly points.
+    const pos = digit.getAttribute('position');
+    const half = C.len / 2;
+    for (let v = 0; v < pos.count; v++) {
+      const y = pos.getY(v);
+      if (y > half * 0.4) {
+        const t = Math.min(1, (y - half * 0.4) / (half * 0.6 + C.r));
+        const k = 1 - t * (1 - C.tipR / C.r);
+        pos.setX(v, pos.getX(v) * k);
+        pos.setZ(v, pos.getZ(v) * k);
+      }
+    }
+    // Curl forward-over the rim, fanned across the top edge.
+    digit.rotateX(-Math.PI / 2 + C.curl); // capsule +y → pitched forward-down
+    digit.rotateY(fanStep * C.fan * -mirror);
+    const ax = mirror * fanStep * R * 0.42;
+    digit.translate(ax, R * 0.42, -R * 0.72);
+    parts.push(digit);
+  }
+
+  // Small opposing thumb nub on the inner-lower edge.
   const T = HANDS.thumb;
-  parts.push(clawLobe(
-    T.r,
-    T.len,
-    new THREE.Vector3(-mirror * R * 0.72, -R * 0.15, R * 0.22),
-    new THREE.Vector3(-mirror * 0.5, 0.78, -0.36),
-  ));
+  const thumb = new THREE.CapsuleGeometry(T.r, T.len, 3, 7);
+  const tpos = thumb.getAttribute('position');
+  const thalf = T.len / 2;
+  for (let v = 0; v < tpos.count; v++) {
+    const y = tpos.getY(v);
+    if (y > thalf * 0.4) {
+      const t = Math.min(1, (y - thalf * 0.4) / (thalf * 0.6 + T.r));
+      const k = 1 - t * (1 - T.tipR / T.r);
+      tpos.setX(v, tpos.getX(v) * k);
+      tpos.setZ(v, tpos.getZ(v) * k);
+    }
+  }
+  thumb.rotateX(-Math.PI / 2 + 0.9);
+  thumb.rotateZ(mirror * 0.7);
+  thumb.translate(-mirror * R * 0.82, R * 0.05, -R * 0.35);
+  parts.push(thumb);
 
   const merged = mergeGeometries(
     parts.map((g) => (g.index ? g.toNonIndexed() : g)),

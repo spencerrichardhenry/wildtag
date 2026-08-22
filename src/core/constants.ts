@@ -1990,12 +1990,14 @@ export const HANDS = {
   mittenRadius: 0.108,
   mittenScale: { x: 1.12, y: 0.94, z: 1.12 },
   /**
-   * Reference-style claw: one broad upper pad and one thick opposing thumb —
-   * no individually readable fingers. Together they form the reference's
-   * simple, cute C-shaped pincer and merge into the palm's single mesh.
+   * Cutesy claw hands (Spencer's direction — NOT anatomical fingers): a plump
+   * toy paw with three stubby rounded claw digits over the top edge and a
+   * small opposing thumb nub. Digits are short capsules that CURL over the
+   * palm rim (tip r < base r reads as a soft point); everything merges into
+   * one mesh with the palm.
    */
-  claw: { r: 0.052, len: 0.105 },
-  thumb: { r: 0.047, len: 0.078 },
+  claw: { r: 0.034, tipR: 0.02, len: 0.055, curl: 1.15, fan: 0.34 },
+  thumb: { r: 0.032, tipR: 0.02, len: 0.04 },
   /** Grapple-hook viewmodel: shaft (radii/len) + prongs (radius/len/count) fanned at the tip. */
   hookShaft: { topR: 0.015, bottomR: 0.02, len: 0.14 },
   hookProng: { r: 0.022, len: 0.06, count: 3, fanR: 0.03 },
