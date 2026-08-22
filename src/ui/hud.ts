@@ -128,7 +128,7 @@ const RES_TAG: Readonly<Record<string, string>> = {
   slow: 'slow',
   honey: 'honey',
   charm: 'charms',
-  purifier: 'Purifiers',
+  purifier: 'purifiers',
 };
 
 const RING_IN = '#6fe08a'; // within track radius (green)
@@ -868,8 +868,8 @@ const STYLE = `
   position: fixed;
   inset: 0;
   pointer-events: none;
-  font-family: 'Courier New', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  color: #eaf2f4;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  color: #e8f1f6;
 }
 .wt-hud.wt-hidden { display: none; }
 
@@ -897,7 +897,7 @@ const STYLE = `
 }
 .wt-cross-diamond {
   width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px;
-  background: #66e0ff;
+  background: #7deec6;
   transform: rotate(45deg);
   box-shadow: 0 0 4px rgba(0,0,0,0.8);
 }
@@ -927,41 +927,45 @@ const STYLE = `
   transform: translateX(-50%);
   white-space: nowrap;
   font-size: 12px;
+  font-weight: 600;
   color: #cfe8d8;
   text-shadow: 0 1px 3px #000;
 }
 
-/* Resource strip ---------------------------------------------------------- */
+/* Resource strip — one dark rounded panel (reference style) ---------------- */
 .wt-resources {
   position: fixed;
   left: 14px;
   top: 12px;
   display: flex;
   flex-wrap: wrap;
-  gap: 6px 14px;
-  max-width: 240px;
+  gap: 5px 13px;
+  max-width: 252px;
+  padding: 8px 12px;
+  background: rgba(18, 25, 32, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
   z-index: 5;
-  text-shadow: 0 1px 2px #000;
 }
-.wt-res { display: flex; align-items: center; gap: 5px; font-size: 13px; }
+.wt-res { display: flex; align-items: center; gap: 5px; font-size: 12.5px; }
 .wt-res-dot {
-  width: 10px; height: 10px; border-radius: 50%;
-  box-shadow: 0 0 2px rgba(0,0,0,0.6);
+  width: 9px; height: 9px; border-radius: 50%;
+  box-shadow: inset 0 -1px 1px rgba(0,0,0,0.35);
 }
 .wt-res-rp { border-radius: 3px; }
-.wt-res-count { min-width: 12px; font-weight: bold; }
-.wt-res-tag { font-size: 11px; color: #9fb0b8; }
+.wt-res-count { min-width: 12px; font-weight: 700; letter-spacing: 0.2px; }
+.wt-res-tag { font-size: 11px; font-weight: 500; color: #9db0bd; }
 
 /* Day/night arc ------------------------------------------------------------ */
 .wt-daycycle {
   position: fixed;
   right: 14px;
-  top: 12px;
-  width: 60px;
-  height: 8px;
-  background: rgba(10, 14, 16, 0.55);
-  border: 1px solid rgba(200, 220, 230, 0.24);
-  border-radius: 4px;
+  top: 14px;
+  width: 64px;
+  height: 10px;
+  background: rgba(18, 25, 32, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 6px;
   z-index: 5;
 }
 .wt-daycycle-dot {
@@ -971,60 +975,63 @@ const STYLE = `
   height: 12px;
   border-radius: 50%;
   transform: translate(-50%, -50%);
-  background: #ffdca0;
-  box-shadow: 0 0 4px rgba(0, 0, 0, 0.7);
+  background: #ffd98f;
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.55);
   transition: left 0.2s linear;
 }
 .wt-daycycle-dot.wt-moon { background: #9db4e0; }
 
-/* Compass ----------------------------------------------------------------- */
+/* Compass — dark strip, ticks under centered cardinals, mint diamond ------- */
 .wt-compass {
   position: fixed;
   left: 50%;
   top: 12px;
   transform: translateX(-50%);
-  width: 360px;
-  height: 26px;
+  width: 400px;
+  height: 30px;
   overflow: hidden;
-  background: rgba(8, 12, 14, 0.5);
-  border: 1px solid rgba(200, 220, 230, 0.18);
-  border-radius: 6px;
+  background: rgba(18, 25, 32, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
   z-index: 5;
-  -webkit-mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
-  mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 10%, #000 90%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 10%, #000 90%, transparent);
 }
 .wt-compass-track { position: absolute; inset: 0; }
 .wt-compass-centre {
   position: absolute;
   left: 50%;
-  top: 0;
-  width: 1px;
-  height: 100%;
-  background: rgba(255, 255, 255, 0.65);
-  transform: translateX(-50%);
+  top: auto;
+  bottom: 4px;
+  width: 7px;
+  height: 7px;
+  background: #7deec6;
+  transform: translateX(-50%) rotate(45deg);
+  box-shadow: 0 0 5px rgba(125, 238, 198, 0.55);
 }
 .wt-tick {
   position: absolute;
-  top: 16px;
+  top: 21px;
   width: 1px;
   height: 5px;
-  background: rgba(210, 226, 232, 0.5);
+  background: rgba(210, 226, 232, 0.35);
   transform: translateX(-50%);
 }
-.wt-tick-major { top: 12px; height: 9px; background: rgba(230, 242, 246, 0.85); }
+.wt-tick-major { top: 19px; height: 7px; background: rgba(230, 242, 246, 0.7); }
 .wt-tick-label {
   position: absolute;
   left: 50%;
-  top: -12px;
+  top: -15px;
   transform: translateX(-50%);
-  font-size: 11px;
-  font-weight: bold;
-  color: #eaf2f4;
-  text-shadow: 0 1px 2px #000;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: #dcebf2;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.6);
 }
 .wt-pip {
   position: absolute;
-  top: 2px;
+  top: 4px;
   width: 6px;
   height: 6px;
   border-radius: 50%;
@@ -1032,17 +1039,18 @@ const STYLE = `
   box-shadow: 0 0 3px rgba(0,0,0,0.7);
 }
 
-/* Stamina ----------------------------------------------------------------- */
+/* Stamina — bottom-right mint bar (reference) ------------------------------- */
 .wt-stamina {
   position: fixed;
-  left: 50%;
-  bottom: 94px;
-  transform: translateX(-50%);
-  width: 220px;
-  height: 6px;
-  background: rgba(10, 14, 16, 0.6);
-  border: 1px solid rgba(200, 220, 230, 0.22);
-  border-radius: 4px;
+  right: 24px;
+  left: auto;
+  bottom: 24px;
+  transform: none;
+  width: 170px;
+  height: 12px;
+  background: rgba(18, 25, 32, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 7px;
   overflow: hidden;
   opacity: 0;
   transition: opacity 0.3s ease;
@@ -1052,7 +1060,8 @@ const STYLE = `
 .wt-stamina-fill {
   height: 100%;
   width: 100%;
-  background: linear-gradient(90deg, #6fe08a, #a8e6bc);
+  border-radius: 5px;
+  background: linear-gradient(90deg, #6ce9bd, #98f6d6);
   transition: width 0.12s linear;
 }
 .wt-stamina.wt-exhausted .wt-stamina-fill {
@@ -1061,17 +1070,18 @@ const STYLE = `
 }
 @keyframes wt-flash { 0% { opacity: 1; } 50% { opacity: 0.35; } 100% { opacity: 1; } }
 
-/* HP ------------------------------------------------------------------ */
+/* HP — above the stamina bar ------------------------------------------------ */
 .wt-health {
   position: fixed;
-  left: 50%;
-  bottom: 118px;
-  transform: translateX(-50%);
-  width: 220px;
-  height: 6px;
-  background: rgba(10, 14, 16, 0.6);
-  border: 1px solid rgba(200, 220, 230, 0.22);
-  border-radius: 4px;
+  right: 24px;
+  left: auto;
+  bottom: 42px;
+  transform: none;
+  width: 170px;
+  height: 10px;
+  background: rgba(18, 25, 32, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
   overflow: hidden;
   opacity: 0;
   transition: opacity 0.3s ease;
@@ -1081,7 +1091,8 @@ const STYLE = `
 .wt-health-fill {
   height: 100%;
   width: 100%;
-  background: #e0463a;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #ef6a5a, #f78d76);
   transition: width 0.12s linear;
 }
 .wt-health.wt-dazed .wt-health-fill {
@@ -1133,40 +1144,42 @@ const STYLE = `
   100% { opacity: 0; }
 }
 
-/* Hotbar ------------------------------------------------------------------ */
+/* Hotbar — larger dark rounded slots (reference) ---------------------------- */
 .wt-hotbar {
   position: fixed;
   left: 50%;
   bottom: 20px;
   transform: translateX(-50%);
   display: flex;
-  gap: 8px;
+  gap: 9px;
   z-index: 5;
 }
 .wt-slot {
   position: relative;
-  width: 58px;
-  height: 52px;
-  border: 1px solid rgba(200, 220, 230, 0.28);
-  border-radius: 7px;
-  background: rgba(14, 18, 22, 0.62);
+  width: 62px;
+  height: 58px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 11px;
+  background: rgba(18, 25, 32, 0.72);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 2px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
 }
 .wt-slot-key {
   position: absolute;
-  left: 5px;
-  top: 3px;
-  font-size: 10px;
-  color: #9fb0b8;
+  left: 6px;
+  top: 4px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #93a5b2;
 }
 .wt-slot-art {
   display: block;
-  width: 48px;
-  height: 46px;
+  width: 50px;
+  height: 48px;
   object-fit: contain;
   pointer-events: none;
   filter: drop-shadow(0 3px 3px rgba(0,0,0,0.45));
@@ -1180,22 +1193,23 @@ const STYLE = `
 /* dim = unusable right now (empty slot or a zero-count item) */
 .wt-slot-dim { opacity: 0.42; }
 .wt-slot-active {
-  border-color: #a8e6bc;
-  box-shadow: 0 0 0 1px #a8e6bc, 0 0 10px rgba(120, 220, 160, 0.4);
-  background: rgba(30, 48, 38, 0.7);
+  border-color: rgba(125, 238, 198, 0.9);
+  box-shadow: 0 0 0 1px rgba(125, 238, 198, 0.9), 0 0 12px rgba(108, 233, 189, 0.35);
+  background: rgba(24, 38, 36, 0.78);
 }
 .wt-slot-badge {
   position: absolute;
-  right: 3px;
-  bottom: 2px;
-  min-width: 15px;
-  padding: 0 3px;
-  font-size: 11px;
-  font-weight: bold;
-  text-align: center;
-  color: #0b0d10;
-  background: #ffe06a;
-  border-radius: 8px;
+  right: 6px;
+  bottom: 4px;
+  min-width: 12px;
+  padding: 0;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: right;
+  color: #eef6fa;
+  background: transparent;
+  border-radius: 0;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.7);
 }
 .wt-slot-badge:empty { display: none; }
 /* Empty-or-zero-count LMB feedback (Inventory+Building Task 3): a brief
@@ -1219,14 +1233,17 @@ const STYLE = `
   align-items: center;
 }
 .wt-ring-track { fill: none; stroke: rgba(255, 255, 255, 0.18); stroke-width: 3; }
-.wt-ring-prog { fill: none; stroke: #6fe08a; stroke-width: 3; stroke-linecap: round; transition: stroke-dashoffset 0.1s linear; }
+.wt-ring-prog { fill: none; stroke: #6ce9bd; stroke-width: 3; stroke-linecap: round; transition: stroke-dashoffset 0.1s linear; }
 .wt-ring-arrow { display: none; }
 .wt-ring-label {
-  font-size: 11px;
-  font-weight: bold;
-  color: #eaf2f4;
-  text-shadow: 0 1px 2px #000;
-  margin-top: 1px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #eef6fa;
+  padding: 2px 8px;
+  background: rgba(18, 25, 32, 0.72);
+  border-radius: 7px;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+  margin-top: 2px;
 }
 .wt-ring.wt-ring-off { transform: translate(-50%, -50%) scale(0.6); }
 .wt-ring.wt-ring-off .wt-ring-arrow {

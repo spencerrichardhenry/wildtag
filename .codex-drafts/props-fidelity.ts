@@ -187,7 +187,7 @@ export function buildOak2(): THREE.BufferGeometry {
   ]);
 }
 
-/** Four-tier conifer with visible trunk gaps, ~5.5m tall, ~108 tris. */
+/** Four-tier conifer with visible trunk gaps, ~5.5m tall, ~80 tris. */
 export function buildPine2(): THREE.BufferGeometry {
   return merge([
     cyl(0.1, 0.25, 4.75, 6, 0x6f4d2f, 2.375),
@@ -239,22 +239,22 @@ function flowerHead(
   return parts;
 }
 
-/** Three-flower patch, ~0.46m tall, ~324 tris. */
+/** Three-flower patch, ~0.49m tall, ~324 tris. */
 export function buildFlowerPatch(color: number): THREE.BufferGeometry {
   const specs: FlowerSpec[] = [
-    { x: -0.12, z: 0.04, height: 0.39, yaw: 0.18 },
-    { x: 0.13, z: 0.07, height: 0.43, yaw: 1.05 },
-    { x: 0.02, z: -0.13, height: 0.36, yaw: 2.2 },
+    { x: -0.12, z: 0.04, height: 0.36, yaw: 0.18 },
+    { x: 0.13, z: 0.07, height: 0.4, yaw: 1.05 },
+    { x: 0.02, z: -0.13, height: 0.34, yaw: 2.2 },
   ];
   const centerColor = color === 0xf2c744 ? 0xe7842f : 0xf2c744;
   const parts: THREE.BufferGeometry[] = [];
   for (const flower of specs) {
+    const stem = cyl(0.014, 0.024, flower.height, 4, 0x3f7a35, flower.height / 2);
+    stem.translate(flower.x, 0, flower.z);
     parts.push(
-      cyl(0.014, 0.024, flower.height, 4, 0x3f7a35, flower.height / 2),
+      stem,
       flowerLeaf(flower.x, flower.height * 0.5, flower.z, flower.yaw + 0.35),
     );
-    const stem = parts[parts.length - 2];
-    if (stem) stem.translate(flower.x, 0, flower.z);
     parts.push(...flowerHead(
       color,
       centerColor,
@@ -296,18 +296,18 @@ export function buildMushroomYellow(): THREE.BufferGeometry {
 
 function bushLobes(): THREE.BufferGeometry[] {
   return [
-    ground(blob(0.7, 0x4e8c3a, -0.2, 0, 0.02, 1.08, 0.76, 1.02)),
-    ground(blob(0.62, 0x4e8c3a, 0.42, 0, 0.08, 1, 0.82, 1.04)),
-    ground(blob(0.56, 0x5a9640, 0.06, 0, -0.4, 1.06, 0.88, 1)),
+    ground(blob(0.7, 0x4e8c3a, -0.2, 0, 0.02, 1.08, 1, 1.02)),
+    ground(blob(0.62, 0x4e8c3a, 0.42, 0, 0.08, 1, 0.9, 1.04)),
+    ground(blob(0.56, 0x4e8c3a, 0.06, 0, -0.4, 1.06, 0.95, 1)),
   ];
 }
 
-/** Fat three-lobe ground bush, ~1.0m tall, ~60 tris. */
+/** Fat three-lobe ground bush, ~1.2m tall, ~60 tris. */
 export function buildBush(): THREE.BufferGeometry {
   return merge(bushLobes());
 }
 
-/** Berry-dotted ground bush, ~1.1m tall, ~180 tris. */
+/** Berry-dotted ground bush, ~1.2m tall, ~180 tris. */
 export function buildBushBerry(): THREE.BufferGeometry {
   return merge([
     ...bushLobes(),
@@ -348,7 +348,7 @@ function tuftBlade(
 ): THREE.BufferGeometry {
   const raw = new THREE.ConeGeometry(radius, height, 4, 2);
   raw.translate(0, height / 2, 0);
-  const g = colored(raw, 0x4f8d37);
+  const g = colored(raw, 0x5da03f);
   const pos = g.getAttribute('position');
   const col = g.getAttribute('color');
   const tip = new THREE.Color(0x73b84f);
@@ -370,7 +370,7 @@ function tuftBlade(
   return g;
 }
 
-/** Eight-cone fountain grass tuft, ~0.5m tall, ~160 tris. */
+/** Eight-cone fountain grass tuft, ~0.5m tall, ~128 tris. */
 export function buildTuft2(): THREE.BufferGeometry {
   const cfg: ReadonlyArray<readonly [number, number, number, number, number, number]> = [
     [0.06, 0.5, 0, 0.08, 0, 0],
@@ -390,9 +390,9 @@ export function buildTuft2(): THREE.BufferGeometry {
 /** Four-piece faceted pebble cluster, ~0.3m tall, ~68 tris. */
 export function buildPebbleCluster(): THREE.BufferGeometry {
   return merge([
-    ground(blob(0.2, 0x7b828c, -0.18, 0, 0.02, 1.25, 0.62, 1.05)),
-    ground(blob(0.15, 0x7b828c, 0.18, 0, 0.09, 1.1, 0.72, 0.95)),
-    ground(blob(0.12, 0x7b828c, 0.04, 0, -0.2, 1.28, 0.65, 1.0)),
+    ground(blob(0.2, 0x7b828c, -0.18, 0, 0.02, 1.25, 0.85, 1.05)),
+    ground(blob(0.15, 0x7b828c, 0.18, 0, 0.09, 1.1, 0.78, 0.95)),
+    ground(blob(0.12, 0x7b828c, 0.04, 0, -0.2, 1.28, 0.74, 1.0)),
     ground(oct(0.12, 0x7b828c, 0.31, 0, -0.13, 1.05, 0.7, 0.9)),
   ]);
 }
@@ -434,7 +434,7 @@ export interface WindmillGeometry {
   blades: THREE.BufferGeometry;
 }
 
-/** Village windmill, ~8.9m tall; tower ~150 tris, blade assembly ~168 tris. */
+/** Village windmill, ~8.9m tall; tower ~152 tris, blade assembly ~176 tris. */
 export function buildWindmill(): WindmillGeometry {
   const tower = merge([
     cyl(1.08, 1.65, 6.65, 6, 0xe8dcc8, 3.325),

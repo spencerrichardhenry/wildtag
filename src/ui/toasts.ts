@@ -27,13 +27,13 @@ function injectStyles(): void {
       pointer-events: none;
     }
     .wt-toast {
-      font: 14px 'Courier New', ui-monospace, Menlo, Consolas, monospace;
-      color: #eef7f0;
-      background: rgba(18, 30, 24, 0.86);
-      border: 1px solid rgba(160, 230, 190, 0.4);
-      border-radius: 8px;
-      padding: 8px 16px;
-      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+      font: 600 13.5px -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      color: #eef6fa;
+      background: rgba(18, 25, 32, 0.82);
+      border: 1px solid rgba(255, 255, 255, 0.07);
+      border-radius: 10px;
+      padding: 9px 16px;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
       opacity: 0;
       transform: translateY(8px);
       transition: opacity 0.25s ease, transform 0.25s ease;
