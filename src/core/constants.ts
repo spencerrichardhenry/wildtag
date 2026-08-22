@@ -1915,6 +1915,15 @@ export const HANDS = {
   /** Mitten: base sphere radius (m) + non-uniform scale for a squashed paw silhouette. */
   mittenRadius: 0.095,
   mittenScale: { x: 1, y: 0.82, z: 1.2 },
+  /**
+   * Fidelity-3 fingers: the mitten grew four knuckle-forward fingers and an
+   * inward thumb (the reference hands read as hands, not paws). Capsule
+   * radius/length, fan spread (rad between fingers), forward curl (rad), and
+   * the thumb's inward yaw. All merged into the one hand mesh — no extra draw
+   * calls.
+   */
+  finger: { r: 0.026, len: 0.075, spread: 0.16, curl: 0.55 },
+  thumb: { r: 0.028, len: 0.06, yaw: 0.9 },
   /** Grapple-hook viewmodel: shaft (radii/len) + prongs (radius/len/count) fanned at the tip. */
   hookShaft: { topR: 0.015, bottomR: 0.02, len: 0.14 },
   hookProng: { r: 0.022, len: 0.06, count: 3, fanR: 0.03 },
@@ -1926,9 +1935,11 @@ export const HANDS = {
   rampWedge: { w: 0.17, run: 0.18, rise: 0.15 },
   /** Mini cube-block viewmodel: a small cube's side length (m). */
   cubeBlock: 0.22,
-  /** Skin-neutral warm mitten/forearm tone + a darker sleeve-cuff tone. */
-  skinColor: 0xd9a066,
-  sleeveColor: 0x33404e,
+  /** Skin-neutral warm hand/forearm tone + a darker sleeve-cuff tone
+   *  (Fidelity-3: brightened toward the reference's sunlit tan + warm-grey
+   *  sleeve instead of navy). */
+  skinColor: 0xe8b072,
+  sleeveColor: 0x4a423c,
   hookColor: 0xb9c0c6,
   /** Held-item tints — mirrors `ITEM_COLOR` in `ui/screens.ts` so the same item
    *  reads as the same color in the inventory screen and in-hand. */

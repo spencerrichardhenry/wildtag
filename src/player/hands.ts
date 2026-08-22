@@ -162,12 +162,55 @@ function buildArm(
   cuff.position.copy(armDir).multiplyScalar(HANDS.mittenRadius * 0.55 + HANDS.forearmLen * 0.55);
   group.add(cuff);
 
-  const mittenGeo = new THREE.SphereGeometry(HANDS.mittenRadius, 8, 6);
-  const mitten = tagMesh(new THREE.Mesh(mittenGeo, skinMat));
-  mitten.scale.set(HANDS.mittenScale.x, HANDS.mittenScale.y, HANDS.mittenScale.z);
-  group.add(mitten);
+  // Fidelity-3: the mitten grew fingers — palm sphere + four curled capsule
+  // fingers fanned forward + an inward thumb, merged into ONE geometry (same
+  // single-draw-call budget as the old bare mitten).
+  const handGeo = buildHandGeometry(mirror);
+  const hand = tagMesh(new THREE.Mesh(handGeo, skinMat));
+  group.add(hand);
 
-  ownGeometries.push(forearmGeo, cuffGeo, mittenGeo);
+  ownGeometries.push(forearmGeo, cuffGeo, handGeo);
+}
+
+/** Palm + fingers + thumb as one merged geometry. `mirror` flips the thumb
+ *  side so each hand reads correctly from behind (knuckles up, fingers curled
+ *  away from the camera). Falls back to the bare palm if a merge ever fails. */
+function buildHandGeometry(mirror: 1 | -1): THREE.BufferGeometry {
+  const R = HANDS.mittenRadius;
+  const palm = new THREE.SphereGeometry(R, 8, 6);
+  palm.scale(HANDS.mittenScale.x, HANDS.mittenScale.y, HANDS.mittenScale.z);
+
+  const parts: THREE.BufferGeometry[] = [palm];
+  const F = HANDS.finger;
+  for (let i = 0; i < 4; i++) {
+    const finger = new THREE.CapsuleGeometry(F.r, F.len, 3, 6);
+    // Capsule axis is Y; pitch it forward (toward -Z) with a downward curl,
+    // then fan across the palm width.
+    finger.rotateX(-Math.PI / 2 + F.curl);
+    const fan = (i - 1.5) * F.spread;
+    finger.rotateY(fan);
+    finger.translate(
+      Math.sin(fan) * -R * 0.2 + (i - 1.5) * R * 0.42,
+      R * 0.18,
+      -R * HANDS.mittenScale.z - F.len * 0.35,
+    );
+    parts.push(finger);
+  }
+  const T = HANDS.thumb;
+  const thumb = new THREE.CapsuleGeometry(T.r, T.len, 3, 6);
+  thumb.rotateX(-Math.PI / 2 + F.curl * 0.6);
+  thumb.rotateY(-mirror * T.yaw);
+  thumb.translate(-mirror * R * 0.95, R * 0.05, -R * 0.45);
+  parts.push(thumb);
+
+  const merged = mergeGeometries(
+    parts.map((g) => (g.index ? g.toNonIndexed() : g)),
+    false,
+  );
+  if (!merged) return palm; // defensive: mismatched attributes
+  for (const g of parts) g.dispose();
+  merged.computeBoundingSphere();
+  return merged;
 }
 
 /** Build the five distinct held-item meshes (darts/purifiers and the two kits
