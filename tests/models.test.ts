@@ -13,6 +13,10 @@ import { mulberry32 } from '../src/core/rng.ts';
 
 const TRI_BUDGET_DEFAULT = 1700;
 const TRI_BUDGET_PRISMHORSE = 2200;
+// Path-2 spike (Spencer): the Cragdrake is reconstructed faithfully from its
+// fal.ai concept + turnarounds at a deliberately higher ceiling (his spec:
+// "5k polygons or less") — one hero critter, still procedural.
+const TRI_BUDGET_CRAGDRAKE = 5000;
 
 function triCount(group: THREE.Object3D): number {
   let tris = 0;
@@ -27,7 +31,7 @@ function triCount(group: THREE.Object3D): number {
 
 describe('critter model tri budgets (round 2)', () => {
   for (const sp of SPECIES) {
-    const budget = sp.id === 'prismhorse' ? TRI_BUDGET_PRISMHORSE : TRI_BUDGET_DEFAULT;
+    const budget = sp.id === 'prismhorse' ? TRI_BUDGET_PRISMHORSE : sp.id === 'cragdrake' ? TRI_BUDGET_CRAGDRAKE : TRI_BUDGET_DEFAULT;
     it(`${sp.id} stays under ${budget} tris (worst-case weathering)`, () => {
       // Sample several seeds so conditional weathering accents (extra tuft /
       // notch / mote meshes) are exercised — the budget must hold worst-case.
