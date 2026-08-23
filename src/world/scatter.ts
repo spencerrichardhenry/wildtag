@@ -40,7 +40,8 @@ export type PropKind =
   | 'log' // fallen two-log cluster w/ cut ends (collides like a rock)
   | 'toadstool' // red/yellow chunky toadstool (no collision)
   | 'pebbles' // small faceted pebble cluster (no collision)
-  | 'cairn'; // stacked-stone stack (wave 3; collides like a boulder)
+  | 'cairn' // stacked-stone stack (wave 3; collides like a boulder)
+  | 'kelp'; // giant underwater kelp tree (Bounce Wave; decoration, swim-through)
 
 /**
  * A single scattered prop: gameplay `kind` + world transform (y already
@@ -87,6 +88,8 @@ const S_GC_ROLL = 0xc010;
 const S_GC_JX = 0xc030;
 const S_GC_JZ = 0xc050;
 const S_GC_ROT = 0xc070;
+// Bounce Wave: giant kelp roll on deep-water sub-cells.
+const S_KELP = 0xc090;
 // Cursed Castle approach mushrooms (Task 9): independent channels keyed by a
 // fixed candidate index (not a chunk grid cell — see approachMushroomsFor).
 const S_APPROACH_ANGLE = 0xf001;
@@ -267,8 +270,21 @@ export function scatterForChunk(cx: number, cz: number): PropPlacement[] {
       const y = heightAt(x, z);
       const biome = biomeAt(x, z);
 
-      // Water sub-cells: only a wetland-lake lily pad may float here.
+      // Water sub-cells: wetland-lake lily pads float; deep water grows giant
+      // kelp (Bounce Wave — pure decoration, swim-through, rooted on the
+      // seabed so the fronds rise toward the surface).
       if (biome === 'water') {
+        if (y < -SCATTER.kelpMinDepth && !capped('kelp') && h(S_KELP, gx, gz) < SCATTER.kelpChance) {
+          out.push({
+            kind: 'kelp',
+            x,
+            z,
+            y,
+            scale: scaleFor('kelp', gx, gz),
+            rot: h(S_ROT, gx, gz) * Math.PI * 2,
+          });
+          counts.kelp = (counts.kelp ?? 0) + 1;
+        }
         if (
           isWetlandLake(x, z, y) &&
           !capped('lilypad') &&

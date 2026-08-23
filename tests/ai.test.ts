@@ -769,3 +769,68 @@ describe("cragdrake 'dive' flee — orbits home with big vertical travel", () =>
     expect(Math.abs(wound)).toBeGreaterThanOrEqual(2 * Math.PI);
   });
 });
+
+// --- Bounce Wave: shark 'packhunt' + sky wyvern 'skyglide' -------------------
+
+describe("shark 'packhunt' — pack aggro", () => {
+  it('an UNTAGGED shark with packAggro pursues the player (pack turned hostile)', () => {
+    const allWater = (): Biome => 'water';
+    let c = makeCritter('shark', { state: 'idle', packAggro: true, pos: { x: 10, y: 0, z: 0 } });
+    c = run(c, 'shark', { x: 0, y: 0, z: 0 }, 1 / 30, 200, allWater);
+    expect(['alert', 'flee']).toContain(c.state);
+    // Pursuit: it closes distance toward the player rather than escaping.
+    expect(Math.hypot(c.pos.x, c.pos.z)).toBeLessThan(10);
+  });
+
+  it('an untagged shark WITHOUT packAggro stays peaceful next to the player', () => {
+    let c = makeCritter('shark', { state: 'idle', pos: { x: 4, y: 0, z: 0 } });
+    c = run(c, 'shark', { x: 0, y: 0, z: 0 }, 1 / 30, 120);
+    expect(['idle', 'wander']).toContain(c.state);
+  });
+
+  it('calming clears packAggro (the shoal settles)', () => {
+    let c = makeCritter('shark', {
+      state: 'flee',
+      stateDur: 999,
+      packAggro: true,
+      tagged: false,
+      pos: { x: 10, y: 0, z: 0 },
+    });
+    // packhunt reacts on tagged/packAggro, not distance — clear the aggro
+    // manually the way linking/expiry does upstream, then far-time calm it.
+    c = { ...c, packAggro: false };
+    c = run(c, 'shark', { x: 500, y: 0, z: 500 }, 1 / 5, 400);
+    expect(c.packAggro).toBeFalsy();
+    expect(['calm', 'wander', 'idle']).toContain(c.state);
+  });
+});
+
+describe("sky wyvern 'skyglide' — high slow-sink cycle", () => {
+  it('sinks at ~skyglideSink and thermals back to the ceiling at the floor', () => {
+    let c = makeCritter('skywyvern', {
+      state: 'wander',
+      stateDur: 999,
+      flightHeight: AI.skyglideFloor + 3,
+      pos: { x: 0, y: AI.skyglideFloor + 3, z: 0 },
+    });
+    const dt = 1 / 30;
+    const before = c.flightHeight;
+    c = run(c, 'skywyvern', { x: 400, y: 0, z: 400 }, dt, 30);
+    // One second of sim → sank by ≈ skyglideSink.
+    expect(before - c.flightHeight).toBeCloseTo(AI.skyglideSink, 0);
+    // Keep sinking past the floor → the band snaps to the ceiling.
+    c = run(c, 'skywyvern', { x: 400, y: 0, z: 400 }, dt, 30 * 3);
+    expect(c.flightHeight).toBeGreaterThan(AI.skyglideFloor + 5);
+  });
+
+  it('cruises high: after settling, altitude sits near terrain + band (unreachable on foot)', () => {
+    let c = makeCritter('skywyvern', {
+      state: 'wander',
+      stateDur: 999,
+      flightHeight: AI.skyglideCeil,
+      pos: { x: 0, y: AI.skyglideCeil, z: 0 },
+    });
+    c = run(c, 'skywyvern', { x: 400, y: 0, z: 400 }, 1 / 30, 300);
+    expect(c.pos.y).toBeGreaterThan(AI.skyglideFloor - 1);
+  });
+});

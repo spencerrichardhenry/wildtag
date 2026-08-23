@@ -580,6 +580,30 @@ function buildLog(): THREE.BufferGeometry {
   ]);
 }
 
+/** Giant underwater kelp tree (Bounce Wave): a tall swaying stalk with paired
+ *  faceted fronds, ~9m at scale 1 so it fills the dive-zone water column.
+ *  Pure decoration — no collision, no grapple anchor (Spencer). */
+function buildKelp(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [cyl(0.09, 0.16, 9.0, 5, C.kelpStalk, 4.5)];
+  for (let i = 0; i < 7; i++) {
+    const yy = 1.6 + i * 1.05;
+    const a = i * 2.4;
+    for (const side of [-1, 1]) {
+      const frond = new THREE.ConeGeometry(0.34, 1.7, 3);
+      frond.scale(1, 1, 0.16);
+      frond.rotateZ(side * 1.05);
+      frond.rotateY(a);
+      frond.translate(Math.cos(a) * side * 0.42, yy, Math.sin(a) * side * 0.42);
+      parts.push(colored(frond, C.kelpFrond));
+    }
+  }
+  const crown = new THREE.IcosahedronGeometry(0.35, 0);
+  crown.scale(1, 0.6, 1);
+  crown.translate(0, 9.1, 0);
+  parts.push(colored(crown, C.kelpFrond));
+  return merge(parts);
+}
+
 /** Four-piece faceted pebble cluster (~0.3m). */
 function buildPebbleCluster(): THREE.BufferGeometry {
   return merge([
@@ -746,6 +770,7 @@ const BUILDERS: Record<string, () => THREE.BufferGeometry> = {
   log: buildLog,
   pebbles: buildPebbleCluster,
   cairn: buildCairn,
+  kelp: buildKelp,
   flowerOrange: () => buildFlowerPatch(C.flowerOrange),
   flowerViolet: () => buildFlowerPatch(C.flowerViolet),
 };

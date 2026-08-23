@@ -3,6 +3,8 @@ import { mulberry32 } from '../core/rng.ts';
 import { SPECIES } from './species.ts';
 import { buildCritterModel, type CritterParts } from './models.ts';
 import { animateCritter } from './animation.ts';
+import { buildGoblin, buildElf } from '../castle/builders.ts';
+import { buildClamGuard, buildCrocodile, buildTurtle } from '../underwater/builders.ts';
 
 // Dev aid: `?preview=critters`. The complete roster is presented as a large,
 // scrollable 3–4 column studio gallery. The canvas stays viewport-sized while
@@ -34,6 +36,24 @@ interface Stand {
  * Take over the given renderer with a self-contained critter showcase scene and
  * its own animation loop. Never returns.
  */
+/**
+ * Non-species characters appended to the full gallery (Spencer, Bounce Wave:
+ * "preview critters needs to stay up to date with ALL critters — clams have
+ * not been added"). Every character model that isn't a SPECIES entry
+ * registers here; tests/preview-registry.test.ts pins the coverage.
+ */
+export const EXTRA_CHARACTERS: {
+  id: string;
+  name: string;
+  build: (seed: number) => THREE.Group;
+}[] = [
+  { id: 'clam', name: 'Clam Guard', build: (seed) => buildClamGuard(seed).root },
+  { id: 'crocodile', name: 'Crocodile', build: (seed) => buildCrocodile(seed).root },
+  { id: 'turtle', name: 'Turtle', build: (seed) => buildTurtle(seed).root },
+  { id: 'goblin', name: 'Goblin', build: (seed) => buildGoblin(mulberry32(seed)) },
+  { id: 'elf', name: 'Elf', build: (seed) => buildElf(mulberry32(seed)) },
+];
+
 export function runCritterPreview(renderer: THREE.WebGLRenderer): void {
   const focusParam = new URLSearchParams(window.location.search).get('focus');
   const focusIds = focusParam
@@ -137,6 +157,33 @@ export function runCritterPreview(renderer: THREE.WebGLRenderer): void {
       worldZ: 0,
     };
   });
+
+  // Non-species characters join the full gallery (skipped in focus mode —
+  // their builders aren't in the SPECIES/focus namespace).
+  if (!focusIds) {
+    for (const [i, extra] of EXTRA_CHARACTERS.entries()) {
+      const group = extra.build(1000 + i * 77);
+      scene.add(group);
+      const label = document.createElement('div');
+      label.textContent = extra.name;
+      label.dataset.speciesId = extra.id;
+      label.style.cssText =
+        'position:absolute;transform:translate(-50%,-100%);font:700 16px system-ui,sans-serif;' +
+        'color:#eaf2ff;background:rgba(20,28,48,.82);padding:4px 10px;border-radius:7px;' +
+        'white-space:nowrap;text-shadow:0 1px 2px #000;will-change:left,top;';
+      overlay.appendChild(label);
+      stands.push({
+        group,
+        parts: { legs: [], head: group, body: group },
+        walkSpeed: 0,
+        speciesId: extra.id,
+        label,
+        labelY: 2.0,
+        worldX: 0,
+        worldZ: 0,
+      });
+    }
+  }
 
   let columns = 1;
   let rows = 1;

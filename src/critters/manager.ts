@@ -114,7 +114,9 @@ export function spawnSlotsForCell(cx: number, cz: number): SpawnSlot[] {
     const overWater = biomeAt(x, z) === 'water';
     const flies =
       def.fleeStyle === 'fly' || def.fleeStyle === 'flutter' || def.fleeStyle === 'sting';
-    if (overWater && def.fleeStyle !== 'swim' && !flies) continue;
+    // packhunt (sharks) LIVES on water; everything else keeps the old rule.
+    if (overWater && def.fleeStyle !== 'swim' && def.fleeStyle !== 'packhunt' && !flies) continue;
+    if (!overWater && def.fleeStyle === 'packhunt') continue; // sharks need water
 
     // Nothing spawns inside Haven Village — the plaza is for villagers.
     if (inVillage(x, z)) continue;
@@ -129,8 +131,28 @@ export function spawnSlotsForCell(cx: number, cz: number): SpawnSlot[] {
           ? AI.flutterHeight
           : species === 'nectarwisp'
             ? AI.stingPatrolHeight
-            : AI.flyHeightMin + h(salt + 4, cx, cz) * (AI.flyHeightMax - AI.flyHeightMin);
-    out.push({ id: slotId(cx, cz, i), species, home: { x, y, z }, flightHeight });
+            : species === 'skywyvern'
+              ? AI.skyglideCeil
+              : AI.flyHeightMin + h(salt + 4, cx, cz) * (AI.flyHeightMax - AI.flyHeightMin);
+    // Sharks home at the water surface, not the seabed.
+    const homeY = def.fleeStyle === 'packhunt' ? 0 : y;
+    out.push({ id: slotId(cx, cz, i), species, home: { x, y: homeY, z }, flightHeight });
+    // Bounce Wave: sharks swim in PACKS — a packhunt slot emits packmates
+    // clustered around the leader (3-4 total, jittered by hash).
+    if (def.fleeStyle === 'packhunt') {
+      const extra = AI.sharkPackSize - 1 + Math.round(h(salt + 5, cx, cz));
+      for (let m = 0; m < extra; m++) {
+        const ax = x + (h(salt + 6 + m, cx, cz) - 0.5) * 14;
+        const az = z + (h(salt + 9 + m, cx, cz) - 0.5) * 14;
+        if (biomeAt(ax, az) !== 'water') continue;
+        out.push({
+          id: slotId(cx, cz, i) * 31 + m + 1,
+          species,
+          home: { x: ax, y: 0, z: az },
+          flightHeight,
+        });
+      }
+    }
   }
   return out;
 }
@@ -274,12 +296,22 @@ export class CritterManager {
       // callback is deliberately health-agnostic; main.ts applies the same HP
       // and knockback rules used by other world threats.
       entry.stingCooldown = Math.max(0, entry.stingCooldown - dt);
+      const sharkHostile =
+        def.fleeStyle === 'packhunt' && (s.tagged || s.packAggro) && !s.linked;
       if (def.fleeStyle === 'sting' && s.tagged && !s.linked) {
         const d = Math.hypot(
           s.pos.x - playerPos.x,
           s.pos.y - (playerPos.y + AI.stingHoverAbovePlayer),
           s.pos.z - playerPos.z,
         );
+        if (d <= AI.stingRange && entry.stingCooldown <= 0) {
+          entry.stingCooldown = AI.stingCooldown;
+          this.onPlayerSting?.(AI.stingDamage, { ...s.pos });
+        }
+      } else if (sharkHostile) {
+        // Bounce Wave sharks: same low bee-tier damage + cadence as the wisp,
+        // plain 3D contact range (they bite at swim height).
+        const d = Math.hypot(s.pos.x - playerPos.x, s.pos.y - playerPos.y, s.pos.z - playerPos.z);
         if (d <= AI.stingRange && entry.stingCooldown <= 0) {
           entry.stingCooldown = AI.stingCooldown;
           this.onPlayerSting?.(AI.stingDamage, { ...s.pos });
@@ -487,6 +519,21 @@ export class CritterManager {
       entry.state.trackProgress = p.trackProgress;
       entry.state.trackEmptyFor = p.trackEmptyFor ?? 0;
       p.species = entry.state.species;
+      // Bounce Wave: tagging ANY packhunt critter (shark) aggros every
+      // same-species packmate within sharkPackRadius — the whole pack turns.
+      if (value) {
+        const def = speciesById(entry.state.species);
+        if (def?.fleeStyle === 'packhunt') {
+          for (const other of this.active.values()) {
+            if (other.state.species !== entry.state.species) continue;
+            const d = Math.hypot(
+              other.state.pos.x - entry.state.pos.x,
+              other.state.pos.z - entry.state.pos.z,
+            );
+            if (d <= AI.sharkPackRadius) other.state.packAggro = true;
+          }
+        }
+      }
       this.invalidateList();
     }
   }

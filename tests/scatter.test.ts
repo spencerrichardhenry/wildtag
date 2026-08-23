@@ -77,15 +77,20 @@ describe('biome density sanity', () => {
 });
 
 describe('placement constraints', () => {
-  it('places nothing in a fully-underwater chunk', () => {
-    expect(scatterForChunk(WATER.cx, WATER.cz)).toHaveLength(0);
+  it('grows ONLY kelp in a fully-underwater chunk (Bounce Wave), rooted on the seabed', () => {
+    const ps = scatterForChunk(WATER.cx, WATER.cz);
+    expect(ps.length).toBeGreaterThan(0);
+    for (const p of ps) {
+      expect(p.kind).toBe('kelp');
+      expect(p.y).toBeLessThan(-SCATTER.kelpMinDepth); // seabed-rooted, deep water only
+    }
   });
 
   it('never places non-lilypad props on water or below minPlacementY', () => {
     for (let cx = -4; cx <= 4; cx++) {
       for (let cz = -16; cz <= 4; cz++) {
         for (const p of scatterForChunk(cx, cz)) {
-          if (p.kind === 'lilypad') continue; // lily pads intentionally float on lakes
+          if (p.kind === 'lilypad' || p.kind === 'kelp') continue; // water kinds by design
           expect(p.y).toBeGreaterThanOrEqual(SCATTER.minPlacementY);
           expect(biomeAt(p.x, p.z)).not.toBe('water');
         }

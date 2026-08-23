@@ -106,13 +106,16 @@ export function stepAI(c: CritterState, ctx: AIContext, dt: number): CritterStat
   // alert or flee — they only ever idle/wander.
   // Bold species (birds etc.) don't care about the player until a tracker is
   // on their back; skittish ones alert at awareness regardless.
-  const canFlee = sp.fleeStyle !== 'none' && !c.linked && (!sp.bold || c.tagged);
+  const canFlee =
+    sp.fleeStyle !== 'none' && !c.linked && (!sp.bold || c.tagged || !!c.packAggro);
   // Nectar Wisps aggro for the whole tagged window, even if the player fired
   // from outside their ordinary awareness radius. Other species retain the
   // normal proximity trigger.
   const shouldReact =
     canFlee &&
-    (sp.fleeStyle === 'sting' || sp.fleeStyle === 'packhunt' ? c.tagged : dist <= sp.awareness);
+    (sp.fleeStyle === 'sting' || sp.fleeStyle === 'packhunt'
+      ? c.tagged || (sp.fleeStyle === 'packhunt' && !!c.packAggro)
+      : dist <= sp.awareness);
 
   // Desired heading + target ground speed produced by the active state.
   let desiredYaw = c.yaw;
@@ -226,6 +229,7 @@ export function stepAI(c: CritterState, ctx: AIContext, dt: number): CritterStat
       }
       if (sp.fleeStyle !== 'sting' && out.farTime >= AI.calmTriggerTime) {
         enter(out, 'calm', ctx.rand, sp);
+        out.packAggro = false; // a calmed shark rejoins the peaceful shoal
         speed = sp.walkSpeed * AI.calmSpeedFactor;
       }
       break;
@@ -408,7 +412,7 @@ function locomote(
   // terrain-relative cruise band.
   const perch = sp.fleeStyle === 'perch';
   const flyer = isFlyer(sp);
-  const swimmer = sp.fleeStyle === 'swim';
+  const swimmer = sp.fleeStyle === 'swim' || sp.fleeStyle === 'packhunt';
 
   let nx = prev.pos.x;
   let nz = prev.pos.z;
@@ -455,7 +459,15 @@ function locomote(
     out.pos.y = Math.min(y, prev.home.y + AI.perchAltClamp);
   } else if (flyer) {
     let target = terrainY + prev.flightHeight;
-    if (sp.fleeStyle === 'dive' && prev.state === 'flee') {
+    if (sp.fleeStyle === 'skyglide') {
+      // Airborne life-cycle in EVERY state: the cruise band slowly sinks at
+      // skyglideSink; at the floor it catches a thermal back to the ceiling
+      // (flyClimbRate smooths the actual climb). See AI.skyglide* docs.
+      let band = prev.flightHeight - AI.skyglideSink * dt;
+      if (band <= AI.skyglideFloor) band = AI.skyglideCeil;
+      out.flightHeight = band;
+      target = terrainY + band;
+    } else if (sp.fleeStyle === 'dive' && prev.state === 'flee') {
       // Steep dives down the crag faces and back up: the sine swings the
       // target through ±diveAmp while terrainY itself plunges along the orbit
       // — but never into the ground.

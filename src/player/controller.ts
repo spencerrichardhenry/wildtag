@@ -462,14 +462,24 @@ export class PlayerController {
     // --- Grapple: Terraria-style projectile hook (RMB tap fires) -----------
     // RMB is now an edge, not a hold. Idle → fire; flying → cancel (retract);
     // zipping → plain release (keep momentum); hanging → re-fire a new hook
-    // (the climb-chaining loop). Any non-normal mode (swim) drops the hook.
-    const rmb = this.input.rmbHeld && this.state.mode === 'normal' && !this.grappleSuppressed;
+    // (the climb-chaining loop). Bounce Wave (Spencer): the hook now WORKS
+    // UNDERWATER — swim mode can fire and keep a latched rope (it reels
+    // through water like anywhere else); only zipline mode still drops it.
+    const rmb =
+      this.input.rmbHeld &&
+      (this.state.mode === 'normal' || this.state.mode === 'swim') &&
+      !this.grappleSuppressed;
     const rmbEdge = rmb && !this.prevRmb;
     this.prevRmb = rmb;
 
-    if (this.hook && this.state.mode !== 'normal') this.hook = null;
+    if (this.hook && this.state.mode !== 'normal' && this.state.mode !== 'swim') this.hook = null;
 
-    if (rmbEdge && this.unlocks.has('grapple') && this.state.mode === 'normal' && !this.stumbleVel) {
+    if (
+      rmbEdge &&
+      this.unlocks.has('grapple') &&
+      (this.state.mode === 'normal' || this.state.mode === 'swim') &&
+      !this.stumbleVel
+    ) {
       const h = this.hook;
       if (underRoof && isGrappleFireAttempt(h)) {
         // Suppressed: no sky in here. Toast at most once per hall stay.

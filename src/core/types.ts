@@ -224,4 +224,7 @@ export interface CritterState {
   stateDur: number;
   /** Seconds the player has stayed beyond awareness×calmDistFactor while fleeing. */
   farTime: number;
+  /** Bounce Wave (sharks): pack-propagated aggro — set on every same-species
+   *  packmate near a tagged packhunt critter. Transient (never saved). */
+  packAggro?: boolean;
 }

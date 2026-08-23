@@ -717,10 +717,14 @@ export const SCATTER = {
     log: 0.6,
     scree: 0.4,
     reed: 0.5,
+    kelp: 0.5,
   },
 
   /** Chance a wetland-lake water sub-cell floats a lily pad. */
   lilypadChance: 0.5,
+  /** Bounce Wave giant kelp: seabed depth (m below sea) required + roll chance. */
+  kelpMinDepth: 2.5,
+  kelpChance: 0.35,
   /** Max shallow-water depth (m below sea) that still reads as a lily-pad lake. */
   lilypadMaxDepth: 3,
 
@@ -744,6 +748,7 @@ export const SCATTER = {
     toadstool: 10,
     pebbles: 18,
     cairn: 6,
+    kelp: 14,
   },
 
   /**
@@ -774,6 +779,7 @@ export const SCATTER = {
     toadstool: [0.8, 1.4],
     pebbles: [0.8, 1.5],
     cairn: [0.9, 1.8],
+    kelp: [0.8, 1.9],
   },
 
   /**
@@ -818,6 +824,8 @@ export const SCATTER = {
     logBark: 0x795635,
     logCut: 0xc9a876,
     pebble: 0x7b828c,
+    kelpStalk: 0x3f6d3a,
+    kelpFrond: 0x3fa060,
     rock: 0x8b8378,
     crystal: 0x7fb0d8,
     flower: 0xe27ba8,
@@ -1319,6 +1327,24 @@ export const AI = {
   diveAmp: 7.5,
   diveRate: 1.1,
   diveMinClear: 1.2,
+  /**
+   * 'packhunt' (sharks): tagging ANY pack member aggros every same-species
+   * critter within sharkPackRadius; packs spawn packSize together. Contact
+   * damage reuses the sting cadence at the same low (bee-tier) damage.
+   */
+  sharkPackRadius: 28,
+  sharkPackSize: 3, // + the leader = 3-4 in the water (jittered by hash)
+  /**
+   * 'skyglide' (sky wyvern): lives airborne — cruises at skyglideCeil above
+   * terrain and SINKS at skyglideSink m/s (player glideSink is 2; "a bit
+   * quicker" per Spencer) until skyglideFloor, then catches a thermal (the
+   * cruise target snaps back to ceil and the smooth climb rate carries it
+   * up). Floor sits above dart/grapple reach but below a sky-trampoline
+   * bounce apex, so the drone trampoline is the intended catch route.
+   */
+  skyglideCeil: 55,
+  skyglideFloor: 26,
+  skyglideSink: 2.4,
   /** Ledge flee: probe distance ahead (m) when sampling for higher ground. */
   ledgeProbe: 3,
   /** Swim flee: probe distance ahead (m) when steering toward water. */
