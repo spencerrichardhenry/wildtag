@@ -197,6 +197,33 @@ export function buildItemThumbnailModel(item: ItemId): THREE.Group {
     case 'kit:drone':
       root.add(buildDrone());
       break;
+    case 'kit:trampoline':
+    case 'kit:skytramp': {
+      // Mini trampoline: horn-purple frame ring + croc-hide membrane; the sky
+      // variant floats a little drone above each side.
+      const ring = mesh(
+        new THREE.TorusGeometry(0.5, 0.09, 5, 8),
+        surface(0x7a5fa8, { roughness: 0.85 }),
+      );
+      ring.rotation.x = Math.PI / 2;
+      root.add(ring);
+      const pad = mesh(
+        new THREE.CylinderGeometry(0.46, 0.46, 0.06, 9),
+        surface(HANDS.itemColor['kit:trampoline'], { roughness: 0.9 }),
+      );
+      root.add(pad);
+      if (item === 'kit:skytramp') {
+        for (const sx of [-1, 1]) {
+          const rotor = mesh(
+            new THREE.BoxGeometry(0.22, 0.05, 0.22),
+            surface(HANDS.itemColor['kit:skytramp'], { roughness: 0.8 }),
+          );
+          rotor.position.set(sx * 0.5, 0.3, 0);
+          root.add(rotor);
+        }
+      }
+      break;
+    }
     case 'wall':
       root.add(
         mesh(
