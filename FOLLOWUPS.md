@@ -360,3 +360,4 @@ block ship; listed here so they aren't lost.
   without the writing-skills retrieval-test pass (RED/GREEN on a fresh agent):
   run that test next session and tighten wording where the agent misreads.
 - Kelp taller than its water depth pokes tops above the surface (reads like real kelp; clamp scale by depth if it ever bothers): world/props.ts buildKelp / scatter kelp roll.
+- Sky trampoline reads as a dark silhouette from below (unlit underside); a lighter membrane bottom tint or slight emissive would help. structures/trampolines.ts buildTrampMesh.
