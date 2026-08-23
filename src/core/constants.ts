@@ -1236,6 +1236,8 @@ export const CRITTER_VARIATION = {
   /** Default hue jitter (fraction of the hue wheel) and lightness jitter. */
   hueJitter: 0.04,
   lightnessJitter: 0.08,
+  /** Per-face lightness variation baked into flat head/body facets (±). */
+  facetLightnessJitter: 0.055,
 } as const;
 
 /**
