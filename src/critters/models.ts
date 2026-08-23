@@ -153,6 +153,44 @@ function blush(r: number, color: number): THREE.Mesh {
   return m;
 }
 
+/**
+ * A thin closed, convex polygon panel in local XY. Keeping a little depth
+ * makes fins and membranes readable from either side (especially against the
+ * sky) without paying for a soft double-sided material class.
+ */
+function facetedPanel(
+  points: ReadonlyArray<readonly [number, number]>,
+  color: number,
+  depth = 0.035,
+): THREE.Mesh {
+  const ordered = points.map(([x, y]) => [x, y] as [number, number]);
+  let signedArea = 0;
+  for (let i = 0; i < ordered.length; i++) {
+    const a = ordered[i]!;
+    const b = ordered[(i + 1) % ordered.length]!;
+    signedArea += a[0] * b[1] - b[0] * a[1];
+  }
+  if (signedArea < 0) ordered.reverse();
+
+  const n = ordered.length;
+  const positions: number[] = [];
+  for (const z of [depth / 2, -depth / 2]) {
+    for (const [x, y] of ordered) positions.push(x, y, z);
+  }
+  const indices: number[] = [];
+  for (let i = 1; i < n - 1; i++) indices.push(0, i, i + 1);
+  for (let i = 1; i < n - 1; i++) indices.push(n, n + i + 1, n + i);
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    indices.push(i, j, n + j, i, n + j, n + i);
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  return new THREE.Mesh(geometry, mat(color));
+}
+
 // --- the charm payoff: an expressive eye ------------------------------------
 
 interface EyeOpts {
@@ -740,6 +778,118 @@ function buildMirefin(rng: () => number): { group: THREE.Group; parts: CritterPa
   return { group: g, parts: { legs, head, body, tail } };
 }
 
+/** Shark — round, cheeky pack hunter with four swimming-fin pivots. */
+function buildShark(rng: () => number): { group: THREE.Group; parts: CritterParts } {
+  const g = new THREE.Group();
+  const slate = jitterColor(0x657986, rng, 0.035, 0.05);
+  const slateLight = jitterColor(0x7f929b, rng, 0.03, 0.04);
+  const slateDark = jitterColor(0x425866, rng, 0.025, 0.045);
+  const cream = jitterColor(0xf0dfb9, rng, 0.025, 0.035);
+  const ink = 0x101820;
+
+  // A broad pear-shaped barrel and a low cream inset give the concept its
+  // toy-like pot belly while keeping the silhouette horizontal in the water.
+  const body = new THREE.Group();
+  body.position.y = 0.72;
+  const barrel = chunk(0.5, slate, [0.9, 0.72, 1.18]);
+  barrel.rotation.x = 0.035;
+  body.add(barrel);
+  const underside = chunk(0.38, cream, [0.72, 0.45, 1.03]);
+  underside.position.set(0, -0.24, 0.08);
+  underside.rotation.x = 0.04;
+  body.add(underside);
+
+  // The large swept dorsal is a true triangular slab rather than a flattened
+  // cone, so its identity survives both side profiles and distant water fog.
+  const dorsal = facetedPanel([[-0.3, 0], [0.28, 0], [-0.03, 0.52]], slateDark, 0.1);
+  dorsal.rotation.y = Math.PI / 2;
+  dorsal.position.set(0, 0.27, -0.08);
+  body.add(dorsal);
+  g.add(body);
+
+  const head = new THREE.Group();
+  head.position.set(0, 0.73, 0.42);
+  const skull = chunk(0.46, slate, [1.04, 0.82, 0.94]);
+  head.add(skull);
+  const brow = chunk(0.27, slateLight, [1.25, 0.52, 0.72], 0);
+  brow.position.set(0, 0.16, 0.08);
+  head.add(brow);
+  const jaw = chunk(0.34, cream, [1.14, 0.58, 0.78]);
+  jaw.position.set(0, -0.16, 0.18);
+  head.add(jaw);
+
+  // Wrap the lenses onto the broad cheek facets: front view keeps the huge
+  // paired expression, while profile sees a flush round eye instead of the
+  // edge of a lens authored only on the nose plane.
+  for (const e of eyePair(0.34, 0.12, 0.29, 0.18, { iris: 0x06080a, rim: cream }, 0.78)) {
+    head.add(e);
+  }
+  const grin = smile(0.145, 0.011, ink, 1.82);
+  grin.position.set(0, -0.16, 0.445);
+  head.add(grin);
+  for (const sx of [-1, 1]) {
+    const nostril = blob(0.019, ink);
+    nostril.scale.set(1.0, 0.7, 0.42);
+    nostril.position.set(sx * 0.1, -0.015, 0.45);
+    head.add(nostril);
+  }
+
+  // Two deep slash-gills on each cheek (occasionally three) carry the simple
+  // graphic marks from the approved figurine into the profile view.
+  const gillRoll = rng();
+  const gillCount = gillRoll < 0.32 ? 3 : 2;
+  for (const sx of [-1, 1] as const) {
+    for (let i = 0; i < gillCount; i++) {
+      const gill = cyl(0.011, 0.011, 0.13 - i * 0.012, ink, 4);
+      gill.position.set(sx * 0.475, -0.02 - i * 0.005, 0.07 - i * 0.055);
+      gill.rotation.z = sx * (0.16 + i * 0.03);
+      head.add(gill);
+    }
+  }
+  g.add(head);
+
+  // Four planar fin handles mirror Mirefin's swimming-part topology. Front
+  // fins are the big concept paddles; the rear pair is deliberately smaller.
+  const legs: THREE.Object3D[] = [];
+  for (const [sx, front] of [[-1, true], [1, true], [-1, false], [1, false]] as const) {
+    const fin = new THREE.Group();
+    fin.position.set(sx * (front ? 0.33 : 0.3), 0.64, front ? 0.22 : -0.3);
+    const reach = front ? 0.47 : 0.28;
+    const sweep = front ? 0.3 : 0.19;
+    const blade = facetedPanel(
+      [[0, 0], [sx * reach, -0.07], [sx * reach * 0.44, -sweep]],
+      front ? slateDark : slate,
+      front ? 0.075 : 0.055,
+    );
+    blade.rotation.x = Math.PI / 2;
+    fin.add(blade);
+    legs.push(fin);
+    g.add(fin);
+  }
+
+  // A thick peduncle carries two separate triangular caudal lobes. Keeping it
+  // under one tail pivot preserves the generic swim sway.
+  const tail = new THREE.Group();
+  tail.position.set(0, 0.72, -0.48);
+  tail.add(segmentedHorn([
+    [0, 0, 0],
+    [0, 0.01, -0.18],
+    [0.015, 0.035, -0.38],
+  ], 0.22, 0.095, slateDark, {}, 6));
+  for (const points of [
+    [[0, 0], [0.25, 0.36], [0.3, 0.05]],
+    [[0, 0], [0.3, -0.05], [0.25, -0.36]],
+  ] as const) {
+    const lobe = facetedPanel(points, slateDark, 0.09);
+    lobe.rotation.y = Math.PI / 2;
+    lobe.position.set(0.015, 0.035, -0.38);
+    tail.add(lobe);
+  }
+  g.add(tail);
+
+  return { group: g, parts: { legs, head, body, tail } };
+}
+
 /** Craghorn — shag-mantled ibex with long swept, ridged faceted horns. */
 function buildCraghorn(rng: () => number): { group: THREE.Group; parts: CritterParts } {
   const g = new THREE.Group();
@@ -926,6 +1076,232 @@ function buildZephyrfinch(rng: () => number): { group: THREE.Group; parts: Critt
     g.add(l);
   }
   return { group: g, parts: { legs, wings, head, body } };
+}
+
+/**
+ * Sky Wyvern — a long, winding Chinese-dragon silhouette built as overlapping
+ * low-poly capsule segments. Its pale shields and wing membranes sit on the
+ * physical underside, not merely the front, so a player looking up can still
+ * identify it against a bright sky.
+ */
+function buildSkyWyvern(rng: () => number): { group: THREE.Group; parts: CritterParts } {
+  const g = new THREE.Group();
+  const sky = jitterColor(0xb9dce7, rng, 0.035, 0.045);
+  const skyShade = jitterColor(0x91c3d5, rng, 0.035, 0.045);
+  const cloud = jitterColor(0xeaf3ef, rng, 0.018, 0.03);
+  const cream = jitterColor(0xf2e5c5, rng, 0.018, 0.03);
+  const copper = jitterColor(0xb87948, rng, 0.025, 0.04);
+  const ink = 0x253a45;
+
+  type RibbonPoint = readonly [number, number, number];
+  const addCapsuleChain = (
+    root: THREE.Group,
+    points: ReadonlyArray<RibbonPoint>,
+    radii: ReadonlyArray<number>,
+    bellyThrough: number,
+  ): void => {
+    for (let i = 0; i < points.length; i++) {
+      const [x, y, z] = points[i]!;
+      const prev = points[Math.max(0, i - 1)]!;
+      const next = points[Math.min(points.length - 1, i + 1)]!;
+      const dx = next[0] - prev[0];
+      const dy = next[1] - prev[1];
+      const angle = Math.atan2(-dx, dy);
+      const r = radii[i]!;
+      const before = i > 0
+        ? Math.hypot(x - prev[0], y - prev[1], z - prev[2])
+        : 0;
+      const after = i < points.length - 1
+        ? Math.hypot(next[0] - x, next[1] - y, next[2] - z)
+        : 0;
+      const span = Math.max(before, after);
+      const axialScale = Math.max(1.18, (span * 1.08 + r * 0.85) / (2 * r));
+      const capsule = chunk(r, i % 3 === 1 ? skyShade : sky, [0.82, axialScale, 0.8], 0);
+      capsule.position.set(x, y, z);
+      capsule.rotation.z = angle;
+      root.add(capsule);
+
+      if (i < bellyThrough) {
+        const shield = chunk(r * 0.72, i % 2 === 0 ? cream : cloud, [0.7, 0.42, 0.72], 0);
+        shield.position.set(x, y - r * 0.69, z + r * 0.16);
+        shield.rotation.z = angle;
+        root.add(shield);
+      }
+    }
+  };
+
+  // The torso drops from the high neck, rolls through a deep U, then rises
+  // into the tail. The alternating capsule facets keep it a ribbon rather
+  // than the single fat sausage silhouette rejected in the first concept.
+  const body = new THREE.Group();
+  body.position.y = 1.18;
+  const bodyPath: ReadonlyArray<RibbonPoint> = [
+    [-0.28, 0.5, 0.02],
+    [-0.36, 0.3, 0.05],
+    [-0.36, 0.08, 0.06],
+    [-0.27, -0.12, 0.05],
+    [-0.08, -0.25, 0.01],
+    [0.14, -0.23, -0.05],
+    [0.32, -0.08, -0.1],
+    [0.39, 0.12, -0.13],
+  ];
+  addCapsuleChain(body, bodyPath, [0.18, 0.19, 0.2, 0.21, 0.22, 0.21, 0.19, 0.175], 7);
+  for (const i of [1, 5]) {
+    const [x, y, z] = bodyPath[i]!;
+    const ridge = cone(0.042, 0.14, cloud, 4);
+    ridge.position.set(x, y + 0.16, z - 0.08);
+    ridge.rotation.x = -0.28;
+    body.add(ridge);
+  }
+  g.add(body);
+
+  // Head pivot begins at the neck-body join. Three small capsules taper up to
+  // an elegant skull; inset eyes dominate without swelling the whole head.
+  const head = new THREE.Group();
+  head.position.set(-0.28, 1.62, 0.03);
+  const neckPath: ReadonlyArray<RibbonPoint> = [
+    [0, 0, 0],
+    [0.015, 0.18, 0.035],
+    [-0.045, 0.34, 0.095],
+  ];
+  addCapsuleChain(head, neckPath, [0.17, 0.155, 0.135], 3);
+
+  const skull = chunk(0.24, cloud, [1.0, 0.78, 1.08]);
+  skull.position.set(-0.075, 0.48, 0.17);
+  head.add(skull);
+  const muzzle = chunk(0.14, skyShade, [1.18, 0.58, 1.25], 0);
+  muzzle.position.set(-0.075, 0.36, 0.39);
+  head.add(muzzle);
+  for (const e of eyePair(0.17, 0.5, 0.34, 0.105, { iris: 0x15242b, rim: cloud }, 0.7)) {
+    e.position.x -= 0.075;
+    head.add(e);
+  }
+  for (const sx of [-1, 1]) {
+    const nostril = new THREE.Mesh(new THREE.CircleGeometry(0.016, 4), mat(ink));
+    nostril.scale.y = 0.62;
+    nostril.position.set(-0.075 + sx * 0.07, 0.38, 0.56);
+    head.add(nostril);
+  }
+
+  // One long whisker on either side and compact copper antlers supply the
+  // Chinese-dragon read without overpowering the deliberately small head.
+  for (const sx of [-1, 1] as const) {
+    head.add(segmentedHorn([
+      [-0.075 + sx * 0.07, 0.36, 0.5],
+      [-0.075 + sx * 0.27, 0.34, 0.56],
+      [-0.075 + sx * 0.47, 0.27, 0.57],
+    ], 0.014, 0.004, cream, {}, 4));
+  }
+
+  const antlerWear = rng();
+  for (const sx of [-1, 1] as const) {
+    const antler = cone(0.038, 0.3, copper, 5);
+    antler.position.set(-0.075 + sx * 0.14, 0.76, 0.01);
+    antler.rotation.z = sx * -0.27;
+    antler.rotation.x = -0.22;
+    head.add(antler);
+    if (!(antlerWear < 0.3 && sx === 1)) {
+      const nub = cone(0.02, 0.13, copper, 5);
+      nub.position.set(-0.075 + sx * 0.22, 0.8, -0.02);
+      nub.rotation.z = sx * -1.08;
+      nub.rotation.x = -0.18;
+      head.add(nub);
+    }
+    for (const [yy, tilt] of [[0.5, 1.1], [0.6, 0.88]] as const) {
+      const frill = cone(0.038, 0.14, yy > 0.55 ? cloud : skyShade, 4);
+      frill.position.set(-0.075 + sx * 0.22, yy, 0.06);
+      frill.rotation.z = sx * tilt;
+      frill.rotation.x = -0.18;
+      head.add(frill);
+    }
+  }
+  g.add(head);
+
+  // Vestigial wings stay small beside the long ribbon body. Cream closed
+  // panels remain visible from below; sky-blue leading spars clarify the pair
+  // and give the generic wing animator sturdy pivots to flap.
+  const wings: THREE.Object3D[] = [];
+  for (const sx of [-1, 1] as const) {
+    const wing = new THREE.Group();
+    wing.position.set(0.18 + sx * 0.1, 1.35, -0.08);
+    wing.rotation.y = sx * -0.12;
+    const panel = facetedPanel([
+      [0, 0],
+      [sx * 0.13, 0.18],
+      [sx * 0.38, 0.11],
+      [sx * 0.23, -0.055],
+    ], cream, 0.04);
+    panel.rotation.x = -0.16;
+    wing.add(panel);
+    wing.add(segmentedHorn([
+      [0, 0, 0.015],
+      [sx * 0.14, 0.18, 0.015],
+      [sx * 0.38, 0.11, 0.015],
+    ], 0.032, 0.011, skyShade, {}, 5));
+    wings.push(wing);
+    g.add(wing);
+  }
+
+  // Only the concept's visible foreclaws are modelled. They hang clear of the
+  // belly shields, read cleanly from below, and keep the baked model at seven
+  // meshes rather than spending four animation roots on vestigial feet.
+  const legs: THREE.Object3D[] = [];
+  for (const sx of [-1, 1] as const) {
+    const leg = new THREE.Group();
+    leg.position.set(-0.25 + sx * 0.13, 1.16, 0.1);
+    leg.add(segmentedHorn([
+      [0, 0, 0],
+      [sx * 0.025, -0.14, 0.055],
+      [sx * 0.085, -0.23, 0.13],
+    ], 0.046, 0.023, skyShade, {}, 5));
+    const paw = blob(0.055, cloud);
+    paw.scale.set(0.9, 0.56, 1.12);
+    paw.position.set(sx * 0.085, -0.245, 0.145);
+    leg.add(paw);
+    for (const tx of [-0.025, 0.025]) {
+      const claw = cone(0.011, 0.055, cream, 4);
+      claw.rotation.x = Math.PI / 2 - 0.15;
+      claw.position.set(sx * 0.085 + tx, -0.26, 0.195);
+      leg.add(claw);
+    }
+    legs.push(leg);
+    g.add(leg);
+  }
+
+  // The independent tail continues the body's rising stroke into a broad C
+  // and then tapers far downward. This is the main long-and-lanky payoff.
+  const tail = new THREE.Group();
+  tail.position.set(0.39, 1.3, -0.13);
+  const tailPath: ReadonlyArray<RibbonPoint> = [
+    [0, 0, 0],
+    [0.13, 0.18, -0.05],
+    [0.3, 0.29, -0.12],
+    [0.48, 0.28, -0.2],
+    [0.62, 0.15, -0.29],
+    [0.68, -0.05, -0.38],
+    [0.63, -0.28, -0.46],
+    [0.51, -0.48, -0.55],
+    [0.38, -0.66, -0.64],
+  ];
+  addCapsuleChain(tail, tailPath, [0.17, 0.16, 0.145, 0.13, 0.115, 0.095, 0.077, 0.06, 0.043], 6);
+  for (const i of [2, 5]) {
+    const [x, y, z] = tailPath[i]!;
+    const ridge = cone(0.034 - i * 0.002, 0.12, cloud, 4);
+    ridge.position.set(x, y + 0.13, z - 0.045);
+    ridge.rotation.z = -0.25 - i * 0.06;
+    tail.add(ridge);
+  }
+  const tip = tailPath[tailPath.length - 1]!;
+  for (const sx of [-1, 1]) {
+    const streamer = cone(0.034, 0.14, cream, 4);
+    streamer.position.set(tip[0] + sx * 0.035, tip[1] - 0.04, tip[2]);
+    streamer.rotation.z = sx * 0.65;
+    streamer.rotation.x = -0.25;
+    tail.add(streamer);
+  }
+  g.add(tail);
+
+  return { group: g, parts: { legs, wings, head, body, tail } };
 }
 
 /** Shardwing — faceted moth figurine carrying two pairs of crystal wings. */
@@ -2431,10 +2807,8 @@ const BUILDERS: Record<string, (rng: () => number) => { group: THREE.Group; part
   mirefin: buildMirefin,
   craghorn: buildCraghorn,
   cragdrake: buildCragdrake,
-  // Bounce Wave STUBS — codex replaces with concept-faithful builds
-  // (.codex-drafts/bounce-concepts/shark.jpg, docs/fidelity/skywyvern-concept.jpg).
-  shark: buildMirefin,
-  skywyvern: buildZephyrfinch,
+  shark: buildShark,
+  skywyvern: buildSkyWyvern,
   zephyrfinch: buildZephyrfinch,
   shardwing: buildShardwing,
   nectarwisp: buildNectarWisp,

@@ -359,3 +359,4 @@ block ship; listed here so they aren't lost.
 - The `.claude/skills/critter-modeling` skill was written at end-of-context
   without the writing-skills retrieval-test pass (RED/GREEN on a fresh agent):
   run that test next session and tighten wording where the agent misreads.
+- Kelp taller than its water depth pokes tops above the surface (reads like real kelp; clamp scale by depth if it ever bothers): world/props.ts buildKelp / scatter kelp roll.
