@@ -41,6 +41,8 @@ const FLEE_LABEL: Record<SpeciesDef['fleeStyle'], string> = {
   swim: 'dives & swims',
   ledge: 'scales ledges',
   dive: 'dives in loops',
+  packhunt: 'hunts in packs',
+  skyglide: 'sinks from the sky',
   perch: 'perches',
 };
 

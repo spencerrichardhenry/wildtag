@@ -429,12 +429,12 @@ async function checkBoot() {
 
       // 18 species (Haven added 4, Cursed Castle the gargoyle, Inventory+
       // Building timberchomp + pebbleshrew, field-critters two more, fal.ai
-      // Cragdrake) — assert
+      // Cragdrake, Bounce-Wave shark+skywyvern) — assert
       // via the Field Guide denominator
       await page.keyboard.press('Tab');
       await sleep(400);
       const guideH1 = await page.evaluate(() => document.querySelector('.wt-panel h1')?.textContent ?? '');
-      assert(/\/18\b/.test(guideH1), `Field Guide does not show /18 species ("${guideH1}")`);
+      assert(/\/20\b/.test(guideH1), `Field Guide does not show /20 species ("${guideH1}")`);
       console.log(`    guide: "${guideH1.trim()}"`);
       await page.keyboard.press('Tab');
       await sleep(200);
@@ -509,7 +509,7 @@ async function checkMovement() {
 }
 
 async function checkTracking() {
-  await check('c. Tracking loop: spawn → track → ring → complete → link → guide 1/18', async () => {
+  await check('c. Tracking loop: spawn → track → ring → complete → link → guide 1/20', async () => {
     const page = await openPage('?fresh=1');
     try {
       await page.evaluate(() => window.__game.setTimeScale(1));
@@ -547,13 +547,13 @@ async function checkTracking() {
       assert(toast, 'no "Linked" toast appeared');
       await shot(page, '04-linked-toast.png');
 
-      // Field Guide shows 1/18 (the Cragdrake raised the roster to 18)
+      // Field Guide shows 1/18 (Bounce Wave raised the roster to 20)
       await page.keyboard.press('Tab');
       const guide18 = await page.waitForFunction(
-        () => /\b1\/18\b/.test(document.querySelector('.wt-panel h1')?.textContent || ''),
+        () => /\b1\/20\b/.test(document.querySelector('.wt-panel h1')?.textContent || ''),
         { timeout: 3000 },
       ).then(() => true).catch(() => false);
-      assert(guide18, 'Field Guide did not show 1/18');
+      assert(guide18, 'Field Guide did not show 1/20');
       const guideH1 = await page.evaluate(() => document.querySelector('.wt-panel h1')?.textContent ?? '');
       console.log(`    guide: "${guideH1.trim()}"`);
       await page.keyboard.press('Tab');

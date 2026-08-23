@@ -2431,6 +2431,10 @@ const BUILDERS: Record<string, (rng: () => number) => { group: THREE.Group; part
   mirefin: buildMirefin,
   craghorn: buildCraghorn,
   cragdrake: buildCragdrake,
+  // Bounce Wave STUBS — codex replaces with concept-faithful builds
+  // (.codex-drafts/bounce-concepts/shark.jpg, docs/fidelity/skywyvern-concept.jpg).
+  shark: buildMirefin,
+  skywyvern: buildZephyrfinch,
   zephyrfinch: buildZephyrfinch,
   shardwing: buildShardwing,
   nectarwisp: buildNectarWisp,

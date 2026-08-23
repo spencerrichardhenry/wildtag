@@ -219,6 +219,50 @@ export const SPECIES: SpeciesDef[] = [
     ringHeight: 3.8,
     farmRole: { kind: 'produce', resource: 'spark', amount: 2 },
   },
+  {
+    id: 'shark',
+    bold: true,
+    name: 'Shark',
+    biomes: ['water'],
+    size: 1.4,
+    walkSpeed: 3.2,
+    fleeSpeed: 7.0,
+    awareness: 14,
+    // Bounce Wave: pack hunter — tagging ANY member aggros the whole pack
+    // (manager-level propagation); per-hit damage is nectarwisp-low, the
+    // threat is the 3-4 of them (see AI.sharkPack*).
+    fleeStyle: 'packhunt',
+    trackRadius: 13,
+    trackTime: 14,
+    rarity: 0.5,
+    rewardSparks: 3,
+    rewardRP: 22,
+    rideable: false,
+    farmRole: { kind: 'aura', auraPct: 20 },
+  },
+  {
+    id: 'skywyvern',
+    bold: true,
+    name: 'Sky Wyvern',
+    biomes: ['meadow', 'highlands'],
+    size: 1.9,
+    walkSpeed: 3.0,
+    fleeSpeed: 6.0,
+    awareness: 18,
+    // Bounce Wave: spawns VERY high and slowly sinks at ~player glide rate —
+    // easy to catch once reached, but reaching it needs a drone trampoline
+    // (AI.skyglide*). Long serpentine chinese-dragon build (approved concept
+    // docs/fidelity/skywyvern-concept.jpg).
+    fleeStyle: 'skyglide',
+    trackRadius: 16,
+    trackTime: 12,
+    rarity: 0.25,
+    rewardSparks: 5,
+    rewardRP: 36,
+    rideable: false,
+    ringHeight: 2.0,
+    farmRole: { kind: 'aura', auraPct: 30 },
+  },
 
   // --- Haven Village whimsy pass (+4, spec §5) -------------------------------
   {
@@ -393,7 +437,7 @@ export const SPECIES: SpeciesDef[] = [
     rewardRP: 20,
     rideable: false,
     ringHeight: 1.7,
-    farmRole: { kind: 'produce', resource: 'spark', amount: 2 },
+    farmRole: { kind: 'produce', resource: 'horn', amount: 1 },
   },
 ];
 

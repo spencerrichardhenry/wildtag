@@ -295,7 +295,7 @@ function parseFarm(v: unknown): FarmState | undefined {
     // straight into a plot hopper like any other producer, so they need the
     // same shape guard as fiber/resin/shard/spark. 'mushroom' stays absent —
     // it's forage-only and never a farm-role resource.
-    for (const k of ['fiber', 'resin', 'shard', 'spark', 'honey', 'wood', 'stone'] as const) {
+    for (const k of ['fiber', 'resin', 'shard', 'spark', 'honey', 'wood', 'stone', 'horn'] as const) {
       const n = (p.hopper as Record<string, unknown>)[k];
       if (n === undefined) continue;
       if (typeof n !== 'number' || !Number.isFinite(n) || n < 0) return undefined;
@@ -411,6 +411,8 @@ export function decodeSave(json: string): SaveV3 | null {
     const shell = isCount(inv.shell) ? (inv.shell as number) : 0;
     if (inv.scale !== undefined && !isCount(inv.scale)) return null;
     const scale = isCount(inv.scale) ? (inv.scale as number) : 0;
+    if (inv.horn !== undefined && !isCount(inv.horn)) return null;
+    const horn = isCount(inv.horn) ? (inv.horn as number) : 0;
     if (inv.tideDarts !== undefined && !isCount(inv.tideDarts)) return null;
     const tideDarts = isCount(inv.tideDarts) ? (inv.tideDarts as number) : 0;
     // `walls`/`ramps` mirror `purifiers` (Inventory+Building Task 5): forward-
@@ -449,6 +451,7 @@ export function decodeSave(json: string): SaveV3 | null {
       wood,
       stone,
       shell,
+      horn,
       scale,
       charms,
       purifiers,

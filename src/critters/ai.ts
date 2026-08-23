@@ -65,7 +65,8 @@ function isFlyer(sp: SpeciesDef): boolean {
     sp.fleeStyle === 'flutter' ||
     sp.fleeStyle === 'sting' ||
     sp.fleeStyle === 'perch' ||
-    sp.fleeStyle === 'dive'
+    sp.fleeStyle === 'dive' ||
+    sp.fleeStyle === 'skyglide'
   );
 }
 
@@ -109,7 +110,9 @@ export function stepAI(c: CritterState, ctx: AIContext, dt: number): CritterStat
   // Nectar Wisps aggro for the whole tagged window, even if the player fired
   // from outside their ordinary awareness radius. Other species retain the
   // normal proximity trigger.
-  const shouldReact = canFlee && (sp.fleeStyle === 'sting' ? c.tagged : dist <= sp.awareness);
+  const shouldReact =
+    canFlee &&
+    (sp.fleeStyle === 'sting' || sp.fleeStyle === 'packhunt' ? c.tagged : dist <= sp.awareness);
 
   // Desired heading + target ground speed produced by the active state.
   let desiredYaw = c.yaw;
@@ -307,6 +310,13 @@ function fleeYaw(
     }
     case 'sting':
       return towardYaw;
+    case 'packhunt':
+      // Sharks pursue like a sting flyer but in water (Wave C adds the
+      // pack-aggro propagation at the manager level).
+      return towardYaw;
+    case 'skyglide':
+      // Gentle away-drift; altitude handling (slow sink) in locomote.
+      return awayYaw + Math.sin(c.stateTime * AI.flyArcRate * 0.5) * 0.4;
     case 'dive': {
       // Orbit home instead of escaping: tangent of the diveOrbitR circle
       // (direction fixed per critter by id parity) plus a radial correction

@@ -98,6 +98,7 @@ describe('inventory', () => {
       wood: 0,
       stone: 0,
       shell: 0,
+      horn: 0,
       scale: 0,
       rp: 0,
       darts: 0,

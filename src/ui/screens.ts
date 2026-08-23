@@ -298,7 +298,8 @@ const RESOURCE_LABEL: Record<ResourceKind, string> = {
   wood: 'Wood',
   stone: 'Stone',
   shell: 'Shell Fragment',
-  scale: 'Croc Scale',
+  scale: 'Croc Hide',
+  horn: 'Cragdrake Horn',
 };
 
 function applyCraft(inventory: Inventory, unlocks: Set<string>, recipeId: RecipeId): void {
@@ -381,11 +382,11 @@ function renderRecipeCard(
         ? 'Flat underwater shot; deals double damage to clam guards & crocodiles'
         : recipe.id === 'currentboard'
           ? 'Strap-on current board: swim 75% faster'
-          : 'Clam guards drop shell; underwater crocodiles drop scales';
+          : 'Clam guards drop shell; underwater crocodiles drop croc hide';
     card.appendChild(hint);
     const source = document.createElement('div');
     source.className = 'wt-recipe-hint';
-    source.textContent = 'Clam guards drop shell; underwater crocodiles drop scales';
+    source.textContent = 'Clam guards drop shell; underwater crocodiles drop croc hide';
     card.appendChild(source);
   }
 
@@ -723,6 +724,7 @@ const RESOURCE_COLOR: Record<ResourceKind, string> = {
   stone: '#8f8f92',
   shell: '#e7b9d6',
   scale: '#6fa76a',
+  horn: '#b39ddb',
 };
 
 let inventoryStylesInjected = false;
@@ -959,6 +961,7 @@ const RESOURCE_KINDS: readonly ResourceKind[] = [
   'wood',
   'stone',
   'shell',
+  'horn',
   'scale',
 ];
 

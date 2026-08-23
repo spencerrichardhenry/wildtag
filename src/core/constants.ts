@@ -1987,6 +1987,7 @@ export const FARM = {
     // intentionally exhaustive over ResourceKind for safe imported saves.
     shell: 0xe7b9d6,
     scale: 0x6fa76a,
+    horn: 0xb39ddb,
   },
 } as const;
 

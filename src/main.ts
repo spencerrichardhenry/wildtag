@@ -1117,6 +1117,14 @@ function bootGame(): void {
     inventory.stone = 9999;
     inventory.shell = 999;
     inventory.scale = 999;
+    // Spencer (Bounce Wave): the dev loadout skipped several materials —
+    // grant EVERYTHING craftable-with for easier testing.
+    inventory.mushroom = 999;
+    inventory.fiber = 9999;
+    inventory.resin = 9999;
+    inventory.shard = 9999;
+    inventory.horn = 999;
+    inventory.purifiers = 99;
     inventory.rp = 999;
     inventory.darts = 999;
     inventory.slowDarts = 999;

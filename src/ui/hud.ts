@@ -122,7 +122,8 @@ const RES_COLOR: Record<string, string> = {
   wood: '#8a5a35', // timberchomp produce — dam-brown
   stone: '#8f8f92', // pebbleshrew produce — flint grey
   shell: '#e7b9d6', // clam shell fragment
-  scale: '#6fa76a', // crocodile scale
+  scale: '#6fa76a', // croc hide
+  horn: '#b39ddb', // cragdrake horn
   dart: '#66e0ff',
   slow: '#77d6b2', // honey-weighted Slowing Dart
   tide: '#4af5e8', // fast underwater Tide Dart
@@ -137,7 +138,8 @@ const RES_TAG: Readonly<Record<string, string>> = {
   slow: 'slow',
   tide: 'tide',
   shell: 'shell',
-  scale: 'scales',
+  scale: 'croc hide',
+  horn: 'horns',
   honey: 'honey',
   charm: 'charms',
   purifier: 'purifiers',
@@ -276,7 +278,7 @@ export class HUD {
 
     // --- Resource strip (top-left) -----------------------------------------
     const res = el('div', 'wt-resources');
-    for (const kind of ['fiber', 'resin', 'shard', 'spark', 'honey', 'mushroom', 'wood', 'stone', 'shell', 'scale', 'dart', 'slow', 'tide', 'charm', 'purifier', 'rp'] as const) {
+    for (const kind of ['fiber', 'resin', 'shard', 'spark', 'honey', 'mushroom', 'wood', 'stone', 'shell', 'scale', 'horn', 'dart', 'slow', 'tide', 'charm', 'purifier', 'rp'] as const) {
       const item = el('div', 'wt-res');
       const dot = el('span', 'wt-res-dot');
       if (kind === 'rp') dot.classList.add('wt-res-rp');
@@ -646,6 +648,7 @@ export class HUD {
       wood: inv.wood,
       stone: inv.stone,
       shell: inv.shell,
+      horn: inv.horn,
       scale: inv.scale,
       dart: inv.darts,
       slow: inv.slowDarts,

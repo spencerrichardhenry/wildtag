@@ -22,12 +22,14 @@ const TABLE = [
   { id: 'gargoyle', bold: true, rideable: false, awareness: 14, fleeStyle: 'perch', trackRadius: 14, trackTime: 16, rewardRP: 24, rewardSparks: 3, farmRole: { kind: 'aura', auraPct: 20 } },
   { id: 'timberchomp', bold: false, rideable: false, awareness: 12, fleeStyle: 'swim', trackRadius: 12, trackTime: 12, rewardRP: 15, rewardSparks: 2, farmRole: { kind: 'produce', resource: 'wood', amount: 2 } },
   { id: 'pebbleshrew', bold: false, rideable: false, awareness: 13, fleeStyle: 'zigzag', trackRadius: 11, trackTime: 12, rewardRP: 15, rewardSparks: 2, farmRole: { kind: 'produce', resource: 'stone', amount: 2 } },
-  { id: 'cragdrake', bold: false, rideable: false, awareness: 15, fleeStyle: 'dive', trackRadius: 15, trackTime: 17, rewardRP: 20, rewardSparks: 3, farmRole: { kind: 'produce', resource: 'spark', amount: 2 } },
+  { id: 'cragdrake', bold: false, rideable: false, awareness: 15, fleeStyle: 'dive', trackRadius: 15, trackTime: 17, rewardRP: 20, rewardSparks: 3, farmRole: { kind: 'produce', resource: 'horn', amount: 1 } },
+  { id: 'shark', bold: true, rideable: false, awareness: 14, fleeStyle: 'packhunt', trackRadius: 13, trackTime: 14, rewardRP: 22, rewardSparks: 3, farmRole: { kind: 'aura', auraPct: 20 } },
+  { id: 'skywyvern', bold: true, rideable: false, awareness: 18, fleeStyle: 'skyglide', trackRadius: 16, trackTime: 12, rewardRP: 36, rewardSparks: 5, farmRole: { kind: 'aura', auraPct: 30 } },
 ] as const;
 
 describe('SPECIES roster', () => {
-  it('has exactly 18 species', () => {
-    expect(SPECIES).toHaveLength(18);
+  it('has exactly 20 species', () => {
+    expect(SPECIES).toHaveLength(20);
   });
 
   it('has unique ids', () => {

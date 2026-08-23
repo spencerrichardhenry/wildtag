@@ -24,8 +24,10 @@ export interface Inventory {
   stone: number;
   /** Shell fragments dropped by defeated clam guards. */
   shell: number;
-  /** Crocodile scales dropped by defeated underwater crocodiles. */
+  /** Crocodile scales ("croc hide") dropped by underwater crocodiles. */
   scale: number;
+  /** Cragdrake horns — farm produce (Bounce Wave). */
+  horn: number;
   /** Research points (gates crafting tiers — never spent). */
   rp: number;
   /** Tracker darts on hand (Task 10). */
@@ -60,6 +62,7 @@ export function createInventory(): Inventory {
     wood: 0,
     stone: 0,
     shell: 0,
+    horn: 0,
     scale: 0,
     rp: 0,
     darts: 0,

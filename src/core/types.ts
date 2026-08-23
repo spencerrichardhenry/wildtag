@@ -19,8 +19,10 @@ export type ResourceKind =
   | 'stone'
   /** Broken from hostile clam guards in the Atlantis dive zone. */
   | 'shell'
-  /** Shed by underwater crocodiles in the Atlantis dive zone. */
-  | 'scale';
+  /** Shed by underwater crocodiles in the Atlantis dive zone ("croc hide"). */
+  | 'scale'
+  /** Cragdrake farm produce (Bounce Wave) — trampoline frames. */
+  | 'horn';
 
 // ---------------------------------------------------------------------------
 // Crafting tree (Task 7). Recipe ids/tiers/RP gates are exact per the design
@@ -161,6 +163,10 @@ export interface SpeciesDef {
     /** Orbits its home point while diving steeply down the crag faces and
      *  back up — big vertical travel, little horizontal (Cragdrake). */
     | 'dive'
+    /** Water pack hunter (sharks): tagging ANY pack member aggros the pack. */
+    | 'packhunt'
+    /** Very-high glider that slowly sinks at ~player glide rate (sky wyvern). */
+    | 'skyglide'
     | 'none';
   /** Bold species ignore the player entirely until TAGGED — only a beacon on
    *  their back spooks them (e.g. birds). Skittish species (false) alert at
