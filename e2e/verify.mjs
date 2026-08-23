@@ -1522,7 +1522,7 @@ async function checkSpeciesPreview() {
       // Spencer: the preview must cover EVERY character model).
       assert(initial.labels === 25, `preview has ${initial.labels} labels, expected 25`);
       assert(initial.columns >= 2 && initial.columns <= 4, `preview uses ${initial.columns} columns, expected 2–4`);
-      assert(initial.rows === Math.ceil(18 / initial.columns), `preview rows ${initial.rows} do not fit 18 models in ${initial.columns} columns`);
+      assert(initial.rows === Math.ceil(25 / initial.columns), `preview rows ${initial.rows} do not fit 25 models in ${initial.columns} columns`);
       assert(initial.scrollHeight > initial.viewportHeight * 2, `preview does not provide meaningful scrolling (${initial.scrollHeight}px document)`);
 
       await page.mouse.wheel(0, 700);

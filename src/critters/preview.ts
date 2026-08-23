@@ -209,14 +209,15 @@ export function runCritterPreview(renderer: THREE.WebGLRenderer): void {
 
   function layout(): void {
     columns = responsiveColumns();
-    rows = Math.max(1, Math.ceil(roster.length / columns));
+    // stands = roster + non-species EXTRA_CHARACTERS — the grid must fit ALL.
+    rows = Math.max(1, Math.ceil(stands.length / columns));
     const colSpacing = closeup ? 2.7 : GALLERY_COL_SPACING;
     rowSpacing = closeup ? 3.2 : GALLERY_ROW_SPACING;
 
     stands.forEach((stand, i) => {
       const row = Math.floor(i / columns);
       const col = i % columns;
-      const inThisRow = Math.min(columns, roster.length - row * columns);
+      const inThisRow = Math.min(columns, stands.length - row * columns);
       const rowStartX = -((inThisRow - 1) * colSpacing) / 2;
       stand.worldX = rowStartX + col * colSpacing;
       stand.worldZ = -row * rowSpacing;
