@@ -50,10 +50,13 @@ export type RecipeId =
   | 'wall'
   | 'ramp'
   // Inventory + Building playtest (Task 8): the cube block.
-  | 'cube';
+  | 'cube'
+  // Bounce Wave: croc-hide + horn bouncer, and its 4-drone sky variant.
+  | 'trampoline'
+  | 'skytramp';
 
 /** Placeable structures that accumulate as held "kits" until Task 13 spends them. */
-export type DeployableId = 'zipline' | 'beacon' | 'drone';
+export type DeployableId = 'zipline' | 'beacon' | 'drone' | 'trampoline' | 'skytramp';
 
 export type RecipeKind = 'consumable' | 'unlock' | 'deployable';
 
@@ -64,6 +67,9 @@ export interface Recipe {
   /** Research points required to unlock this tier (gate only — never spent). */
   rpRequired: 0 | 25 | 75 | 180;
   cost: Partial<Record<ResourceKind, number>>;
+  /** Bounce Wave: kits consumed by this craft (e.g. sky trampoline combines
+   *  1 trampoline kit + 4 drone kits) — checked and spent alongside `cost`. */
+  kitCost?: Partial<Record<DeployableId, number>>;
   kind: RecipeKind;
   /** Units produced per craft for consumables (e.g. darts craft in batches of 4). */
   batch?: number;

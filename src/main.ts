@@ -14,6 +14,7 @@ import {
   SIM_DT,
   STRUCTURES,
   UNDERWATER,
+  MOVE,
 } from './core/constants.ts';
 import { setupEnvironment, setupDaylight, updateWater, updateClouds } from './world/environment.ts';
 import { daylightAt } from './core/daylight.ts';
@@ -52,6 +53,7 @@ import { blip, chime } from './ui/audio.ts';
 import { AnchorRegistry } from './structures/anchors.ts';
 import { ZiplineSystem } from './structures/ziplines.ts';
 import { DroneSystem } from './structures/drones.ts';
+import { TrampolineSystem } from './structures/trampolines.ts';
 import { PlacementSystem, serializeStructures, deserializeStructures } from './structures/placement.ts';
 import { BuildSystem } from './structures/build.ts';
 import { pieceAtRayHit, resolveBuildAim } from './structures/buildmath.ts';
@@ -617,7 +619,8 @@ function bootGame(): void {
   // -------------------------------------------------------------------------
   const ziplines = new ZiplineSystem(scene, ground, inventory);
   const drones = new DroneSystem(scene, ground, anchors, inventory);
-  const placement = new PlacementSystem(scene, camera, ground, inventory, ziplines, drones);
+  const tramps = new TrampolineSystem(scene, ground, inventory);
+  const placement = new PlacementSystem(scene, camera, ground, inventory, ziplines, drones, tramps);
 
   // Prismhorse mount (Haven V6): owns the single active-mount actor + ride
   // state. Set from the roster (Mount button) or a barter'd Saddle; ridden via
@@ -671,7 +674,7 @@ function bootGame(): void {
       // count (a fresh farm if the save predates V5).
       farm = loaded.farm ? setDeeds(loaded.farm, getDeedCount()) : createFarm(getDeedCount());
       lastDeeds = getDeedCount();
-      deserializeStructures(loaded.structures, ziplines, drones);
+      deserializeStructures(loaded.structures, ziplines, drones, tramps);
       // Build pieces (Inventory+Building Task 5): deserialize BEFORE the
       // snapToGround call below, which uses the COMPOSED `ground.heightAt` —
       // so a player who saved standing atop their own fort snaps back onto
@@ -817,6 +820,10 @@ function bootGame(): void {
       setDemolish(false);
       if (build.active) build.cancel();
       placement.toggle('drone');
+    } else if (item === 'kit:trampoline' || item === 'kit:skytramp') {
+      setDemolish(false);
+      if (build.active) build.cancel();
+      placement.toggle(item === 'kit:skytramp' ? 'skytramp' : 'trampoline');
     } else if (item === 'wall' || item === 'ramp' || item === 'cube') {
       setDemolish(false);
       if (placement.active) placement.cancel();
@@ -885,6 +892,12 @@ function bootGame(): void {
     if (droneId) {
       drones.recall(droneId);
       toast('Drone reclaimed');
+      return;
+    }
+    const trampId = tramps.reclaimableIdNear(player.pos);
+    if (trampId) {
+      tramps.recall(trampId);
+      toast('Trampoline reclaimed');
       return;
     }
     const hit = demolishAim();
@@ -1069,6 +1082,8 @@ function bootGame(): void {
         return;
       case 'kit:zipline':
       case 'kit:drone':
+      case 'kit:trampoline':
+      case 'kit:skytramp':
         if (placement.active) placement.confirm();
         else hudUi.shake();
         return;
@@ -1138,6 +1153,8 @@ function bootGame(): void {
     inventory.cubes = 50;
     inventory.kits.zipline = 9;
     inventory.kits.drone = 9;
+    inventory.kits.trampoline = 4;
+    inventory.kits.skytramp = 2;
     for (const u of ['grapple', 'boots', 'glider', 'rocket', 'currentboard']) player.unlocks.add(u);
     breathLevel = UNDERWATER.breathUpgradeCount;
     breath = createBreath(breathLevel);
@@ -1151,7 +1168,7 @@ function bootGame(): void {
       inventory: { ...inventory, kits: { ...inventory.kits } },
       unlocks: [...player.unlocks],
       critterPersist: critters.exportRegistry(),
-      structures: serializeStructures(ziplines, drones),
+      structures: serializeStructures(ziplines, drones, tramps),
       builds: build.serialize(),
       player: { pos: player.pos, yaw: input.yaw },
       hints: hudUi.getHintFlags(),
@@ -1995,6 +2012,14 @@ function bootGame(): void {
     updateClouds(scene, worldTime);
     // Fidelity-3: windmill blade spin (one rotation write).
     updateWindmill(scene, worldTime);
+    // Bounce Wave: trampoline cosmetics + the bounce impulse. The launch apex
+    // is fixed relative to the PAD, so chained bounces plateau (free-flight
+    // invariant). Uses the movement core's gravity for an exact apex.
+    tramps.update(dt);
+    {
+      const bvy = tramps.bounceVelocity(player.pos, player.vel.y, MOVE.gravity);
+      if (bvy !== null) player.bounce(bvy);
+    }
 
     // First-person hands (Inventory+Building Task 6) — must run before the
     // render call below since the view model is a camera child. Hidden while
@@ -2263,6 +2288,10 @@ function bootGame(): void {
     setDemolishing: (next: boolean) => {
       setDemolish(next);
       return demolishActive;
+    },
+    placeTrampoline: (kind: 'ground' | 'sky', x: number, z: number) => {
+      const res = tramps.place({ x, y: ground.heightAt(x, z), z }, kind);
+      return res.ok ? (res.id ?? null) : null;
     },
     placeDrone: (x: number, z: number) => {
       const res = drones.place({ x, y: ground.heightAt(x, z), z }, { instant: true });

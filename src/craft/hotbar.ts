@@ -18,6 +18,8 @@ export type ItemId =
   | 'charms'
   | 'kit:zipline'
   | 'kit:drone'
+  | 'kit:trampoline'
+  | 'kit:skytramp'
   | 'wall'
   | 'ramp'
   | 'cube';
@@ -33,6 +35,8 @@ export const ITEM_IDS: readonly ItemId[] = [
   'charms',
   'kit:zipline',
   'kit:drone',
+  'kit:trampoline',
+  'kit:skytramp',
   'wall',
   'ramp',
   'cube',
@@ -120,6 +124,10 @@ export function itemCount(inv: Inventory, item: ItemId): number {
       return inv.purifiers;
     case 'charms':
       return inv.charms;
+    case 'kit:trampoline':
+      return inv.kits.trampoline;
+    case 'kit:skytramp':
+      return inv.kits.skytramp;
     case 'kit:zipline':
       return inv.kits.zipline;
     case 'kit:drone':

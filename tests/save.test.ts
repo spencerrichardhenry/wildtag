@@ -17,7 +17,7 @@ function sampleSave(over: Partial<SaveV3> = {}): SaveV3 {
   inventory.spark = 2;
   inventory.rp = 44;
   inventory.darts = 7;
-  inventory.kits = { zipline: 2, beacon: 0, drone: 1 };
+  inventory.kits = { zipline: 2, beacon: 0, drone: 1, trampoline: 0, skytramp: 0 };
 
   return {
     v: 3,
@@ -180,7 +180,7 @@ describe('encodeSave / decodeSave', () => {
     expect(decoded!.inventory.charms).toBe(0);
     expect(decoded!.inventory.honey).toBe(0);
     expect(decoded!.inventory.slowDarts).toBe(0);
-    expect(decoded!.inventory.kits).toEqual({ zipline: 0, beacon: 0, drone: 0 });
+    expect(decoded!.inventory.kits).toEqual({ zipline: 0, beacon: 0, drone: 0, trampoline: 0, skytramp: 0 });
     expect(decoded!.roster).toEqual([]);
     expect('barter' in decoded!).toBe(false);
     expect('rewards' in decoded!).toBe(false);
@@ -254,7 +254,7 @@ describe('encodeSave / decodeSave', () => {
     const raw = { ...state, inventory: invNoKits };
     const decoded = decodeSave(JSON.stringify(raw));
     expect(decoded).not.toBeNull();
-    expect(decoded?.inventory.kits).toEqual({ zipline: 0, beacon: 0, drone: 0 });
+    expect(decoded?.inventory.kits).toEqual({ zipline: 0, beacon: 0, drone: 0, trampoline: 0, skytramp: 0 });
     // Every other inventory field survives untouched.
     expect(decoded?.inventory.fiber).toBe(state.inventory.fiber);
   });

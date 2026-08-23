@@ -707,6 +707,8 @@ const ITEM_COLOR: Record<ItemId, string> = {
   purifiers: '#8ef0c0',
   charms: '#d98cff',
   'kit:zipline': '#f0c058',
+  'kit:trampoline': '#7bb662',
+  'kit:skytramp': '#8fd3e8',
   'kit:drone': '#7fb2f0',
   wall: '#8f8f92',
   ramp: '#c9a06a',

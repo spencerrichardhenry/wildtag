@@ -707,6 +707,14 @@ export class PlayerController {
    * and a still-latched distant hook would immediately yank them straight
    * back off that spot. Correct general teleport semantics regardless.
    */
+  /** Trampoline launch (Bounce Wave): a single ballistic vertical impulse —
+   *  replaces (never stacks with) current fall speed, releases any hook so a
+   *  latched rope can't convert the launch into a slingshot. */
+  bounce(vy: number): void {
+    this.hook = null;
+    this.state = { ...this.state, vel: { ...this.state.vel, y: vy }, grounded: false };
+  }
+
   teleport(x: number, y: number, z: number): void {
     this.state = {
       ...this.state,

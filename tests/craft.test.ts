@@ -136,11 +136,11 @@ describe('craft — deployable kits', () => {
     const unlocks = new Set<string>();
 
     const first = craft(inv, 'zipline', unlocks);
-    expect(first.kits).toEqual({ zipline: 1, beacon: 0, drone: 0 });
-    expect(first.inv.kits).toEqual({ zipline: 1, beacon: 0, drone: 0 });
+    expect(first.kits).toEqual({ zipline: 1, beacon: 0, drone: 0, trampoline: 0, skytramp: 0 });
+    expect(first.inv.kits).toEqual({ zipline: 1, beacon: 0, drone: 0, trampoline: 0, skytramp: 0 });
 
     const second = craft(first.inv, 'zipline', unlocks);
-    expect(second.kits).toEqual({ zipline: 2, beacon: 0, drone: 0 });
+    expect(second.kits).toEqual({ zipline: 2, beacon: 0, drone: 0, trampoline: 0, skytramp: 0 });
     expect(second.inv.fiber).toBe(0);
     expect(second.inv.shard).toBe(0);
   });
@@ -200,7 +200,9 @@ describe('full crafting tree — affordability walk', () => {
     inv.wood = 7; // wall (2) + ramp (3) + cube (2)
     inv.stone = 6; // wall (3) + ramp (1) + cube (2)
     inv.shell = 9; // Tide Dart (1) + Currentboard (8)
-    inv.scale = 7; // Tide Dart (1) + Currentboard (6)
+    inv.scale = 13; // Tide Dart (1) + Currentboard (6) + Trampoline (6)
+    inv.horn = 2; // Trampoline (2)
+    inv.kits.drone = 3; // Sky Trampoline consumes 4 drone kits (1 crafted in-walk)
 
     const unlocks = new Set<string>();
     const order: RecipeId[] = RECIPES
@@ -218,7 +220,8 @@ describe('full crafting tree — affordability walk', () => {
     }
 
     expect(unlocks).toEqual(new Set(['grapple', 'boots', 'glider', 'currentboard', 'rocket']));
-    expect(working.kits).toEqual({ zipline: 1, beacon: 0, drone: 1 });
+    // Sky Trampoline consumed the crafted trampoline kit + all 4 drone kits.
+    expect(working.kits).toEqual({ zipline: 1, beacon: 0, drone: 0, trampoline: 0, skytramp: 1 });
     expect(working.darts).toBe(10);
     expect(working.slowDarts).toBe(3);
     expect(working.tideDarts).toBe(5);

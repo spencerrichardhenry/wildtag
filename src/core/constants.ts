@@ -294,6 +294,15 @@ export const STRUCTURES = {
   losSamples: 24,
   /** Drone station-keeping altitude above the ground beneath it (m). */
   droneHover: 25,
+  /**
+   * Bounce Wave trampolines: pad radius (m), bounce apex as a multiple of
+   * droneHover (Spencer: "1.5x a drone's height"), placement cap, and the
+   * membrane's contact band (m above pad surface that still triggers).
+   */
+  trampolinePadR: 1.7,
+  trampolineBounceFactor: 1.5,
+  maxTrampolines: 8,
+  trampolineContactBand: 0.7,
   /** Radius (m) of the grapple anchor sphere a hovering drone registers. */
   droneAnchorRadius: 4.8,
   /** Max terrain-aim distance (m) for placing a structure. */
@@ -2121,6 +2130,8 @@ export const HANDS = {
     charms: 0xd98cff,
     'kit:zipline': 0xf0c058,
     'kit:drone': 0x7fb2f0,
+    'kit:trampoline': 0x7bb662,
+    'kit:skytramp': 0x8fd3e8,
     wall: 0x8f8f92,
     ramp: 0xc9a06a,
     cube: 0x8f8f92,

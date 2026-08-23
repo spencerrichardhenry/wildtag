@@ -163,6 +163,24 @@ export const RECIPES: Recipe[] = [
     cost: { shard: 8, spark: 8 },
     kind: 'deployable',
   },
+  // --- Bounce Wave ------------------------------------------------------------
+  {
+    id: 'trampoline',
+    name: 'Trampoline',
+    tier: 3,
+    rpRequired: 180,
+    cost: { scale: 6, horn: 2 },
+    kind: 'deployable',
+  },
+  {
+    id: 'skytramp',
+    name: 'Sky Trampoline',
+    tier: 3,
+    rpRequired: 180,
+    cost: {},
+    kitCost: { trampoline: 1, drone: 4 },
+    kind: 'deployable',
+  },
 ];
 
 const BY_ID = new Map<RecipeId, Recipe>(RECIPES.map((r) => [r.id, r]));
@@ -201,6 +219,9 @@ export function canCraft(
   if (spend(inv, recipe.cost) === null) {
     return { ok: false, reason: 'cost' };
   }
+  for (const [kit, n] of Object.entries(recipe.kitCost ?? {})) {
+    if (inv.kits[kit as DeployableId] < (n as number)) return { ok: false, reason: 'cost' };
+  }
   return { ok: true };
 }
 
@@ -224,9 +245,16 @@ export function craft(inv: Inventory, recipeId: RecipeId, unlocks: ReadonlySet<s
   if (!check.ok) {
     throw new Error(`cannot craft ${recipeId}: ${check.reason}`);
   }
-  const paid = spend(inv, recipe.cost);
+  let paid = spend(inv, recipe.cost);
   // Unreachable: canCraft already confirmed affordability above.
   if (!paid) throw new Error(`cannot craft ${recipeId}: cost`);
+  if (recipe.kitCost) {
+    const kits = { ...paid.kits };
+    for (const [kit, n] of Object.entries(recipe.kitCost)) {
+      kits[kit as DeployableId] -= n as number;
+    }
+    paid = { ...paid, kits };
+  }
 
   if (recipe.kind === 'consumable') {
     const gained = recipe.batch ?? 1;

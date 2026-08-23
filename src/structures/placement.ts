@@ -5,6 +5,7 @@ import { raycastTerrain } from '../player/grapple.ts';
 import { toast } from '../ui/toasts.ts';
 import { validateZipline, zipPoint, type ZiplineSystem } from './ziplines.ts';
 import type { DroneSystem } from './drones.ts';
+import type { TrampolineSystem, TrampData } from './trampolines.ts';
 import type { Inventory } from '../craft/inventory.ts';
 
 // ---------------------------------------------------------------------------
@@ -25,7 +26,7 @@ import type { Inventory } from '../craft/inventory.ts';
 // cancel-by-hotbar) so no preview geometry leaks into the scene.
 // ---------------------------------------------------------------------------
 
-type Tool = 'zipline' | 'drone';
+type Tool = 'zipline' | 'drone' | 'trampoline' | 'skytramp';
 type Stage = 'a' | 'b';
 
 const GHOST_SEGMENTS = 20;
@@ -39,6 +40,7 @@ export class PlacementSystem {
   private readonly inventory: Inventory;
   private readonly ziplines: ZiplineSystem;
   private readonly drones: DroneSystem;
+  private readonly tramps: TrampolineSystem;
 
   private tool: Tool | null = null;
   private stage: Stage = 'a';
@@ -62,12 +64,14 @@ export class PlacementSystem {
     inventory: Inventory,
     ziplines: ZiplineSystem,
     drones: DroneSystem,
+    tramps: TrampolineSystem,
   ) {
     this.scene = scene;
     this.camera = camera;
     this.ground = ground;
     this.inventory = inventory;
     this.ziplines = ziplines;
+    this.tramps = tramps;
     this.drones = drones;
   }
 
@@ -101,7 +105,15 @@ export class PlacementSystem {
     this.stage = 'a';
     this.stagedA = null;
     this.buildGhost();
-    toast(tool === 'zipline' ? 'Zipline: place near post' : 'Drone: pick a spot');
+    toast(
+      tool === 'zipline'
+        ? 'Zipline: place near post'
+        : tool === 'drone'
+          ? 'Drone: pick a spot'
+          : tool === 'skytramp'
+            ? 'Sky trampoline: pick a spot'
+            : 'Trampoline: pick a spot',
+    );
   }
 
   /** Cancel placement (Esc or same-slot hotbar). Staged A held no kit — nothing refunds. */
@@ -114,6 +126,19 @@ export class PlacementSystem {
   /** LMB confirm at the current aim point. */
   confirm(): void {
     if (!this.tool || !this.aim) return;
+
+    if (this.tool === 'trampoline' || this.tool === 'skytramp') {
+      if (!this.valid) {
+        toast(this.tramps.count >= STRUCTURES.maxTrampolines ? 'Trampoline limit reached' : 'Invalid spot');
+        return;
+      }
+      const res = this.tramps.place(this.aim, this.tool === 'skytramp' ? 'sky' : 'ground');
+      if (res.ok) {
+        toast(this.tool === 'skytramp' ? 'Sky trampoline deployed' : 'Trampoline deployed');
+        this.exit();
+      }
+      return;
+    }
 
     if (this.tool === 'drone') {
       if (!this.valid) {
@@ -198,6 +223,10 @@ export class PlacementSystem {
 
   private computeValid(): boolean {
     if (!this.aim) return false;
+    if (this.tool === 'trampoline' || this.tool === 'skytramp') {
+      const kit = this.tool === 'skytramp' ? 'skytramp' : 'trampoline';
+      return this.tramps.count < STRUCTURES.maxTrampolines && this.inventory.kits[kit] > 0;
+    }
     if (this.tool === 'drone') {
       return this.drones.count < STRUCTURES.maxDrones && this.inventory.kits.drone > 0;
     }
@@ -282,19 +311,31 @@ export class PlacementSystem {
 // ---------------------------------------------------------------------------
 
 export interface StructuresSave {
+  trampolines?: TrampData[];
   ziplines: ReturnType<ZiplineSystem['serialize']>;
   drones: ReturnType<DroneSystem['serialize']>;
 }
 
-export function serializeStructures(ziplines: ZiplineSystem, drones: DroneSystem): StructuresSave {
-  return { ziplines: ziplines.serialize(), drones: drones.serialize() };
+export function serializeStructures(
+  ziplines: ZiplineSystem,
+  drones: DroneSystem,
+  tramps?: TrampolineSystem,
+): StructuresSave {
+  return {
+    ziplines: ziplines.serialize(),
+    drones: drones.serialize(),
+    trampolines: tramps?.data() ?? [],
+  };
 }
 
 export function deserializeStructures(
   save: StructuresSave,
   ziplines: ZiplineSystem,
   drones: DroneSystem,
+  tramps?: TrampolineSystem,
 ): void {
   ziplines.deserialize(save.ziplines);
   drones.deserialize(save.drones);
+  // Forward-compat: pre-Bounce-Wave saves have no trampolines array.
+  if (tramps && Array.isArray(save.trampolines)) tramps.load(save.trampolines);
 }

@@ -427,11 +427,11 @@ export function decodeSave(json: string): SaveV3 | null {
     // negative value rejects.
     if (inv.cubes !== undefined && !isCount(inv.cubes)) return null;
     const cubes = isCount(inv.cubes) ? (inv.cubes as number) : 0;
-    const kits: Inventory['kits'] = { zipline: 0, beacon: 0, drone: 0 };
+    const kits: Inventory['kits'] = { zipline: 0, beacon: 0, drone: 0, trampoline: 0, skytramp: 0 };
     if (inv.kits !== undefined && inv.kits !== null) {
       if (typeof inv.kits !== 'object') return null;
       const k = inv.kits as Record<string, unknown>;
-      for (const id of ['zipline', 'beacon', 'drone'] as const) {
+      for (const id of ['zipline', 'beacon', 'drone', 'trampoline', 'skytramp'] as const) {
         if (k[id] === undefined) continue; // missing individual kit → default 0
         if (!isCount(k[id])) return null;
         kits[id] = k[id] as number;

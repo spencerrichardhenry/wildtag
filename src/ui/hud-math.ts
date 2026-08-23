@@ -50,6 +50,8 @@ const ITEM_LABELS: Record<ItemId, string> = {
   purifiers: 'Purify',
   charms: 'Charm',
   'kit:zipline': 'Zipline',
+  'kit:trampoline': 'Trampoline',
+  'kit:skytramp': 'Sky Tramp',
   'kit:drone': 'Drone',
   wall: 'Wall',
   ramp: 'Ramp',

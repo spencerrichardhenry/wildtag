@@ -67,6 +67,7 @@ export interface DebugDeps {
    * Returns the new drone's id, or null on failure (no kit / at the cap).
    */
   placeDrone(x: number, z: number): string | null;
+  placeTrampoline(kind: 'ground' | 'sky', x: number, z: number): string | null;
   /**
    * Debug-only: place a zipline directly between two ground points via the
    * REAL `ZiplineSystem.place` path (spends a kit) — same rationale as
@@ -182,6 +183,8 @@ export interface GameDebugHandle {
    * Returns success.
    */
   placePiece(kind: string, x: number, y: number, z: number, yaw: number): boolean;
+  /** Debug-only: place a trampoline via the real place() path (Bounce Wave e2e). */
+  placeTrampoline(kind: 'ground' | 'sky', x: number, z: number): string | null;
   setTimeScale(f: number): void;
   /**
    * Debug-only: aim the camera (radians; yaw 0 faces -Z, pitch + looks up).
@@ -476,6 +479,11 @@ export function buildDebugHandle(deps: DebugDeps): GameDebugHandle {
     /** Debug-only: place a drone directly via the real place() path (playtest Task 9 e2e). */
     placeDrone(x: number, z: number): string | null {
       return deps.placeDrone(x, z);
+    },
+
+    /** Debug-only: place a trampoline via the real place() path (Bounce Wave e2e). */
+    placeTrampoline(kind: 'ground' | 'sky', x: number, z: number): string | null {
+      return deps.placeTrampoline(kind, x, z);
     },
 
     /** Debug-only: place a zipline directly via the real place() path (playtest Task 9 e2e). */

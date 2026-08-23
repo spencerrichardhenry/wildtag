@@ -109,7 +109,7 @@ describe('inventory', () => {
       walls: 0,
       ramps: 0,
       cubes: 0,
-      kits: { zipline: 0, beacon: 0, drone: 0 },
+      kits: { zipline: 0, beacon: 0, drone: 0, trampoline: 0, skytramp: 0 },
     });
   });
 

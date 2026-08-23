@@ -274,7 +274,7 @@ export class DroneSystem {
 }
 
 /** Small quad-rotor: body, four arms + spinning rotor discs, and a status light. */
-function buildDroneMesh(): { group: THREE.Group; rotors: THREE.Mesh[] } {
+export function buildDroneMesh(): { group: THREE.Group; rotors: THREE.Mesh[] } {
   const group = new THREE.Group();
   const bodyMat = new THREE.MeshStandardMaterial({ color: BODY_COLOR, roughness: 0.5, metalness: 0.4 });
   const rotorMat = new THREE.MeshStandardMaterial({ color: ROTOR_COLOR, roughness: 0.4, metalness: 0.6 });
