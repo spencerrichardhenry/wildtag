@@ -356,3 +356,6 @@ block ship; listed here so they aren't lost.
   floppy ears, tongue out). The round-4 snickerdoodle became a faceted
   figurine pup; the flip-cookie deserves a distinct slot + a flip-gait in
   animation.ts. Add AFTER the round-4 register pass settles.
+- The `.claude/skills/critter-modeling` skill was written at end-of-context
+  without the writing-skills retrieval-test pass (RED/GREEN on a fresh agent):
+  run that test next session and tighten wording where the agent misreads.
