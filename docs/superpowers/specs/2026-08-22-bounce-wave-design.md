@@ -7,8 +7,12 @@
    ADD 'horn' produce to cragdrake). Player bounces on it: launch height ≈
    1.5× drone height. Ballistic bounce only — free-flight invariant holds.
 3. DRONE TRAMPOLINE: trampoline + 4 drones = trampoline floating at drone
-   height. Bounce from it reaches ~2.5× drone height total altitude.
-4. SKY WYVERN (new species): stays very high, slowly glides DOWN at ≈ player
+   height. NO separate asset (Spencer): compose in-game from 4 existing drone
+   models holding the corners of the NORMAL trampoline asset (concept
+   approved: 'very good'). Bounce from it reaches ~2.5× drone height total altitude.
+4. SKY WYVERN (new species): LONG AND LANKY like a Chinese dragon (Spencer)
+   — serpentine ribbon body, not the stubby winged glider of concept v1;
+   regenerate concept. Stays very high, slowly glides DOWN at ≈ player
    glide sink rate or slightly faster; easy to catch once reached, but
    requires a drone trampoline to get high enough. fleeStyle: new 'skyglide'.
 5. SHARKS (new species, water biome): swim in packs of 3-4; tagging ANY pack
@@ -22,5 +26,6 @@
    trampoline, sky wyvern, shark, giant kelp) per .claude/skills/
    critter-modeling — Spencer approves concepts before builds.
 
-Open decisions to confirm with Spencer: cragdrake horn produce vs sparks;
-kelp grappleable; croc fleeStyle (swim? lunge?); wyvern respawn cadence.
+DECIDED: cragdrake ADDS horn produce (sparks stay); kelp = decoration only,
+swim-through, no collision/grapple; preview page gains a non-species
+character registry (clams/turtles/goblins/elves) + coverage test.
