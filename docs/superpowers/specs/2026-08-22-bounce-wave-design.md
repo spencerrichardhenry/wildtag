@@ -12,7 +12,7 @@
    approved: 'very good'). Bounce from it reaches ~2.5× drone height total altitude.
 4. SKY WYVERN (new species): LONG AND LANKY like a Chinese dragon (Spencer)
    — serpentine ribbon body, not the stubby winged glider of concept v1;
-   regenerate concept. Stays very high, slowly glides DOWN at ≈ player
+   APPROVED concept: skywyvern-v2-b → docs/fidelity/skywyvern-concept.jpg. Stays very high, slowly glides DOWN at ≈ player
    glide sink rate or slightly faster; easy to catch once reached, but
    requires a drone trampoline to get high enough. fleeStyle: new 'skyglide'.
 5. SHARKS (new species, water biome): swim in packs of 3-4; tagging ANY pack
