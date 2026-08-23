@@ -1497,7 +1497,7 @@ async function checkMount() {
 }
 
 async function checkSpeciesPreview() {
-  await check('n. Species preview: 18-model scroll gallery + middle-drag turntable', async () => {
+  await check('n. Species preview: 25-model scroll gallery (20 species + 5 non-species characters) + middle-drag turntable', async () => {
     const page = await context.newPage();
     const errors = [];
     page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
@@ -1518,7 +1518,9 @@ async function checkSpeciesPreview() {
           viewportHeight: window.innerHeight,
         };
       });
-      assert(initial.labels === 18, `preview has ${initial.labels} labels, expected 18`);
+      // 20 SPECIES + 5 EXTRA_CHARACTERS (clam/turtle/crocodile/goblin/elf —
+      // Spencer: the preview must cover EVERY character model).
+      assert(initial.labels === 25, `preview has ${initial.labels} labels, expected 25`);
       assert(initial.columns >= 2 && initial.columns <= 4, `preview uses ${initial.columns} columns, expected 2–4`);
       assert(initial.rows === Math.ceil(18 / initial.columns), `preview rows ${initial.rows} do not fit 18 models in ${initial.columns} columns`);
       assert(initial.scrollHeight > initial.viewportHeight * 2, `preview does not provide meaningful scrolling (${initial.scrollHeight}px document)`);
