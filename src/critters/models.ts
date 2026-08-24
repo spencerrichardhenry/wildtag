@@ -1079,7 +1079,7 @@ function buildZephyrfinch(rng: () => number): { group: THREE.Group; parts: Critt
 }
 
 /**
- * Sky Wyvern — a long, winding Chinese-dragon silhouette built as overlapping
+ * Skivern — a long, winding Chinese-dragon silhouette built as overlapping
  * low-poly capsule segments. Its pale shields and wing membranes sit on the
  * physical underside, not merely the front, so a player looking up can still
  * identify it against a bright sky.

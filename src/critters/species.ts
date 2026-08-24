@@ -243,7 +243,7 @@ export const SPECIES: SpeciesDef[] = [
   {
     id: 'skywyvern',
     bold: true,
-    name: 'Sky Wyvern',
+    name: 'Skivern',
     biomes: ['meadow', 'highlands'],
     size: 1.9,
     walkSpeed: 3.0,
@@ -254,6 +254,7 @@ export const SPECIES: SpeciesDef[] = [
     // (AI.skyglide*). Long serpentine chinese-dragon build (approved concept
     // docs/fidelity/skywyvern-concept.jpg).
     fleeStyle: 'skyglide',
+    patientTracking: true,
     trackRadius: 16,
     trackTime: 12,
     rarity: 0.25,

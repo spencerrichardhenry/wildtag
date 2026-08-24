@@ -862,7 +862,9 @@ describe('applyStartingLoadout', () => {
 
 describe('Atlantis save additions', () => {
   it('round-trips materials, Tide Darts, turtle ids, and breath level', () => {
-    const state = sampleSave({ underwater: { purifiedClams: [2000, 2004], breathLevel: 2 } });
+    const state = sampleSave({
+      underwater: { purifiedClams: [2000, 2004], breathLevel: 2, linkedCrocs: [3001] },
+    });
     state.inventory.shell = 7;
     state.inventory.scale = 5;
     state.inventory.tideDarts = 11;
@@ -870,7 +872,11 @@ describe('Atlantis save additions', () => {
     expect(decoded?.inventory.shell).toBe(7);
     expect(decoded?.inventory.scale).toBe(5);
     expect(decoded?.inventory.tideDarts).toBe(11);
-    expect(decoded?.underwater).toEqual({ purifiedClams: [2000, 2004], breathLevel: 2 });
+    expect(decoded?.underwater).toEqual({
+      purifiedClams: [2000, 2004],
+      breathLevel: 2,
+      linkedCrocs: [3001],
+    });
   });
 
   it('defaults new inventory counters and preserves the sound half of underwater state', () => {
@@ -881,7 +887,7 @@ describe('Atlantis save additions', () => {
     expect(decoded?.inventory.shell).toBe(0);
     expect(decoded?.inventory.scale).toBe(0);
     expect(decoded?.inventory.tideDarts).toBe(0);
-    expect(decoded?.underwater).toEqual({ purifiedClams: [], breathLevel: 2 });
+    expect(decoded?.underwater).toEqual({ purifiedClams: [], breathLevel: 2, linkedCrocs: [] });
   });
 
   it('rejects negative or non-numeric Atlantis inventory counts', () => {

@@ -108,7 +108,7 @@ export interface SaveV3 {
   castlePurified?: boolean;
   /** Atlantis progression: permanent turtle transformations and the two
    * freed-elf breath upgrades. Optional for all pre-underwater saves. */
-  underwater?: { purifiedClams: number[]; breathLevel: number };
+  underwater?: { purifiedClams: number[]; breathLevel: number; linkedCrocs?: number[] };
   /**
    * Inventory+Building Task 2: the 6-slot hotbar assignment + selection.
    * Optional + shape-guarded so pre-Task-2 saves round-trip to exactly their
@@ -536,7 +536,7 @@ export function decodeSave(json: string): SaveV3 | null {
     if (typeof o.castlePurified === 'boolean') {
       castlePurified = o.castlePurified;
     }
-    let underwater: { purifiedClams: number[]; breathLevel: number } | undefined;
+    let underwater: { purifiedClams: number[]; breathLevel: number; linkedCrocs?: number[] } | undefined;
     if (o.underwater !== undefined && o.underwater !== null && typeof o.underwater === 'object') {
       const u = o.underwater as Record<string, unknown>;
       const hasClams = Array.isArray(u.purifiedClams);
@@ -553,6 +553,10 @@ export function decodeSave(json: string): SaveV3 | null {
             UNDERWATER.breathUpgradeCount,
             Math.max(0, Math.floor(hasBreath ? (u.breathLevel as number) : 0)),
           ),
+          linkedCrocs: Array.isArray(u.linkedCrocs)
+            ? (u.linkedCrocs as unknown[])
+                .filter((id): id is number => typeof id === 'number' && Number.isInteger(id) && id >= 0)
+            : [],
         };
       }
     }

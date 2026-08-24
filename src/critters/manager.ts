@@ -351,7 +351,8 @@ export class CritterManager {
         changed = true;
       }
 
-      if (p.tagged && !p.linked && p.trackProgress <= 0) {
+      const patient = !!(p.species && speciesById(p.species)?.patientTracking);
+      if (p.tagged && !p.linked && p.trackProgress <= 0 && !patient) {
         p.trackEmptyFor = (p.trackEmptyFor ?? 0) + dt;
         changed = true;
         if (p.trackEmptyFor >= TRACKING.emptyExpiryS) {

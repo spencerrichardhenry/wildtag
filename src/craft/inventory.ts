@@ -22,7 +22,7 @@ export interface Inventory {
   wood: number;
   /** Farm-only material (Inventory+Building Task 1): pebbleshrew produce. */
   stone: number;
-  /** Shell fragments dropped by defeated clam guards. */
+  /** Shell fragments shed when a clam is purified into a turtle. */
   shell: number;
   /** Crocodile scales ("croc hide") dropped by underwater crocodiles. */
   scale: number;

@@ -171,7 +171,7 @@ export interface SpeciesDef {
     | 'dive'
     /** Water pack hunter (sharks): tagging ANY pack member aggros the pack. */
     | 'packhunt'
-    /** Very-high glider that slowly sinks at ~player glide rate (sky wyvern). */
+    /** Very-high glider that slowly sinks at ~player glide rate (Skivern). */
     | 'skyglide'
     | 'none';
   /** Bold species ignore the player entirely until TAGGED — only a beacon on
@@ -194,6 +194,10 @@ export interface SpeciesDef {
    * override it so their ring doesn't float low over the model's midriff.
    */
   ringHeight?: number;
+  /** Skivern (Bounce Wave E): tracking progress NEVER decays and the tag
+   *  never expires — the critter waits (holds still) until the player is
+   *  back in range instead of punishing the climb back up. */
+  patientTracking?: boolean;
   /** This species' farm-plot job (spec §4/§5). Every species has one. */
   farmRole: FarmRole;
 }

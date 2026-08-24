@@ -1035,9 +1035,15 @@ function bootGame(): void {
   // first materials; crafted Tide Darts deal double enemy damage underwater.
   underwater = new UnderwaterSystem(scene, ground, {
     purifiedClams: loaded?.underwater?.purifiedClams ?? [],
+    linkedCrocs: loaded?.underwater?.linkedCrocs ?? [],
+    onCrocTagged: () => toast('Crocodile tagged — stay close to win its trust!'),
+    onCrocLinked: () => {
+      toast('The crocodile trusts you now! 🐊');
+      blip(660, 0.12);
+    },
     onDrop: (kind, amount) => {
       addResource(inventory, kind, amount);
-      toast(`+${amount} ${kind === 'shell' ? 'shell fragments' : 'croc scales'}`);
+      toast(`+${amount} ${kind === 'shell' ? 'shell fragments' : 'croc hide'}`);
     },
     onPlayerHit: (dmg, from) => {
       if (isDazed(health)) return;
@@ -1194,6 +1200,7 @@ function bootGame(): void {
       castlePurified,
       underwater: {
         purifiedClams: underwater?.purifiedClamIds() ?? [],
+        linkedCrocs: underwater?.linkedCrocIds() ?? [],
         breathLevel,
       },
       // Mount (Haven V6): only surfaced when a mount is active, so pre-mount
@@ -2416,6 +2423,7 @@ function bootGame(): void {
         breathLevel,
         targets: underwater?.dartTargets().length ?? 0,
         purifiedClams: underwater?.purifiedClamIds() ?? [],
+        linkedCrocs: underwater?.linkedCrocIds() ?? [],
         shell: inventory.shell,
         scale: inventory.scale,
         tideDarts: inventory.tideDarts,

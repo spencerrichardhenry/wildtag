@@ -26,7 +26,14 @@ export function stepTracking(
   sp: SpeciesDef,
   fillRate = 1,
 ): number {
-  const delta = dist <= sp.trackRadius ? dt * fillRate : -dt * TRACKING.trackDecayFactor;
+  // Patient species (Skivern) hold their progress outside the ring instead
+  // of decaying — the climb back up to it is the challenge, not a timer.
+  const delta =
+    dist <= sp.trackRadius
+      ? dt * fillRate
+      : sp.patientTracking
+        ? 0
+        : -dt * TRACKING.trackDecayFactor;
   const next = progress + delta;
   if (next < 0) return 0;
   if (next > sp.trackTime) return sp.trackTime;

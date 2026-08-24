@@ -28,6 +28,11 @@ export interface UnderwaterTarget {
 export interface UnderwaterSystemOpts {
   purifiedClams?: Iterable<number>;
   onPurifiedClam?: (id: number, pos: Vec3) => void;
+  /** Wave E croc tracking hooks (toasts/sfx live in main). */
+  onCrocTagged?: (id: number) => void;
+  onCrocLinked?: (id: number, pos: Vec3) => void;
+  /** Previously-befriended crocodiles to restore as linked. */
+  linkedCrocs?: number[];
   onDrop: (kind: 'shell' | 'scale', amount: number, pos: Vec3) => void;
   onPlayerHit: (damage: number, from: Vec3) => void;
 }
@@ -40,10 +45,13 @@ interface EnemyRuntime {
   home: Vec3;
   pos: Vec3;
   yaw: number;
-  hp: number;
+  /** Wave E: crocs are TRACKED, not damaged. */
+  tagged: boolean;
+  trackProgress: number;
+  linked: boolean;
+  shedFor: number;
   active: boolean;
   purified: boolean;
-  respawnFor: number;
   phase: EnemyPhase;
   timer: number;
   cooldown: number;
@@ -58,9 +66,11 @@ interface TurtleRuntime {
   phase: number;
 }
 
-/** Tide darts are the only projectile that lands two points of enemy damage. */
-export function underwaterDartDamage(kind: DartKind): number {
-  return kind === 'tide' ? UNDERWATER.tideDartDamage : 1;
+/** Wave E: crocs are tracked like surface critters; a persisted linked list
+ *  restores friendships across reloads (mirrors sanitizePurifiedClamIds). */
+export function sanitizeLinkedCrocIds(ids: Iterable<number>): number[] {
+  const valid = new Set(crocSpawns().map((s) => s.id));
+  return [...new Set(ids)].filter((id) => valid.has(id)).sort((a, b) => a - b);
 }
 
 /** Clamp an arbitrary persisted list to real clam ids only. */
@@ -82,6 +92,8 @@ export class UnderwaterSystem {
   private readonly bubbles: THREE.Points;
   private readonly bubbleBase: Float32Array;
   private t = 0;
+  /** Croc ids restored as linked from the save (applied at spawn). */
+  private restoreLinked = new Set<number>();
 
   constructor(
     private readonly scene: THREE.Scene,
@@ -108,6 +120,8 @@ export class UnderwaterSystem {
     this.deep.add(this.bubbles);
 
     for (const id of sanitizePurifiedClamIds(opts.purifiedClams ?? [])) this.purified.add(id);
+    const linkedRestore = new Set(sanitizeLinkedCrocIds(opts.linkedCrocs ?? []));
+    this.restoreLinked = linkedRestore;
 
     for (const s of clamSpawns()) {
       const y = this.ground.heightAt(s.x, s.z) + s.lift;
@@ -119,7 +133,9 @@ export class UnderwaterSystem {
     }
     for (const s of crocSpawns()) {
       const y = this.ground.heightAt(s.x, s.z) + s.lift;
-      this.enemies.push(this.makeEnemy('croc', s.id, { x: s.x, y, z: s.z }, s.yaw));
+      const croc = this.makeEnemy('croc', s.id, { x: s.x, y, z: s.z }, s.yaw);
+      if (this.restoreLinked.has(s.id)) croc.linked = true;
+      this.enemies.push(croc);
     }
 
     // Ancient cyan lamps guide the player through the otherwise deep fog.
@@ -160,23 +176,30 @@ export class UnderwaterSystem {
     return [...this.purified].sort((a, b) => a - b);
   }
 
-  /** Resolve a tracker/slow/tide dart against one underwater enemy. */
+  /**
+   * Resolve a tracker/slow/tide dart against one underwater enemy. Wave E
+   * (Spencer): darts never damage or kill anything down here — this is a
+   * non-violent game. A dart TAGS a crocodile (starting its tracking clock,
+   * exactly like surface critters); clams simply shrug darts off (they are
+   * PURIFIED with purifying darts instead — see purifyClam).
+   */
   hitEnemy(id: number, dartKind: DartKind): boolean {
+    void dartKind;
     const enemy = this.enemies.find((e) => e.id === id && e.active);
     if (!enemy) return false;
-    enemy.hp -= underwaterDartDamage(dartKind);
-    if (enemy.hp > 0) return true;
-
-    enemy.active = false;
-    enemy.respawnFor = UNDERWATER.enemyRespawnS;
-    this.removeEnemyVisual(enemy);
-    if (enemy.kind === 'clam') {
-      this.opts.onDrop('shell', UNDERWATER.shellDrop, enemy.pos);
-    } else {
-      this.opts.onDrop('scale', UNDERWATER.scaleDrop, enemy.pos);
-      this.opts.onDrop('shell', UNDERWATER.crocShellDrop, enemy.pos);
+    if (enemy.kind === 'croc' && !enemy.linked && !enemy.tagged) {
+      enemy.tagged = true;
+      this.opts.onCrocTagged?.(enemy.id);
     }
     return true;
+  }
+
+  /** Linked (befriended) crocodile ids, for the save. */
+  linkedCrocIds(): number[] {
+    return this.enemies
+      .filter((e) => e.kind === 'croc' && e.linked)
+      .map((e) => e.id)
+      .sort((a, b) => a - b);
   }
 
   /** Permanently turn an individual living clam into a harmless cute turtle. */
@@ -185,11 +208,13 @@ export class UnderwaterSystem {
     if (!enemy || this.purified.has(id)) return false;
     enemy.active = false;
     enemy.purified = true;
-    enemy.respawnFor = 0;
     this.purified.add(id);
     const pos = { ...enemy.pos };
     this.removeEnemyVisual(enemy);
     this.spawnTurtle(id, pos);
+    // Wave E: shell fragments come from PURIFYING a clam (it sheds its old
+    // armor as it transforms), never from breaking one.
+    this.opts.onDrop('shell', UNDERWATER.shellDrop, pos);
     this.opts.onPurifiedClam?.(id, pos);
     return true;
   }
@@ -204,15 +229,37 @@ export class UnderwaterSystem {
     this.deep.visible = near;
     if (!near) return;
     for (const enemy of this.enemies) {
-      if (!enemy.active) {
-        if (!enemy.purified) {
-          enemy.respawnFor -= dt;
-          if (enemy.respawnFor <= 0) this.respawnEnemy(enemy);
-        }
-        continue;
-      }
+      // Wave E: nothing dies down here anymore — the only way an enemy goes
+      // inactive is clam purification, which is permanent.
+      if (!enemy.active) continue;
       if (enemy.kind === 'clam') this.updateClam(enemy, dt, playerPos, playerUnderwater);
       else this.updateCroc(enemy, dt, playerPos, playerUnderwater);
+      // Wave E croc tracking: accrue while the player stays close (progress
+      // never decays — crocs are patient), Link at the threshold: drop croc
+      // hide, turn permanently friendly. Linked crocs shed another hide every
+      // crocShedS while the player is around to collect it.
+      if (enemy.kind === 'croc') {
+        const pdist = Math.hypot(
+          playerPos.x - enemy.pos.x,
+          playerPos.y - enemy.pos.y,
+          playerPos.z - enemy.pos.z,
+        );
+        if (enemy.tagged && !enemy.linked) {
+          if (pdist <= UNDERWATER.crocTrackRadius) enemy.trackProgress += dt;
+          if (enemy.trackProgress >= UNDERWATER.crocTrackTime) {
+            enemy.linked = true;
+            enemy.tagged = false;
+            this.opts.onDrop('scale', UNDERWATER.scaleDrop, enemy.pos);
+            this.opts.onCrocLinked?.(enemy.id, { ...enemy.pos });
+          }
+        } else if (enemy.linked) {
+          enemy.shedFor -= dt;
+          if (enemy.shedFor <= 0 && pdist <= 40) {
+            enemy.shedFor = UNDERWATER.crocShedS;
+            this.opts.onDrop('scale', 1, enemy.pos);
+          }
+        }
+      }
       this.syncEnemy(enemy);
     }
 
@@ -280,10 +327,12 @@ export class UnderwaterSystem {
       home: { ...home },
       pos: { ...home },
       yaw,
-      hp: kind === 'clam' ? UNDERWATER.clamHp : UNDERWATER.crocHp,
+      tagged: false,
+      trackProgress: 0,
+      linked: false,
+      shedFor: UNDERWATER.crocShedS,
       active: true,
       purified: false,
-      respawnFor: 0,
       phase: 'idle',
       timer: 0,
       cooldown: 0,
@@ -318,16 +367,6 @@ export class UnderwaterSystem {
     }
     enemy.clam = null;
     enemy.croc = null;
-  }
-
-  private respawnEnemy(enemy: EnemyRuntime): void {
-    enemy.active = true;
-    enemy.pos = { ...enemy.home };
-    enemy.hp = enemy.kind === 'clam' ? UNDERWATER.clamHp : UNDERWATER.crocHp;
-    enemy.phase = 'idle';
-    enemy.timer = 0;
-    enemy.cooldown = 0;
-    this.spawnEnemyVisual(enemy);
   }
 
   private spawnTurtle(id: number, home: Vec3): void {
@@ -386,7 +425,8 @@ export class UnderwaterSystem {
     const dy = p.y + 0.7 - enemy.pos.y;
     const dz = p.z - enemy.pos.z;
     const dist = Math.hypot(dx, dy, dz);
-    const chasing = submerged && dist <= UNDERWATER.crocNoticeR;
+    // Linked (befriended) crocs never chase or bite — they lazily patrol.
+    const chasing = !enemy.linked && submerged && dist <= UNDERWATER.crocNoticeR;
 
     let tx: number;
     let ty: number;

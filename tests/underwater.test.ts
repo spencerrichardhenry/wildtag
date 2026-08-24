@@ -16,9 +16,9 @@ import {
   tradeForBreath,
 } from '../src/underwater/progression.ts';
 import {
+  sanitizeLinkedCrocIds,
   sanitizePurifiedClamIds,
   UnderwaterSystem,
-  underwaterDartDamage,
 } from '../src/underwater/system.ts';
 
 const flatSeabed: GroundQuery = {
@@ -146,11 +146,10 @@ describe('underwater movement and breath', () => {
   });
 });
 
-describe('underwater enemies and permanent turtles', () => {
-  it('Tide Darts deal double damage', () => {
-    expect(underwaterDartDamage('tracker')).toBe(1);
-    expect(underwaterDartDamage('slowing')).toBe(1);
-    expect(underwaterDartDamage('tide')).toBe(2);
+describe('underwater characters: purify clams, track crocs', () => {
+  it('sanitizes linked croc ids against the real croc roster', () => {
+    const crocIds = crocSpawns().map((c) => c.id);
+    expect(sanitizeLinkedCrocIds([crocIds[0]!, -1, 999999, crocIds[0]!])).toEqual([crocIds[0]!]);
   });
 
   it('spends Tide ammo and resolves an underwater hostile before wildlife', () => {
@@ -180,7 +179,7 @@ describe('underwater enemies and permanent turtles', () => {
     darts.dispose();
   });
 
-  it('drops renewable materials and replaces a purified clam with a turtle', () => {
+  it('clams shrug off darts and only purification transforms them (dropping shells)', () => {
     const scene = new THREE.Scene();
     const drops: { kind: 'shell' | 'scale'; amount: number }[] = [];
     const system = new UnderwaterSystem(scene, flatSeabed, {
@@ -188,29 +187,83 @@ describe('underwater enemies and permanent turtles', () => {
       onPlayerHit: () => undefined,
     });
 
-    const firstClam = system.purifierTargets()[0]!;
-    expect(system.purifyClam(firstClam.id)).toBe(true);
-    expect(system.purifiedClamIds()).toContain(firstClam.id);
-    expect(system.purifierTargets().some((t) => t.id === firstClam.id)).toBe(false);
-    expect(scene.getObjectByName('purifiedTurtle')?.userData.clamId).toBe(firstClam.id);
+    const clam = system.purifierTargets()[0]!;
+    // Darts never damage or remove a clam — it stays alive and purifiable.
+    expect(system.hitEnemy(clam.id, 'tide')).toBe(true);
+    expect(system.hitEnemy(clam.id, 'tracker')).toBe(true);
+    expect(drops).toEqual([]);
+    expect(system.purifierTargets().some((t) => t.id === clam.id)).toBe(true);
 
-    const secondClam = system.purifierTargets()[0]!;
-    expect(system.hitEnemy(secondClam.id, 'tide')).toBe(true);
-    expect(system.hitEnemy(secondClam.id, 'tracker')).toBe(true);
-    expect(drops).toContainEqual({ kind: 'shell', amount: UNDERWATER.shellDrop });
+    expect(system.purifyClam(clam.id)).toBe(true);
+    expect(system.purifiedClamIds()).toContain(clam.id);
+    expect(system.purifierTargets().some((t) => t.id === clam.id)).toBe(false);
+    expect(scene.getObjectByName('purifiedTurtle')?.userData.clamId).toBe(clam.id);
+    expect(drops).toEqual([{ kind: 'shell', amount: UNDERWATER.shellDrop }]);
+    system.dispose();
+  });
+
+  it('darts tag a croc; staying close links it, drops hide, and it sheds more over time', () => {
+    const scene = new THREE.Scene();
+    const drops: { kind: 'shell' | 'scale'; amount: number }[] = [];
+    let taggedId: number | undefined;
+    let linkedId: number | undefined;
+    const system = new UnderwaterSystem(scene, flatSeabed, {
+      onDrop: (kind, amount) => drops.push({ kind, amount }),
+      onPlayerHit: () => undefined,
+      onCrocTagged: (id) => (taggedId = id),
+      onCrocLinked: (id) => (linkedId = id),
+    });
 
     const croc = system.dartTargets().find((t) => t.id >= 3000)!;
     expect(system.hitEnemy(croc.id, 'tide')).toBe(true);
-    expect(system.hitEnemy(croc.id, 'tide')).toBe(true);
+    expect(taggedId).toBe(croc.id);
+    expect(drops).toEqual([]);
+
+    // Track by staying inside crocTrackRadius (the croc's live position is at
+    // its target pos while we hover right on top of it).
+    const near = { x: croc.pos.x, y: croc.pos.y, z: croc.pos.z };
+    for (let i = 0; i < Math.ceil(UNDERWATER.crocTrackTime / 0.5) + 2; i++) {
+      system.update(0.5, near, true);
+    }
+    expect(linkedId).toBe(croc.id);
+    expect(system.linkedCrocIds()).toContain(croc.id);
     expect(drops).toContainEqual({ kind: 'scale', amount: UNDERWATER.scaleDrop });
-    expect(drops).toContainEqual({ kind: 'shell', amount: UNDERWATER.crocShellDrop });
-    system.update(
-      UNDERWATER.enemyRespawnS + 0.1,
-      { x: UNDERWATER.center.x, y: UNDERWATER.floorY + 8, z: UNDERWATER.center.z },
-      false,
-    );
-    expect(system.dartTargets().some((t) => t.id === secondClam.id)).toBe(true);
-    expect(system.dartTargets().some((t) => t.id === croc.id)).toBe(true);
+
+    // Linked crocs periodically shed one more hide while the player is near.
+    const before = drops.length;
+    const crocNow = system.dartTargets().find((t) => t.id === croc.id);
+    const shedNear = crocNow ? { ...crocNow.pos } : near;
+    for (let i = 0; i < Math.ceil(UNDERWATER.crocShedS / 1) + 2; i++) {
+      system.update(1, shedNear, true);
+    }
+    expect(drops.length).toBeGreaterThan(before);
+    expect(drops[drops.length - 1]).toEqual({ kind: 'scale', amount: 1 });
+    system.dispose();
+  });
+
+  it('restores linked crocs from the save so they stay friendly forever', () => {
+    const scene = new THREE.Scene();
+    const crocId = crocSpawns()[0]!.id;
+    let bitten = false;
+    const system = new UnderwaterSystem(scene, flatSeabed, {
+      onDrop: () => undefined,
+      onPlayerHit: () => (bitten = true),
+      linkedCrocs: [crocId],
+    });
+    expect(system.linkedCrocIds()).toEqual([crocId]);
+    // Park the player on top of the linked croc: it must never chase or bite.
+    const spawn = crocSpawns()[0]!;
+    const pos = {
+      x: spawn.x,
+      y: UNDERWATER.floorY + spawn.lift,
+      z: spawn.z,
+    };
+    for (let i = 0; i < 40; i++) system.update(0.25, pos, true);
+    expect(bitten).toBe(false);
+    // A dart against a linked croc is a friendly no-op (never re-tags).
+    system.hitEnemy(crocId, 'tide');
+    system.hitEnemy(crocId, 'tracker');
+    expect(system.linkedCrocIds()).toEqual([crocId]);
     system.dispose();
   });
 });

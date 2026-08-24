@@ -299,7 +299,7 @@ export const STRUCTURES = {
    * droneHover (Spencer: "1.5x a drone's height"), placement cap, and the
    * membrane's contact band (m above pad surface that still triggers).
    */
-  trampolinePadR: 1.7,
+  trampolinePadR: 3.4, // Spencer: "about 2x the size" (was 1.7)
   trampolineBounceFactor: 1.5,
   maxTrampolines: 8,
   trampolineContactBand: 0.7,
@@ -1335,7 +1335,7 @@ export const AI = {
   sharkPackRadius: 28,
   sharkPackSize: 3, // + the leader = 3-4 in the water (jittered by hash)
   /**
-   * 'skyglide' (sky wyvern): lives airborne — cruises at skyglideCeil above
+   * 'skyglide' (Skivern): lives airborne — cruises at skyglideCeil above
    * terrain and SINKS at skyglideSink m/s (player glideSink is 2; "a bit
    * quicker" per Spencer) until skyglideFloor, then catches a thermal (the
    * cruise target snaps back to ceil and the smooth climb rate carries it
@@ -1468,8 +1468,16 @@ export const UNDERWATER = {
   /** Enemy population and combat cadence. */
   clamCount: 8,
   crocCount: 5,
-  clamHp: 3,
-  crocHp: 4,
+  /**
+   * Bounce Wave E (Spencer): NOTHING underwater is damaged or killed by darts
+   * — clams are PURIFIED into turtles (shell fragments drop then), and
+   * crocodiles are TRACKED like critters (tag → stay within crocTrackRadius
+   * for crocTrackTime → Linked: drops croc hide, turns permanently friendly,
+   * and sheds another hide every crocShedS while you visit).
+   */
+  crocTrackRadius: 16,
+  crocTrackTime: 14,
+  crocShedS: 150,
   clamNoticeR: 12,
   clamWindupS: 0.55,
   clamChompS: 0.25,
@@ -1482,17 +1490,14 @@ export const UNDERWATER = {
   crocBiteR: 2.25,
   crocBiteCooldownS: 1.45,
   crocDamage: 16,
-  enemyRespawnS: 45,
+  /** Shell fragments a clam sheds as it transforms into a turtle. */
   shellDrop: 2,
+  /** Croc hide dropped the moment a tracked croc Links (befriends you). */
   scaleDrop: 2,
-  /** Barnacles on a defeated croc keep an all-turtle save from losing the
-   * last renewable source of shell fragments. */
-  crocShellDrop: 1,
 
   /** Tide darts trade ordinary ballistic drop for a flatter, harder shot. */
   tideDartSpeed: 76,
   tideDartGravity: -0.8,
-  tideDartDamage: 2,
 
   /** Underwater atmosphere. */
   fogColor: 0x0b6076,
