@@ -255,10 +255,6 @@ export function stepAI(c: CritterState, ctx: AIContext, dt: number): CritterStat
   }
 
   if ((c.slowFor ?? 0) > 0) speed *= TRACKING.slowMultiplier;
-  // Skivern patient hold: tagged + player out of tracking range → stand still
-  // (mid-air) until they climb back up. Horizontal freeze here; the altitude
-  // band freeze lives in locomote's skyglide branch.
-  if (sp.patientTracking && c.tagged && !c.linked && dist > sp.trackRadius) speed = 0;
   locomote(out, c, sp, ctx, desiredYaw, speed, dt);
   return out;
 }
@@ -467,11 +463,9 @@ function locomote(
       // Airborne life-cycle in EVERY state: the cruise band slowly sinks at
       // skyglideSink; at the floor it catches a thermal back to the ceiling
       // (flyClimbRate smooths the actual climb). See AI.skyglide* docs.
-      // Patient-tracking hold (Spencer): a TAGGED skivern with the player out
-      // of tracking range freezes its band — it waits in place for you.
-      const pd = Math.hypot(ctx.playerPos.x - prev.pos.x, ctx.playerPos.z - prev.pos.z);
-      const waiting = prev.tagged && !prev.linked && pd > sp.trackRadius;
-      let band = prev.flightHeight - (waiting ? 0 : AI.skyglideSink * dt);
+      // (Patient tracking lives entirely in progress/expiry: a tagged skivern
+      // keeps cruising and cycling its band — it just never loses progress.)
+      let band = prev.flightHeight - AI.skyglideSink * dt;
       if (band <= AI.skyglideFloor) band = AI.skyglideCeil;
       out.flightHeight = band;
       target = terrainY + band;

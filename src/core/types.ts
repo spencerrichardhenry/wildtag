@@ -195,8 +195,8 @@ export interface SpeciesDef {
    */
   ringHeight?: number;
   /** Skivern (Bounce Wave E): tracking progress NEVER decays and the tag
-   *  never expires — the critter waits (holds still) until the player is
-   *  back in range instead of punishing the climb back up. */
+   *  never expires — the critter keeps cruising as normal; falling out of
+   *  range just pauses the fill instead of punishing the climb back up. */
   patientTracking?: boolean;
   /** This species' farm-plot job (spec §4/§5). Every species has one. */
   farmRole: FarmRole;
