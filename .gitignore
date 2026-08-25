@@ -4,3 +4,4 @@ dist/
 .superpowers/
 .claude/
 .codex-drafts/
+.DS_Store
