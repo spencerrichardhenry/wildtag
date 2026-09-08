@@ -1,0 +1,352 @@
+{
+  "hero_shrimp": {
+    "file": "hero_shrimp.glb",
+    "triangles": 15432,
+    "bytes": 401992,
+    "authoring": "Blender MCP",
+    "animated": true
+  },
+  "hero_fish": {
+    "file": "hero_fish.glb",
+    "triangles": 9156,
+    "bytes": 238588,
+    "authoring": "Blender MCP",
+    "animated": true
+  },
+  "hero_orca": {
+    "file": "hero_orca.glb",
+    "triangles": 8056,
+    "bytes": 209968,
+    "authoring": "Blender MCP",
+    "animated": true
+  },
+  "hero_fortress": {
+    "file": "hero_fortress.glb",
+    "triangles": 25856,
+    "bytes": 618172,
+    "authoring": "Blender MCP",
+    "animated": true
+  },
+  "hero_cosmic": {
+    "file": "hero_cosmic.glb",
+    "triangles": 20476,
+    "bytes": 485464,
+    "authoring": "Blender MCP",
+    "animated": true
+  },
+  "plant": {
+    "file": "plant.glb",
+    "triangles": 760,
+    "bytes": 21740,
+    "authoring": "Blender MCP",
+    "animated": false
+  },
+  "kelp_snack": {
+    "file": "kelp_snack.glb",
+    "triangles": 716,
+    "bytes": 19844,
+    "authoring": "Blender MCP",
+    "animated": false
+  },
+  "seagrape": {
+    "file": "seagrape.glb",
+    "triangles": 4240,
+    "bytes": 105800,
+    "authoring": "Blender MCP",
+    "animated": false
+  },
+  "lettuce": {
+    "file": "lettuce.glb",
+    "triangles": 2596,
+    "bytes": 64820,
+    "authoring": "Blender MCP",
+    "animated": false
+  },
+  "shrimp": {
+    "file": "shrimp.glb",
+    "triangles": 2120,
+    "bytes": 54408,
+    "authoring": "Blender MCP",
+    "animated": false
+  },
+  "crab": {
+    "file": "crab.glb",
+    "triangles": 2778,
+    "bytes": 70336,
+    "authoring": "Blender MCP",
+    "animated": false
+  },
+  "jellyfish": {
+    "file": "jellyfish.glb",
+    "triangles": 2968,
+    "bytes": 74192,
+    "authoring": "Blender MCP",
+    "animated": false
+  },
+  "snail": {
+    "file": "snail.glb",
+    "triangles": 2240,
+    "bytes": 56496,
+    "authoring": "Blender MCP",
+    "animated": false
+  },
+  "fish": {
+    "file": "fish.glb",
+    "triangles": 992,
+    "bytes": 26756,
+    "authoring": "Blender MCP",
+    "animated": false
+  },
+  "squid": {
+    "file": "squid.glb",
+    "triangles": 2076,
+    "bytes": 53136,
+    "authoring": "Blender MCP",
+    "animated": false
+  },
+  "ray": {
+    "file": "ray.glb",
+    "triangles": 1284,
+    "bytes": 33580,
+    "authoring": "Blender MCP",
+    "animated": false
+  },
+  "bird": {
+    "file": "bird.glb",
+    "triangles": 1428,
+    "bytes": 37652,
+    "authoring": "Blender MCP",
+    "animated": false
+  },
+  "tree": {
+    "file": "tree.glb",
+    "triangles": 4500,
+    "bytes": 116836,
+    "authoring": "Blender MCP",
+    "animated": false
+  },
+  "boat": {
+    "file": "boat.glb",
+    "triangles": 1164,
+    "bytes": 30308,
+    "authoring": "Blender MCP",
+    "animated": false
+  },
+  "plane": {
+    "file": "plane.glb",
+    "triangles": 2024,
+    "bytes": 52100,
+    "authoring": "Blender MCP",
+    "animated": false
+  },
+  "balloon": {
+    "file": "balloon.glb",
+    "triangles": 2876,
+    "bytes": 71120,
+    "authoring": "Blender MCP",
+    "animated": false
+  },
+  "lighthouse": {
+    "file": "lighthouse.glb",
+    "triangles": 2228,
+    "bytes": 57888,
+    "authoring": "Blender MCP",
+    "animated": false
+  },
+  "reef_rock_0": {
+    "file": "reef_rock_0.glb",
+    "triangles": 798,
+    "bytes": 21800,
+    "authoring": "Blender MCP",
+    "animated": false
+  },
+  "reef_rock_1": {
+    "file": "reef_rock_1.glb",
+    "triangles": 798,
+    "bytes": 21800,
+    "authoring": "Blender MCP",
+    "animated": false
+  },
+  "reef_arch": {
+    "file": "reef_arch.glb",
+    "triangles": 2528,
+    "bytes": 64668,
+    "authoring": "Blender MCP",
+    "animated": false
+  },
+  "reef_coral_0": {
+    "file": "reef_coral_0.glb",
+    "triangles": 1700,
+    "bytes": 44340,
+    "authoring": "Blender MCP",
+    "animated": false
+  },
+  "reef_coral_1": {
+    "file": "reef_coral_1.glb",
+    "triangles": 1700,
+    "bytes": 44344,
+    "authoring": "Blender MCP",
+    "animated": false
+  },
+  "reef_coral_2": {
+    "file": "reef_coral_2.glb",
+    "triangles": 550,
+    "bytes": 16156,
+    "authoring": "Blender MCP",
+    "animated": false
+  },
+  "reef_coral_3": {
+    "file": "reef_coral_3.glb",
+    "triangles": 1500,
+    "bytes": 38872,
+    "authoring": "Blender MCP",
+    "animated": false
+  },
+  "reef_kelp": {
+    "file": "reef_kelp.glb",
+    "triangles": 1800,
+    "bytes": 47812,
+    "authoring": "Blender MCP",
+    "animated": false
+  },
+  "reef_grass": {
+    "file": "reef_grass.glb",
+    "triangles": 850,
+    "bytes": 22708,
+    "authoring": "Blender MCP",
+    "animated": false
+  },
+  "reef_shell": {
+    "file": "reef_shell.glb",
+    "triangles": 600,
+    "bytes": 15844,
+    "authoring": "Blender MCP",
+    "animated": false
+  },
+  "reef_starfish": {
+    "file": "reef_starfish.glb",
+    "triangles": 1100,
+    "bytes": 28496,
+    "authoring": "Blender MCP",
+    "animated": false
+  },
+  "island": {
+    "file": "island.glb",
+    "triangles": 480,
+    "bytes": 14320,
+    "authoring": "Blender MCP",
+    "animated": false
+  },
+  "cloud": {
+    "file": "cloud.glb",
+    "triangles": 1152,
+    "bytes": 29284,
+    "authoring": "Blender MCP",
+    "animated": false
+  },
+  "planet_00": {
+    "file": "planet_00.glb",
+    "triangles": 4076,
+    "bytes": 103500,
+    "authoring": "Blender MCP",
+    "animated": false
+  },
+  "planet_01": {
+    "file": "planet_01.glb",
+    "triangles": 2976,
+    "bytes": 72784,
+    "authoring": "Blender MCP",
+    "animated": false
+  },
+  "planet_02": {
+    "file": "planet_02.glb",
+    "triangles": 3680,
+    "bytes": 92900,
+    "authoring": "Blender MCP",
+    "animated": false
+  },
+  "planet_03": {
+    "file": "planet_03.glb",
+    "triangles": 4340,
+    "bytes": 111340,
+    "authoring": "Blender MCP",
+    "animated": false
+  },
+  "planet_04": {
+    "file": "planet_04.glb",
+    "triangles": 4076,
+    "bytes": 103520,
+    "authoring": "Blender MCP",
+    "animated": false
+  },
+  "planet_05": {
+    "file": "planet_05.glb",
+    "triangles": 3680,
+    "bytes": 92900,
+    "authoring": "Blender MCP",
+    "animated": false
+  },
+  "planet_06": {
+    "file": "planet_06.glb",
+    "triangles": 4076,
+    "bytes": 103504,
+    "authoring": "Blender MCP",
+    "animated": false
+  },
+  "planet_07": {
+    "file": "planet_07.glb",
+    "triangles": 3636,
+    "bytes": 91236,
+    "authoring": "Blender MCP",
+    "animated": false
+  },
+  "planet_08": {
+    "file": "planet_08.glb",
+    "triangles": 3680,
+    "bytes": 92900,
+    "authoring": "Blender MCP",
+    "animated": false
+  },
+  "planet_09": {
+    "file": "planet_09.glb",
+    "triangles": 3788,
+    "bytes": 93676,
+    "authoring": "Blender MCP",
+    "animated": false
+  },
+  "planet_10": {
+    "file": "planet_10.glb",
+    "triangles": 3680,
+    "bytes": 92900,
+    "authoring": "Blender MCP",
+    "animated": false
+  },
+  "planet_11": {
+    "file": "planet_11.glb",
+    "triangles": 4076,
+    "bytes": 103504,
+    "authoring": "Blender MCP",
+    "animated": false
+  },
+  "seabed_0": {
+    "file": "seabed_0.glb",
+    "triangles": 20000,
+    "bytes": 488552,
+    "authoring": "Blender MCP",
+    "animated": false
+  },
+  "seabed_1": {
+    "file": "seabed_1.glb",
+    "triangles": 19200,
+    "bytes": 480124,
+    "authoring": "Blender MCP",
+    "animated": false
+  },
+  "seabed_2": {
+    "file": "seabed_2.glb",
+    "triangles": 19200,
+    "bytes": 480128,
+    "authoring": "Blender MCP",
+    "animated": false
+  }
+}

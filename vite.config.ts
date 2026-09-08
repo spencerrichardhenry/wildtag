@@ -1,11 +1,20 @@
 /// <reference types="vitest/config" />
 import { defineConfig } from 'vite';
+import { existsSync } from 'node:fs';
 
 // GitHub Pages serves the site at https://<user>.github.io/wildtag/, so
-// production builds need the repo-name base path for asset URLs. Dev and
-// tests stay at '/'.
-export default defineConfig(({ command }) => ({
-  base: command === 'build' ? '/wildtag/' : '/',
+// production builds and their local preview need the repo-name base path.
+// Dev and tests stay at '/'.
+export default defineConfig(({ command, isPreview }) => ({
+  base: command === 'build' || isPreview ? '/wildtag/' : '/',
+  build: {
+    rollupOptions: {
+      input: {
+        wildtag: 'index.html', tide: 'tiny-tide.html', siege: 'royal-yeet.html', wildtagAlias: 'wildtag.html',
+        ...(existsSync('mineral-wage.html') ? { miner: 'mineral-wage.html' } : {}),
+      },
+    },
+  },
   server: {
     port: 5199,
   },

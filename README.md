@@ -1,5 +1,23 @@
 # Wildtag
 
+## Play the games
+
+[Open Spencer’s Arcade](https://spencerrichardhenry.github.io/) for the full collection.
+
+| Game | Play |
+| --- | --- |
+| Tiny Tide | https://spencerrichardhenry.github.io/wildtag/tiny-tide.html |
+| Royal Yeet | https://spencerrichardhenry.github.io/wildtag/royal-yeet.html |
+| Dungeon Run (mobademo) | https://spencerrichardhenry.github.io/mobatest/ |
+| Wildtag | https://spencerrichardhenry.github.io/wildtag/ |
+
+Tiny Tide has five animated forms and 50 original Blender assets. Read the
+[game guide](docs/TINY-TIDE.md) and [art notes](docs/TINY-TIDE-ART.md).
+Royal Yeet has its own [controls and game guide](docs/ROYAL-YEET.md).
+The original Wildtag game and its existing URL are preserved.
+
+For local development, use `/tiny-tide.html`, `/royal-yeet.html`, or `/`.
+
 **Wildtag** is a first-person, non-violent creature-tracking exploration game for
 the web. You wander a hand-shaped procedural island — meadow, forest, wetland,
 crags and highlands — hunting nothing and harming nobody. Instead you *track*:

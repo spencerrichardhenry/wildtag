@@ -5,3 +5,5 @@ dist/
 .claude/
 .codex-drafts/
 .DS_Store
+__pycache__/
+*.pyc
