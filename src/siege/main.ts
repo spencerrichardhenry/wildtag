@@ -1,3 +1,4 @@
+import { startAnalytics } from '../analytics';
 import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
 import { AMMO, LAUNCH, WIN_PERCENT, clamp, normalizePull, trajectory, type Pull, type Vector3 } from './layout';
@@ -210,6 +211,7 @@ async function boot() {
   let previous = performance.now(), accumulator = 0, trailTimer = 0;
   document.addEventListener('visibilitychange', () => { cancelDrag(); previous = performance.now(); accumulator = 0; });
   buildCastle(); resize(); $('loading').remove();
+  startAnalytics('royal-yeet', () => modal === null);
   Object.defineProperty(window, '__siege', { configurable: true, get: () => ({ seed, name: simulation.layout.name, blocks: simulation.stones.length,
     damage: simulation.destruction, shots: simulation.shotCount, shotsLeft: simulation.shotsLeft, current: simulation.currentAmmo, next: simulation.nextAmmo,
     ready: simulation.canFire, won: simulation.won, exhausted: simulation.exhausted, time: simulation.time, power, score: simulation.score, target: aimedAt?.building.spec.name ?? null, buildings: simulation.buildings.map(b => ({ ...b.spec, awarded: b.awarded, damage: Math.round(b.stones.filter(s => s.destroyed).length / b.stones.length * 100) })), pull: { ...pull }, dragging: !!drag || keyboardCharge,

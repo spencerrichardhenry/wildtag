@@ -1,3 +1,4 @@
+import { startAnalytics } from './analytics';
 import * as THREE from 'three';
 import {
   AI,
@@ -2436,6 +2437,8 @@ function bootGame(): void {
   // render every animation frame. Frame delta is clamped so tab-switches /
   // long stalls don't cause a spiral-of-death catch-up burst.
   // -------------------------------------------------------------------------
+
+  startAnalytics('wildtag', () => !screens.isOpen() && !debugFrozen);
 
   const MAX_STEPS_PER_FRAME = 240;
   let accumulator = 0;

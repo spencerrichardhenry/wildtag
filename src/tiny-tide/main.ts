@@ -1,3 +1,4 @@
+import { startAnalytics } from '../analytics';
 import * as T from 'three';
 import './style.css';
 import { canEat, eat, freshRun, parseSave, STAGES, FOOD_LABELS, type Run } from './state';
@@ -64,6 +65,7 @@ let saved: Run | null = null;
 try { saved = parseSave(localStorage.getItem(SAVE_KEY)); audio.muted = localStorage.getItem('tiny-tide-muted') === 'true'; } catch { /* Storage is optional. */ }
 let run = freshRun();
 let mode: 'menu' | 'playing' | 'paused' | 'evolving' | 'won' = 'menu';
+startAnalytics('tiny-tide', () => mode === 'playing' || mode === 'evolving');
 let keys = new Set<string>();
 let stickX = 0, stickZ = 0, stickPointer: number | null = null;
 let holdingChomp = false, rising = false, diving = false;
