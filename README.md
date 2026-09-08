@@ -10,6 +10,7 @@
 | Royal Yeet | https://spencerrichardhenry.github.io/wildtag/royal-yeet.html |
 | Dungeon Run (mobademo) | https://spencerrichardhenry.github.io/mobatest/ |
 | Wildtag | https://spencerrichardhenry.github.io/wildtag/ |
+| Moss & Maw | https://spencerrichardhenry.github.io/moss-and-maw/ |
 
 Tiny Tide has five animated forms and 50 original Blender assets. Read the
 [game guide](docs/TINY-TIDE.md) and [art notes](docs/TINY-TIDE-ART.md).
