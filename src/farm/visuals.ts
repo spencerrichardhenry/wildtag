@@ -1,3 +1,4 @@
+import { refineArt, artGeometry } from '../art/library.ts';
 import * as THREE from 'three';
 import { FARM, VILLAGE } from '../core/constants.ts';
 import type { ResourceKind } from '../core/types.ts';
@@ -90,7 +91,7 @@ function mat(color: number, opts: { emissive?: number; opacity?: number } = {}):
 }
 
 /** A faded post + board "deed" sign for a locked plot. */
-function buildSign(): THREE.Group {
+export function buildSign(): THREE.Group {
   const g = new THREE.Group();
   const post = new THREE.Mesh(
     new THREE.CylinderGeometry(0.05, 0.05, FARM.signPostH, 5),
@@ -104,6 +105,7 @@ function buildSign(): THREE.Group {
   );
   board.position.y = FARM.signPostH;
   g.add(board);
+  refineArt(g, 'farm_sign');
   return g;
 }
 
@@ -222,7 +224,7 @@ export class FarmVisuals {
           stack.position.set(half, FARM.hopperFloat, half); // above a corner post
           for (let i = 0; i < wantCubes; i++) {
             const cube = new THREE.Mesh(
-              new THREE.BoxGeometry(FARM.cubeSize, FARM.cubeSize, FARM.cubeSize),
+              artGeometry('farm_crate') ?? new THREE.BoxGeometry(FARM.cubeSize, FARM.cubeSize, FARM.cubeSize),
               mat(color, { emissive: color }),
             );
             cube.position.y = i * FARM.cubeGap;

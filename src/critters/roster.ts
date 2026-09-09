@@ -18,6 +18,7 @@ import { WORLD_SEED } from '../core/constants.ts';
 export type RosterStatus =
   | { kind: 'idle' }
   | { kind: 'farm'; plotId: number }
+  | { kind: 'haul'; siteId: string }
   | { kind: 'mount' };
 
 export interface RosterEntry {

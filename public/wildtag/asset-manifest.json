@@ -1,0 +1,1757 @@
+{
+  "version": 1,
+  "assets": [
+    {
+      "id": "prop_pine",
+      "category": "scenery",
+      "triangles": 672,
+      "sourceTriangles": 80,
+      "bytes": 53468,
+      "parts": 1,
+      "authoring": "Blender MCP",
+      "lods": [
+        {
+          "level": 1,
+          "path": "lod/prop_pine_lod1.glb",
+          "triangles": 234,
+          "bytes": 22308,
+          "authoring": "Blender MCP"
+        },
+        {
+          "level": 2,
+          "path": "lod/prop_pine_lod2.glb",
+          "triangles": 80,
+          "bytes": 9628,
+          "authoring": "Blender MCP"
+        }
+      ]
+    },
+    {
+      "id": "prop_broadleaf",
+      "category": "scenery",
+      "triangles": 608,
+      "sourceTriangles": 344,
+      "bytes": 58132,
+      "parts": 1,
+      "authoring": "Blender MCP",
+      "lods": [
+        {
+          "level": 1,
+          "path": "lod/prop_broadleaf_lod1.glb",
+          "triangles": 212,
+          "bytes": 25268,
+          "authoring": "Blender MCP"
+        },
+        {
+          "level": 2,
+          "path": "lod/prop_broadleaf_lod2.glb",
+          "triangles": 72,
+          "bytes": 9448,
+          "authoring": "Blender MCP"
+        }
+      ]
+    },
+    {
+      "id": "prop_snag",
+      "category": "scenery",
+      "triangles": 364,
+      "sourceTriangles": 52,
+      "bytes": 29100,
+      "parts": 1,
+      "authoring": "Blender MCP",
+      "lods": [
+        {
+          "level": 1,
+          "path": "lod/prop_snag_lod1.glb",
+          "triangles": 124,
+          "bytes": 12636,
+          "authoring": "Blender MCP"
+        },
+        {
+          "level": 2,
+          "path": "lod/prop_snag_lod2.glb",
+          "triangles": 42,
+          "bytes": 5696,
+          "authoring": "Blender MCP"
+        }
+      ]
+    },
+    {
+      "id": "prop_oak",
+      "category": "scenery",
+      "triangles": 1552,
+      "sourceTriangles": 384,
+      "bytes": 128032,
+      "parts": 1,
+      "authoring": "Blender MCP",
+      "lods": [
+        {
+          "level": 1,
+          "path": "lod/prop_oak_lod1.glb",
+          "triangles": 542,
+          "bytes": 59140,
+          "authoring": "Blender MCP"
+        },
+        {
+          "level": 2,
+          "path": "lod/prop_oak_lod2.glb",
+          "triangles": 186,
+          "bytes": 22436,
+          "authoring": "Blender MCP"
+        }
+      ]
+    },
+    {
+      "id": "prop_shrub",
+      "category": "scenery",
+      "triangles": 1560,
+      "sourceTriangles": 120,
+      "bytes": 126932,
+      "parts": 1,
+      "authoring": "Blender MCP",
+      "lods": [
+        {
+          "level": 1,
+          "path": "lod/prop_shrub_lod1.glb",
+          "triangles": 398,
+          "bytes": 30552,
+          "authoring": "Blender MCP"
+        },
+        {
+          "level": 2,
+          "path": "lod/prop_shrub_lod2.glb",
+          "triangles": 136,
+          "bytes": 10832,
+          "authoring": "Blender MCP"
+        }
+      ]
+    },
+    {
+      "id": "prop_windpine",
+      "category": "scenery",
+      "triangles": 518,
+      "sourceTriangles": 62,
+      "bytes": 41520,
+      "parts": 1,
+      "authoring": "Blender MCP",
+      "lods": [
+        {
+          "level": 1,
+          "path": "lod/prop_windpine_lod1.glb",
+          "triangles": 180,
+          "bytes": 17552,
+          "authoring": "Blender MCP"
+        },
+        {
+          "level": 2,
+          "path": "lod/prop_windpine_lod2.glb",
+          "triangles": 62,
+          "bytes": 7876,
+          "authoring": "Blender MCP"
+        }
+      ]
+    },
+    {
+      "id": "prop_boulderpine",
+      "category": "scenery",
+      "triangles": 876,
+      "sourceTriangles": 84,
+      "bytes": 70852,
+      "parts": 1,
+      "authoring": "Blender MCP",
+      "lods": [
+        {
+          "level": 1,
+          "path": "lod/prop_boulderpine_lod1.glb",
+          "triangles": 306,
+          "bytes": 31416,
+          "authoring": "Blender MCP"
+        },
+        {
+          "level": 2,
+          "path": "lod/prop_boulderpine_lod2.glb",
+          "triangles": 104,
+          "bytes": 12240,
+          "authoring": "Blender MCP"
+        }
+      ]
+    },
+    {
+      "id": "prop_willow",
+      "category": "scenery",
+      "triangles": 1264,
+      "sourceTriangles": 128,
+      "bytes": 101252,
+      "parts": 1,
+      "authoring": "Blender MCP",
+      "lods": [
+        {
+          "level": 1,
+          "path": "lod/prop_willow_lod1.glb",
+          "triangles": 442,
+          "bytes": 41772,
+          "authoring": "Blender MCP"
+        },
+        {
+          "level": 2,
+          "path": "lod/prop_willow_lod2.glb",
+          "triangles": 150,
+          "bytes": 16320,
+          "authoring": "Blender MCP"
+        }
+      ]
+    },
+    {
+      "id": "prop_juniper",
+      "category": "scenery",
+      "triangles": 1184,
+      "sourceTriangles": 120,
+      "bytes": 95232,
+      "parts": 1,
+      "authoring": "Blender MCP",
+      "lods": [
+        {
+          "level": 1,
+          "path": "lod/prop_juniper_lod1.glb",
+          "triangles": 414,
+          "bytes": 40024,
+          "authoring": "Blender MCP"
+        },
+        {
+          "level": 2,
+          "path": "lod/prop_juniper_lod2.glb",
+          "triangles": 142,
+          "bytes": 16348,
+          "authoring": "Blender MCP"
+        }
+      ]
+    },
+    {
+      "id": "prop_tree",
+      "category": "scenery",
+      "triangles": 672,
+      "sourceTriangles": 80,
+      "bytes": 53468,
+      "parts": 1,
+      "authoring": "Blender MCP",
+      "lods": [
+        {
+          "level": 1,
+          "path": "lod/prop_tree_lod1.glb",
+          "triangles": 234,
+          "bytes": 22308,
+          "authoring": "Blender MCP"
+        },
+        {
+          "level": 2,
+          "path": "lod/prop_tree_lod2.glb",
+          "triangles": 80,
+          "bytes": 9628,
+          "authoring": "Blender MCP"
+        }
+      ]
+    },
+    {
+      "id": "prop_rock",
+      "category": "scenery",
+      "triangles": 260,
+      "sourceTriangles": 20,
+      "bytes": 22276,
+      "parts": 1,
+      "authoring": "Blender MCP",
+      "lods": [
+        {
+          "level": 1,
+          "path": "lod/prop_rock_lod1.glb",
+          "triangles": 90,
+          "bytes": 10552,
+          "authoring": "Blender MCP"
+        },
+        {
+          "level": 2,
+          "path": "lod/prop_rock_lod2.glb",
+          "triangles": 30,
+          "bytes": 4644,
+          "authoring": "Blender MCP"
+        }
+      ]
+    },
+    {
+      "id": "prop_mesa",
+      "category": "scenery",
+      "triangles": 1340,
+      "sourceTriangles": 140,
+      "bytes": 110848,
+      "parts": 1,
+      "authoring": "Blender MCP",
+      "lods": [
+        {
+          "level": 1,
+          "path": "lod/prop_mesa_lod1.glb",
+          "triangles": 468,
+          "bytes": 42928,
+          "authoring": "Blender MCP"
+        },
+        {
+          "level": 2,
+          "path": "lod/prop_mesa_lod2.glb",
+          "triangles": 160,
+          "bytes": 19400,
+          "authoring": "Blender MCP"
+        }
+      ]
+    },
+    {
+      "id": "prop_rib",
+      "category": "scenery",
+      "triangles": 168,
+      "sourceTriangles": 24,
+      "bytes": 15244,
+      "parts": 1,
+      "authoring": "Blender MCP",
+      "lods": [
+        {
+          "level": 1,
+          "path": "lod/prop_rib_lod1.glb",
+          "triangles": 58,
+          "bytes": 7408,
+          "authoring": "Blender MCP"
+        },
+        {
+          "level": 2,
+          "path": "lod/prop_rib_lod2.glb",
+          "triangles": 24,
+          "bytes": 3956,
+          "authoring": "Blender MCP"
+        }
+      ]
+    },
+    {
+      "id": "prop_boulder",
+      "category": "scenery",
+      "triangles": 888,
+      "sourceTriangles": 72,
+      "bytes": 72712,
+      "parts": 1,
+      "authoring": "Blender MCP",
+      "lods": [
+        {
+          "level": 1,
+          "path": "lod/prop_boulder_lod1.glb",
+          "triangles": 310,
+          "bytes": 32512,
+          "authoring": "Blender MCP"
+        },
+        {
+          "level": 2,
+          "path": "lod/prop_boulder_lod2.glb",
+          "triangles": 106,
+          "bytes": 13324,
+          "authoring": "Blender MCP"
+        }
+      ]
+    },
+    {
+      "id": "prop_scree",
+      "category": "scenery",
+      "triangles": 2080,
+      "sourceTriangles": 160,
+      "bytes": 169296,
+      "parts": 1,
+      "authoring": "Blender MCP",
+      "lods": [
+        {
+          "level": 1,
+          "path": "lod/prop_scree_lod1.glb",
+          "triangles": 728,
+          "bytes": 76172,
+          "authoring": "Blender MCP"
+        },
+        {
+          "level": 2,
+          "path": "lod/prop_scree_lod2.glb",
+          "triangles": 248,
+          "bytes": 29440,
+          "authoring": "Blender MCP"
+        }
+      ]
+    },
+    {
+      "id": "prop_reed",
+      "category": "scenery",
+      "triangles": 432,
+      "sourceTriangles": 48,
+      "bytes": 35204,
+      "parts": 1,
+      "authoring": "Blender MCP",
+      "lods": [
+        {
+          "level": 1,
+          "path": "lod/prop_reed_lod1.glb",
+          "triangles": 150,
+          "bytes": 16540,
+          "authoring": "Blender MCP"
+        },
+        {
+          "level": 2,
+          "path": "lod/prop_reed_lod2.glb",
+          "triangles": 50,
+          "bytes": 6864,
+          "authoring": "Blender MCP"
+        }
+      ]
+    },
+    {
+      "id": "prop_lilypad",
+      "category": "scenery",
+      "triangles": 512,
+      "sourceTriangles": 56,
+      "bytes": 41376,
+      "parts": 1,
+      "authoring": "Blender MCP",
+      "lods": [
+        {
+          "level": 1,
+          "path": "lod/prop_lilypad_lod1.glb",
+          "triangles": 178,
+          "bytes": 17608,
+          "authoring": "Blender MCP"
+        },
+        {
+          "level": 2,
+          "path": "lod/prop_lilypad_lod2.glb",
+          "triangles": 60,
+          "bytes": 8076,
+          "authoring": "Blender MCP"
+        }
+      ]
+    },
+    {
+      "id": "prop_mushroom",
+      "category": "scenery",
+      "triangles": 1216,
+      "sourceTriangles": 232,
+      "bytes": 97012,
+      "parts": 1,
+      "authoring": "Blender MCP",
+      "lods": [
+        {
+          "level": 1,
+          "path": "lod/prop_mushroom_lod1.glb",
+          "triangles": 422,
+          "bytes": 40036,
+          "authoring": "Blender MCP"
+        },
+        {
+          "level": 2,
+          "path": "lod/prop_mushroom_lod2.glb",
+          "triangles": 144,
+          "bytes": 17304,
+          "authoring": "Blender MCP"
+        }
+      ]
+    },
+    {
+      "id": "prop_grasstuft",
+      "category": "scenery",
+      "triangles": 768,
+      "sourceTriangles": 128,
+      "bytes": 59368,
+      "parts": 1,
+      "authoring": "Blender MCP",
+      "lods": [
+        {
+          "level": 1,
+          "path": "lod/prop_grasstuft_lod1.glb",
+          "triangles": 268,
+          "bytes": 13404,
+          "authoring": "Blender MCP"
+        },
+        {
+          "level": 2,
+          "path": "lod/prop_grasstuft_lod2.glb",
+          "triangles": 92,
+          "bytes": 9032,
+          "authoring": "Blender MCP"
+        }
+      ]
+    },
+    {
+      "id": "prop_crystal",
+      "category": "scenery",
+      "triangles": 728,
+      "sourceTriangles": 72,
+      "bytes": 60672,
+      "parts": 1,
+      "authoring": "Blender MCP",
+      "lods": [
+        {
+          "level": 1,
+          "path": "lod/prop_crystal_lod1.glb",
+          "triangles": 254,
+          "bytes": 23068,
+          "authoring": "Blender MCP"
+        },
+        {
+          "level": 2,
+          "path": "lod/prop_crystal_lod2.glb",
+          "triangles": 86,
+          "bytes": 10320,
+          "authoring": "Blender MCP"
+        }
+      ]
+    },
+    {
+      "id": "prop_crystalA",
+      "category": "scenery",
+      "triangles": 728,
+      "sourceTriangles": 72,
+      "bytes": 60676,
+      "parts": 1,
+      "authoring": "Blender MCP",
+      "lods": [
+        {
+          "level": 1,
+          "path": "lod/prop_crystalA_lod1.glb",
+          "triangles": 254,
+          "bytes": 23072,
+          "authoring": "Blender MCP"
+        },
+        {
+          "level": 2,
+          "path": "lod/prop_crystalA_lod2.glb",
+          "triangles": 86,
+          "bytes": 10320,
+          "authoring": "Blender MCP"
+        }
+      ]
+    },
+    {
+      "id": "prop_crystalB",
+      "category": "scenery",
+      "triangles": 672,
+      "sourceTriangles": 64,
+      "bytes": 56020,
+      "parts": 1,
+      "authoring": "Blender MCP",
+      "lods": [
+        {
+          "level": 1,
+          "path": "lod/prop_crystalB_lod1.glb",
+          "triangles": 234,
+          "bytes": 24108,
+          "authoring": "Blender MCP"
+        },
+        {
+          "level": 2,
+          "path": "lod/prop_crystalB_lod2.glb",
+          "triangles": 80,
+          "bytes": 10292,
+          "authoring": "Blender MCP"
+        }
+      ]
+    },
+    {
+      "id": "prop_crystalC",
+      "category": "scenery",
+      "triangles": 824,
+      "sourceTriangles": 72,
+      "bytes": 68160,
+      "parts": 1,
+      "authoring": "Blender MCP",
+      "lods": [
+        {
+          "level": 1,
+          "path": "lod/prop_crystalC_lod1.glb",
+          "triangles": 288,
+          "bytes": 27092,
+          "authoring": "Blender MCP"
+        },
+        {
+          "level": 2,
+          "path": "lod/prop_crystalC_lod2.glb",
+          "triangles": 98,
+          "bytes": 10900,
+          "authoring": "Blender MCP"
+        }
+      ]
+    },
+    {
+      "id": "prop_flower",
+      "category": "scenery",
+      "triangles": 372,
+      "sourceTriangles": 36,
+      "bytes": 30808,
+      "parts": 1,
+      "authoring": "Blender MCP",
+      "lods": [
+        {
+          "level": 1,
+          "path": "lod/prop_flower_lod1.glb",
+          "triangles": 130,
+          "bytes": 14516,
+          "authoring": "Blender MCP"
+        },
+        {
+          "level": 2,
+          "path": "lod/prop_flower_lod2.glb",
+          "triangles": 44,
+          "bytes": 6004,
+          "authoring": "Blender MCP"
+        }
+      ]
+    },
+    {
+      "id": "prop_fiber",
+      "category": "scenery",
+      "triangles": 90,
+      "sourceTriangles": 10,
+      "bytes": 8340,
+      "parts": 1,
+      "authoring": "Blender MCP",
+      "lods": [
+        {
+          "level": 1,
+          "path": "lod/prop_fiber_lod1.glb",
+          "triangles": 30,
+          "bytes": 3752,
+          "authoring": "Blender MCP"
+        },
+        {
+          "level": 2,
+          "path": "lod/prop_fiber_lod2.glb",
+          "triangles": 24,
+          "bytes": 3280,
+          "authoring": "Blender MCP"
+        }
+      ]
+    },
+    {
+      "id": "prop_resin",
+      "category": "scenery",
+      "triangles": 260,
+      "sourceTriangles": 20,
+      "bytes": 22288,
+      "parts": 1,
+      "authoring": "Blender MCP",
+      "lods": [
+        {
+          "level": 1,
+          "path": "lod/prop_resin_lod1.glb",
+          "triangles": 90,
+          "bytes": 10632,
+          "authoring": "Blender MCP"
+        },
+        {
+          "level": 2,
+          "path": "lod/prop_resin_lod2.glb",
+          "triangles": 30,
+          "bytes": 4652,
+          "authoring": "Blender MCP"
+        }
+      ]
+    },
+    {
+      "id": "prop_shard",
+      "category": "scenery",
+      "triangles": 168,
+      "sourceTriangles": 24,
+      "bytes": 15248,
+      "parts": 1,
+      "authoring": "Blender MCP",
+      "lods": [
+        {
+          "level": 1,
+          "path": "lod/prop_shard_lod1.glb",
+          "triangles": 58,
+          "bytes": 7484,
+          "authoring": "Blender MCP"
+        },
+        {
+          "level": 2,
+          "path": "lod/prop_shard_lod2.glb",
+          "triangles": 24,
+          "bytes": 3960,
+          "authoring": "Blender MCP"
+        }
+      ]
+    },
+    {
+      "id": "prop_spark",
+      "category": "scenery",
+      "triangles": 104,
+      "sourceTriangles": 8,
+      "bytes": 9680,
+      "parts": 1,
+      "authoring": "Blender MCP",
+      "lods": [
+        {
+          "level": 1,
+          "path": "lod/prop_spark_lod1.glb",
+          "triangles": 36,
+          "bytes": 5124,
+          "authoring": "Blender MCP"
+        },
+        {
+          "level": 2,
+          "path": "lod/prop_spark_lod2.glb",
+          "triangles": 24,
+          "bytes": 3892,
+          "authoring": "Blender MCP"
+        }
+      ]
+    },
+    {
+      "id": "prop_flowerPink",
+      "category": "scenery",
+      "triangles": 3060,
+      "sourceTriangles": 324,
+      "bytes": 241788,
+      "parts": 1,
+      "authoring": "Blender MCP",
+      "lods": [
+        {
+          "level": 1,
+          "path": "lod/prop_flowerPink_lod1.glb",
+          "triangles": 1062,
+          "bytes": 86544,
+          "authoring": "Blender MCP"
+        },
+        {
+          "level": 2,
+          "path": "lod/prop_flowerPink_lod2.glb",
+          "triangles": 364,
+          "bytes": 42468,
+          "authoring": "Blender MCP"
+        }
+      ]
+    },
+    {
+      "id": "prop_flowerYellow",
+      "category": "scenery",
+      "triangles": 3060,
+      "sourceTriangles": 324,
+      "bytes": 241792,
+      "parts": 1,
+      "authoring": "Blender MCP",
+      "lods": [
+        {
+          "level": 1,
+          "path": "lod/prop_flowerYellow_lod1.glb",
+          "triangles": 1062,
+          "bytes": 86548,
+          "authoring": "Blender MCP"
+        },
+        {
+          "level": 2,
+          "path": "lod/prop_flowerYellow_lod2.glb",
+          "triangles": 364,
+          "bytes": 42472,
+          "authoring": "Blender MCP"
+        }
+      ]
+    },
+    {
+      "id": "prop_flowerBlue",
+      "category": "scenery",
+      "triangles": 3060,
+      "sourceTriangles": 324,
+      "bytes": 241788,
+      "parts": 1,
+      "authoring": "Blender MCP",
+      "lods": [
+        {
+          "level": 1,
+          "path": "lod/prop_flowerBlue_lod1.glb",
+          "triangles": 1062,
+          "bytes": 86544,
+          "authoring": "Blender MCP"
+        },
+        {
+          "level": 2,
+          "path": "lod/prop_flowerBlue_lod2.glb",
+          "triangles": 364,
+          "bytes": 42468,
+          "authoring": "Blender MCP"
+        }
+      ]
+    },
+    {
+      "id": "prop_toadstool",
+      "category": "scenery",
+      "triangles": 602,
+      "sourceTriangles": 87,
+      "bytes": 46960,
+      "parts": 1,
+      "authoring": "Blender MCP",
+      "lods": [
+        {
+          "level": 1,
+          "path": "lod/prop_toadstool_lod1.glb",
+          "triangles": 210,
+          "bytes": 16692,
+          "authoring": "Blender MCP"
+        },
+        {
+          "level": 2,
+          "path": "lod/prop_toadstool_lod2.glb",
+          "triangles": 71,
+          "bytes": 9268,
+          "authoring": "Blender MCP"
+        }
+      ]
+    },
+    {
+      "id": "prop_toadstoolRed",
+      "category": "scenery",
+      "triangles": 602,
+      "sourceTriangles": 87,
+      "bytes": 46968,
+      "parts": 1,
+      "authoring": "Blender MCP",
+      "lods": [
+        {
+          "level": 1,
+          "path": "lod/prop_toadstoolRed_lod1.glb",
+          "triangles": 210,
+          "bytes": 16696,
+          "authoring": "Blender MCP"
+        },
+        {
+          "level": 2,
+          "path": "lod/prop_toadstoolRed_lod2.glb",
+          "triangles": 71,
+          "bytes": 9272,
+          "authoring": "Blender MCP"
+        }
+      ]
+    },
+    {
+      "id": "prop_toadstoolYellow",
+      "category": "scenery",
+      "triangles": 602,
+      "sourceTriangles": 87,
+      "bytes": 46972,
+      "parts": 1,
+      "authoring": "Blender MCP",
+      "lods": [
+        {
+          "level": 1,
+          "path": "lod/prop_toadstoolYellow_lod1.glb",
+          "triangles": 210,
+          "bytes": 16704,
+          "authoring": "Blender MCP"
+        },
+        {
+          "level": 2,
+          "path": "lod/prop_toadstoolYellow_lod2.glb",
+          "triangles": 71,
+          "bytes": 9280,
+          "authoring": "Blender MCP"
+        }
+      ]
+    },
+    {
+      "id": "prop_bush",
+      "category": "scenery",
+      "triangles": 780,
+      "sourceTriangles": 60,
+      "bytes": 64288,
+      "parts": 1,
+      "authoring": "Blender MCP",
+      "lods": [
+        {
+          "level": 1,
+          "path": "lod/prop_bush_lod1.glb",
+          "triangles": 272,
+          "bytes": 29508,
+          "authoring": "Blender MCP"
+        },
+        {
+          "level": 2,
+          "path": "lod/prop_bush_lod2.glb",
+          "triangles": 92,
+          "bytes": 11720,
+          "authoring": "Blender MCP"
+        }
+      ]
+    },
+    {
+      "id": "prop_bushBerry",
+      "category": "scenery",
+      "triangles": 2340,
+      "sourceTriangles": 180,
+      "bytes": 189364,
+      "parts": 1,
+      "authoring": "Blender MCP",
+      "lods": [
+        {
+          "level": 1,
+          "path": "lod/prop_bushBerry_lod1.glb",
+          "triangles": 720,
+          "bytes": 43300,
+          "authoring": "Blender MCP"
+        },
+        {
+          "level": 2,
+          "path": "lod/prop_bushBerry_lod2.glb",
+          "triangles": 246,
+          "bytes": 13880,
+          "authoring": "Blender MCP"
+        }
+      ]
+    },
+    {
+      "id": "prop_log",
+      "category": "scenery",
+      "triangles": 1232,
+      "sourceTriangles": 176,
+      "bytes": 94716,
+      "parts": 1,
+      "authoring": "Blender MCP",
+      "lods": [
+        {
+          "level": 1,
+          "path": "lod/prop_log_lod1.glb",
+          "triangles": 430,
+          "bytes": 30060,
+          "authoring": "Blender MCP"
+        },
+        {
+          "level": 2,
+          "path": "lod/prop_log_lod2.glb",
+          "triangles": 146,
+          "bytes": 17876,
+          "authoring": "Blender MCP"
+        }
+      ]
+    },
+    {
+      "id": "prop_pebbles",
+      "category": "scenery",
+      "triangles": 884,
+      "sourceTriangles": 68,
+      "bytes": 72696,
+      "parts": 1,
+      "authoring": "Blender MCP",
+      "lods": [
+        {
+          "level": 1,
+          "path": "lod/prop_pebbles_lod1.glb",
+          "triangles": 308,
+          "bytes": 33552,
+          "authoring": "Blender MCP"
+        },
+        {
+          "level": 2,
+          "path": "lod/prop_pebbles_lod2.glb",
+          "triangles": 106,
+          "bytes": 13256,
+          "authoring": "Blender MCP"
+        }
+      ]
+    },
+    {
+      "id": "prop_cairn",
+      "category": "scenery",
+      "triangles": 816,
+      "sourceTriangles": 80,
+      "bytes": 67584,
+      "parts": 1,
+      "authoring": "Blender MCP",
+      "lods": [
+        {
+          "level": 1,
+          "path": "lod/prop_cairn_lod1.glb",
+          "triangles": 278,
+          "bytes": 22380,
+          "authoring": "Blender MCP"
+        },
+        {
+          "level": 2,
+          "path": "lod/prop_cairn_lod2.glb",
+          "triangles": 94,
+          "bytes": 10440,
+          "authoring": "Blender MCP"
+        }
+      ]
+    },
+    {
+      "id": "prop_kelp",
+      "category": "scenery",
+      "triangles": 1156,
+      "sourceTriangles": 124,
+      "bytes": 93668,
+      "parts": 1,
+      "authoring": "Blender MCP",
+      "lods": [
+        {
+          "level": 1,
+          "path": "lod/prop_kelp_lod1.glb",
+          "triangles": 404,
+          "bytes": 41336,
+          "authoring": "Blender MCP"
+        },
+        {
+          "level": 2,
+          "path": "lod/prop_kelp_lod2.glb",
+          "triangles": 138,
+          "bytes": 16964,
+          "authoring": "Blender MCP"
+        }
+      ]
+    },
+    {
+      "id": "prop_flowerOrange",
+      "category": "scenery",
+      "triangles": 3060,
+      "sourceTriangles": 324,
+      "bytes": 241792,
+      "parts": 1,
+      "authoring": "Blender MCP",
+      "lods": [
+        {
+          "level": 1,
+          "path": "lod/prop_flowerOrange_lod1.glb",
+          "triangles": 1062,
+          "bytes": 86548,
+          "authoring": "Blender MCP"
+        },
+        {
+          "level": 2,
+          "path": "lod/prop_flowerOrange_lod2.glb",
+          "triangles": 364,
+          "bytes": 42472,
+          "authoring": "Blender MCP"
+        }
+      ]
+    },
+    {
+      "id": "prop_flowerViolet",
+      "category": "scenery",
+      "triangles": 3060,
+      "sourceTriangles": 324,
+      "bytes": 241792,
+      "parts": 1,
+      "authoring": "Blender MCP",
+      "lods": [
+        {
+          "level": 1,
+          "path": "lod/prop_flowerViolet_lod1.glb",
+          "triangles": 1062,
+          "bytes": 86548,
+          "authoring": "Blender MCP"
+        },
+        {
+          "level": 2,
+          "path": "lod/prop_flowerViolet_lod2.glb",
+          "triangles": 364,
+          "bytes": 42472,
+          "authoring": "Blender MCP"
+        }
+      ]
+    },
+    {
+      "id": "drone",
+      "category": "equipment",
+      "triangles": 1372,
+      "sourceTriangles": 220,
+      "bytes": 77168,
+      "parts": 10,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "trampoline_ground",
+      "category": "equipment",
+      "triangles": 1932,
+      "sourceTriangles": 276,
+      "bytes": 104052,
+      "parts": 13,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "trampoline_sky",
+      "category": "equipment",
+      "triangles": 6860,
+      "sourceTriangles": 1076,
+      "bytes": 368280,
+      "parts": 49,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "build_wall",
+      "category": "architecture",
+      "triangles": 108,
+      "sourceTriangles": 12,
+      "bytes": 7040,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "build_ramp",
+      "category": "architecture",
+      "triangles": 80,
+      "sourceTriangles": 8,
+      "bytes": 5572,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "build_cube",
+      "category": "architecture",
+      "triangles": 108,
+      "sourceTriangles": 12,
+      "bytes": 7004,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "hands_equipment",
+      "category": "equipment",
+      "triangles": 6896,
+      "sourceTriangles": 1352,
+      "bytes": 382648,
+      "parts": 13,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "farm_sign",
+      "category": "equipment",
+      "triangles": 248,
+      "sourceTriangles": 32,
+      "bytes": 15600,
+      "parts": 2,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "zipline_post",
+      "category": "equipment",
+      "triangles": 224,
+      "sourceTriangles": 32,
+      "bytes": 12880,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "tracker_dart",
+      "category": "equipment",
+      "triangles": 168,
+      "sourceTriangles": 24,
+      "bytes": 9984,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "deposit_wood",
+      "category": "logistics",
+      "triangles": 5376,
+      "sourceTriangles": 0,
+      "bytes": 133240,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "deposit_stone",
+      "category": "logistics",
+      "triangles": 3192,
+      "sourceTriangles": 0,
+      "bytes": 79136,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "deposit_fiber",
+      "category": "logistics",
+      "triangles": 8712,
+      "sourceTriangles": 0,
+      "bytes": 215872,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "deposit_resin",
+      "category": "logistics",
+      "triangles": 7536,
+      "sourceTriangles": 0,
+      "bytes": 186232,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "deposit_shard",
+      "category": "logistics",
+      "triangles": 3332,
+      "sourceTriangles": 0,
+      "bytes": 83920,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "deposit_spark",
+      "category": "logistics",
+      "triangles": 3332,
+      "sourceTriangles": 0,
+      "bytes": 83916,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "extractor_wood",
+      "category": "logistics",
+      "triangles": 5460,
+      "sourceTriangles": 0,
+      "bytes": 135380,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "extractor_stone",
+      "category": "logistics",
+      "triangles": 5740,
+      "sourceTriangles": 0,
+      "bytes": 143108,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "extractor_fiber",
+      "category": "logistics",
+      "triangles": 5344,
+      "sourceTriangles": 0,
+      "bytes": 132668,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "extractor_resin",
+      "category": "logistics",
+      "triangles": 5956,
+      "sourceTriangles": 0,
+      "bytes": 143616,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "extractor_shard",
+      "category": "logistics",
+      "triangles": 5740,
+      "sourceTriangles": 0,
+      "bytes": 143108,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "extractor_spark",
+      "category": "logistics",
+      "triangles": 5740,
+      "sourceTriangles": 0,
+      "bytes": 143108,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "creature_cart",
+      "category": "logistics",
+      "triangles": 6052,
+      "sourceTriangles": 0,
+      "bytes": 151420,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "cargo_bundle",
+      "category": "logistics",
+      "triangles": 2544,
+      "sourceTriangles": 0,
+      "bytes": 62672,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "trail_marker",
+      "category": "logistics",
+      "triangles": 376,
+      "sourceTriangles": 0,
+      "bytes": 10348,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "logistics_depot",
+      "category": "logistics",
+      "triangles": 5936,
+      "sourceTriangles": 0,
+      "bytes": 147016,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "village",
+      "category": "architecture",
+      "triangles": 11780,
+      "sourceTriangles": 3932,
+      "bytes": 1054912,
+      "parts": 5,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "castle_cursed",
+      "category": "architecture",
+      "triangles": 93324,
+      "sourceTriangles": 31108,
+      "bytes": 8623276,
+      "parts": 3,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "castle_purified",
+      "category": "architecture",
+      "triangles": 92861,
+      "sourceTriangles": 30954,
+      "bytes": 8576768,
+      "parts": 2,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "ward_crystal",
+      "category": "crystal",
+      "triangles": 360,
+      "sourceTriangles": 72,
+      "bytes": 24552,
+      "parts": 3,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "atlantis",
+      "category": "architecture",
+      "triangles": 22022,
+      "sourceTriangles": 7660,
+      "bytes": 1584452,
+      "parts": 402,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "dive_marker",
+      "category": "equipment",
+      "triangles": 3864,
+      "sourceTriangles": 1176,
+      "bytes": 240848,
+      "parts": 26,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "item_darts",
+      "category": "equipment",
+      "triangles": 420,
+      "sourceTriangles": 84,
+      "bytes": 29840,
+      "parts": 5,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "item_slowDarts",
+      "category": "equipment",
+      "triangles": 420,
+      "sourceTriangles": 84,
+      "bytes": 30044,
+      "parts": 5,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "item_tideDarts",
+      "category": "equipment",
+      "triangles": 420,
+      "sourceTriangles": 84,
+      "bytes": 30044,
+      "parts": 5,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "item_purifiers",
+      "category": "equipment",
+      "triangles": 420,
+      "sourceTriangles": 84,
+      "bytes": 30044,
+      "parts": 5,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "item_charms",
+      "category": "equipment",
+      "triangles": 656,
+      "sourceTriangles": 272,
+      "bytes": 38180,
+      "parts": 2,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "item_kit_zipline",
+      "category": "equipment",
+      "triangles": 1210,
+      "sourceTriangles": 308,
+      "bytes": 72216,
+      "parts": 5,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "item_kit_drone",
+      "category": "equipment",
+      "triangles": 940,
+      "sourceTriangles": 220,
+      "bytes": 63572,
+      "parts": 10,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "item_kit_trampoline",
+      "category": "equipment",
+      "triangles": 580,
+      "sourceTriangles": 116,
+      "bytes": 37992,
+      "parts": 2,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "item_kit_skytramp",
+      "category": "equipment",
+      "triangles": 700,
+      "sourceTriangles": 140,
+      "bytes": 46804,
+      "parts": 4,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "item_wall",
+      "category": "equipment",
+      "triangles": 60,
+      "sourceTriangles": 12,
+      "bytes": 5212,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "item_ramp",
+      "category": "equipment",
+      "triangles": 40,
+      "sourceTriangles": 8,
+      "bytes": 3824,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "item_cube",
+      "category": "equipment",
+      "triangles": 60,
+      "sourceTriangles": 12,
+      "bytes": 5432,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "clouds",
+      "category": "cloud",
+      "triangles": 6900,
+      "sourceTriangles": 1380,
+      "bytes": 688384,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "mountains",
+      "category": "scenery",
+      "triangles": 384,
+      "sourceTriangles": 384,
+      "bytes": 31336,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "grapple_hook",
+      "category": "equipment",
+      "triangles": 60,
+      "sourceTriangles": 12,
+      "bytes": 5204,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "farm_crate",
+      "category": "equipment",
+      "triangles": 60,
+      "sourceTriangles": 12,
+      "bytes": 5200,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "critter_puffle",
+      "category": "creature",
+      "triangles": 4660,
+      "sourceTriangles": 932,
+      "bytes": 119008,
+      "parts": 6,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "critter_skitterling",
+      "category": "creature",
+      "triangles": 4980,
+      "sourceTriangles": 996,
+      "bytes": 126592,
+      "parts": 8,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "critter_bellowbuck",
+      "category": "creature",
+      "triangles": 5900,
+      "sourceTriangles": 1180,
+      "bytes": 150432,
+      "parts": 7,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "critter_mirefin",
+      "category": "creature",
+      "triangles": 6240,
+      "sourceTriangles": 1248,
+      "bytes": 161176,
+      "parts": 7,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "critter_craghorn",
+      "category": "creature",
+      "triangles": 6280,
+      "sourceTriangles": 1256,
+      "bytes": 156700,
+      "parts": 6,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "critter_zephyrfinch",
+      "category": "creature",
+      "triangles": 3900,
+      "sourceTriangles": 780,
+      "bytes": 100924,
+      "parts": 6,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "critter_shardwing",
+      "category": "creature",
+      "triangles": 4324,
+      "sourceTriangles": 1044,
+      "bytes": 377408,
+      "parts": 10,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "critter_nectarwisp",
+      "category": "creature",
+      "triangles": 5020,
+      "sourceTriangles": 1004,
+      "bytes": 130036,
+      "parts": 6,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "critter_emberpup",
+      "category": "creature",
+      "triangles": 5270,
+      "sourceTriangles": 1054,
+      "bytes": 139344,
+      "parts": 9,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "critter_lumenstag",
+      "category": "creature",
+      "triangles": 5620,
+      "sourceTriangles": 1124,
+      "bytes": 143132,
+      "parts": 9,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "critter_shark",
+      "category": "creature",
+      "triangles": 5040,
+      "sourceTriangles": 1008,
+      "bytes": 132488,
+      "parts": 7,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "critter_skywyvern",
+      "category": "creature",
+      "triangles": 8270,
+      "sourceTriangles": 1654,
+      "bytes": 213768,
+      "parts": 7,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "critter_prismhorse",
+      "category": "creature",
+      "triangles": 5512,
+      "sourceTriangles": 1280,
+      "bytes": 516356,
+      "parts": 22,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "critter_bumblewhale",
+      "category": "creature",
+      "triangles": 4180,
+      "sourceTriangles": 836,
+      "bytes": 106840,
+      "parts": 4,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "critter_snickerdoodle",
+      "category": "creature",
+      "triangles": 4060,
+      "sourceTriangles": 812,
+      "bytes": 101028,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "critter_gloomgobbler",
+      "category": "creature",
+      "triangles": 3700,
+      "sourceTriangles": 740,
+      "bytes": 96888,
+      "parts": 6,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "critter_gargoyle",
+      "category": "creature",
+      "triangles": 3164,
+      "sourceTriangles": 860,
+      "bytes": 280788,
+      "parts": 8,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "critter_timberchomp",
+      "category": "creature",
+      "triangles": 4260,
+      "sourceTriangles": 852,
+      "bytes": 111960,
+      "parts": 7,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "critter_pebbleshrew",
+      "category": "creature",
+      "triangles": 4240,
+      "sourceTriangles": 848,
+      "bytes": 109212,
+      "parts": 7,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "critter_cragdrake",
+      "category": "creature",
+      "triangles": 15465,
+      "sourceTriangles": 4064,
+      "bytes": 1318432,
+      "parts": 9,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "npc_fenn",
+      "category": "character",
+      "triangles": 6780,
+      "sourceTriangles": 1356,
+      "bytes": 126248,
+      "parts": 20,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "npc_odd",
+      "category": "character",
+      "triangles": 7320,
+      "sourceTriangles": 1464,
+      "bytes": 136800,
+      "parts": 22,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "npc_juno",
+      "category": "character",
+      "triangles": 7070,
+      "sourceTriangles": 1414,
+      "bytes": 131648,
+      "parts": 20,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "npc_bram",
+      "category": "character",
+      "triangles": 7060,
+      "sourceTriangles": 1412,
+      "bytes": 131720,
+      "parts": 22,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "npc_kit",
+      "category": "character",
+      "triangles": 7860,
+      "sourceTriangles": 1572,
+      "bytes": 145528,
+      "parts": 21,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "goblin",
+      "category": "character",
+      "triangles": 18150,
+      "sourceTriangles": 3630,
+      "bytes": 442624,
+      "parts": 2,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "elf",
+      "category": "character",
+      "triangles": 17730,
+      "sourceTriangles": 3546,
+      "bytes": 430048,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "clam",
+      "category": "creature",
+      "triangles": 2700,
+      "sourceTriangles": 540,
+      "bytes": 53828,
+      "parts": 10,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "crocodile",
+      "category": "creature",
+      "triangles": 1650,
+      "sourceTriangles": 330,
+      "bytes": 40300,
+      "parts": 15,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "turtle",
+      "category": "creature",
+      "triangles": 3050,
+      "sourceTriangles": 610,
+      "bytes": 58428,
+      "parts": 14,
+      "authoring": "Blender MCP"
+    }
+  ]
+}

@@ -11,10 +11,7 @@ export type ResourceKind =
   /** Gathered from Linked/bonded Nectar Wisps; crafts Slowing Darts. */
   | 'honey'
   | 'mushroom'
-  // Inventory + Building (Task 1): farm-only materials — produced exclusively
-  // by the timberchomp (wood) and pebbleshrew (stone) farm plots, never
-  // scattered/harvested in the world (see world/scatter.ts's PropKind, which
-  // deliberately has no 'wood'/'stone' member).
+  // Bulk materials: natural deposits and matching farm creatures.
   | 'wood'
   | 'stone'
   /** Broken from hostile clam guards in the Atlantis dive zone. */

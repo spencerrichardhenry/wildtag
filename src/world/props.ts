@@ -1,3 +1,5 @@
+import { artGeometry } from '../art/library.ts';
+import { propDetail, type PropDetail } from './prop-lod.ts';
 import * as THREE from 'three';
 import { CHUNKS, SCATTER, WORLD_SEED } from '../core/constants.ts';
 import type { Vec3 } from '../core/types.ts';
@@ -724,7 +726,7 @@ function buildSpark(): THREE.BufferGeometry {
 
 // Geometry buckets keyed by `variant ?? kind`. Trees/crystals/mesas resolve via
 // their variant; everything else via its gameplay kind.
-const BUILDERS: Record<string, () => THREE.BufferGeometry> = {
+export const PROP_ART_BUILDERS: Record<string, () => THREE.BufferGeometry> = {
   // trees
   pine: buildTree,
   broadleaf: buildBroadleaf,
@@ -833,12 +835,14 @@ function materialFor(bucket: string): THREE.Material {
 const geoCache = new Map<string, THREE.BufferGeometry>();
 const matCache = new Map<string, THREE.Material>();
 
-function sharedGeo(bucket: string): THREE.BufferGeometry {
-  let g = geoCache.get(bucket);
+function sharedGeo(bucket: string, detail: PropDetail = 0): THREE.BufferGeometry {
+  const key = `${bucket}:${detail}`;
+  let g = geoCache.get(key);
   if (!g) {
-    const build = BUILDERS[bucket] ?? buildRock;
-    g = build();
-    geoCache.set(bucket, g);
+    const build = PROP_ART_BUILDERS[bucket] ?? buildRock;
+    g = artGeometry(`prop_${bucket}${detail ? `_lod${detail}` : ''}`) ?? artGeometry(`prop_${bucket}`) ?? build();
+    if (g.index) { const indexed = g; g = indexed.toNonIndexed(); indexed.dispose(); }
+    geoCache.set(key, g);
   }
   return g;
 }
@@ -873,6 +877,7 @@ interface ChunkAlloc {
   bucket: string;
   batch: PropBatch;
   indices: number[];
+  placements: { x: number; z: number; lodScale: number; detail: PropDetail }[];
 }
 
 interface LoadedProps {
@@ -940,13 +945,16 @@ class PropBatch {
   private readonly geoIds = new Map<string, number>();
   /** Currently-allocated instance count (visibility gate + stats). */
   live = 0;
+  private vertexCapacity = 0;
 
   constructor(
     private readonly scene: THREE.Scene,
     group: string,
     firstBucket: string,
+    sortObjects: boolean,
   ) {
     const verts = group === 'standard' ? BATCH_VERTS_STANDARD : BATCH_VERTS_SMALL;
+    this.vertexCapacity = verts;
     // All bucket geometries are non-indexed (see merge()), so no index storage.
     this.mesh = new THREE.BatchedMesh(BATCH_INITIAL_INSTANCES, verts, 0, sharedMat(firstBucket));
     this.mesh.name = `props batch ${group}`;
@@ -954,16 +962,26 @@ class PropBatch {
     // culling on — each instance is tested against the frustum individually.
     this.mesh.frustumCulled = false;
     this.mesh.perObjectFrustumCulled = true;
+    // These materials are opaque. Test/retain front-to-back sorting only when
+    // its reduced overdraw outweighs sorting thousands of props per pass.
+    this.mesh.sortObjects = sortObjects;
     this.mesh.visible = false; // until the first live instance lands
     this.scene.add(this.mesh);
   }
 
   /** The batch-local geometry id for `bucket`, registering it on first use. */
-  private geometryIdFor(bucket: string): number {
-    let id = this.geoIds.get(bucket);
+  private geometryIdFor(bucket: string, detail: PropDetail = 0): number {
+    const key = `${bucket}:${detail}`;
+    let id = this.geoIds.get(key);
     if (id === undefined) {
-      id = this.mesh.addGeometry(sharedGeo(bucket));
-      this.geoIds.set(bucket, id);
+      const geometry = sharedGeo(bucket, detail);
+      const need = geometry.getAttribute('position').count;
+      if (this.mesh.unusedVertexCount < need) {
+        this.vertexCapacity += Math.max(need, BATCH_VERTS_STANDARD);
+        this.mesh.setGeometrySize(this.vertexCapacity, 0);
+      }
+      id = this.mesh.addGeometry(geometry);
+      this.geoIds.set(key, id);
     }
     return id;
   }
@@ -987,6 +1005,10 @@ class PropBatch {
   /** Set the transform of a live instance. */
   setMatrix(id: number, m: THREE.Matrix4): void {
     this.mesh.setMatrixAt(id, m);
+  }
+
+  setDetail(id: number, bucket: string, detail: PropDetail): void {
+    this.mesh.setGeometryIdAt(id, this.geometryIdFor(bucket, detail));
   }
 
   /**
@@ -1051,11 +1073,15 @@ export class PropManager {
   /** Persistent node state keyed by `${cx},${cz}:${placementIndex}`. */
   private readonly registry = new Map<string, NodeState>();
   private nextId = 1;
+  private lodX = Infinity;
+  private lodZ = Infinity;
+  private lodQuality = currentQuality();
+  private lodDirty = true;
 
   /** Prop batches keyed by material group, created lazily. */
   private readonly batches = new Map<string, PropBatch>();
 
-  constructor(scene: THREE.Scene) {
+  constructor(scene: THREE.Scene, private readonly distanceLod = true, private readonly sortObjects = false) {
     this.scene = scene;
   }
 
@@ -1064,7 +1090,7 @@ export class PropManager {
     const group = materialGroup(bucket);
     let batch = this.batches.get(group);
     if (!batch) {
-      batch = new PropBatch(this.scene, group, bucket);
+      batch = new PropBatch(this.scene, group, bucket, this.sortObjects);
       this.batches.set(group, batch);
     }
     return batch;
@@ -1103,6 +1129,7 @@ export class PropManager {
     }
 
     this.syncVisuals(now);
+    this.syncDetail(playerX, playerZ);
   }
 
   /** Build every in-range chunk synchronously (boot priming, no hitch cap). */
@@ -1119,6 +1146,7 @@ export class PropManager {
       }
     }
     this.syncVisuals(now);
+    this.syncDetail(playerX, playerZ);
   }
 
   private buildChunk(cx: number, cz: number, now: number): LoadedProps {
@@ -1201,10 +1229,36 @@ export class PropManager {
         }
       }
 
-      allocs.push({ bucket, batch, indices });
+      const geometry = sharedGeo(bucket);
+      if (!geometry.boundingSphere) geometry.computeBoundingSphere();
+      const radius = geometry.boundingSphere!.radius;
+      allocs.push({ bucket, batch, indices, placements: list.map(({ p }) => ({
+        x: p.x, z: p.z, detail: 0 as const,
+        // A tall tree still fills the screen much farther away than a flower.
+        lodScale: Math.max(1, radius * p.scale / 2),
+      })) });
     }
 
+    this.lodDirty = true;
     return { cx, cz, allocs, obstacles, grappleColliders, nodes };
+  }
+
+  /** Geometry switches preserve instance transforms, tints and gameplay state.
+   * Revisit only after 2 m of movement, a quality change, or newly streamed props. */
+  private syncDetail(x: number, z: number): void {
+    if (!this.distanceLod) return;
+    const quality = currentQuality();
+    if (!this.lodDirty && quality === this.lodQuality && (x-this.lodX)**2 + (z-this.lodZ)**2 < 4) return;
+    this.lodDirty = false; this.lodX = x; this.lodZ = z; this.lodQuality = quality;
+    for (const chunk of this.loaded.values()) for (const alloc of chunk.allocs) {
+      for (let i = 0; i < alloc.indices.length; i++) {
+        const p = alloc.placements[i]!;
+        const detail = propDetail(Math.hypot(p.x-x, p.z-z) / p.lodScale, p.detail, quality);
+        if (detail === p.detail) continue;
+        alloc.batch.setDetail(alloc.indices[i]!, alloc.bucket, detail);
+        p.detail = detail;
+      }
+    }
   }
 
   /** Restore/dim node instances whose availability changed since last sync. */
@@ -1308,6 +1362,14 @@ export class PropManager {
       out[group] = { capacity: batch.capacity, live: batch.live };
     }
     return out;
+  }
+
+  detailStats(): { near: number; mid: number; far: number } {
+    const counts = [0, 0, 0];
+    for (const c of this.loaded.values()) for (const a of c.allocs) {
+      for (const p of a.placements) counts[p.detail]!++;
+    }
+    return { near: counts[0]!, mid: counts[1]!, far: counts[2]! };
   }
 
   /**

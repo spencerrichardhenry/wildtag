@@ -1,3 +1,4 @@
+import { artGeometry } from '../art/library.ts';
 import * as THREE from 'three';
 import { PURIFIER } from '../core/constants.ts';
 import type { GroundQuery, Vec3 } from '../core/types.ts';
@@ -153,7 +154,7 @@ export class PurifierSystem {
     );
 
     const mesh = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.02, 0.02, 0.4, 6),
+      artGeometry('tracker_dart') ?? new THREE.CylinderGeometry(0.02, 0.02, 0.4, 6),
       new THREE.MeshBasicMaterial({ color: PURIFIER.color }),
     );
     const trailGeo = new THREE.BufferGeometry();

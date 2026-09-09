@@ -1,3 +1,4 @@
+import { refineArt } from '../art/library.ts';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { CRITTER_VARIATION } from '../core/constants.ts';
@@ -2843,5 +2844,6 @@ export function buildCritterModel(
   // Per-individual uniform scale (±10% by default; see CRITTER_VARIATION).
   const s = CRITTER_VARIATION.scaleMin + rng() * CRITTER_VARIATION.scaleRange;
   out.group.scale.setScalar(s);
+  refineArt(out.group, `critter_${speciesId}`);
   return out;
 }

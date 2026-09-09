@@ -25,6 +25,7 @@ import type { MoveInput } from '../core/types.ts';
 // ---------------------------------------------------------------------------
 
 export type Action =
+  | { type: 'logistics' }
   | { type: 'interact' }
   | { type: 'hotbar'; slot: number }
   | { type: 'hotbarStep'; dir: 1 | -1 }
@@ -67,6 +68,8 @@ export type Action =
  */
 export function actionForCode(code: string): Action | null {
   switch (code) {
+    case 'KeyN':
+      return { type: 'logistics' };
     case 'KeyF':
       return { type: 'interact' };
     case 'KeyX':
@@ -375,10 +378,15 @@ export class Input {
     return this.held.has('ControlLeft') || this.held.has('ControlRight');
   }
 
-  /** Ctrl doubles as descend while swimming inside the marked dive lagoon.
+  /** Q descends while swimming inside the marked dive lagoon.
    * Context is resolved by PlayerController; Input only exposes the raw hold. */
   get diveHeld(): boolean {
-    return this.snapHeld && this.locked;
+    return this.held.has('KeyQ') && this.locked;
+  }
+
+  /** E ascends while swimming; Space keeps its land/mount controls. */
+  get riseHeld(): boolean {
+    return this.held.has('KeyE') && this.locked;
   }
 
   /** True while the right mouse button is held and the pointer is locked. */

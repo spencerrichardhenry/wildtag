@@ -1,3 +1,4 @@
+import { artGeometry } from '../art/library.ts';
 import * as THREE from 'three';
 import type { Vec3 } from '../core/types.ts';
 
@@ -36,7 +37,7 @@ export class GrappleVisuals {
     this.mesh = new THREE.Mesh(new THREE.BufferGeometry(), this.ropeMat);
     this.mesh.frustumCulled = false;
 
-    const hookGeo = new THREE.ConeGeometry(0.26, 0.8, 6);
+    const hookGeo = artGeometry('grapple_hook') ?? new THREE.ConeGeometry(0.26, 0.8, 6);
     const hookMat = new THREE.MeshStandardMaterial({
       color: 0xf0d9a0,
       emissive: 0x9a6a20,

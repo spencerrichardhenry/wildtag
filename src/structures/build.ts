@@ -1,3 +1,4 @@
+import { artGeometry } from '../art/library.ts';
 import * as THREE from 'three';
 import { BUILD } from '../core/constants.ts';
 import type { GroundQuery, Vec3 } from '../core/types.ts';
@@ -107,7 +108,12 @@ const cubeGeo = new THREE.BoxGeometry(BUILD.cube.w, BUILD.cube.h, BUILD.cube.d);
 const wallMat = new THREE.MeshStandardMaterial({ color: WALL_COLOR });
 const rampMat = new THREE.MeshStandardMaterial({ color: RAMP_COLOR });
 
-function geometryFor(kind: PieceKind): THREE.BufferGeometry {
+const artBuildGeometries = new Map<PieceKind, THREE.BufferGeometry>();
+export function geometryFor(kind: PieceKind): THREE.BufferGeometry {
+  const cached = artBuildGeometries.get(kind);
+  if (cached) return cached;
+  const art = artGeometry(`build_${kind}`);
+  if (art) { artBuildGeometries.set(kind, art); return art; }
   if (kind === 'ramp') return rampGeo;
   if (kind === 'cube') return cubeGeo;
   return wallGeo;

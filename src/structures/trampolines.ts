@@ -1,3 +1,4 @@
+import { refineArt } from '../art/library.ts';
 import * as THREE from 'three';
 import { STRUCTURES } from '../core/constants.ts';
 import type { GroundQuery, Vec3 } from '../core/types.ts';
@@ -47,7 +48,7 @@ export function bounceLaunchVelocity(gravity: number, apex: number): number {
   return Math.sqrt(2 * Math.abs(gravity) * apex);
 }
 
-function buildTrampMesh(kind: TrampKind): { group: THREE.Group; membrane: THREE.Mesh; rotors: THREE.Mesh[] } {
+export function buildTrampMesh(kind: TrampKind): { group: THREE.Group; membrane: THREE.Mesh; rotors: THREE.Mesh[] } {
   const g = new THREE.Group();
   const R = STRUCTURES.trampolinePadR;
   const mat = (color: number) =>
@@ -84,6 +85,7 @@ function buildTrampMesh(kind: TrampKind): { group: THREE.Group; membrane: THREE.
       rotors.push(...droneRotors);
     }
   }
+  refineArt(g, `trampoline_${kind}`);
   return { group: g, membrane, rotors };
 }
 

@@ -1,0 +1,57 @@
+{
+  "backend": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspecified Version)",
+  "viewport": [
+    1440,
+    900
+  ],
+  "devicePixelRatio": 2,
+  "scenario": "haven",
+  "frameMs": 20.641004184100417,
+  "fps": 48.44725533122517,
+  "p95Ms": 33.399999999999636,
+  "p99Ms": 33.400000000000546,
+  "over50Ms": 0,
+  "samples": 239,
+  "stats": {
+    "drawCalls": 884,
+    "triangles": 11056415,
+    "geometries": 448,
+    "textures": 44,
+    "scenery": {
+      "near": 12681,
+      "mid": 0,
+      "far": 0
+    },
+    "view": {
+      "x": 76,
+      "y": 6.726164626335407,
+      "z": -26
+    },
+    "performance": {
+      "samples": 120,
+      "fps": 48.64799124336158,
+      "frameMs": 20.555833333333332,
+      "p95Ms": 33.399999999999636,
+      "simulationMs": 0.3833333313465118,
+      "renderMs": 5.365000000099341,
+      "gpuMs": 41.181760706002024
+    }
+  },
+  "quality": {
+    "id": "high",
+    "flags": {
+      "shadowCascades": 2,
+      "shadowRes": 2048,
+      "ssao": true,
+      "bloom": true,
+      "waterReflections": false,
+      "terrainDetailShader": true,
+      "standardMaterials": true,
+      "terrainDetailHigh": true,
+      "nearLod": true
+    }
+  },
+  "overlay": "49 FPS  ·  20.6 ms/frame\np95 33.3 ms  ·  high · 2.00×\nCPU sim 0.4 / render 5.4 ms\nGPU 43.0 ms\n883 draws  ·  11.06M triangles",
+  "uncapped": false,
+  "errors": []
+}

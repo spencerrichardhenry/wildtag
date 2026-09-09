@@ -1,5 +1,6 @@
 import { CASTLE, CHUNKS, ENV, PATHS, SCATTER, TERRAIN, WORLD_SEED } from '../core/constants.ts';
 import { pathMask } from './paths.ts';
+import { inLogisticsCorridor } from '../logistics/layout.ts';
 import type { Biome } from '../core/types.ts';
 import type { Obstacle } from '../player/collision.ts';
 import type { GrappleCollider } from '../player/grapple.ts';
@@ -438,7 +439,7 @@ export function scatterForChunk(cx: number, cz: number): PropPlacement[] {
   // the choke point for ALL prop kinds (including grass tufts) and can never
   // touch the mushrooms themselves.
   const cleared = out.filter(
-    (p) => !inCastleFootprint(p.x, p.z) && pathMask(p.x, p.z) < PATHS.scatterMaskThreshold,
+    (p) => !inCastleFootprint(p.x, p.z) && !inLogisticsCorridor(p.x, p.z) && pathMask(p.x, p.z) < PATHS.scatterMaskThreshold,
   );
 
   // Cursed Castle approach: mushroom clusters seeded along the ring around

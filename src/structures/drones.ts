@@ -1,3 +1,4 @@
+import { refineArt } from '../art/library.ts';
 import * as THREE from 'three';
 import { STRUCTURES } from '../core/constants.ts';
 import type { GroundQuery, Vec3 } from '../core/types.ts';
@@ -307,6 +308,7 @@ export function buildDroneMesh(): { group: THREE.Group; rotors: THREE.Mesh[] } {
   light.position.set(0, -0.18, 0);
   group.add(light);
 
+  refineArt(group, 'drone');
   return { group, rotors };
 }
 

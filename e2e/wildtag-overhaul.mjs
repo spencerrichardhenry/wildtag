@@ -1,0 +1,52 @@
+import { chromium } from 'playwright';
+import { mkdirSync,writeFileSync } from 'node:fs';
+import assert from 'node:assert/strict';
+const out=process.env.VERIFY_OUT??'docs/wildtag';mkdirSync(out,{recursive:true});
+const base=process.env.VERIFY_URL??'http://localhost:5199/wildtag.html';
+const browser=await chromium.launch({channel:'chrome',headless:true,args:process.env.PERF_GPU==='metal'?['--enable-gpu','--use-angle=metal']:['--enable-unsafe-swiftshader','--use-gl=angle','--use-angle=swiftshader','--disable-background-timer-throttling']});
+const page=await browser.newPage({viewport:{width:1440,height:900}});
+const errors=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',msg=>{if(msg.type()==='error')errors.push(msg.text()+' '+msg.location().url);});
+try{
+ await page.goto(`${base}?fresh=1&quality=low`);
+ await page.waitForFunction(()=>!!window.__game,{timeout:120000});
+ console.log('booted');
+
+ await page.keyboard.press('n');await page.getByRole('heading',{name:'A little help from the wild'}).waitFor();
+ await page.screenshot({path:`${out}/supply-routes.png`});
+ await page.keyboard.press('Escape');await page.getByRole('heading',{name:'A little help from the wild'}).waitFor({state:'hidden'});
+ const d=await page.evaluate(()=>window.__game.logistics().deposits[0]);
+ await page.evaluate(d=>window.__game.player.teleport(d.pos.x,d.pos.y+.5,d.pos.z+3),d);
+ console.log('at deposit',await page.evaluate(()=>window.__game.player.pos()));await page.keyboard.press('f');
+ await page.waitForFunction(()=>window.__game.logistics().state.sites[0].surveyed);
+ await page.keyboard.press('n');
+ assert(await page.locator('[data-site="haven-wood"]').getByRole('button',{name:'Build extractor'}).isDisabled());
+ await page.evaluate(()=>{for(const kind of ['wood','stone','fiber','resin','shard','spark','rp','charms'])window.__game.grant(kind,100);});
+ // Reopen so affordability refreshes against the newly granted test loadout.
+ await page.keyboard.press('n');await page.getByRole('heading',{name:'A little help from the wild'}).waitFor({state:'hidden'});await page.keyboard.press('n');await page.getByRole('heading',{name:'A little help from the wild'}).waitFor();
+ await page.locator('[data-tech="fieldworks"]').getByRole('button',{name:'Research',exact:true}).click();
+ await page.locator('[data-tech="harness"]').getByRole('button',{name:'Research',exact:true}).click();
+ await page.locator('[data-site="haven-wood"]').getByRole('button',{name:'Build extractor'}).click();
+ await page.keyboard.press('Escape');await page.getByRole('heading',{name:'A little help from the wild'}).waitFor({state:'hidden'});
+ const worker=await page.evaluate(()=>{const id=window.__game.spawn('timberchomp',5);window.__game.completeTracking(id);window.__game.bond(id);return id;});
+ await page.keyboard.press('n');await page.locator('[data-site="haven-wood"]').getByRole('button',{name:'Assign hauler'}).click();
+ const assigned=await page.evaluate(()=>window.__game.logistics());assert.equal(assigned.state.sites[0].worker,worker);assert.equal(assigned.roster.find(e=>e.id===worker).status.kind,'haul');
+ await page.screenshot({path:`${out}/assigned-route.png`});
+ await page.keyboard.press('Escape');await page.getByRole('heading',{name:'A little help from the wild'}).waitFor({state:'hidden'});
+ await page.evaluate(()=>window.__game.setTimeScale(20));
+ await page.waitForFunction(()=>window.__game.logistics().state.delivered>0,{timeout:120000});
+ await page.evaluate(()=>window.__game.setTimeScale(1));
+ const result=await page.evaluate(()=>window.__game.logistics());
+ assert(result.state.delivered>0);assert(result.art.loaded>=104);assert.equal(result.art.failed.length,0);assert(result.art.replaced>100);
+ await page.evaluate(()=>{const n=window.__game.logistics(),d=n.deposits[0];window.__game.player.teleport(d.pos.x+7,d.pos.y+.5,d.pos.z+9);window.__game.setLook(.66,-.08);});
+ await page.waitForTimeout(700);await page.screenshot({path:`${out}/timber-grove.png`});
+ await page.keyboard.press('n');await page.locator('[data-site="haven-wood"]').getByRole('button',{name:'Recall to roster'}).click();
+ assert.equal(await page.evaluate(()=>window.__game.logistics().state.sites[0].worker),null);
+ await page.keyboard.press('Escape');await page.getByRole('heading',{name:'A little help from the wild'}).waitFor({state:'hidden'});
+ await page.evaluate(()=>window.__game.save());
+ await page.goto(`${base}?quality=low`);await page.waitForFunction(()=>!!window.__game,{timeout:120000});
+ assert.equal(await page.evaluate(()=>window.__game.logistics().state.sites[0].built),true);
+ assert((await page.evaluate(()=>window.__game.logistics().state.delivered))>0);
+ assert.deepEqual(errors,[]);
+ writeFileSync(`${out}/verification.json`,JSON.stringify({passed:true,art:result.art,delivered:result.state.delivered,checks:['fresh gathering','RP-gated research UI','construction UI','capture and assign','physical delivery','recall','save reload','no console errors']},null,2));
+ console.log('PASS Wildtag overhaul',result.art,result.state.delivered);
+}catch(e){console.log('DIAGNOSTICS',await page.evaluate(()=>({state:window.__game?.state(),network:window.__game?.logistics(),text:document.body.innerText})));await page.screenshot({path:`${out}/failure.png`});console.log('ERRORS',errors);throw e;}finally{await browser.close();}

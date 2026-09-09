@@ -1,4 +1,9 @@
 import { startAnalytics } from './analytics';
+import { loadArtLibrary, artStats } from './art/library.ts';
+import { resourceDeposits, DEPOT } from './logistics/layout.ts';
+import { createEconomy, restoreEconomy, tickEconomy, gather, buildSite, buyTechnology, collectSite, assignHauler, recallHauler, type Technology } from './logistics/economy.ts';
+import { createLogisticsScreen } from './logistics/screen.ts';
+import { LogisticsVisuals } from './logistics/visuals.ts';
 import * as THREE from 'three';
 import {
   AI,
@@ -25,6 +30,7 @@ import { groundNormalAt, heightAt } from './world/terrain.ts';
 import type { GroundQuery, Vec3 } from './core/types.ts';
 import { Input, shouldTreatRmbAsPlacementConfirm } from './player/input.ts';
 import { PlayerController } from './player/controller.ts';
+import { CameraInterpolation } from './player/camera-interpolation.ts';
 import { HandsView } from './player/hands.ts';
 import { createHealth, applyHit, isDazed, stepHealth } from './player/health.ts';
 import { createInventory, addResource } from './craft/inventory.ts';
@@ -41,6 +47,7 @@ import { ScreenManager, createCraftScreen, createHelpScreen, createInventoryScre
 import { createGuideScreen } from './ui/guide.ts';
 import { createRosterScreen, setRosterActions } from './ui/roster.ts';
 import { HUD } from './ui/hud.ts';
+import { createPerformanceHUD } from './ui/performance.ts';
 import { runCritterPreview } from './critters/preview.ts';
 import { CritterManager, type CritterView } from './critters/manager.ts';
 import { speciesById } from './critters/species.ts';
@@ -177,6 +184,7 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 // Dev hook: `?preview=critters` takes over the renderer with the critter
 // showcase (all 18 species in a scrollable turntable gallery) and skips the
 // normal player spawn.
+await loadArtLibrary();
 if (new URLSearchParams(window.location.search).get('preview') === 'critters') {
   runCritterPreview(renderer);
 } else {
@@ -185,6 +193,10 @@ if (new URLSearchParams(window.location.search).get('preview') === 'critters') {
 
 /** Normal gameplay boot: scene, camera, world streaming and the FP controller. */
 function bootGame(): void {
+  // SSAO renders the scene again for normals; refresh both shadow cascades
+  // only on the first scene pass of each animation frame.
+  renderer.shadowMap.autoUpdate = false;
+  const devMode = new URLSearchParams(window.location.search).get('dev') === '1';
   const debugParam = new URLSearchParams(window.location.search).get('debug');
   const debugGrapple = debugParam === 'grapple';
   const debugStructures = debugParam === 'structures';
@@ -233,7 +245,9 @@ function bootGame(): void {
   const daylight = setupDaylight(scene);
 
   const chunks = new ChunkManager(scene);
-  const props = new PropManager(scene);
+  const props = new PropManager(scene,
+    !(devMode && new URLSearchParams(window.location.search).get('lod') === '0'),
+    devMode && new URLSearchParams(window.location.search).get('sortProps') === '1');
   const critters = new CritterManager(scene);
 
   /**
@@ -485,6 +499,9 @@ function bootGame(): void {
   const getDeedCount = (): number =>
     grantedRewards().filter((r) => r === 'plotDeed').length;
   let farm: FarmState = createFarm(getDeedCount());
+  const deposits = resourceDeposits();
+  let economy = createEconomy(deposits);
+  const logisticsVisuals = new LogisticsVisuals(scene, deposits);
   let lastDeeds = getDeedCount();
   const farmVisuals = new FarmVisuals(scene);
 
@@ -638,7 +655,9 @@ function bootGame(): void {
   const freshStart = new URLSearchParams(window.location.search).get('fresh') === '1';
   // `?dev=1`: playtest mode — everything unlocked, effectively-infinite darts
   // and materials. Implies a fresh throwaway session (never touches the save).
-  const devMode = new URLSearchParams(window.location.search).get('dev') === '1';
+  const performanceHUD = devMode ? createPerformanceHUD(renderer) : null;
+  // Count the entire frame, including shadow and post passes, not just the last pass.
+  renderer.info.autoReset = false;
   let loaded: SaveV3 | null = freshStart || devMode ? null : loadSave();
   // Day/night clock (Cursed Castle Task 5): seconds since world start, fed
   // through `daylightAt()` each frame. Restored from the save (absent on
@@ -1168,10 +1187,33 @@ function bootGame(): void {
     toast('DEV MODE — all unlocks, 999 darts, deep material stacks (no saving)');
   }
 
+  economy = restoreEconomy(loaded?.logistics, deposits, roster);
+  if (devMode) economy.tech = ['fieldworks','harness','tools','extraction','cargo','trailcraft'];
+  function logisticsAction(action:'gather'|'build'|'upgrade'|'collect'|'recall'|'survey', id:string): void {
+    const deposit=deposits.find(d=>d.id===id), site=economy.sites.find(s=>s.id===id);
+    if (!deposit || !site) return;
+    const near=Math.hypot(player.pos.x-deposit.pos.x,player.pos.z-deposit.pos.z)<=6;
+    if (['gather','collect','survey','build','upgrade'].includes(action) && !near) { toast('Move within 6 m of the deposit'); return; }
+    if (action==='survey') { site.surveyed=true; toast('Deposit surveyed — build from Supply Routes (N)'); }
+    if (action==='gather') toast(gather(economy,site,deposit,inventory));
+    if (action==='build'||action==='upgrade') toast(buildSite(economy,site,inventory,action==='upgrade'));
+    if (action==='collect') toast(`+${collectSite(site,deposit,inventory)} ${deposit.kind}`);
+    if (action==='recall') { recallHauler(site,roster); toast('Companion recalled; carried cargo returned to the site hopper'); }
+  }
+  screens.register(createLogisticsScreen({manager:screens,state:()=>economy,roster:()=>roster,inventory,deposits,pos:()=>player.pos,
+    action:logisticsAction,research:(id)=>toast(buyTechnology(economy,id,inventory)),
+    assign:(id,worker)=>{const site=economy.sites.find(s=>s.id===id);if(site)toast(assignHauler(economy,site,roster,worker));},
+  }));
+  if (screenParam==='logistics') screens.open('logistics');
+  const supplyButton=document.createElement('button');supplyButton.textContent='N · Supply routes';supplyButton.setAttribute('aria-label','Open supply routes');
+  supplyButton.style.cssText='position:fixed;right:18px;top:18px;z-index:12;pointer-events:auto;background:#193a31dd;color:#e4e7bf;border:1px solid #afc89a66;border-radius:6px;padding:10px 14px;cursor:pointer;font:13px system-ui';
+  supplyButton.onclick=()=>screens.toggle('logistics');hud.append(supplyButton);
+
   /** Build the current in-memory state as a plain-data SaveV3 snapshot. */
   function buildSaveState(): SaveV3 {
     return {
       v: 3,
+      logistics: structuredClone(economy),
       inventory: { ...inventory, kits: { ...inventory.kits } },
       unlocks: [...player.unlocks],
       critterPersist: critters.exportRegistry(),
@@ -1311,6 +1353,7 @@ function bootGame(): void {
   function releaseFromRoster(id: number): void {
     const entry = byId(roster, id);
     if (!entry) return;
+    for (const site of economy.sites) if (site.worker===id) recallHauler(site,roster);
     roster = release(roster, id);
     farm = unassignEntry(farm, id); // free any plot it worked
     if (mounts.activeEntryId() === id) {
@@ -1456,7 +1499,7 @@ function bootGame(): void {
     const entry = byId(roster, id);
     if (!entry) return false;
     if (!canAssignToFarm(entry)) {
-      toast('Unset as mount first (Roster → Mount)');
+      toast('Finish mount or hauling duty first (B / N)');
       return false;
     }
     if (free === null) {
@@ -1603,6 +1646,7 @@ function bootGame(): void {
       player.obstacles = props
         .getObstacles(prev.x, prev.z)
         .concat(villageObs)
+        .concat(logisticsVisuals.obstacles(economy))
         .concat(castleObs)
         .concat(wardObstaclesNear(prev.x, prev.z))
         .concat(spireObs)
@@ -1729,7 +1773,7 @@ function bootGame(): void {
       breath = breathStep.state;
       if (player.underwater && breath.remaining <= 5 && breath.remaining > 0 && !breathWarned) {
         breathWarned = true;
-        toast('Air is running low — Space to rise!');
+        toast('Air is running low — E to rise!');
         blip(310, 0.08);
       }
       if (!player.underwater && breath.remaining > 5) breathWarned = false;
@@ -1780,7 +1824,7 @@ function bootGame(): void {
     const inLagoon = inDiveZone(p.x, p.z);
     if (inLagoon && !wasInDiveZone && !diveHintShown) {
       diveHintShown = true;
-      toast('Turquoise water is diveable — Ctrl down, Space up');
+      toast('Turquoise water is diveable — Q to dive, E to rise');
     }
     wasInDiveZone = inLagoon;
     chunks.update(p.x, p.z);
@@ -1806,6 +1850,7 @@ function bootGame(): void {
         lastDeeds = deeds;
       }
       farm = tickFarm(farm, roster, speciesById, dt);
+      tickEconomy(economy, deposits, roster, inventory, dt, point => build.obstaclesNear(point.x, point.z).some(o => point.y < (o.yTop ?? Infinity) && Math.hypot(point.x-o.x,point.z-o.z)<o.r+0.7));
     }
 
     // Advance darts in flight and tracking progress for tagged critters. On a
@@ -1842,6 +1887,7 @@ function bootGame(): void {
         screens.toggle('guide');
         continue;
       }
+      if (action.type === 'logistics') { screens.toggle('logistics'); continue; }
       if (action.type === 'roster') {
         screens.toggle('roster');
         continue;
@@ -1904,6 +1950,9 @@ function bootGame(): void {
         continue;
       }
       if (action.type === 'interact') {
+        const deposit=deposits.find(d=>Math.hypot(player.pos.x-d.pos.x,player.pos.z-d.pos.z)<=6);
+        if(deposit){logisticsAction('gather',deposit.id);continue;}
+        if(Math.hypot(player.pos.x-DEPOT.x,player.pos.z-DEPOT.z)<5){screens.open('logistics');continue;}
         // Interact priority chain (Haven): village NPC > BOND > structures > harvest.
         const npc = npcs.nearestNpc(player.pos, 3);
         if (npc) {
@@ -2006,6 +2055,7 @@ function bootGame(): void {
       lantern.visible = false;
     }
     farmVisuals.update(farm, roster, worldTime, SIM_DT);
+    logisticsVisuals.update(economy, roster, worldTime, SIM_DT);
     // Day/night visuals (Task 5): sun/hemi/fog/sky-dome/moon/stars react to the
     // live daylight sample; the resolved sun-scale feeds the cascade rig so
     // night dimming survives a shadow re-plan (quality change / fps gate).
@@ -2048,8 +2098,12 @@ function bootGame(): void {
 
     // High + fxAllowed → the post composer (SSAO + bloom + tone-map output);
     // otherwise the unchanged direct render path (medium/low/software).
+    renderer.info.reset();
+    renderer.shadowMap.needsUpdate = renderer.shadowMap.enabled;
+    performanceHUD?.gpu.begin();
     if (post) post.render();
     else renderer.render(scene, camera);
+    performanceHUD?.gpu.end();
     npcs.updateLabels(camera);
     const p = player.pos;
     const aimed = props.findHarvestable(camera.position, cameraLook(), worldTime);
@@ -2086,6 +2140,8 @@ function bootGame(): void {
       critters: critters.list(),
       harvestPrompt: aimed ? aimed.kind : null,
       interactionPrompt:
+        deposits.some(d=>Math.hypot(p.x-d.pos.x,p.z-d.pos.z)<=6) ? 'Gather deposit · N manages extractor & hauler' :
+        Math.hypot(p.x-DEPOT.x,p.z-DEPOT.z)<5 ? 'Open Haven supply routes' :
         castlePurified && elves.nearest(p, 3)
           ? breathLevel >= UNDERWATER.breathUpgradeCount
             ? 'Talk to elf (breathing gear complete)'
@@ -2335,6 +2391,10 @@ function bootGame(): void {
     save: doSave,
     resetSave,
     farmState: () => farm,
+    logistics: () => ({state:structuredClone(economy),deposits, depot:DEPOT, roster:structuredClone(roster), art:artStats}),
+    logisticsAction,
+    researchField: (id:Technology) => buyTechnology(economy,id,inventory),
+    assignHauler: (id:string,worker:number) => { const site=economy.sites.find(s=>s.id===id);return site?assignHauler(economy,site,roster,worker):'Unknown site'; },
     // Draw-call / resource counters sampled from renderer.info after the last
     // render (Fidelity-2 P1 draw-call budget check).
     renderStats: () => ({
@@ -2342,6 +2402,9 @@ function bootGame(): void {
       triangles: renderer.info.render.triangles,
       geometries: renderer.info.memory.geometries,
       textures: renderer.info.memory.textures,
+      scenery: props.detailStats(),
+      view: devMode ? { ...cameraInterpolation.lastRendered } : undefined,
+      performance: performanceHUD ? { ...performanceHUD.metrics.snapshot(), gpuMs: performanceHUD.gpu.milliseconds } : undefined,
     }),
     quality: () => ({ id: currentQuality(), flags: qualityFlags() }),
     hp: () => health.hp,
@@ -2402,7 +2465,7 @@ function bootGame(): void {
     };
     (window as unknown as { __underwater: unknown }).__underwater = {
       center: { ...UNDERWATER.center, y: UNDERWATER.floorY },
-      /** Jump to the marked buoy line, ready to press Ctrl and descend. */
+      /** Jump to the marked buoy line, ready to press Q and descend. */
       surface(): void {
         const p = diveEntryPoint();
         player.teleport(p.x, p.y, p.z);
@@ -2443,6 +2506,13 @@ function bootGame(): void {
   const MAX_STEPS_PER_FRAME = 240;
   let accumulator = 0;
   let lastTime = performance.now();
+  const cameraInterpolation = new CameraInterpolation(camera.position, player.teleportVersion);
+  document.addEventListener('visibilitychange', () => {
+    lastTime = performance.now();
+    accumulator = 0;
+    cameraInterpolation.reset(camera.position, player.teleportVersion);
+    performanceHUD?.metrics.reset();
+  });
 
   // Perf gate (generalised from the F1 shadow gate into quality, P1): average
   // wall-clock fps over the first ENV.shadowGateFrames frames; if it's below
@@ -2496,15 +2566,29 @@ function bootGame(): void {
     // defensive cap (never hit at the 16x ceiling with MAX_FRAME_DT=0.1: that's
     // 96 steps) so a future change to either constant can't turn a slow frame
     // into an unbounded catch-up spiral.
+    const simulationStart = performanceHUD ? performance.now() : 0;
+    cameraInterpolation.syncTeleport(camera.position, player.teleportVersion);
     accumulator += frameDt * timeScale;
     let steps = 0;
     while (accumulator >= SIM_DT && steps < MAX_STEPS_PER_FRAME) {
       update(SIM_DT);
+      cameraInterpolation.record(camera.position, player.teleportVersion);
       accumulator -= SIM_DT;
       steps++;
     }
 
+    const renderStart = performanceHUD ? performance.now() : 0;
+    cameraInterpolation.sample(accumulator / SIM_DT, camera.position);
+    // Mouse look follows the display cadence, including frames with no sim step.
+    camera.rotation.set(input.pitch, input.yaw, 0, 'YXZ');
+    if (skyDome) skyDome.position.set(camera.position.x, 0, camera.position.z);
     render(frameDt);
+    // Restore the authoritative eye before gameplay raycasts and the next step.
+    camera.position.copy(cameraInterpolation.current);
+    camera.updateMatrixWorld();
+    if (performanceHUD && !document.hidden) {
+      performanceHUD.update(now, rawDt * 1000, renderStart - simulationStart, performance.now() - renderStart);
+    }
   }
 
   requestAnimationFrame(frame);

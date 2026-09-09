@@ -1,3 +1,4 @@
+import { artGeometry } from '../art/library.ts';
 import * as THREE from 'three';
 import { MOVE, STRUCTURES } from '../core/constants.ts';
 import type { GroundQuery, Vec3 } from '../core/types.ts';
@@ -381,7 +382,8 @@ export class ZiplineSystem {
     for (const end of [a, b]) {
       const groundY = this.ground.heightAt(end.x, end.z);
       const h = Math.max(0.5, end.y - groundY);
-      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.2, h, 8), postMat);
+      const post = new THREE.Mesh(artGeometry('zipline_post') ?? new THREE.CylinderGeometry(0.16, 0.2, 1, 8), postMat);
+      post.scale.y=h;
       post.position.set(end.x, groundY + h / 2, end.z);
       group.add(post);
     }

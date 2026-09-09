@@ -1,3 +1,4 @@
+import { artGeometry } from '../art/library.ts';
 import * as THREE from 'three';
 import { DART, TRACKING, UNDERWATER } from '../core/constants.ts';
 import type { GroundQuery, Vec3 } from '../core/types.ts';
@@ -189,7 +190,7 @@ export class DartSystem {
 
     const color = kind === 'slowing' ? SLOW_DART_COLOR : kind === 'tide' ? TIDE_DART_COLOR : DART_COLOR;
     const mesh = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.02, 0.02, 0.4, 6),
+      artGeometry('tracker_dart') ?? new THREE.CylinderGeometry(0.02, 0.02, 0.4, 6),
       new THREE.MeshBasicMaterial({ color }),
     );
     const trailGeo = new THREE.BufferGeometry();

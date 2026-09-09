@@ -1,3 +1,5 @@
+import { refineArt } from '../art/library.ts';
+import { waterNormalMap } from '../art/surfaces.ts';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { ENV, DAYLIGHT, WORLD_SEED } from '../core/constants.ts';
@@ -98,7 +100,7 @@ function makeSkyDome(): THREE.Object3D {
  * dark. Parented under the camera-following sky dome → no parallax; the whole
  * layer yaw-drifts slowly (updateClouds).
  */
-function makeClouds(): THREE.Mesh {
+export function makeClouds(): THREE.Mesh {
   const C = ENV.clouds;
   const rand = mulberry32(WORLD_SEED ^ 0xc10ed);
   const parts: THREE.BufferGeometry[] = [];
@@ -144,6 +146,7 @@ function makeClouds(): THREE.Mesh {
   const mat = new THREE.MeshBasicMaterial({ vertexColors: true, fog: false });
   const clouds = new THREE.Mesh(geo, mat);
   clouds.name = 'clouds';
+  refineArt(clouds, 'clouds');
   return clouds;
 }
 
@@ -160,7 +163,7 @@ export function updateClouds(scene: THREE.Scene, time: number): void {
  * melts into the horizon), fog-exempt, unlit. Night darkening is a material
  * color lerp in the daylight rig (same pattern as the clouds).
  */
-function makeMountains(): THREE.Mesh {
+export function makeMountains(): THREE.Mesh {
   const M = ENV.mountains;
   const positions: number[] = [];
   const colors: number[] = [];
@@ -226,6 +229,7 @@ function makeMountains(): THREE.Mesh {
   });
   const mountains = new THREE.Mesh(geo, mat);
   mountains.name = 'mountains';
+  refineArt(mountains, 'mountains');
   return mountains;
 }
 
@@ -321,6 +325,8 @@ function makeWater(): THREE.Mesh {
     depthWrite: false,
     specular: new THREE.Color(ENV.waterSpecular),
     shininess: ENV.waterShininess,
+    normalMap: waterNormalMap() ?? null,
+    normalScale: new THREE.Vector2(0.22, 0.22),
     // The surface is also the luminous ceiling when the camera dives below it.
     side: THREE.DoubleSide,
   });

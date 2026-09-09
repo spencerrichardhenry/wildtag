@@ -34,6 +34,14 @@ export interface PostPipeline {
   dispose(): void;
 }
 
+/** Composer passes receive physical pixel sizes, including device pixel ratio.
+ * Keep AO at half that resolution on boot AND resize; beauty stays full size. */
+class HalfResolutionSSAO extends SSAOPass {
+  override setSize(width: number, height: number): void {
+    super.setSize(Math.max(1, Math.round(width / 2)), Math.max(1, Math.round(height / 2)));
+  }
+}
+
 /**
  * Build the high-preset post composer, or return null when the preset doesn't
  * request post (medium/low: `ssao`/`bloom` both false). Both flags gate together
@@ -58,7 +66,7 @@ export function buildPostPipeline(
   if (flags.ssao) {
     // Subtle contact occlusion. kernelRadius is in view-space metres (~0.7 m);
     // min/max clamp the depth range so only near-surface concavities darken.
-    ssao = new SSAOPass(scene, camera, size.x, size.y);
+    ssao = new HalfResolutionSSAO(scene, camera, size.x, size.y);
     ssao.kernelRadius = 0.7;
     ssao.minDistance = 0.0015;
     ssao.maxDistance = 0.06;
@@ -83,13 +91,12 @@ export function buildPostPipeline(
     composer,
     setSize(width: number, height: number): void {
       composer.setSize(width, height);
-      ssao?.setSize(width, height);
-      bloom?.setSize(width, height);
     },
     render(): void {
       composer.render();
     },
     dispose(): void {
+      for (const pass of composer.passes) pass.dispose();
       composer.dispose();
     },
   };

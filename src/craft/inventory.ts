@@ -18,9 +18,9 @@ export interface Inventory {
   honey: number;
   /** Foraged glow mushrooms (Cursed Castle) — later spent on purifying darts. */
   mushroom: number;
-  /** Farm-only material (Inventory+Building Task 1): timberchomp produce. */
+  /** Timber groves, hauling deliveries, and timberchomp farm produce. */
   wood: number;
-  /** Farm-only material (Inventory+Building Task 1): pebbleshrew produce. */
+  /** Stone outcrops, hauling deliveries, and pebbleshrew farm produce. */
   stone: number;
   /** Shell fragments shed when a clam is purified into a turtle. */
   shell: number;

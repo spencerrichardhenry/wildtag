@@ -1,3 +1,4 @@
+import { refineArt } from '../art/library.ts';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { HANDS } from '../core/constants.ts';
@@ -370,6 +371,11 @@ export class HandsView {
       }
     }
 
+    refineArt(this.root, 'hands_equipment');
+    this.ownGeometries.length = 0;
+    this.root.traverse(object => {
+      if (object instanceof THREE.Mesh && !this.ownGeometries.includes(object.geometry)) this.ownGeometries.push(object.geometry);
+    });
     camera.add(this.root);
   }
 

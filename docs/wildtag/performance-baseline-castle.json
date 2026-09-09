@@ -1,0 +1,36 @@
+{
+  "backend": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspecified Version)",
+  "viewport": [
+    1440,
+    900
+  ],
+  "devicePixelRatio": 2,
+  "scenario": "castle",
+  "frameMs": 18.966945606694562,
+  "fps": 52.723301934658394,
+  "p95Ms": 33.399999999999636,
+  "p99Ms": 33.400000000000546,
+  "over50Ms": 0,
+  "samples": 239,
+  "stats": {
+    "drawCalls": 1,
+    "triangles": 1,
+    "geometries": 524,
+    "textures": 42
+  },
+  "quality": {
+    "id": "high",
+    "flags": {
+      "shadowCascades": 2,
+      "shadowRes": 2048,
+      "ssao": true,
+      "bloom": true,
+      "waterReflections": false,
+      "terrainDetailShader": true,
+      "standardMaterials": true,
+      "terrainDetailHigh": true,
+      "nearLod": true
+    }
+  },
+  "errors": []
+}

@@ -1,6 +1,12 @@
 # Wildtag
 
+**New: natural deposits and creature-powered supply routes.** Press **N** in Wildtag to survey six renewable deposits, build extractors, research automation, and assign bonded companions to haul cargo to Haven. The visual update includes 120 Blender MCP model assets. Read the [revamp review](docs/WILDTAG-REVAMP-REVIEW.md) for the decisions, costs, controls, save compatibility, and verification.
+
 ## Play the games
+
+**Performance update:** `?dev=1` shows FPS, frame timings and rendering counters.
+Swimming uses **Q / E** for dive / rise. The [performance review](docs/WILDTAG-PERFORMANCE-REVIEW.md)
+covers the Blender LODs, rendering fixes and measured before/after results.
 
 [Open Spencer’s Arcade](https://spencerrichardhenry.github.io/) for the full collection.
 
@@ -33,9 +39,9 @@ goods up a no-money reward track, and saddle a sixteen-legged crystal Prismhorse
 to ride. It is a game about patience, traversal and the quiet thrill of getting
 close to something wild without scaring it off.
 
-The whole thing runs in the browser on WebGL (three.js) with zero external
-assets: every mesh, critter, texture-free colour and sound is generated
-procedurally at runtime.
+The game runs in the browser on WebGL (three.js). Wildtag now ships a local
+Blender-authored model library and surface maps, while terrain, animation,
+lighting, and sound retain their procedural systems.
 
 ---
 
@@ -46,7 +52,13 @@ npm i          # install dependencies (three.js + dev tooling)
 npm run dev    # start the vite dev server
 ```
 
-Then open **http://localhost:5199/** and click the canvas to capture the mouse.
+Open **http://localhost:5199/tiny-tide.html** to play Tiny Tide. For the original Wildtag
+game described below, open **http://localhost:5199/wildtag.html** and click the
+canvas to capture the mouse.
+
+Tiny Tide is a mobile 3D eat-and-evolve game with one continuous ocean-to-space
+world, five animated forms, and 50 original Blender MCP assets. See
+[the game guide](docs/TINY-TIDE.md) and [Blender art notes](docs/TINY-TIDE-ART.md).
 
 Build a production bundle with `npm run build` (output in `dist/`), preview it
 with `npm run preview`.
@@ -60,6 +72,7 @@ with `npm run preview`.
 | `W A S D`    | Move                                               |
 | `Shift`      | Sprint (drains stamina)                            |
 | `Space`      | Jump — *hold* to Glide once the Glider is crafted  |
+| `Q` / `E`    | While swimming: dive / rise in the Atlantis lagoon |
 | `Q`          | Dash (short stamina-cost burst; available from start) |
 | `R`          | Rocket boost (once crafted)                        |
 | `RMB`        | Fire the Grapple hook (once crafted) — a projectile that arcs, latches to trees/rocks/terrain/drones, and auto-zips you in; tap again from a hang to re-fire |
@@ -286,11 +299,10 @@ instead of letting the script spawn its own `npm run dev`.
 
 ## Assets & provenance
 
-**Everything is procedural.** There are no imported models, textures, audio
-files or fonts beyond the OS monospace stack. Terrain, props, all seventeen critters
-and their animations, the village and its NPCs, the sky gradient and water, the
-UI and the chime are all generated in code at runtime from a single world seed.
-Nothing is downloaded and no third-party art is bundled.
+Wildtag’s tangible model catalog has been rebuilt through the local Blender MCP.
+See [the revamp review](docs/WILDTAG-REVAMP-REVIEW.md#6-blender-fidelity-pass)
+and `public/wildtag/asset-manifest.json` for coverage and provenance. The editable
+library lives in `art/wildtag/wildtag-art.blend`. No third-party art is used for Wildtag.
 
 ## Save data
 

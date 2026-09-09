@@ -1,3 +1,4 @@
+import { refineArt } from '../art/library.ts';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { VILLAGE } from '../core/constants.ts';
@@ -655,6 +656,7 @@ export function buildVillage(scene: THREE.Scene): THREE.Group {
   // can keep spinning.
   const merged = mergeVillage(root);
   merged.add(buildWindmillBlades(layout.windmill));
+  refineArt(merged, 'village');
   scene.add(merged);
   return merged;
 }

@@ -1,3 +1,5 @@
+import { refineArt } from '../art/library.ts';
+import { mergeStaticMeshes } from '../art/merge-static.ts';
 import * as THREE from 'three';
 import { UNDERWATER, WORLD_SEED } from '../core/constants.ts';
 import { makeSurfaceMaterial } from '../core/materials.ts';
@@ -128,7 +130,7 @@ function addSeaweed(parent: THREE.Object3D, x: number, y: number, z: number, h: 
 }
 
 /** Palace ruins + coral, positioned at local floor y=0. */
-export function buildAtlantis(): THREE.Group {
+export function buildAtlantis(mergeStatic = true): THREE.Group {
   const root = new THREE.Group();
   root.name = 'atlantis';
   const stone = material(UNDERWATER.castleStone, { metalness: 0.08 });
@@ -215,6 +217,10 @@ export function buildAtlantis(): THREE.Group {
     addSeaweed(root, Math.cos(a) * r, 0, Math.sin(a) * r, 2.2 + rand() * 2.8);
   }
 
+  refineArt(root, 'atlantis');
+  // Columns, coral and walls need no independent draw call. Seaweed keeps its
+  // animation pivots and remains independently animated by UnderwaterSystem.
+  if (mergeStatic) mergeStaticMeshes(root, m => typeof m.userData.seaweedPhase !== 'number');
   return root;
 }
 
@@ -291,6 +297,7 @@ export function buildDiveMarker(): THREE.Group {
       root.add(sprite);
     }
   }
+  refineArt(root, 'dive_marker');
   return root;
 }
 
@@ -341,6 +348,7 @@ export function buildClamGuard(seed: number): ClamVisual {
   pearl.position.set(0, 0.4, -0.16);
   root.add(pearl);
   root.scale.setScalar(1.05);
+  refineArt(root, 'clam');
   return { root, upper, lower, pearl };
 }
 
@@ -398,6 +406,7 @@ export function buildCrocodile(seed: number): CrocVisual {
     root.add(foot);
   }
   root.scale.setScalar(0.82);
+  refineArt(root, 'crocodile');
   return { root, jaw, tail };
 }
 
@@ -448,6 +457,7 @@ export function buildTurtle(seed: number): TurtleVisual {
     flippers.push(pivot);
   }
   root.scale.setScalar(0.72);
+  refineArt(root, 'turtle');
   return { root, flippers };
 }
 

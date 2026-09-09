@@ -1,0 +1,51 @@
+{
+  "backend": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspecified Version)",
+  "viewport": [
+    1440,
+    900
+  ],
+  "devicePixelRatio": 2,
+  "scenario": "lagoon",
+  "frameMs": 17.851464435146443,
+  "fps": 56.01781319582796,
+  "p95Ms": 16.800000000000182,
+  "p99Ms": 49.90000000000009,
+  "over50Ms": 2,
+  "samples": 239,
+  "stats": {
+    "drawCalls": 1851,
+    "triangles": 1515149,
+    "geometries": 1030,
+    "textures": 50,
+    "scenery": {
+      "near": 147,
+      "mid": 586,
+      "far": 3255
+    },
+    "performance": {
+      "samples": 120,
+      "fps": 60.00300015000748,
+      "frameMs": 16.66583333333334,
+      "p95Ms": 16.800000000000182,
+      "simulationMs": 0.36583333363135656,
+      "renderMs": 5.359999999900659,
+      "gpuMs": 13.515543587847374
+    }
+  },
+  "quality": {
+    "id": "high",
+    "flags": {
+      "shadowCascades": 2,
+      "shadowRes": 2048,
+      "ssao": true,
+      "bloom": true,
+      "waterReflections": false,
+      "terrainDetailShader": true,
+      "standardMaterials": true,
+      "terrainDetailHigh": true,
+      "nearLod": true
+    }
+  },
+  "overlay": "60 FPS  ·  16.7 ms/frame\np95 16.8 ms  ·  high · 2.00×\nCPU sim 0.4 / render 5.4 ms\nGPU 13.5 ms\n1851 draws  ·  1.52M triangles",
+  "errors": []
+}

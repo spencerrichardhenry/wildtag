@@ -54,6 +54,8 @@ function statusText(entry: RosterEntry): string {
       return `Farm plot ${entry.status.plotId + 1}`;
     case 'mount':
       return 'Mount';
+    case 'haul':
+      return `Hauling · ${entry.status.siteId.replace('haven-', '')} (N)`;
   }
 }
 

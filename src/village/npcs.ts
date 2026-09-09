@@ -1,3 +1,4 @@
+import { refineArt } from '../art/library.ts';
 import * as THREE from 'three';
 import type { Vec3 } from '../core/types.ts';
 import { mulberry32 } from '../core/rng.ts';
@@ -111,7 +112,7 @@ function addFace(
  * silhouette keeps its distinguishing accessory. Returns the group and its
  * head height (for label projection).
  */
-function buildNpcModel(def: NpcDef): { group: THREE.Group; headY: number } {
+export function buildNpcModel(def: NpcDef): { group: THREE.Group; headY: number } {
   const g = new THREE.Group();
   const small = def.silhouette === 'small';
   const s = small ? 0.72 : 1;
@@ -221,6 +222,7 @@ function buildNpcModel(def: NpcDef): { group: THREE.Group; headY: number } {
     }
   }
 
+  refineArt(g, `npc_${def.id}`);
   return { group: g, headY: headY + headR };
 }
 

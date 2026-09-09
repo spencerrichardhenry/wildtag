@@ -1,3 +1,4 @@
+import { refineArt } from '../art/library.ts';
 import * as THREE from 'three';
 import { BUILD, HANDS } from '../core/constants.ts';
 import { makeSurfaceMaterial, ROUGHNESS } from '../core/materials.ts';
@@ -249,6 +250,7 @@ export function buildItemThumbnailModel(item: ItemId): THREE.Group {
       );
       break;
   }
+  refineArt(root, `item_${item.replace(':','_')}`);
   return root;
 }
 

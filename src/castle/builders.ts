@@ -1,3 +1,4 @@
+import { refineArt } from '../art/library.ts';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { CASTLE, CASTLE_COLORS, CRYSTAL, SPIRES, WARD, WARD_COLORS, WORLD_SEED } from '../core/constants.ts';
@@ -1078,6 +1079,7 @@ export function buildCastle(scene: THREE.Scene, purified: boolean): THREE.Group 
   buildSpires(built, purified);
 
   const merged = mergeCastle(built);
+  refineArt(merged, purified ? 'castle_purified' : 'castle_cursed');
   scene.add(merged);
   return merged;
 }
@@ -1140,6 +1142,7 @@ export function buildCrystal(purified: boolean): CrystalMesh {
   bottom.position.y = -CRYSTAL.gemH / 2;
   group.add(bottom);
 
+  refineArt(group, 'ward_crystal');
   return { group, material };
 }
 
@@ -1480,6 +1483,7 @@ export function buildGoblin(rng: () => number): THREE.Group {
   inner.scale.setScalar(scale);
   const root = new THREE.Group();
   root.add(inner);
+  refineArt(root, 'goblin');
   return root;
 }
 
@@ -1629,5 +1633,6 @@ export function buildElf(rng: () => number): THREE.Group {
   inner.scale.setScalar(scale);
   const root = new THREE.Group();
   root.add(inner);
+  refineArt(root, 'elf');
   return root;
 }

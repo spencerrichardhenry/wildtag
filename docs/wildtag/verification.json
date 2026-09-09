@@ -1,0 +1,19 @@
+{
+  "passed": true,
+  "art": {
+    "loaded": 120,
+    "failed": [],
+    "replaced": 1112
+  },
+  "delivered": 4,
+  "checks": [
+    "fresh gathering",
+    "RP-gated research UI",
+    "construction UI",
+    "capture and assign",
+    "physical delivery",
+    "recall",
+    "save reload",
+    "no console errors"
+  ]
+}

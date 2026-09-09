@@ -84,7 +84,7 @@ describe('underwater movement and breath', () => {
     );
   });
 
-  it('Ctrl-style descend clamps to the seabed and leaving the zone auto-surfaces', () => {
+  it('descending clamps to the seabed and leaving the zone auto-surfaces', () => {
     const down = stepSwimDepth(0, UNDERWATER.floorY, true, -1, 1);
     expect(down.y).toBe(-UNDERWATER.verticalSpeed);
     expect(down.vy).toBe(-UNDERWATER.verticalSpeed);

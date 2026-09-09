@@ -358,14 +358,11 @@ function renderRecipeCard(
 
   card.appendChild(renderCostPills(inv, recipe.cost));
 
-  // Kid-UX discovery hint (final-review Fix 6): wood/stone are farm-only
-  // (never scattered/harvested in the world — core/types.ts's ResourceKind
-  // doc), so a young player staring at a locked wall/ramp/cube card with no
-  // wood/stone on hand has no in-game clue where to get it without this line.
+  // Direct builders to the new bulk-resource loop.
   if (recipe.cost.wood != null || recipe.cost.stone != null) {
     const hint = document.createElement('div');
     hint.className = 'wt-recipe-hint';
-    hint.textContent = 'Farm critters make wood & stone';
+    hint.textContent = 'Gather wood & stone at deposits near Haven · N opens supply routes';
     card.appendChild(hint);
   }
   if (recipe.cost.honey != null) {
@@ -421,10 +418,11 @@ function renderRecipeCard(
 const KEYBINDS: [string, string][] = [
   ['W A S D', 'Move'],
   ['Shift', 'Sprint'],
-  ['Space', 'Jump / hold to Glide — underwater: rise'],
-  ['Q', 'Dash'],
+  ['Space', 'Jump / hold to Glide'],
+  ['Q', 'Dash — swimming: dive'],
+  ['E', 'Swimming: rise'],
   ['R', 'Rocket  (when crafted) — rotates the build ghost +90° while placing'],
-  ['Ctrl', 'Build snap — underwater: dive'],
+  ['Ctrl', 'Build snap'],
   ['AIR', 'Only the turquoise Atlantis lagoon is diveable; surface to refill'],
   ['RMB', 'Fire Grapple — auto-zips on latch  (when crafted)'],
   ['F', 'Harvest / Interact'],

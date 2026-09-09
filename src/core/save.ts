@@ -42,6 +42,7 @@ export interface CritterPersistEntry {
 
 export interface SaveV3 {
   v: 3;
+  logistics?: import('../logistics/economy.ts').EconomyState;
   inventory: Inventory;
   unlocks: string[];
   /** Keyed by critter slot id (as a string key in the JSON object). */
@@ -226,6 +227,7 @@ function isRosterEntry(r: unknown): boolean {
   if (!st || typeof st !== 'object') return false;
   if (st.kind === 'idle' || st.kind === 'mount') return true;
   if (st.kind === 'farm' && Number.isFinite(st.plotId)) return true;
+  if (st.kind === 'haul' && typeof st.siteId === 'string') return true;
   return false;
 }
 

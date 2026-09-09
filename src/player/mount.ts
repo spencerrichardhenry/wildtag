@@ -29,7 +29,7 @@ import type { GroundQuery, MoveInput, MoveState, Vec3 } from '../core/types.ts';
  */
 export function canMount(rewards: Set<string>, entry: RosterEntry | undefined): boolean {
   if (!entry) return false;
-  if (entry.status.kind === 'farm') return false;
+  if (entry.status.kind === 'farm' || entry.status.kind === 'haul') return false;
   if (!rewards.has('saddle')) return false;
   return speciesById(entry.speciesId)?.rideable === true;
 }
@@ -47,7 +47,7 @@ export function canSummon(rewards: Set<string>): boolean {
  */
 export function canAssignToFarm(entry: RosterEntry | undefined): boolean {
   if (!entry) return false;
-  return entry.status.kind !== 'mount';
+  return entry.status.kind !== 'mount' && entry.status.kind !== 'haul';
 }
 
 /**
@@ -60,7 +60,7 @@ export function canAssignToFarm(entry: RosterEntry | undefined): boolean {
  */
 export function setActiveMount(roster: Roster, id: number): Roster {
   const target = roster.find((e) => e.id === id);
-  if (!target || target.status.kind === 'farm') return roster;
+  if (!target || target.status.kind === 'farm' || target.status.kind === 'haul') return roster;
   return roster.map((e) => {
     if (e.id === id) {
       return e.status.kind === 'mount' ? e : { ...e, status: { kind: 'mount' } };

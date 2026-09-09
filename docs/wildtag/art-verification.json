@@ -1,0 +1,15 @@
+{
+  "passed": true,
+  "stats": {
+    "drawCalls": 272,
+    "triangles": 4106249,
+    "geometries": 300,
+    "textures": 23
+  },
+  "art": {
+    "loaded": 120,
+    "failed": [],
+    "replaced": 1097
+  },
+  "errors": []
+}

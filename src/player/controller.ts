@@ -196,6 +196,9 @@ export class PlayerController {
    * false so headless/unit use (no main.ts wiring) never suppresses anything.
    */
   grappleSuppressed = false;
+  private teleportSerial = 0;
+  /** Invalidates render interpolation on respawn, recovery and debug warps. */
+  get teleportVersion(): number { return this.teleportSerial; }
 
   constructor(
     camera: THREE.PerspectiveCamera,
@@ -541,7 +544,7 @@ export class PlayerController {
 
     // --- Swimming: surface everywhere, 3D only in the marked dive lagoon ---
     if (next.mode === 'swim') {
-      const vertical = ((this.input.spaceHeld ? 1 : 0) - (this.input.diveHeld ? 1 : 0)) as -1 | 0 | 1;
+      const vertical = ((this.input.riseHeld ? 1 : 0) - (this.input.diveHeld ? 1 : 0)) as -1 | 0 | 1;
       const startY = prev.mode === 'swim' ? prev.pos.y : TERRAIN.seaLevel;
       const depth = stepSwimDepth(
         startY,
@@ -726,6 +729,7 @@ export class PlayerController {
   }
 
   teleport(x: number, y: number, z: number): void {
+    this.teleportSerial++;
     this.state = {
       ...this.state,
       pos: { x, y, z },

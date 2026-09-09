@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { applyGroundArt } from '../art/surfaces.ts';
 import { CHUNKS, ENV, PATHS, WORLD_SEED } from '../core/constants.ts';
 import type { Biome } from '../core/types.ts';
 import { hash2 } from '../core/rng.ts';
@@ -421,6 +422,7 @@ function buildTerrainMaterial(): THREE.MeshLambertMaterial {
   const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
   const flags = qualityFlags();
   if (flags.terrainDetailShader) applyTerrainDetail(mat, flags.terrainDetailHigh);
+  applyGroundArt(mat);
   return mat;
 }
 

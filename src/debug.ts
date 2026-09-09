@@ -1,3 +1,9 @@
+interface FieldDebug {
+  logistics(): unknown;
+  logisticsAction(action:'gather'|'build'|'upgrade'|'collect'|'recall'|'survey',id:string):void;
+  researchField(id:import('./logistics/economy.ts').Technology):string;
+  assignHauler(id:string,worker:number):string;
+}
 import type { GroundQuery, Vec3 } from './core/types.ts';
 import type { Inventory } from './craft/inventory.ts';
 import { RECIPES } from './craft/recipes.ts';
@@ -20,7 +26,7 @@ import { DAYLIGHT, INPUT } from './core/constants.ts';
 // reward land; fast-forward time; save/reset) without a real mouse/keyboard.
 // ---------------------------------------------------------------------------
 
-export interface DebugDeps {
+export interface DebugDeps extends FieldDebug {
   player: PlayerController;
   input: Input;
   inventory: Inventory;
@@ -154,9 +160,12 @@ export interface RenderStats {
   triangles: number;
   geometries: number;
   textures: number;
+  scenery?: { near: number; mid: number; far: number };
+  view?: Vec3;
+  performance?: { samples: number; fps: number; frameMs: number; p95Ms: number; simulationMs: number; renderMs: number; gpuMs: number | null };
 }
 
-export interface GameDebugHandle {
+export interface GameDebugHandle extends FieldDebug {
   state(): unknown;
   player: {
     pos(): Vec3;
@@ -363,6 +372,10 @@ export function buildDebugHandle(deps: DebugDeps): GameDebugHandle {
     },
 
     /** Live farm state (plots / assignments / hoppers / progress). */
+    logistics: deps.logistics,
+    logisticsAction: deps.logisticsAction,
+    researchField: deps.researchField,
+    assignHauler: deps.assignHauler,
     farmState(): unknown {
       return deps.farmState();
     },
