@@ -1,0 +1,2439 @@
+{
+  "id": "atlantis",
+  "center": {
+    "x": 590,
+    "z": 650,
+    "y": -24
+  },
+  "floors": [
+    {
+      "id": "causeway",
+      "x": 0,
+      "z": -64,
+      "w": 12,
+      "d": 44,
+      "y": 1.2,
+      "rise": 0,
+      "axis": "z",
+      "sector": "gate",
+      "thickness": 2.4
+    },
+    {
+      "id": "shell-market",
+      "x": 0,
+      "z": -28,
+      "w": 70,
+      "d": 34,
+      "y": 1.2,
+      "rise": 0,
+      "axis": "z",
+      "sector": "market",
+      "thickness": 2.4
+    },
+    {
+      "id": "hall-approach",
+      "x": 0,
+      "z": -16,
+      "w": 10,
+      "d": 12,
+      "y": 1.2,
+      "rise": 2.8,
+      "axis": "-z",
+      "sector": "hall",
+      "thickness": 5.2
+    },
+    {
+      "id": "hall-floor",
+      "x": 0,
+      "z": 12,
+      "w": 34,
+      "d": 44,
+      "y": 4,
+      "rise": 0,
+      "axis": "z",
+      "sector": "hall",
+      "thickness": 5.2
+    },
+    {
+      "id": "hall-roof-west",
+      "x": -12,
+      "z": 12,
+      "w": 10,
+      "d": 44,
+      "y": 16,
+      "rise": 0,
+      "axis": "z",
+      "sector": "hall",
+      "thickness": 0.6
+    },
+    {
+      "id": "hall-roof-east",
+      "x": 12,
+      "z": 12,
+      "w": 10,
+      "d": 44,
+      "y": 16,
+      "rise": 0,
+      "axis": "z",
+      "sector": "hall",
+      "thickness": 0.6
+    },
+    {
+      "id": "hall-roof-front",
+      "x": 0,
+      "z": -2,
+      "w": 14,
+      "d": 16,
+      "y": 16,
+      "rise": 0,
+      "axis": "z",
+      "sector": "hall",
+      "thickness": 0.6
+    },
+    {
+      "id": "hall-roof-back",
+      "x": 0,
+      "z": 28,
+      "w": 14,
+      "d": 12,
+      "y": 16,
+      "rise": 0,
+      "axis": "z",
+      "sector": "hall",
+      "thickness": 0.6
+    },
+    {
+      "id": "upper-gallery-west",
+      "x": -13.5,
+      "z": 12,
+      "w": 7,
+      "d": 44,
+      "y": 11,
+      "rise": 0,
+      "axis": "z",
+      "sector": "gallery",
+      "thickness": 0.6
+    },
+    {
+      "id": "upper-gallery-east",
+      "x": 13.5,
+      "z": 12,
+      "w": 7,
+      "d": 44,
+      "y": 11,
+      "rise": 0,
+      "axis": "z",
+      "sector": "gallery",
+      "thickness": 0.6
+    },
+    {
+      "id": "upper-gallery-back",
+      "x": 0,
+      "z": 30,
+      "w": 20,
+      "d": 8,
+      "y": 11,
+      "rise": 0,
+      "axis": "z",
+      "sector": "gallery",
+      "thickness": 0.6
+    },
+    {
+      "id": "arcade-entry",
+      "x": -39,
+      "z": -14,
+      "w": 20,
+      "d": 8,
+      "y": 1.2,
+      "rise": 0,
+      "axis": "z",
+      "sector": "arcade",
+      "thickness": 2.4
+    },
+    {
+      "id": "arcade-west",
+      "x": -47,
+      "z": 0,
+      "w": 8,
+      "d": 36,
+      "y": 1.2,
+      "rise": 0,
+      "axis": "z",
+      "sector": "arcade",
+      "thickness": 2.4
+    },
+    {
+      "id": "arcade-turn",
+      "x": -39,
+      "z": 14,
+      "w": 24,
+      "d": 8,
+      "y": 1.2,
+      "rise": 0,
+      "axis": "z",
+      "sector": "arcade",
+      "thickness": 2.4
+    },
+    {
+      "id": "arcade-exit",
+      "x": -31,
+      "z": 24,
+      "w": 8,
+      "d": 20,
+      "y": 1.2,
+      "rise": 0,
+      "axis": "z",
+      "sector": "arcade",
+      "thickness": 2.4
+    },
+    {
+      "id": "arcade-roof-entry",
+      "x": -39,
+      "z": -14,
+      "w": 20,
+      "d": 8,
+      "y": 9.2,
+      "rise": 0,
+      "axis": "z",
+      "sector": "arcade",
+      "thickness": 0.55
+    },
+    {
+      "id": "arcade-roof-west",
+      "x": -47,
+      "z": 0,
+      "w": 8,
+      "d": 36,
+      "y": 9.2,
+      "rise": 0,
+      "axis": "z",
+      "sector": "arcade",
+      "thickness": 0.55
+    },
+    {
+      "id": "arcade-roof-turn",
+      "x": -39,
+      "z": 14,
+      "w": 24,
+      "d": 8,
+      "y": 9.2,
+      "rise": 0,
+      "axis": "z",
+      "sector": "arcade",
+      "thickness": 0.55
+    },
+    {
+      "id": "arcade-roof-exit",
+      "x": -31,
+      "z": 24,
+      "w": 8,
+      "d": 20,
+      "y": 9.2,
+      "rise": 0,
+      "axis": "z",
+      "sector": "arcade",
+      "thickness": 0.55
+    },
+    {
+      "id": "archive-floor",
+      "x": -35,
+      "z": 42,
+      "w": 24,
+      "d": 24,
+      "y": 1.2,
+      "rise": 0,
+      "axis": "z",
+      "sector": "archive",
+      "thickness": 2.4
+    },
+    {
+      "id": "archive-roof",
+      "x": -35,
+      "z": 42,
+      "w": 25,
+      "d": 25,
+      "y": 10.2,
+      "rise": 0,
+      "axis": "z",
+      "sector": "archive",
+      "thickness": 0.6
+    },
+    {
+      "id": "crypt-floor",
+      "x": -55,
+      "z": 40,
+      "w": 16,
+      "d": 14,
+      "y": 0.9,
+      "rise": 0,
+      "axis": "z",
+      "sector": "crypt",
+      "thickness": 2.1
+    },
+    {
+      "id": "crypt-roof",
+      "x": -55,
+      "z": 40,
+      "w": 17,
+      "d": 15,
+      "y": 7.9,
+      "rise": 0,
+      "axis": "z",
+      "sector": "crypt",
+      "thickness": 0.6
+    },
+    {
+      "id": "archive-back-road",
+      "x": -12,
+      "z": 42,
+      "w": 22,
+      "d": 8,
+      "y": 1.2,
+      "rise": 2.8,
+      "axis": "x",
+      "sector": "roads",
+      "thickness": 5.2
+    },
+    {
+      "id": "back-road",
+      "x": 13,
+      "z": 42,
+      "w": 32,
+      "d": 8,
+      "y": 4,
+      "rise": 0,
+      "axis": "z",
+      "sector": "roads",
+      "thickness": 5.2
+    },
+    {
+      "id": "east-crossing",
+      "x": 22,
+      "z": 12,
+      "w": 10,
+      "d": 8,
+      "y": 4,
+      "rise": 0,
+      "axis": "z",
+      "sector": "roads",
+      "thickness": 5.2
+    },
+    {
+      "id": "tideworks-floor",
+      "x": 37,
+      "z": 13,
+      "w": 22,
+      "d": 30,
+      "y": 3,
+      "rise": 0,
+      "axis": "z",
+      "sector": "tideworks",
+      "thickness": 4.2
+    },
+    {
+      "id": "tideworks-roof",
+      "x": 37,
+      "z": 13,
+      "w": 23,
+      "d": 31,
+      "y": 14,
+      "rise": 0,
+      "axis": "z",
+      "sector": "tideworks",
+      "thickness": 0.6
+    },
+    {
+      "id": "tideworks-approach",
+      "x": 37,
+      "z": -6,
+      "w": 8,
+      "d": 8,
+      "y": 1.2,
+      "rise": 1.8,
+      "axis": "-z",
+      "sector": "roads",
+      "thickness": 4.2
+    },
+    {
+      "id": "tideworks-south-road",
+      "x": 37,
+      "z": 33,
+      "w": 8,
+      "d": 12,
+      "y": 1.2,
+      "rise": 1.8,
+      "axis": "z",
+      "sector": "roads",
+      "thickness": 4.2
+    },
+    {
+      "id": "conservatory",
+      "x": 38,
+      "z": 47,
+      "w": 30,
+      "d": 26,
+      "y": 1.2,
+      "rise": 0,
+      "axis": "z",
+      "sector": "reef",
+      "thickness": 2.4
+    },
+    {
+      "id": "observatory-floor",
+      "x": 0,
+      "z": 44,
+      "w": 26,
+      "d": 20,
+      "y": 11,
+      "rise": 0,
+      "axis": "z",
+      "sector": "observatory",
+      "thickness": 0.6
+    },
+    {
+      "id": "observatory-roof-west",
+      "x": -10,
+      "z": 44,
+      "w": 7,
+      "d": 21,
+      "y": 20,
+      "rise": 0,
+      "axis": "z",
+      "sector": "observatory",
+      "thickness": 0.6
+    },
+    {
+      "id": "observatory-roof-east",
+      "x": 10,
+      "z": 44,
+      "w": 7,
+      "d": 21,
+      "y": 20,
+      "rise": 0,
+      "axis": "z",
+      "sector": "observatory",
+      "thickness": 0.6
+    },
+    {
+      "id": "observatory-roof-north",
+      "x": 0,
+      "z": 36,
+      "w": 13,
+      "d": 5,
+      "y": 20,
+      "rise": 0,
+      "axis": "z",
+      "sector": "observatory",
+      "thickness": 0.6
+    },
+    {
+      "id": "observatory-roof-south",
+      "x": 0,
+      "z": 52,
+      "w": 13,
+      "d": 5,
+      "y": 20,
+      "rise": 0,
+      "axis": "z",
+      "sector": "observatory",
+      "thickness": 0.6
+    }
+  ],
+  "walls": [
+    {
+      "id": "gate-fragment-29",
+      "x": -29,
+      "z": -45,
+      "w": 14,
+      "d": 2,
+      "y": 1.2,
+      "h": 6,
+      "sector": "gate",
+      "style": "ruin"
+    },
+    {
+      "id": "gate-fragment29",
+      "x": 29,
+      "z": -45,
+      "w": 14,
+      "d": 2,
+      "y": 1.2,
+      "h": 6,
+      "sector": "gate",
+      "style": "ruin"
+    },
+    {
+      "id": "hall-north-0",
+      "x": -11,
+      "z": -10,
+      "w": 12,
+      "d": 1.2,
+      "y": 4,
+      "h": 12,
+      "sector": "hall",
+      "style": "wall"
+    },
+    {
+      "id": "hall-north-1",
+      "x": 11,
+      "z": -10,
+      "w": 12,
+      "d": 1.2,
+      "y": 4,
+      "h": 12,
+      "sector": "hall",
+      "style": "wall"
+    },
+    {
+      "id": "hall-north-lintel",
+      "x": 0,
+      "z": -10,
+      "w": 10,
+      "d": 1.2,
+      "y": 13,
+      "h": 3,
+      "sector": "hall",
+      "style": "wall"
+    },
+    {
+      "id": "hall-south-0",
+      "x": -11.5,
+      "z": 34,
+      "w": 11,
+      "d": 1.2,
+      "y": 4,
+      "h": 12,
+      "sector": "hall",
+      "style": "wall"
+    },
+    {
+      "id": "hall-south-1",
+      "x": 11.5,
+      "z": 34,
+      "w": 11,
+      "d": 1.2,
+      "y": 4,
+      "h": 12,
+      "sector": "hall",
+      "style": "wall"
+    },
+    {
+      "id": "hall-south-lintel",
+      "x": 0,
+      "z": 34,
+      "w": 12,
+      "d": 1.2,
+      "y": 13,
+      "h": 3,
+      "sector": "hall",
+      "style": "wall"
+    },
+    {
+      "id": "hall-west-0",
+      "x": -17,
+      "z": -1,
+      "w": 1.2,
+      "d": 18,
+      "y": 4,
+      "h": 12,
+      "sector": "hall",
+      "style": "wall"
+    },
+    {
+      "id": "hall-west-1",
+      "x": -17,
+      "z": 25,
+      "w": 1.2,
+      "d": 18,
+      "y": 4,
+      "h": 12,
+      "sector": "hall",
+      "style": "wall"
+    },
+    {
+      "id": "hall-west-lintel",
+      "x": -17,
+      "z": 12,
+      "w": 1.2,
+      "d": 8,
+      "y": 12,
+      "h": 4,
+      "sector": "hall",
+      "style": "wall"
+    },
+    {
+      "id": "hall-east-0",
+      "x": 17,
+      "z": -1,
+      "w": 1.2,
+      "d": 18,
+      "y": 4,
+      "h": 12,
+      "sector": "hall",
+      "style": "wall"
+    },
+    {
+      "id": "hall-east-1",
+      "x": 17,
+      "z": 25,
+      "w": 1.2,
+      "d": 18,
+      "y": 4,
+      "h": 12,
+      "sector": "hall",
+      "style": "wall"
+    },
+    {
+      "id": "hall-east-lintel",
+      "x": 17,
+      "z": 12,
+      "w": 1.2,
+      "d": 8,
+      "y": 12,
+      "h": 4,
+      "sector": "hall",
+      "style": "wall"
+    },
+    {
+      "id": "arcade-west-wall",
+      "x": -51,
+      "z": 0,
+      "w": 1,
+      "d": 36,
+      "y": 1.2,
+      "h": 8,
+      "sector": "arcade",
+      "style": "wall"
+    },
+    {
+      "id": "arcade-north-wall",
+      "x": -39,
+      "z": -18,
+      "w": 25,
+      "d": 1,
+      "y": 1.2,
+      "h": 8,
+      "sector": "arcade",
+      "style": "wall"
+    },
+    {
+      "id": "arcade-inner-one",
+      "x": -43,
+      "z": 0,
+      "w": 1,
+      "d": 20,
+      "y": 1.2,
+      "h": 8,
+      "sector": "arcade",
+      "style": "wall"
+    },
+    {
+      "id": "arcade-inner-two",
+      "x": -37,
+      "z": 10,
+      "w": 12,
+      "d": 1,
+      "y": 1.2,
+      "h": 8,
+      "sector": "arcade",
+      "style": "wall"
+    },
+    {
+      "id": "arcade-turn-south",
+      "x": -43,
+      "z": 18,
+      "w": 16,
+      "d": 1,
+      "y": 1.2,
+      "h": 8,
+      "sector": "arcade",
+      "style": "wall"
+    },
+    {
+      "id": "arcade-exit-east",
+      "x": -27,
+      "z": 26,
+      "w": 1,
+      "d": 24,
+      "y": 1.2,
+      "h": 8,
+      "sector": "arcade",
+      "style": "wall"
+    },
+    {
+      "id": "arcade-exit-west",
+      "x": -35,
+      "z": 24,
+      "w": 1,
+      "d": 12,
+      "y": 1.2,
+      "h": 8,
+      "sector": "arcade",
+      "style": "wall"
+    },
+    {
+      "id": "archive-north-0",
+      "x": -41,
+      "z": 30,
+      "w": 12,
+      "d": 1.2,
+      "y": 1.2,
+      "h": 9,
+      "sector": "archive",
+      "style": "wall"
+    },
+    {
+      "id": "archive-north-1",
+      "x": -25,
+      "z": 30,
+      "w": 4,
+      "d": 1.2,
+      "y": 1.2,
+      "h": 9,
+      "sector": "archive",
+      "style": "wall"
+    },
+    {
+      "id": "archive-north-lintel",
+      "x": -31,
+      "z": 30,
+      "w": 8,
+      "d": 1.2,
+      "y": 8.2,
+      "h": 2,
+      "sector": "archive",
+      "style": "wall"
+    },
+    {
+      "id": "archive-south-0",
+      "x": -35,
+      "z": 54,
+      "w": 24,
+      "d": 1.2,
+      "y": 1.2,
+      "h": 9,
+      "sector": "archive",
+      "style": "wall"
+    },
+    {
+      "id": "archive-west-0",
+      "x": -47,
+      "z": 33.75,
+      "w": 1.2,
+      "d": 7.5,
+      "y": 1.2,
+      "h": 9,
+      "sector": "archive",
+      "style": "wall"
+    },
+    {
+      "id": "archive-west-1",
+      "x": -47,
+      "z": 48.25,
+      "w": 1.2,
+      "d": 11.5,
+      "y": 1.2,
+      "h": 9,
+      "sector": "archive",
+      "style": "wall"
+    },
+    {
+      "id": "archive-west-lintel",
+      "x": -47,
+      "z": 40,
+      "w": 1.2,
+      "d": 5,
+      "y": 7.2,
+      "h": 3,
+      "sector": "archive",
+      "style": "wall"
+    },
+    {
+      "id": "archive-east-0",
+      "x": -23,
+      "z": 34.25,
+      "w": 1.2,
+      "d": 8.5,
+      "y": 1.2,
+      "h": 9,
+      "sector": "archive",
+      "style": "wall"
+    },
+    {
+      "id": "archive-east-1",
+      "x": -23,
+      "z": 49.75,
+      "w": 1.2,
+      "d": 8.5,
+      "y": 1.2,
+      "h": 9,
+      "sector": "archive",
+      "style": "wall"
+    },
+    {
+      "id": "archive-east-lintel",
+      "x": -23,
+      "z": 42,
+      "w": 1.2,
+      "d": 7,
+      "y": 8.2,
+      "h": 2,
+      "sector": "archive",
+      "style": "wall"
+    },
+    {
+      "id": "crypt-north-0",
+      "x": -55,
+      "z": 33,
+      "w": 16,
+      "d": 1.2,
+      "y": 0.9,
+      "h": 7,
+      "sector": "crypt",
+      "style": "wall"
+    },
+    {
+      "id": "crypt-south-0",
+      "x": -55,
+      "z": 47,
+      "w": 16,
+      "d": 1.2,
+      "y": 0.9,
+      "h": 7,
+      "sector": "crypt",
+      "style": "wall"
+    },
+    {
+      "id": "crypt-west-0",
+      "x": -63,
+      "z": 40,
+      "w": 1.2,
+      "d": 14,
+      "y": 0.9,
+      "h": 7,
+      "sector": "crypt",
+      "style": "wall"
+    },
+    {
+      "id": "crypt-east-0",
+      "x": -47,
+      "z": 35.25,
+      "w": 1.2,
+      "d": 4.5,
+      "y": 0.9,
+      "h": 7,
+      "sector": "crypt",
+      "style": "wall"
+    },
+    {
+      "id": "crypt-east-1",
+      "x": -47,
+      "z": 44.75,
+      "w": 1.2,
+      "d": 4.5,
+      "y": 0.9,
+      "h": 7,
+      "sector": "crypt",
+      "style": "wall"
+    },
+    {
+      "id": "crypt-east-lintel",
+      "x": -47,
+      "z": 40,
+      "w": 1.2,
+      "d": 5,
+      "y": 6.9,
+      "h": 1,
+      "sector": "crypt",
+      "style": "wall"
+    },
+    {
+      "id": "tideworks-north-0",
+      "x": 29.75,
+      "z": -2,
+      "w": 7.5,
+      "d": 1.2,
+      "y": 3,
+      "h": 11,
+      "sector": "tideworks",
+      "style": "wall"
+    },
+    {
+      "id": "tideworks-north-1",
+      "x": 44.25,
+      "z": -2,
+      "w": 7.5,
+      "d": 1.2,
+      "y": 3,
+      "h": 11,
+      "sector": "tideworks",
+      "style": "wall"
+    },
+    {
+      "id": "tideworks-north-lintel",
+      "x": 37,
+      "z": -2,
+      "w": 7,
+      "d": 1.2,
+      "y": 11,
+      "h": 3,
+      "sector": "tideworks",
+      "style": "wall"
+    },
+    {
+      "id": "tideworks-south-0",
+      "x": 29.5,
+      "z": 28,
+      "w": 7,
+      "d": 1.2,
+      "y": 3,
+      "h": 11,
+      "sector": "tideworks",
+      "style": "wall"
+    },
+    {
+      "id": "tideworks-south-1",
+      "x": 44.5,
+      "z": 28,
+      "w": 7,
+      "d": 1.2,
+      "y": 3,
+      "h": 11,
+      "sector": "tideworks",
+      "style": "wall"
+    },
+    {
+      "id": "tideworks-south-lintel",
+      "x": 37,
+      "z": 28,
+      "w": 8,
+      "d": 1.2,
+      "y": 11,
+      "h": 3,
+      "sector": "tideworks",
+      "style": "wall"
+    },
+    {
+      "id": "tideworks-west-0",
+      "x": 26,
+      "z": 3,
+      "w": 1.2,
+      "d": 10,
+      "y": 3,
+      "h": 11,
+      "sector": "tideworks",
+      "style": "wall"
+    },
+    {
+      "id": "tideworks-west-1",
+      "x": 26,
+      "z": 22,
+      "w": 1.2,
+      "d": 12,
+      "y": 3,
+      "h": 11,
+      "sector": "tideworks",
+      "style": "wall"
+    },
+    {
+      "id": "tideworks-west-lintel",
+      "x": 26,
+      "z": 12,
+      "w": 1.2,
+      "d": 8,
+      "y": 11,
+      "h": 3,
+      "sector": "tideworks",
+      "style": "wall"
+    },
+    {
+      "id": "tideworks-east-0",
+      "x": 48,
+      "z": 13,
+      "w": 1.2,
+      "d": 30,
+      "y": 3,
+      "h": 11,
+      "sector": "tideworks",
+      "style": "wall"
+    },
+    {
+      "id": "observatory-north-0",
+      "x": -9.5,
+      "z": 34,
+      "w": 7,
+      "d": 1.2,
+      "y": 11,
+      "h": 9,
+      "sector": "observatory",
+      "style": "wall"
+    },
+    {
+      "id": "observatory-north-1",
+      "x": 9.5,
+      "z": 34,
+      "w": 7,
+      "d": 1.2,
+      "y": 11,
+      "h": 9,
+      "sector": "observatory",
+      "style": "wall"
+    },
+    {
+      "id": "observatory-north-lintel",
+      "x": 0,
+      "z": 34,
+      "w": 12,
+      "d": 1.2,
+      "y": 19,
+      "h": 1,
+      "sector": "observatory",
+      "style": "wall"
+    },
+    {
+      "id": "observatory-south-0",
+      "x": 0,
+      "z": 54,
+      "w": 26,
+      "d": 1.2,
+      "y": 11,
+      "h": 9,
+      "sector": "observatory",
+      "style": "wall"
+    },
+    {
+      "id": "observatory-west-0",
+      "x": -13,
+      "z": 37,
+      "w": 1.2,
+      "d": 6,
+      "y": 11,
+      "h": 9,
+      "sector": "observatory",
+      "style": "wall"
+    },
+    {
+      "id": "observatory-west-1",
+      "x": -13,
+      "z": 51,
+      "w": 1.2,
+      "d": 6,
+      "y": 11,
+      "h": 9,
+      "sector": "observatory",
+      "style": "wall"
+    },
+    {
+      "id": "observatory-west-lintel",
+      "x": -13,
+      "z": 44,
+      "w": 1.2,
+      "d": 8,
+      "y": 18,
+      "h": 2,
+      "sector": "observatory",
+      "style": "wall"
+    },
+    {
+      "id": "observatory-east-0",
+      "x": 13,
+      "z": 37,
+      "w": 1.2,
+      "d": 6,
+      "y": 11,
+      "h": 9,
+      "sector": "observatory",
+      "style": "wall"
+    },
+    {
+      "id": "observatory-east-1",
+      "x": 13,
+      "z": 51,
+      "w": 1.2,
+      "d": 6,
+      "y": 11,
+      "h": 9,
+      "sector": "observatory",
+      "style": "wall"
+    },
+    {
+      "id": "observatory-east-lintel",
+      "x": 13,
+      "z": 44,
+      "w": 1.2,
+      "d": 8,
+      "y": 18,
+      "h": 2,
+      "sector": "observatory",
+      "style": "wall"
+    },
+    {
+      "id": "airbell-cap-approach",
+      "x": -64,
+      "z": -76,
+      "w": 5.2,
+      "d": 5.2,
+      "y": 14.1,
+      "h": 0.35,
+      "sector": "gate",
+      "style": "hidden"
+    },
+    {
+      "id": "airbell-cap-gate",
+      "x": 6,
+      "z": -55,
+      "w": 5.2,
+      "d": 5.2,
+      "y": 10.1,
+      "h": 0.35,
+      "sector": "gate",
+      "style": "hidden"
+    },
+    {
+      "id": "airbell-cap-market",
+      "x": -5,
+      "z": -32,
+      "w": 5.2,
+      "d": 5.2,
+      "y": 9.1,
+      "h": 0.35,
+      "sector": "market",
+      "style": "hidden"
+    },
+    {
+      "id": "airbell-cap-entry",
+      "x": -30,
+      "z": -14,
+      "w": 5.2,
+      "d": 5.2,
+      "y": 8.1,
+      "h": 0.35,
+      "sector": "arcade",
+      "style": "hidden"
+    },
+    {
+      "id": "airbell-cap-arcade",
+      "x": -47,
+      "z": -7,
+      "w": 5.2,
+      "d": 5.2,
+      "y": 8.1,
+      "h": 0.35,
+      "sector": "arcade",
+      "style": "hidden"
+    },
+    {
+      "id": "airbell-cap-turn",
+      "x": -31,
+      "z": 20,
+      "w": 5.2,
+      "d": 5.2,
+      "y": 8.1,
+      "h": 0.35,
+      "sector": "arcade",
+      "style": "hidden"
+    },
+    {
+      "id": "airbell-cap-crypt",
+      "x": -53,
+      "z": 40,
+      "w": 5.2,
+      "d": 5.2,
+      "y": 7.1,
+      "h": 0.35,
+      "sector": "crypt",
+      "style": "hidden"
+    },
+    {
+      "id": "airbell-cap-road",
+      "x": -5,
+      "z": 42,
+      "w": 5.2,
+      "d": 5.2,
+      "y": 8.6,
+      "h": 0.35,
+      "sector": "roads",
+      "style": "hidden"
+    },
+    {
+      "id": "airbell-cap-crossing",
+      "x": 22,
+      "z": 12,
+      "w": 5.2,
+      "d": 5.2,
+      "y": 9.6,
+      "h": 0.35,
+      "sector": "roads",
+      "style": "hidden"
+    },
+    {
+      "id": "airbell-cap-nave",
+      "x": 4,
+      "z": 9,
+      "w": 5.2,
+      "d": 5.2,
+      "y": 12.1,
+      "h": 0.35,
+      "sector": "hall",
+      "style": "hidden"
+    },
+    {
+      "id": "airbell-cap-archive",
+      "x": -34,
+      "z": 38,
+      "w": 5.2,
+      "d": 5.2,
+      "y": 8.3,
+      "h": 0.35,
+      "sector": "archive",
+      "style": "hidden"
+    },
+    {
+      "id": "airbell-cap-tideworks",
+      "x": 34,
+      "z": 7,
+      "w": 5.2,
+      "d": 5.2,
+      "y": 11.1,
+      "h": 0.35,
+      "sector": "tideworks",
+      "style": "hidden"
+    },
+    {
+      "id": "airbell-cap-reef",
+      "x": 38,
+      "z": 46,
+      "w": 5.2,
+      "d": 5.2,
+      "y": 9.1,
+      "h": 0.35,
+      "sector": "reef",
+      "style": "hidden"
+    },
+    {
+      "id": "airbell-cap-crown",
+      "x": 0,
+      "z": 42,
+      "w": 5.2,
+      "d": 5.2,
+      "y": 18.1,
+      "h": 0.35,
+      "sector": "observatory",
+      "style": "hidden"
+    },
+    {
+      "id": "observatory-foundation--11.5-35.5",
+      "x": -11.5,
+      "z": 35.5,
+      "w": 3,
+      "d": 3,
+      "y": -1.2,
+      "h": 12.2,
+      "sector": "observatory",
+      "style": "foundation"
+    },
+    {
+      "id": "observatory-foundation--11.5-52.5",
+      "x": -11.5,
+      "z": 52.5,
+      "w": 3,
+      "d": 3,
+      "y": -1.2,
+      "h": 12.2,
+      "sector": "observatory",
+      "style": "foundation"
+    },
+    {
+      "id": "observatory-foundation-11.5-35.5",
+      "x": 11.5,
+      "z": 35.5,
+      "w": 3,
+      "d": 3,
+      "y": -1.2,
+      "h": 12.2,
+      "sector": "observatory",
+      "style": "foundation"
+    },
+    {
+      "id": "observatory-foundation-11.5-52.5",
+      "x": 11.5,
+      "z": 52.5,
+      "w": 3,
+      "d": 3,
+      "y": -1.2,
+      "h": 12.2,
+      "sector": "observatory",
+      "style": "foundation"
+    }
+  ],
+  "arches": [
+    {
+      "x": 0,
+      "z": -46,
+      "y": 1.2,
+      "w": 12,
+      "h": 10,
+      "sector": "gate",
+      "yaw": 0
+    },
+    {
+      "x": 0,
+      "z": -68,
+      "y": 1.2,
+      "w": 10,
+      "h": 8,
+      "sector": "gate",
+      "yaw": 0
+    },
+    {
+      "x": 0,
+      "z": -10,
+      "y": 4,
+      "w": 10,
+      "h": 9,
+      "sector": "hall",
+      "yaw": 0
+    },
+    {
+      "x": 0,
+      "z": 34,
+      "y": 4,
+      "w": 12,
+      "h": 9,
+      "sector": "hall",
+      "yaw": 0
+    },
+    {
+      "x": -17,
+      "z": 12,
+      "y": 4,
+      "w": 8,
+      "h": 8,
+      "sector": "hall",
+      "yaw": 1.5708
+    },
+    {
+      "x": 17,
+      "z": 12,
+      "y": 4,
+      "w": 8,
+      "h": 8,
+      "sector": "hall",
+      "yaw": 1.5708
+    },
+    {
+      "x": 0,
+      "z": -3,
+      "y": 4,
+      "w": 23,
+      "h": 11.5,
+      "sector": "hall",
+      "yaw": 0
+    },
+    {
+      "x": 0,
+      "z": 18,
+      "y": 4,
+      "w": 23,
+      "h": 11.5,
+      "sector": "hall",
+      "yaw": 0
+    },
+    {
+      "x": 0,
+      "z": 28,
+      "y": 4,
+      "w": 23,
+      "h": 11.5,
+      "sector": "hall",
+      "yaw": 0
+    },
+    {
+      "x": -47,
+      "z": -10,
+      "y": 1.2,
+      "w": 7,
+      "h": 7.6,
+      "sector": "arcade",
+      "yaw": 0
+    },
+    {
+      "x": -47,
+      "z": 4,
+      "y": 1.2,
+      "w": 7,
+      "h": 7.6,
+      "sector": "arcade",
+      "yaw": 0
+    },
+    {
+      "x": -31,
+      "z": 25,
+      "y": 1.2,
+      "w": 7,
+      "h": 7.6,
+      "sector": "arcade",
+      "yaw": 0
+    },
+    {
+      "x": -31,
+      "z": 30,
+      "y": 1.2,
+      "w": 8,
+      "h": 7,
+      "sector": "archive",
+      "yaw": 0
+    },
+    {
+      "x": -47,
+      "z": 40,
+      "y": 1.2,
+      "w": 5,
+      "h": 6,
+      "sector": "archive",
+      "yaw": 1.5708
+    },
+    {
+      "x": -23,
+      "z": 42,
+      "y": 1.2,
+      "w": 7,
+      "h": 7,
+      "sector": "archive",
+      "yaw": 1.5708
+    },
+    {
+      "x": -47,
+      "z": 40,
+      "y": 0.9,
+      "w": 5,
+      "h": 6,
+      "sector": "crypt",
+      "yaw": 1.5708
+    },
+    {
+      "x": 37,
+      "z": -2,
+      "y": 3,
+      "w": 7,
+      "h": 8,
+      "sector": "tideworks",
+      "yaw": 0
+    },
+    {
+      "x": 37,
+      "z": 28,
+      "y": 3,
+      "w": 8,
+      "h": 8,
+      "sector": "tideworks",
+      "yaw": 0
+    },
+    {
+      "x": 26,
+      "z": 12,
+      "y": 3,
+      "w": 8,
+      "h": 8,
+      "sector": "tideworks",
+      "yaw": 1.5708
+    },
+    {
+      "x": 38,
+      "z": 58,
+      "y": 1.2,
+      "w": 18,
+      "h": 10,
+      "sector": "reef",
+      "yaw": 0
+    },
+    {
+      "x": 50,
+      "z": 46,
+      "y": 1.2,
+      "w": 18,
+      "h": 10,
+      "sector": "reef",
+      "yaw": 1.5708
+    },
+    {
+      "x": 0,
+      "z": 34,
+      "y": 11,
+      "w": 12,
+      "h": 8,
+      "sector": "observatory",
+      "yaw": 0
+    },
+    {
+      "x": -13,
+      "z": 44,
+      "y": 11,
+      "w": 8,
+      "h": 7,
+      "sector": "observatory",
+      "yaw": 1.5708
+    },
+    {
+      "x": 13,
+      "z": 44,
+      "y": 11,
+      "w": 8,
+      "h": 7,
+      "sector": "observatory",
+      "yaw": 1.5708
+    }
+  ],
+  "props": [
+    {
+      "kind": "coral_spire",
+      "x": -29,
+      "z": -45,
+      "y": 1.2,
+      "sector": "gate",
+      "s": 1.4,
+      "yaw": 0
+    },
+    {
+      "kind": "coral_spire",
+      "x": 29,
+      "z": -45,
+      "y": 1.2,
+      "sector": "gate",
+      "s": 1.4,
+      "yaw": 0
+    },
+    {
+      "kind": "shell_stall",
+      "x": -22,
+      "z": -25,
+      "y": 1.2,
+      "sector": "market",
+      "s": 1,
+      "yaw": 1.5708
+    },
+    {
+      "kind": "amphora",
+      "x": -22,
+      "z": -38,
+      "y": 1.2,
+      "sector": "market",
+      "s": 1.4,
+      "yaw": 0
+    },
+    {
+      "kind": "shell_stall",
+      "x": 22,
+      "z": -25,
+      "y": 1.2,
+      "sector": "market",
+      "s": 1,
+      "yaw": -1.5708
+    },
+    {
+      "kind": "amphora",
+      "x": 22,
+      "z": -38,
+      "y": 1.2,
+      "sector": "market",
+      "s": 1.4,
+      "yaw": 0
+    },
+    {
+      "kind": "tidal_throne",
+      "x": 0,
+      "z": 29,
+      "y": 11,
+      "sector": "gallery",
+      "s": 1.6,
+      "yaw": 0
+    },
+    {
+      "kind": "astrolabe",
+      "x": 0,
+      "z": 12,
+      "y": 4,
+      "sector": "hall",
+      "s": 1.5,
+      "yaw": 0
+    },
+    {
+      "kind": "coral_planter",
+      "x": -12,
+      "z": 0,
+      "y": 4,
+      "sector": "hall",
+      "s": 1.1,
+      "yaw": 0
+    },
+    {
+      "kind": "coral_planter",
+      "x": -12,
+      "z": 23,
+      "y": 4,
+      "sector": "hall",
+      "s": 1.1,
+      "yaw": 0
+    },
+    {
+      "kind": "coral_planter",
+      "x": 12,
+      "z": 0,
+      "y": 4,
+      "sector": "hall",
+      "s": 1.1,
+      "yaw": 0
+    },
+    {
+      "kind": "coral_planter",
+      "x": 12,
+      "z": 23,
+      "y": 4,
+      "sector": "hall",
+      "s": 1.1,
+      "yaw": 0
+    },
+    {
+      "kind": "tablet_shelf",
+      "x": -43,
+      "z": 46,
+      "y": 1.2,
+      "sector": "archive",
+      "s": 1.1,
+      "yaw": 1.5708
+    },
+    {
+      "kind": "tablet_shelf",
+      "x": -27,
+      "z": 46,
+      "y": 1.2,
+      "sector": "archive",
+      "s": 1.1,
+      "yaw": 1.5708
+    },
+    {
+      "kind": "chart_table",
+      "x": -35,
+      "z": 46,
+      "y": 1.2,
+      "sector": "archive",
+      "s": 1,
+      "yaw": 0
+    },
+    {
+      "kind": "pearl_cache",
+      "x": -59,
+      "z": 42,
+      "y": 0.9,
+      "sector": "crypt",
+      "s": 1.6,
+      "yaw": 0
+    },
+    {
+      "kind": "amphora",
+      "x": -59,
+      "z": 36,
+      "y": 0.9,
+      "sector": "crypt",
+      "s": 1.6,
+      "yaw": 0
+    },
+    {
+      "kind": "tide_engine",
+      "x": 39,
+      "z": 16,
+      "y": 3,
+      "sector": "tideworks",
+      "s": 1.6,
+      "yaw": 0
+    },
+    {
+      "kind": "tablet_shelf",
+      "x": 44,
+      "z": 6,
+      "y": 3,
+      "sector": "tideworks",
+      "s": 1.3,
+      "yaw": 1.5708
+    },
+    {
+      "kind": "coral_spire",
+      "x": 25,
+      "z": 36,
+      "y": 1.2,
+      "sector": "reef",
+      "s": 1.2,
+      "yaw": 0
+    },
+    {
+      "kind": "coral_spire",
+      "x": 25,
+      "z": 58,
+      "y": 1.2,
+      "sector": "reef",
+      "s": 1.2,
+      "yaw": 0
+    },
+    {
+      "kind": "coral_spire",
+      "x": 51,
+      "z": 36,
+      "y": 1.2,
+      "sector": "reef",
+      "s": 1.2,
+      "yaw": 0
+    },
+    {
+      "kind": "coral_spire",
+      "x": 51,
+      "z": 58,
+      "y": 1.2,
+      "sector": "reef",
+      "s": 1.2,
+      "yaw": 0
+    },
+    {
+      "kind": "coral_planter",
+      "x": 31,
+      "z": 53,
+      "y": 1.2,
+      "sector": "reef",
+      "s": 1.5,
+      "yaw": 0
+    },
+    {
+      "kind": "coral_planter",
+      "x": 45,
+      "z": 40,
+      "y": 1.2,
+      "sector": "reef",
+      "s": 1.4,
+      "yaw": 0
+    },
+    {
+      "kind": "coral_planter",
+      "x": 48,
+      "z": 53,
+      "y": 1.2,
+      "sector": "reef",
+      "s": 1.8,
+      "yaw": 0
+    },
+    {
+      "kind": "astrolabe",
+      "x": 0,
+      "z": 49,
+      "y": 11,
+      "sector": "observatory",
+      "s": 1.3,
+      "yaw": 0
+    },
+    {
+      "kind": "pearl_cache",
+      "x": -8,
+      "z": 49,
+      "y": 11,
+      "sector": "observatory",
+      "s": 1,
+      "yaw": 0
+    },
+    {
+      "kind": "airbell",
+      "x": -64,
+      "z": -76,
+      "y": 12,
+      "sector": "gate",
+      "s": 1,
+      "yaw": 0
+    },
+    {
+      "kind": "airbell",
+      "x": 6,
+      "z": -55,
+      "y": 8,
+      "sector": "gate",
+      "s": 1,
+      "yaw": 0
+    },
+    {
+      "kind": "airbell",
+      "x": -5,
+      "z": -32,
+      "y": 7,
+      "sector": "market",
+      "s": 1,
+      "yaw": 0
+    },
+    {
+      "kind": "airbell",
+      "x": -30,
+      "z": -14,
+      "y": 6,
+      "sector": "arcade",
+      "s": 1,
+      "yaw": 0
+    },
+    {
+      "kind": "airbell",
+      "x": -47,
+      "z": -7,
+      "y": 6,
+      "sector": "arcade",
+      "s": 1,
+      "yaw": 0
+    },
+    {
+      "kind": "airbell",
+      "x": -31,
+      "z": 20,
+      "y": 6,
+      "sector": "arcade",
+      "s": 1,
+      "yaw": 0
+    },
+    {
+      "kind": "airbell",
+      "x": -53,
+      "z": 40,
+      "y": 5,
+      "sector": "crypt",
+      "s": 1,
+      "yaw": 0
+    },
+    {
+      "kind": "airbell",
+      "x": -5,
+      "z": 42,
+      "y": 6.5,
+      "sector": "roads",
+      "s": 1,
+      "yaw": 0
+    },
+    {
+      "kind": "airbell",
+      "x": 22,
+      "z": 12,
+      "y": 7.5,
+      "sector": "roads",
+      "s": 1,
+      "yaw": 0
+    },
+    {
+      "kind": "airbell",
+      "x": 4,
+      "z": 9,
+      "y": 10,
+      "sector": "hall",
+      "s": 1,
+      "yaw": 0
+    },
+    {
+      "kind": "airbell",
+      "x": -34,
+      "z": 38,
+      "y": 6.2,
+      "sector": "archive",
+      "s": 1,
+      "yaw": 0
+    },
+    {
+      "kind": "airbell",
+      "x": 34,
+      "z": 7,
+      "y": 9,
+      "sector": "tideworks",
+      "s": 1,
+      "yaw": 0
+    },
+    {
+      "kind": "airbell",
+      "x": 38,
+      "z": 46,
+      "y": 7,
+      "sector": "reef",
+      "s": 1,
+      "yaw": 0
+    },
+    {
+      "kind": "airbell",
+      "x": 0,
+      "z": 42,
+      "y": 16,
+      "sector": "observatory",
+      "s": 1,
+      "yaw": 0
+    },
+    {
+      "kind": "relic",
+      "x": -40,
+      "z": 49,
+      "y": 1.2,
+      "sector": "archive",
+      "s": 1,
+      "yaw": 0
+    },
+    {
+      "kind": "relic",
+      "x": 43,
+      "z": 22,
+      "y": 3,
+      "sector": "tideworks",
+      "s": 1,
+      "yaw": 0
+    },
+    {
+      "kind": "relic",
+      "x": 7,
+      "z": 48,
+      "y": 11,
+      "sector": "observatory",
+      "s": 1,
+      "yaw": 0
+    },
+    {
+      "kind": "reef_lantern",
+      "x": -5,
+      "z": -78,
+      "y": 1.2,
+      "sector": "roads",
+      "s": 1,
+      "yaw": 0
+    },
+    {
+      "kind": "reef_lantern",
+      "x": 5,
+      "z": -65,
+      "y": 1.2,
+      "sector": "roads",
+      "s": 1,
+      "yaw": 0
+    },
+    {
+      "kind": "reef_lantern",
+      "x": -10,
+      "z": -41,
+      "y": 1.2,
+      "sector": "roads",
+      "s": 1,
+      "yaw": 0
+    },
+    {
+      "kind": "reef_lantern",
+      "x": 12,
+      "z": -19,
+      "y": 1.2,
+      "sector": "roads",
+      "s": 1,
+      "yaw": 0
+    },
+    {
+      "kind": "reef_lantern",
+      "x": -38,
+      "z": -14,
+      "y": 1.2,
+      "sector": "roads",
+      "s": 1,
+      "yaw": 0
+    },
+    {
+      "kind": "reef_lantern",
+      "x": -47,
+      "z": 13,
+      "y": 1.2,
+      "sector": "roads",
+      "s": 1,
+      "yaw": 0
+    },
+    {
+      "kind": "reef_lantern",
+      "x": -31,
+      "z": 26,
+      "y": 1.2,
+      "sector": "roads",
+      "s": 1,
+      "yaw": 0
+    },
+    {
+      "kind": "reef_lantern",
+      "x": -42,
+      "z": 41,
+      "y": 1.2,
+      "sector": "roads",
+      "s": 1,
+      "yaw": 0
+    },
+    {
+      "kind": "reef_lantern",
+      "x": -20,
+      "z": 42,
+      "y": 1.5818,
+      "sector": "roads",
+      "s": 1,
+      "yaw": 0
+    },
+    {
+      "kind": "reef_lantern",
+      "x": 23,
+      "z": 12,
+      "y": 4,
+      "sector": "roads",
+      "s": 1,
+      "yaw": 0
+    },
+    {
+      "kind": "reef_lantern",
+      "x": 37,
+      "z": -5,
+      "y": 2.325,
+      "sector": "roads",
+      "s": 1,
+      "yaw": 0
+    },
+    {
+      "kind": "reef_lantern",
+      "x": 37,
+      "z": 32,
+      "y": 2.25,
+      "sector": "roads",
+      "s": 1,
+      "yaw": 0
+    },
+    {
+      "kind": "reef_lantern",
+      "x": 47,
+      "z": 47,
+      "y": 1.2,
+      "sector": "roads",
+      "s": 1,
+      "yaw": 0
+    },
+    {
+      "kind": "reef_lantern",
+      "x": 8,
+      "z": 36,
+      "y": 1.2,
+      "sector": "roads",
+      "s": 1,
+      "yaw": 0
+    },
+    {
+      "kind": "coral_planter",
+      "x": -60,
+      "z": -28,
+      "y": 0,
+      "sector": "reef",
+      "s": 1.2,
+      "yaw": 0
+    },
+    {
+      "kind": "coral_planter",
+      "x": -60,
+      "z": 15,
+      "y": 0,
+      "sector": "reef",
+      "s": 1.5,
+      "yaw": 0
+    },
+    {
+      "kind": "coral_planter",
+      "x": 57,
+      "z": -12,
+      "y": 0,
+      "sector": "reef",
+      "s": 1.8,
+      "yaw": 0
+    },
+    {
+      "kind": "coral_planter",
+      "x": 58,
+      "z": 28,
+      "y": 0,
+      "sector": "reef",
+      "s": 1.2,
+      "yaw": 0
+    },
+    {
+      "kind": "coral_planter",
+      "x": -16,
+      "z": 61,
+      "y": 0,
+      "sector": "reef",
+      "s": 1.5,
+      "yaw": 0
+    },
+    {
+      "kind": "coral_planter",
+      "x": 13,
+      "z": -70,
+      "y": 0,
+      "sector": "reef",
+      "s": 1.8,
+      "yaw": 0
+    }
+  ],
+  "zones": [
+    {
+      "id": "gate",
+      "name": "The Drowned Causeway",
+      "x": 0,
+      "z": -60,
+      "w": 22,
+      "d": 50,
+      "y": 0,
+      "h": 20,
+      "story": "Follow the lantern road beneath the arches. Brass airbells replenish your breath."
+    },
+    {
+      "id": "market",
+      "name": "Shellmarket",
+      "x": 0,
+      "z": -28,
+      "w": 70,
+      "d": 34,
+      "y": 0,
+      "h": 14,
+      "story": "Shell stalls, fallen amphorae and old guardians. A covered passage turns west; the palace rises ahead."
+    },
+    {
+      "id": "hall",
+      "name": "The Tidal Nave",
+      "x": 0,
+      "z": 12,
+      "w": 34,
+      "d": 44,
+      "y": 1,
+      "h": 9,
+      "story": "Swim through the vaulted palace or rise through its open center to the royal galleries."
+    },
+    {
+      "id": "arcade",
+      "name": "The Kelp Arcade",
+      "x": -39,
+      "z": 7,
+      "w": 28,
+      "d": 58,
+      "y": 0,
+      "h": 10,
+      "story": "Three sheltered turns lead toward the archive. Blue lamps and airbells mark the route."
+    },
+    {
+      "id": "archive",
+      "name": "The Sunken Archive",
+      "x": -35,
+      "z": 42,
+      "w": 24,
+      "d": 24,
+      "y": 0,
+      "h": 10,
+      "story": "Stone tablets survived where paper could not. The low western doorway conceals a pearl cache."
+    },
+    {
+      "id": "crypt",
+      "name": "The Pearl Crypt",
+      "x": -55,
+      "z": 40,
+      "w": 16,
+      "d": 14,
+      "y": 0,
+      "h": 8,
+      "story": "A quiet side chamber, hidden beyond the archive. Light catches on the old pearl coffers."
+    },
+    {
+      "id": "tideworks",
+      "name": "The Tideworks",
+      "x": 37,
+      "z": 13,
+      "w": 22,
+      "d": 30,
+      "y": 1,
+      "h": 12,
+      "story": "The old tide engine is still turning. Two outer doors make a loop through the coral gardens."
+    },
+    {
+      "id": "reef",
+      "name": "The Coral Conservatory",
+      "x": 38,
+      "z": 47,
+      "w": 30,
+      "d": 26,
+      "y": 0,
+      "h": 18,
+      "story": "Corals have reclaimed the colonnades. This open garden provides an easy route to the surface."
+    },
+    {
+      "id": "gallery",
+      "name": "The Royal Galleries",
+      "x": 0,
+      "z": 12,
+      "w": 34,
+      "d": 44,
+      "y": 10,
+      "h": 6,
+      "story": "A high balcony surrounds the nave. Follow it south toward the crown observatory."
+    },
+    {
+      "id": "observatory",
+      "name": "The Crown Observatory",
+      "x": 0,
+      "z": 44,
+      "w": 26,
+      "d": 20,
+      "y": 10,
+      "h": 13,
+      "story": "The city’s final star chart waits below an open oculus. Rise here to return to the sea above."
+    }
+  ],
+  "relics": [
+    {
+      "id": "archive",
+      "name": "Chart of the Lost Tides",
+      "x": -40,
+      "z": 49,
+      "y": 1.2,
+      "story": "A folded coast map marks safe airbells through the city. The pearl crypt lies beyond the low western doorway."
+    },
+    {
+      "id": "tideworks",
+      "name": "The Tidekeeper’s Record",
+      "x": 43,
+      "z": 22,
+      "y": 3,
+      "story": "The city once timed its gates to the moon. Follow the palace’s open water shaft to the crown gallery."
+    },
+    {
+      "id": "crown",
+      "name": "The Last Star Chart",
+      "x": 7,
+      "z": 48,
+      "y": 11,
+      "story": "Three records preserve the city’s memory. The open oculus above this room is a direct route back to daylight."
+    }
+  ],
+  "airbells": [
+    {
+      "id": "approach",
+      "x": -64,
+      "z": -76,
+      "y": 12,
+      "r": 2.4
+    },
+    {
+      "id": "gate",
+      "x": 6,
+      "z": -55,
+      "y": 8,
+      "r": 2.4
+    },
+    {
+      "id": "market",
+      "x": -5,
+      "z": -32,
+      "y": 7,
+      "r": 2.4
+    },
+    {
+      "id": "entry",
+      "x": -30,
+      "z": -14,
+      "y": 6,
+      "r": 2.4
+    },
+    {
+      "id": "arcade",
+      "x": -47,
+      "z": -7,
+      "y": 6,
+      "r": 2.4
+    },
+    {
+      "id": "turn",
+      "x": -31,
+      "z": 20,
+      "y": 6,
+      "r": 2.4
+    },
+    {
+      "id": "crypt",
+      "x": -53,
+      "z": 40,
+      "y": 5,
+      "r": 2.4
+    },
+    {
+      "id": "road",
+      "x": -5,
+      "z": 42,
+      "y": 6.5,
+      "r": 2.4
+    },
+    {
+      "id": "crossing",
+      "x": 22,
+      "z": 12,
+      "y": 7.5,
+      "r": 2.4
+    },
+    {
+      "id": "nave",
+      "x": 4,
+      "z": 9,
+      "y": 10,
+      "r": 2.4
+    },
+    {
+      "id": "archive",
+      "x": -34,
+      "z": 38,
+      "y": 6.2,
+      "r": 2.4
+    },
+    {
+      "id": "tideworks",
+      "x": 34,
+      "z": 7,
+      "y": 9,
+      "r": 2.4
+    },
+    {
+      "id": "reef",
+      "x": 38,
+      "z": 46,
+      "y": 7,
+      "r": 2.4
+    },
+    {
+      "id": "crown",
+      "x": 0,
+      "z": 42,
+      "y": 16,
+      "r": 2.4
+    }
+  ],
+  "towers": [],
+  "routeHints": {
+    "lower": [
+      [
+        0,
+        -55
+      ],
+      [
+        0,
+        -32
+      ],
+      [
+        -25,
+        -32
+      ],
+      [
+        -25,
+        -14
+      ],
+      [
+        -47,
+        -14
+      ],
+      [
+        -47,
+        14
+      ],
+      [
+        -31,
+        14
+      ],
+      [
+        -31,
+        38
+      ],
+      [
+        -40,
+        49
+      ],
+      [
+        -35,
+        40
+      ],
+      [
+        -55,
+        40
+      ],
+      [
+        -35,
+        40
+      ],
+      [
+        -35,
+        42
+      ],
+      [
+        -18,
+        42
+      ],
+      [
+        0,
+        42
+      ],
+      [
+        24,
+        42
+      ],
+      [
+        37,
+        42
+      ],
+      [
+        38,
+        47
+      ],
+      [
+        37,
+        30
+      ],
+      [
+        37,
+        13
+      ],
+      [
+        43,
+        22
+      ],
+      [
+        37,
+        12
+      ],
+      [
+        20,
+        12
+      ],
+      [
+        0,
+        12
+      ]
+    ],
+    "upper": [
+      [
+        0,
+        12
+      ],
+      [
+        13.5,
+        12
+      ],
+      [
+        13.5,
+        30
+      ],
+      [
+        0,
+        30
+      ],
+      [
+        0,
+        44
+      ],
+      [
+        7,
+        48
+      ]
+    ]
+  }
+}

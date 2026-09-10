@@ -1,0 +1,62 @@
+{
+  "backend": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspecified Version)",
+  "viewport": [
+    1440,
+    900
+  ],
+  "devicePixelRatio": 2,
+  "drawingBuffer": [
+    2880,
+    1800
+  ],
+  "scenario": "wonder-kite-garden",
+  "pan": false,
+  "frameMs": 16.665738161559887,
+  "fps": 60.00334280461308,
+  "p95Ms": 16.799999999999272,
+  "p99Ms": 16.800000000000182,
+  "over50Ms": 0,
+  "samples": 359,
+  "stats": {
+    "drawCalls": 750,
+    "triangles": 2362857,
+    "geometries": 637,
+    "textures": 42,
+    "scenery": {
+      "near": 49,
+      "mid": 371,
+      "far": 11257
+    },
+    "view": {
+      "x": 234,
+      "y": 148.65,
+      "z": -213
+    },
+    "performance": {
+      "samples": 120,
+      "fps": 60.00600060006002,
+      "frameMs": 16.664999999999996,
+      "p95Ms": 16.700000000000728,
+      "simulationMs": 0.3591666723291079,
+      "renderMs": 4.270000001291434,
+      "gpuMs": 15.008014901171407
+    }
+  },
+  "quality": {
+    "id": "high",
+    "flags": {
+      "shadowCascades": 2,
+      "shadowRes": 2048,
+      "ssao": true,
+      "bloom": true,
+      "waterReflections": false,
+      "terrainDetailShader": true,
+      "standardMaterials": true,
+      "terrainDetailHigh": true,
+      "nearLod": true
+    }
+  },
+  "overlay": "60 FPS  ·  16.7 ms/frame\np95 16.7 ms  ·  high · 2.00×\nCPU sim 0.4 / render 4.2 ms\nGPU 14.7 ms\n750 draws  ·  2.36M triangles",
+  "uncapped": false,
+  "errors": []
+}

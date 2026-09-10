@@ -15,6 +15,8 @@ import type { Biome, SpeciesDef } from '../core/types.ts';
 
 /** One-line flavour text per species (guide reveal). */
 const FLAVOR: Record<string, string> = {
+  suncresteagle: 'A gold-crested navigator whose wings carry the warmth of the cloud city.',
+  seraphlet: 'Six quiet wings and a borrowed halo. It listens for the kingdom’s lost wind chimes.',
   puffle: 'A meadow marshmallow that bounces when startled — mostly bounces.',
   skitterling: 'Six legs, no patience; it is gone before the grass stops waving.',
   bellowbuck: 'Too proud to run. It simply strides off, bellowing its disdain.',
@@ -54,7 +56,7 @@ function biomeHint(biomes: Biome[]): string {
   // The gargoyle's biomes: [] (fixed castle-perch slots, no procedural cell
   // spawn) would otherwise render as a blank line here.
   if (biomes.length === 0) return 'Castle towers';
-  return biomes.map(capitalize).join(' / ');
+  return biomes.map(b=>b==='sky'?'Sky Kingdom':capitalize(b)).join(' / ');
 }
 
 let stylesInjected = false;

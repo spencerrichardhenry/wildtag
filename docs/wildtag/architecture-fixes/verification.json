@@ -1,0 +1,342 @@
+{
+  "checks": [
+    "Keep, library, forge and rampart roof joins inspected in cursed and purified palettes; all standing heights preserved",
+    "Nave foundation blocks swimming beneath the previously floating floor",
+    "Normal swimming still passes through front and side nave doors and the observatory underpass"
+  ],
+  "views": {
+    "cursed-keep-roof": {
+      "drawCalls": 693,
+      "triangles": 2373677,
+      "geometries": 612,
+      "textures": 43,
+      "scenery": {
+        "near": 11,
+        "mid": 156,
+        "far": 5983
+      },
+      "view": {
+        "x": -424.7,
+        "y": 122.75,
+        "z": -176.6
+      },
+      "performance": {
+        "samples": 120,
+        "fps": 60.00300015000751,
+        "frameMs": 16.66583333333333,
+        "p95Ms": 16.700000000000273,
+        "simulationMs": 0.41916666825612386,
+        "renderMs": 4.8316666652758915,
+        "gpuMs": 12.252486503801194
+      }
+    },
+    "cursed-keep-corner": {
+      "drawCalls": 699,
+      "triangles": 2312407,
+      "geometries": 681,
+      "textures": 43,
+      "scenery": {
+        "near": 11,
+        "mid": 155,
+        "far": 5984
+      },
+      "view": {
+        "x": -431.7,
+        "y": 122.75,
+        "z": -175.6
+      },
+      "performance": {
+        "samples": 120,
+        "fps": 60.00300015000748,
+        "frameMs": 16.66583333333334,
+        "p95Ms": 16.799999999999272,
+        "simulationMs": 0.40500000019868215,
+        "renderMs": 4.054999998708566,
+        "gpuMs": 14.354293702897454
+      }
+    },
+    "cursed-library-roof": {
+      "drawCalls": 632,
+      "triangles": 2030853,
+      "geometries": 694,
+      "textures": 43,
+      "scenery": {
+        "near": 9,
+        "mid": 255,
+        "far": 5737
+      },
+      "view": {
+        "x": -427.2,
+        "y": 110.75,
+        "z": -237.6
+      },
+      "performance": {
+        "samples": 120,
+        "fps": 60.00300015000751,
+        "frameMs": 16.66583333333333,
+        "p95Ms": 16.799999999999272,
+        "simulationMs": 0.4441666677594185,
+        "renderMs": 4.296666666865349,
+        "gpuMs": 13.839634298604894
+      }
+    },
+    "cursed-forge-roof": {
+      "drawCalls": 578,
+      "triangles": 2025565,
+      "geometries": 674,
+      "textures": 43,
+      "scenery": {
+        "near": 11,
+        "mid": 269,
+        "far": 5526
+      },
+      "view": {
+        "x": -487.2,
+        "y": 110.75,
+        "z": -179.1
+      },
+      "performance": {
+        "samples": 120,
+        "fps": 59.99999999999999,
+        "frameMs": 16.666666666666668,
+        "p95Ms": 16.700000000000728,
+        "simulationMs": 0.3900000015894572,
+        "renderMs": 4.523333331942558,
+        "gpuMs": 11.486830624188656
+      }
+    },
+    "cursed-rampart": {
+      "drawCalls": 777,
+      "triangles": 2842837,
+      "geometries": 725,
+      "textures": 43,
+      "scenery": {
+        "near": 38,
+        "mid": 380,
+        "far": 5847
+      },
+      "view": {
+        "x": -354.7,
+        "y": 110.75,
+        "z": -266.6
+      },
+      "performance": {
+        "samples": 120,
+        "fps": 59.509050334738404,
+        "frameMs": 16.804166666666667,
+        "p95Ms": 16.799999999999272,
+        "simulationMs": 0.37999999672174456,
+        "renderMs": 5.258333335320155,
+        "gpuMs": 10.843879474258335
+      }
+    },
+    "purified-keep-roof": {
+      "drawCalls": 713,
+      "triangles": 2417441,
+      "geometries": 732,
+      "textures": 43,
+      "scenery": {
+        "near": 7,
+        "mid": 158,
+        "far": 5985
+      },
+      "view": {
+        "x": -424.7,
+        "y": 122.75,
+        "z": -176.6
+      },
+      "performance": {
+        "samples": 120,
+        "fps": 57.14557836087429,
+        "frameMs": 17.499166666666678,
+        "p95Ms": 16.799999999999272,
+        "simulationMs": 0.4450000042716662,
+        "renderMs": 4.4691666627923645,
+        "gpuMs": 14.422594275641407
+      }
+    },
+    "purified-keep-corner": {
+      "drawCalls": 731,
+      "triangles": 2361161,
+      "geometries": 745,
+      "textures": 43,
+      "scenery": {
+        "near": 7,
+        "mid": 158,
+        "far": 5985
+      },
+      "view": {
+        "x": -431.7,
+        "y": 122.75,
+        "z": -175.6
+      },
+      "performance": {
+        "samples": 120,
+        "fps": 57.603686635944676,
+        "frameMs": 17.360000000000007,
+        "p95Ms": 16.700000000000728,
+        "simulationMs": 0.4858333354194959,
+        "renderMs": 5.346666667362054,
+        "gpuMs": 10.83617529718409
+      }
+    },
+    "purified-library-roof": {
+      "drawCalls": 625,
+      "triangles": 2042499,
+      "geometries": 752,
+      "textures": 43,
+      "scenery": {
+        "near": 8,
+        "mid": 257,
+        "far": 5736
+      },
+      "view": {
+        "x": -427.2,
+        "y": 110.75,
+        "z": -237.6
+      },
+      "performance": {
+        "samples": 120,
+        "fps": 60.00300015000757,
+        "frameMs": 16.665833333333314,
+        "p95Ms": 16.700000000000728,
+        "simulationMs": 0.36083333343267443,
+        "renderMs": 3.700000002483527,
+        "gpuMs": 14.595941063515312
+      }
+    },
+    "purified-forge-roof": {
+      "drawCalls": 556,
+      "triangles": 2030935,
+      "geometries": 743,
+      "textures": 43,
+      "scenery": {
+        "near": 11,
+        "mid": 269,
+        "far": 5526
+      },
+      "view": {
+        "x": -487.2,
+        "y": 110.75,
+        "z": -179.1
+      },
+      "performance": {
+        "samples": 120,
+        "fps": 60.00300015000745,
+        "frameMs": 16.665833333333346,
+        "p95Ms": 16.799999999999272,
+        "simulationMs": 0.4083333338300387,
+        "renderMs": 4.099999998509884,
+        "gpuMs": 12.104318160575353
+      }
+    },
+    "purified-rampart": {
+      "drawCalls": 795,
+      "triangles": 2878165,
+      "geometries": 720,
+      "textures": 43,
+      "scenery": {
+        "near": 38,
+        "mid": 380,
+        "far": 5847
+      },
+      "view": {
+        "x": -354.7,
+        "y": 110.75,
+        "z": -266.6
+      },
+      "performance": {
+        "samples": 120,
+        "fps": 60.00300015000745,
+        "frameMs": 16.665833333333346,
+        "p95Ms": 16.700000000000728,
+        "simulationMs": 0.37000000327825544,
+        "renderMs": 4.537499995529652,
+        "gpuMs": 14.806835706258365
+      }
+    },
+    "atlantis-foundation": {
+      "drawCalls": 511,
+      "triangles": 1390125,
+      "geometries": 886,
+      "textures": 43,
+      "scenery": {
+        "near": 87,
+        "mid": 564,
+        "far": 3311
+      },
+      "view": {
+        "x": 578,
+        "y": -21.150000000000002,
+        "z": 626
+      },
+      "performance": {
+        "samples": 120,
+        "fps": 59.99999999999999,
+        "frameMs": 16.666666666666668,
+        "p95Ms": 16.700000000004366,
+        "simulationMs": 0.4616666629910469,
+        "renderMs": 3.521666671335697,
+        "gpuMs": 13.22770531635738
+      }
+    },
+    "atlantis-side": {
+      "drawCalls": 477,
+      "triangles": 1306979,
+      "geometries": 896,
+      "textures": 43,
+      "scenery": {
+        "near": 83,
+        "mid": 582,
+        "far": 3029
+      },
+      "view": {
+        "x": 564,
+        "y": -21.55,
+        "z": 650
+      },
+      "performance": {
+        "samples": 120,
+        "fps": 60.00300015000745,
+        "frameMs": 16.665833333333346,
+        "p95Ms": 16.700000000004366,
+        "simulationMs": 0.4508333310484886,
+        "renderMs": 3.494166667262713,
+        "gpuMs": 15.394375468926274
+      }
+    },
+    "atlantis-crown-support": {
+      "drawCalls": 538,
+      "triangles": 1377031,
+      "geometries": 905,
+      "textures": 43,
+      "scenery": {
+        "near": 86,
+        "mid": 572,
+        "far": 1228
+      },
+      "view": {
+        "x": 609,
+        "y": -17.35,
+        "z": 710
+      },
+      "performance": {
+        "samples": 120,
+        "fps": 48.981591085350395,
+        "frameMs": 20.415833333333346,
+        "p95Ms": 16.80000000000291,
+        "simulationMs": 0.43000000367561975,
+        "renderMs": 3.2408333331346513,
+        "gpuMs": 14.640022952163516
+      }
+    }
+  },
+  "errors": [],
+  "art": {
+    "loaded": 218,
+    "lodsLoaded": 84,
+    "failed": [],
+    "replaced": 1715
+  },
+  "passed": true
+}

@@ -1,4 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
+import { readFile } from 'node:fs/promises';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { registerArtAsset } from '../src/art/library.ts';
 import * as THREE from 'three';
 import { buildCritterModel, isSharedCritterMaterial } from '../src/critters/models.ts';
 import { SPECIES } from '../src/critters/species.ts';
@@ -11,6 +14,14 @@ import { mulberry32 } from '../src/core/rng.ts';
 // individually built — ~30 active × ~1.6k tris is negligible next to the
 // terrain. The budget stays as a runaway-detail guard, not a perf gate.
 
+beforeAll(async()=>{
+  const loader=new GLTFLoader();
+  for(const id of ['suncresteagle','seraphlet']){
+    const file=await readFile(new URL(`../public/wildtag/models/critter_${id}.glb`,import.meta.url));
+    const gltf=await loader.parseAsync(file.buffer.slice(file.byteOffset,file.byteOffset+file.byteLength),'');
+    registerArtAsset(`critter_${id}`,gltf.scene);
+  }
+});
 const TRI_BUDGET_DEFAULT = 1700;
 const TRI_BUDGET_PRISMHORSE = 2200;
 // Path-2 spike (Spencer): the Cragdrake is reconstructed faithfully from its
@@ -31,7 +42,7 @@ function triCount(group: THREE.Object3D): number {
 
 describe('critter model tri budgets (round 2)', () => {
   for (const sp of SPECIES) {
-    const budget = sp.id === 'prismhorse' ? TRI_BUDGET_PRISMHORSE : sp.id === 'cragdrake' ? TRI_BUDGET_CRAGDRAKE : TRI_BUDGET_DEFAULT;
+    const budget = sp.id==='suncresteagle'?5000:sp.id==='seraphlet'?12000:sp.id === 'prismhorse' ? TRI_BUDGET_PRISMHORSE : sp.id === 'cragdrake' ? TRI_BUDGET_CRAGDRAKE : TRI_BUDGET_DEFAULT;
     it(`${sp.id} stays under ${budget} tris (worst-case weathering)`, () => {
       // Sample several seeds so conditional weathering accents (extra tuft /
       // notch / mote meshes) are exercised — the budget must hold worst-case.
@@ -62,7 +73,7 @@ describe('critter draw-call baking', () => {
       // 16 identity legs float prismhorse; round 3 gave shardwing a second
       // independently-flapping crystal wing pair (4 wing meshes, animatable
       // Object3Ds — merging would freeze the flap).
-      const cap = sp.id === 'prismhorse' ? 24 : sp.id === 'shardwing' ? 12 : 10;
+      const cap = sp.id==='seraphlet'?18:sp.id === 'prismhorse' ? 24 : sp.id === 'shardwing' ? 12 : 10;
       let worst = 0;
       for (const seed of [1, 2, 3, 5, 8]) {
         const { group } = buildCritterModel(sp.id, mulberry32(seed));

@@ -1,4 +1,6 @@
-import { refineArt } from '../art/library.ts';
+import { refineArt, hasArtAsset, isSharedArtMaterial } from '../art/library.ts';
+import { buildLandmark } from '../landmarks/presentation.ts';
+import { ATLANTIS_DEPTH } from '../landmarks/world.ts';
 import { mergeStaticMeshes } from '../art/merge-static.ts';
 import * as THREE from 'three';
 import { UNDERWATER, WORLD_SEED } from '../core/constants.ts';
@@ -131,6 +133,7 @@ function addSeaweed(parent: THREE.Object3D, x: number, y: number, z: number, h: 
 
 /** Palace ruins + coral, positioned at local floor y=0. */
 export function buildAtlantis(mergeStatic = true): THREE.Group {
+  if(hasArtAsset('atlantis_district_hall'))return buildLandmark(ATLANTIS_DEPTH);
   const root = new THREE.Group();
   root.name = 'atlantis';
   const stone = material(UNDERWATER.castleStone, { metalness: 0.08 });
@@ -474,6 +477,7 @@ export function disposeUnderwaterTree(root: THREE.Object3D): void {
   });
   geometries.forEach((g) => g.dispose());
   materials.forEach((m) => {
+    if(isSharedArtMaterial(m))return;
     const map = (m as THREE.MeshBasicMaterial).map;
     map?.dispose();
     m.dispose();

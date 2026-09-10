@@ -49,11 +49,11 @@ export function clamSpawns(): UnderwaterSpawn[] {
     [-28, -24, 0.2],
     [0, -34, 0],
     [28, -24, -0.2],
-    [-42, 4, Math.PI / 2],
+    [-47, 6, Math.PI / 2],
     [42, 4, -Math.PI / 2],
-    [-24, 34, Math.PI],
+    [-34, 48, Math.PI],
     [0, 45, Math.PI],
-    [25, 34, Math.PI],
+    [28, 38, Math.PI],
   ];
   return local.slice(0, UNDERWATER.clamCount).map(([x, z, yaw], i) => ({
     id: 2000 + i,

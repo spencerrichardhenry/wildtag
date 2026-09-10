@@ -228,6 +228,9 @@ export class CritterManager {
    */
   private listCache: CritterView[] | null = null;
 
+  /** Optional habitat motion applied after ordinary AI and its gameplay flags. */
+  constrainMovement: (previous:CritterState,next:CritterState,dt:number)=>CritterState = (_p,n)=>n;
+
   /** Main-game hook for Nectar Wisp contact stings (keeps health out of this system). */
   onPlayerSting: ((damage: number, from: Vec3) => void) | null = null;
 
@@ -285,7 +288,7 @@ export class CritterManager {
         biomeAt: _biomeAt,
         rand: entry.rng,
       };
-      entry.state = stepAI(entry.state, aiCtx, dt);
+      entry.state = this.constrainMovement(entry.state,stepAI(entry.state, aiCtx, dt),dt);
       const s = entry.state;
       entry.group.position.set(s.pos.x, s.pos.y, s.pos.z);
       entry.group.rotation.y = s.yaw;
@@ -602,6 +605,8 @@ export class CritterManager {
     if (entry) this.deactivate(id); // deactivate reuses the same registry object
   }
 
+  hasFixedSlot(id:number):boolean {return this.fixedSlots.some(s=>s.id===id);}
+
   /**
    * Haven V2 (release): re-open a previously-consumed wild slot so a released
    * roster critter returns to the world at its ORIGINAL home instead of an
@@ -640,11 +645,13 @@ export class CritterManager {
     dir: Vec3,
     maxDist: number,
     cosHalfAngle: number,
+    linkedOnly = false,
   ): CritterView | null {
     let best: CritterView | null = null;
     let bestD = Infinity;
     for (const entry of this.active.values()) {
       const s = entry.state;
+      if (linkedOnly && !s.linked) continue;
       const vx = s.pos.x - origin.x;
       const vy = s.pos.y - origin.y;
       const vz = s.pos.z - origin.z;
@@ -754,9 +761,10 @@ export class CritterManager {
    * >= 0). Idempotent to call only once at boot — calling it again would
    * duplicate slots.
    */
-  addFixedSlots(slots: { species: string; home: Vec3; flightHeight: number }[]): void {
+  addFixedSlots(slots: { id?:number; species: string; home: Vec3; flightHeight: number }[]): void {
     for (const s of slots) {
-      const id = this.debugIdCounter--;
+      const id = s.id ?? this.debugIdCounter--;
+      if(this.fixedSlots.some(slot=>slot.id===id))continue;
       this.fixedSlots.push({ id, species: s.species, home: { ...s.home }, flightHeight: s.flightHeight });
     }
     this.invalidateList();

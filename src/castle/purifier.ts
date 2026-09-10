@@ -91,6 +91,7 @@ const TRAIL_LENGTH = 10;
 const BURST_COUNT = 40;
 
 export interface PurifierOpts {
+  raycastWorld?: (a:Vec3,b:Vec3)=>Vec3|null;
   /** Live goblin id/pos/hit-radius, tested before critters/the crystal (Task 11). */
   goblinTargets: () => { id: number; pos: Vec3; r: number }[];
   /** Called with the purified goblin's id on a hit. */
@@ -184,6 +185,8 @@ export class PurifierSystem {
     for (let i = this.live.length - 1; i >= 0; i--) {
       const dart = this.live[i]!;
       dart.state = stepDart(dart.state, dt, this.ground);
+      const solid=this.opts.raycastWorld?.(dart.state.prev,dart.state.pos);
+      if(solid){dart.state.pos=solid;dart.state.dead=true;}
       const p = dart.state.pos;
 
       const goblins = this.opts.goblinTargets();

@@ -1,5 +1,11 @@
 # Wildtag
 
+**Small wonders:** 18 optional Blender scenes add little discoveries to every biome: a firefly hollow, an old reed organ, a brass rookery, a cloudkeeper’s laundry line and more. Walk up and press **F**. See the [small-wonders review](docs/WILDTAG-SMALL-WONDERS-REVIEW.md) for the full list, design and verification.
+
+**Castle & Atlantis rebuilt:** explore the castle’s battlements, roof galleries, library, forge and climbable keep, then dive through Atlantis’s winding arcade, archive, hidden crypt, tideworks and upper observatory. Each biome has ten discoveries and three records; fourteen airbells support longer underwater routes. Read the [castle and Atlantis review](docs/WILDTAG-CASTLE-ATLANTIS-REVIEW.md) for the design and verification.
+
+**Sky Kingdom:** follow the lanterns east of Haven to a trampoline ascent, then catch the golden grapple halo in midair. Explore the cloud city, gallery and sanctuary; track Suncrest Eagles and Seraphlets. Read the [sky kingdom review](docs/WILDTAG-SKY-KINGDOM-REVIEW.md) for routes, rewards, art and verification.
+
 **New: natural deposits and creature-powered supply routes.** Press **N** in Wildtag to survey six renewable deposits, build extractors, research automation, and assign bonded companions to haul cargo to Haven. The visual update includes 120 Blender MCP model assets. Read the [revamp review](docs/WILDTAG-REVAMP-REVIEW.md) for the decisions, costs, controls, save compatibility, and verification.
 
 ## Play the games

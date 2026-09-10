@@ -1,0 +1,148 @@
+{
+  "hardware": "Apple M5, Chrome ANGLE Metal",
+  "quality": "high",
+  "viewport": [
+    1440,
+    900
+  ],
+  "dpr": 2,
+  "drawingBuffer": [
+    2880,
+    1800
+  ],
+  "measuredFramesPerView": 359,
+  "views": [
+    {
+      "scene": "atlantis-nave",
+      "fps": 60.0,
+      "p99Ms": 16.8,
+      "over50Ms": 0,
+      "cpuSimulationMs": 0.42,
+      "cpuRenderMs": 3.2,
+      "drawCalls": 486,
+      "triangles": 1301207,
+      "file": "performance-wonders-atlantis-nave.json"
+    },
+    {
+      "scene": "castle-crown",
+      "fps": 60.0,
+      "p99Ms": 16.8,
+      "over50Ms": 0,
+      "cpuSimulationMs": 0.38,
+      "cpuRenderMs": 4.08,
+      "drawCalls": 783,
+      "triangles": 2406709,
+      "file": "performance-wonders-castle-crown.json"
+    },
+    {
+      "scene": "haven",
+      "fps": 60.0,
+      "p99Ms": 16.8,
+      "over50Ms": 0,
+      "cpuSimulationMs": 0.36,
+      "cpuRenderMs": 5.17,
+      "drawCalls": 1129,
+      "triangles": 4213456,
+      "file": "performance-wonders-haven.json"
+    },
+    {
+      "scene": "sky-sanctuary",
+      "fps": 60.0,
+      "p99Ms": 16.8,
+      "over50Ms": 0,
+      "cpuSimulationMs": 0.38,
+      "cpuRenderMs": 4.11,
+      "drawCalls": 605,
+      "triangles": 1778641,
+      "file": "performance-wonders-sky-sanctuary.json"
+    },
+    {
+      "scene": "wonder-bumblepost",
+      "fps": 60.0,
+      "p99Ms": 16.8,
+      "over50Ms": 0,
+      "cpuSimulationMs": 0.34,
+      "cpuRenderMs": 5.01,
+      "drawCalls": 1229,
+      "triangles": 4918657,
+      "file": "performance-wonders-wonder-bumblepost.json"
+    },
+    {
+      "scene": "wonder-driftwatch",
+      "fps": 60.0,
+      "p99Ms": 16.8,
+      "over50Ms": 0,
+      "cpuSimulationMs": 0.45,
+      "cpuRenderMs": 4.15,
+      "drawCalls": 631,
+      "triangles": 3098093,
+      "file": "performance-wonders-wonder-driftwatch.json"
+    },
+    {
+      "scene": "wonder-glassfin",
+      "fps": 60.0,
+      "p99Ms": 16.8,
+      "over50Ms": 0,
+      "cpuSimulationMs": 0.45,
+      "cpuRenderMs": 3.23,
+      "drawCalls": 429,
+      "triangles": 1068413,
+      "file": "performance-wonders-wonder-glassfin.json"
+    },
+    {
+      "scene": "wonder-kite-garden",
+      "fps": 60.0,
+      "p99Ms": 16.8,
+      "over50Ms": 0,
+      "cpuSimulationMs": 0.36,
+      "cpuRenderMs": 4.27,
+      "drawCalls": 750,
+      "triangles": 2362857,
+      "file": "performance-wonders-wonder-kite-garden.json"
+    },
+    {
+      "scene": "wonder-prospector",
+      "fps": 60.0,
+      "p99Ms": 16.8,
+      "over50Ms": 0,
+      "cpuSimulationMs": 0.39,
+      "cpuRenderMs": 4.48,
+      "drawCalls": 761,
+      "triangles": 3470900,
+      "file": "performance-wonders-wonder-prospector.json"
+    },
+    {
+      "scene": "wonder-reed-organ",
+      "fps": 60.0,
+      "p99Ms": 16.8,
+      "over50Ms": 0,
+      "cpuSimulationMs": 0.33,
+      "cpuRenderMs": 5.1,
+      "drawCalls": 1369,
+      "triangles": 4565077,
+      "file": "performance-wonders-wonder-reed-organ.json"
+    },
+    {
+      "scene": "wonder-rootlight",
+      "fps": 60.0,
+      "p99Ms": 16.8,
+      "over50Ms": 0,
+      "cpuSimulationMs": 0.36,
+      "cpuRenderMs": 4.02,
+      "drawCalls": 474,
+      "triangles": 2408702,
+      "file": "performance-wonders-wonder-rootlight.json"
+    },
+    {
+      "scene": "wonder-shepherd",
+      "fps": 60.0,
+      "p99Ms": 16.8,
+      "over50Ms": 0,
+      "cpuSimulationMs": 0.39,
+      "cpuRenderMs": 4.09,
+      "drawCalls": 484,
+      "triangles": 2149701,
+      "file": "performance-wonders-wonder-shepherd.json"
+    }
+  ]
+}

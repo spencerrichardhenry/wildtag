@@ -99,7 +99,7 @@ export class MountSystem {
     const rng = mulberry32((WORLD_SEED ^ 0x0f01 ^ (entry.id >>> 0)) >>> 0);
     const built = buildCritterModel(entry.speciesId, rng);
     if (saddle) built.group.add(buildSaddle());
-    const y = this.ground.heightAt(pos.x, pos.z);
+    const y = this.floorAt(pos.x,pos.z,pos.y);
     built.group.position.set(pos.x, y, pos.z);
     this.scene.add(built.group);
     // Collect per-mesh material handles for the camera-proximity ride fade.
@@ -144,7 +144,7 @@ export class MountSystem {
   startRide(controller: PlayerController): boolean {
     if (!this.actor) return false;
     const p = this.actor.group.position;
-    controller.mountStart({ x: p.x, y: this.ground.heightAt(p.x, p.z), z: p.z });
+    controller.mountStart({ x: p.x, y: this.floorAt(p.x,p.z,p.y), z: p.z });
     this.riding = true;
     this.spaceHeldFor = 0;
     return true;
@@ -190,7 +190,7 @@ export class MountSystem {
     this.restoreFade();
     const p = controller.pos;
     // Park the actor at the ride position.
-    this.actor.group.position.set(p.x, this.ground.heightAt(p.x, p.z), p.z);
+    this.actor.group.position.set(p.x, this.floorAt(p.x,p.z,p.y), p.z);
     // Pick a side spot beside the mount (clears its collider, above the surface).
     const spot = this.dismountSpot(p);
     // Preserve planar ride velocity + a hop so the dismount feels continuous.
@@ -215,20 +215,20 @@ export class MountSystem {
     for (const dir of dirs) {
       const x = p.x + dir.x * d;
       const z = p.z + dir.z * d;
-      const y = this.ground.heightAt(x, z);
-      if (y > MOUNT.waterBlockDepth) return { x, y, z };
+      const y = this.floorAt(x,z,p.y);
+      if (y > MOUNT.waterBlockDepth && Math.abs(y-p.y)<3) return { x, y, z };
     }
-    const x = p.x + dirs[0]!.x * d;
-    const z = p.z + dirs[0]!.z * d;
-    return { x, y: this.ground.heightAt(x, z), z };
+    return { x:p.x, y:p.y, z:p.z };
   }
+
+  private floorAt(x:number,z:number,y:number):number {return this.ground.heightBelow?.(x,z,y+.45)??this.ground.heightAt(x,z);}
 
   /** Summon the idle actor to the player's side (Whistle). No-op while riding. */
   summon(playerPos: Vec3): void {
     if (!this.actor || this.riding) return;
     const x = playerPos.x + 1.5;
     const z = playerPos.z + 1.5;
-    this.actor.group.position.set(x, this.ground.heightAt(x, z), z);
+    this.actor.group.position.set(x, this.floorAt(x,z,playerPos.y), z);
   }
 
   /**
@@ -258,7 +258,7 @@ export class MountSystem {
       const fz = -Math.cos(input.yaw);
       const mx = p.x + fx * MOUNT.rideForwardOffset;
       const mz = p.z + fz * MOUNT.rideForwardOffset;
-      this.actor.group.position.set(mx, this.ground.heightAt(mx, mz), mz);
+      this.actor.group.position.set(mx, p.y, mz);
       this.faceYaw(input.yaw, dt);
       const v = controller.vel;
       const speed = Math.hypot(v.x, v.z);
@@ -280,13 +280,13 @@ export class MountSystem {
       // Fallen too far behind — teleport-lag it back onto the standoff ring.
       const nx = target.x - (dx / dist) * MOUNT.followStandoff;
       const nz = target.z - (dz / dist) * MOUNT.followStandoff;
-      a.set(nx, this.ground.heightAt(nx, nz), nz);
+      a.set(nx, this.floorAt(nx,nz,target.y), nz);
       this.faceYaw(Math.atan2(-dx, -dz), dt);
     } else if (dist > MOUNT.followStandoff) {
       const step = Math.min(dist - MOUNT.followStandoff, MOUNT.followSpeed * dt);
       const nx = a.x + (dx / dist) * step;
       const nz = a.z + (dz / dist) * step;
-      a.set(nx, this.ground.heightAt(nx, nz), nz);
+      a.set(nx, this.floorAt(nx,nz,target.y), nz);
       followSpeed = step / dt;
       this.faceYaw(Math.atan2(-dx, -dz), dt);
     }

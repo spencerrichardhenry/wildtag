@@ -1,0 +1,35 @@
+{
+  "verifiedAt": "2026-09-09T01:00:20.328760-06:00",
+  "previousRelease": {
+    "commit": "7048e74bd0466b6c023b65e5a08de9f91705fe4a",
+    "deploymentRun": 34316895618,
+    "status": "success"
+  },
+  "skyFeature": "local implementation, not deployed",
+  "unitTests": {
+    "command": "npx vitest run --maxWorkers=1",
+    "files": 63,
+    "passed": 1072,
+    "failed": 0
+  },
+  "build": "pass",
+  "assetChecks": {
+    "wildtag": "143 assets + 84 LOD variants",
+    "tinyTide": "50 assets",
+    "status": "pass"
+  },
+  "browserGameplay": "gameplay-verification.json",
+  "browserControls": "Q/E swimming, old key removal, camera interpolation, teleport reset and dev-only metrics: pass",
+  "retinaHighBenchmarks": [
+    "haven",
+    "sky-court",
+    "sky-gallery",
+    "sky-sanctuary",
+    "sky-aerie"
+  ],
+  "benchmarkResult": "60 FPS in all five warm views; no intervals above 50 ms",
+  "uncappedFPS": {
+    "sky-court": 81.8,
+    "sky-sanctuary": 85.6
+  }
+}

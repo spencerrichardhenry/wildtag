@@ -42,6 +42,17 @@ export function animateCritter(
   _dt?: number,
   speciesId?: string,
 ): void {
+  if(speciesId==='suncresteagle'||speciesId==='seraphlet'){
+    const angel=speciesId==='seraphlet';
+    for(const wing of parts.wings??[]){const r=rest(wing),side=Number(wing.userData.side)||1,row=Number(wing.userData.row)||0;
+      const beat=angel?Math.sin(t*2.4-row*.8)*.22:Math.sin(t*3.3)*(.16+Math.max(0,Math.sin(t*.48))*.28);
+      wing.rotation.z=r.rz+side*beat;wing.rotation.x=r.rx+Math.sin(t*1.5+row)*.04;
+    }
+    const b=rest(parts.body);parts.body.position.y=b.py+Math.sin(t*(angel?1.8:2.1))*.055;
+    const h=rest(parts.head);parts.head.rotation.y=h.ry+Math.sin(t*.7)*.10;
+    if(parts.tail)parts.tail.rotation.y=rest(parts.tail).ry+Math.sin(t*1.3)*.08;
+    return;
+  }
   // Snickerdoodle moves by flipping over itself — a fully bespoke pose.
   if (speciesId === 'snickerdoodle') {
     animateSnickerdoodle(parts, speed, t);

@@ -440,6 +440,8 @@ export const SPECIES: SpeciesDef[] = [
     ringHeight: 1.7,
     farmRole: { kind: 'produce', resource: 'horn', amount: 1 },
   },
+  {id:'suncresteagle',name:'Suncrest Eagle',biomes:['sky'],size:1.1,walkSpeed:3.4,fleeSpeed:7,awareness:18,fleeStyle:'perch',bold:true,trackRadius:22,trackTime:14,rarity:1,rewardSparks:4,rewardRP:32,rideable:false,patientTracking:true,ringHeight:1.3,farmRole:{kind:'produce',resource:'spark',amount:2}},
+  {id:'seraphlet',name:'Seraphlet',biomes:['sky'],size:.9,walkSpeed:1.7,fleeSpeed:3.5,awareness:13,fleeStyle:'perch',bold:true,trackRadius:18,trackTime:12,rarity:1,rewardSparks:5,rewardRP:38,rideable:false,patientTracking:true,ringHeight:1.5,farmRole:{kind:'aura',auraPct:30}},
 ];
 
 const BY_ID: ReadonlyMap<string, SpeciesDef> = new Map(SPECIES.map((s) => [s.id, s]));

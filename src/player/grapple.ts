@@ -43,6 +43,8 @@ export interface GrappleCollider {
 
 /** Injected world queries for the flying-hook sweep (keeps the core pure). */
 export interface HookQueries {
+  /** Solid architecture independent of the terrain heightfield. */
+  raycastWorld?: (a: Vec3, b: Vec3) => Vec3 | null;
   /** Ground height at a world column (terrain latch when the hook drops below). */
   heightAt: (x: number, z: number) => number;
   /** Grappleable prop cylinders near a query point (trees/rocks). */
@@ -229,6 +231,13 @@ export function stepHook(h: HookState, playerPos: Vec3, q: HookQueries, dt: numb
         bestDrone = dhit.anchorId;
       }
     }
+  }
+
+  const worldHit = q.raycastWorld?.(prev, nextPos);
+  if (worldHit) {
+    const length = Math.hypot(nextPos.x-prev.x,nextPos.y-prev.y,nextPos.z-prev.z) || 1;
+    const t = Math.hypot(worldHit.x-prev.x,worldHit.y-prev.y,worldHit.z-prev.z)/length;
+    if (t < bestT) { bestAnchor=worldHit; bestDrone=null; bestT=t; }
   }
 
   // (c) Terrain: endpoint drop below the ground (t≈1, so props/drones on the

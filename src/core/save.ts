@@ -42,6 +42,9 @@ export interface CritterPersistEntry {
 
 export interface SaveV3 {
   v: 3;
+  skyKingdom?: import('../sky/progress.ts').SkyProgress;
+  landmarkExploration?: import('../landmarks/progress.ts').LandmarkProgress;
+  curiosities?: string[];
   logistics?: import('../logistics/economy.ts').EconomyState;
   inventory: Inventory;
   unlocks: string[];

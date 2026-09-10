@@ -19,7 +19,11 @@ export function mergeStaticMeshes(root: THREE.Group, include: (mesh: THREE.Mesh)
   for (const { material, meshes } of buckets.values()) {
     if (meshes.length < 2) continue;
     const geometries = meshes.map(mesh => {
-      const g = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
+      // Preserve Blender's vertex reuse instead of expanding every indexed
+      // triangle into three fresh vertices. Normalize procedural meshes to an
+      // index so both sources can still share one draw.
+      const g = mesh.geometry.clone();
+      if (!g.index) g.setIndex(Array.from({length:g.getAttribute('position').count},(_,i)=>i));
       return g.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inverse, mesh.matrixWorld));
     });
     const geometry = mergeGeometries(geometries, false);

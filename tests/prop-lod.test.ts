@@ -22,6 +22,20 @@ describe('scenery LOD', () => {
     expect(propDetail(70, 1, 'high')).toBe(1);
     expect(propDetail(70, 1, 'low')).toBe(2);
   });
+  it('reduces distant ground detail during a vertical ascent and restores it on descent', () => {
+    const props = new PropManager(new THREE.Scene());
+    props.primeAround(0, 0, 0);
+    props.update(0, 0, 0, 10);
+    const before = props.detailStats(), population = props.poolStats(), obstacles = props.getObstacles(0, 0);
+    props.update(0, 0, 0, 160);
+    expect(props.detailStats().near).toBeLessThan(before.near);
+    expect(props.detailStats().far).toBeGreaterThan(before.far);
+    expect(props.poolStats()).toEqual(population);
+    expect(props.getObstacles(0, 0)).toEqual(obstacles);
+    props.update(0, 0, 0, 10);
+    expect(props.detailStats().near).toBeGreaterThan(0);
+    props.dispose();
+  });
   it('changes drawing detail without changing collisions, harvest targeting, or population', () => {
     const full = new PropManager(new THREE.Scene(), false);
     const lod = new PropManager(new THREE.Scene());

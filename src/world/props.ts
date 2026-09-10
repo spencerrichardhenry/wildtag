@@ -1,4 +1,5 @@
 import { artGeometry } from '../art/library.ts';
+import { reservedForCuriosity } from '../discoveries/world.ts';
 import { propDetail, type PropDetail } from './prop-lod.ts';
 import * as THREE from 'three';
 import { CHUNKS, SCATTER, WORLD_SEED } from '../core/constants.ts';
@@ -877,7 +878,7 @@ interface ChunkAlloc {
   bucket: string;
   batch: PropBatch;
   indices: number[];
-  placements: { x: number; z: number; lodScale: number; detail: PropDetail }[];
+  placements: { x: number; y: number; z: number; lodScale: number; detail: PropDetail }[];
 }
 
 interface LoadedProps {
@@ -1074,6 +1075,7 @@ export class PropManager {
   private readonly registry = new Map<string, NodeState>();
   private nextId = 1;
   private lodX = Infinity;
+  private lodY = Infinity;
   private lodZ = Infinity;
   private lodQuality = currentQuality();
   private lodDirty = true;
@@ -1101,7 +1103,7 @@ export class PropManager {
    * SCATTER.buildsPerUpdate per call); dispose the rest. `now` (seconds) drives
    * resource respawn visuals.
    */
-  update(playerX: number, playerZ: number, now: number): void {
+  update(playerX: number, playerZ: number, now: number, playerY?: number): void {
     const pcx = Math.floor(playerX / CHUNKS.size);
     const pcz = Math.floor(playerZ / CHUNKS.size);
     const r = SCATTER.radius;
@@ -1129,7 +1131,7 @@ export class PropManager {
     }
 
     this.syncVisuals(now);
-    this.syncDetail(playerX, playerZ);
+    this.syncDetail(playerX, playerZ, playerY);
   }
 
   /** Build every in-range chunk synchronously (boot priming, no hitch cap). */
@@ -1174,6 +1176,8 @@ export class PropManager {
     // obstacle, grapple and resource logic still key off the gameplay `kind`.
     const byBucket = new Map<string, { p: PropPlacement; index: number }[]>();
     placements.forEach((p, index) => {
+      // Keep the scatter array and its saved resource indices unchanged.
+      if (reservedForCuriosity(p.x,p.y,p.z)) return;
       if (thinned(p, index)) return;
       const bucket = p.variant ?? p.kind;
       const list = byBucket.get(bucket) ?? [];
@@ -1233,7 +1237,7 @@ export class PropManager {
       if (!geometry.boundingSphere) geometry.computeBoundingSphere();
       const radius = geometry.boundingSphere!.radius;
       allocs.push({ bucket, batch, indices, placements: list.map(({ p }) => ({
-        x: p.x, z: p.z, detail: 0 as const,
+        x: p.x, y: p.y + geometry.boundingSphere!.center.y * p.scale, z: p.z, detail: 0 as const,
         // A tall tree still fills the screen much farther away than a flower.
         lodScale: Math.max(1, radius * p.scale / 2),
       })) });
@@ -1245,15 +1249,15 @@ export class PropManager {
 
   /** Geometry switches preserve instance transforms, tints and gameplay state.
    * Revisit only after 2 m of movement, a quality change, or newly streamed props. */
-  private syncDetail(x: number, z: number): void {
+  private syncDetail(x: number, z: number, y?: number): void {
     if (!this.distanceLod) return;
     const quality = currentQuality();
-    if (!this.lodDirty && quality === this.lodQuality && (x-this.lodX)**2 + (z-this.lodZ)**2 < 4) return;
-    this.lodDirty = false; this.lodX = x; this.lodZ = z; this.lodQuality = quality;
+    if (!this.lodDirty && quality === this.lodQuality && (x-this.lodX)**2 + ((y??0)-this.lodY)**2 + (z-this.lodZ)**2 < 4) return;
+    this.lodDirty = false; this.lodX = x; this.lodY = y??0; this.lodZ = z; this.lodQuality = quality;
     for (const chunk of this.loaded.values()) for (const alloc of chunk.allocs) {
       for (let i = 0; i < alloc.indices.length; i++) {
         const p = alloc.placements[i]!;
-        const detail = propDetail(Math.hypot(p.x-x, p.z-z) / p.lodScale, p.detail, quality);
+        const detail = propDetail(Math.hypot(p.x-x, y===undefined?0:p.y-y, p.z-z) / p.lodScale, p.detail, quality);
         if (detail === p.detail) continue;
         alloc.batch.setDetail(alloc.indices[i]!, alloc.bucket, detail);
         p.detail = detail;

@@ -1,0 +1,199 @@
+{
+  "checks": [
+    "All 18 sites: walk-up approach, visible F prompt, real F reaction, Blender motion pivots, repeatable interaction without duplicate memories; first and repeated uses leave inventory unchanged",
+    "All 18 first visits save once; cooldown spam and repeated reactions perform no additional saves",
+    "Walk through the full Rootlight Hollow passage",
+    "Normal save/reload retains all 18 memories; inventory screen hides prompt and dev overlay stays absent",
+    "Restored runtime memory matches the saved discoveries"
+  ],
+  "sites": [
+    {
+      "id": "bumblepost",
+      "region": "meadow",
+      "walked": {
+        "x": -61,
+        "y": 5.50886556164722,
+        "z": 118.20000000000013
+      },
+      "rigs": 8
+    },
+    {
+      "id": "tea-circle",
+      "region": "meadow",
+      "walked": {
+        "x": 197,
+        "y": 6.456268368555809,
+        "z": 134.20000000000013
+      },
+      "rigs": 3
+    },
+    {
+      "id": "rootlight",
+      "region": "forest",
+      "walked": {
+        "x": 106,
+        "y": 22.734496655725792,
+        "z": -301.70000000000056
+      },
+      "rigs": 7
+    },
+    {
+      "id": "woodpecker",
+      "region": "forest",
+      "walked": {
+        "x": 270,
+        "y": 18.883194130380375,
+        "z": -163.79999999999987
+      },
+      "rigs": 4
+    },
+    {
+      "id": "reed-organ",
+      "region": "wetland",
+      "walked": {
+        "x": -34,
+        "y": 2.7865311938742443,
+        "z": 283.29999999999944
+      },
+      "rigs": 8
+    },
+    {
+      "id": "moss-ferry",
+      "region": "wetland",
+      "walked": {
+        "x": -100,
+        "y": 3.0014783158200085,
+        "z": 356.29999999999944
+      },
+      "rigs": 1
+    },
+    {
+      "id": "windbone",
+      "region": "crags",
+      "walked": {
+        "x": -122,
+        "y": 7.161118691777805,
+        "z": 215.20000000000013
+      },
+      "rigs": 9
+    },
+    {
+      "id": "prospector",
+      "region": "crags",
+      "walked": {
+        "x": -241,
+        "y": 37.48735991666665,
+        "z": 60.22555555555552
+      },
+      "rigs": 3
+    },
+    {
+      "id": "star-cairn",
+      "region": "highlands",
+      "walked": {
+        "x": -210,
+        "y": 81.71624831616019,
+        "z": -261.78222222222274
+      },
+      "rigs": 1
+    },
+    {
+      "id": "shepherd",
+      "region": "highlands",
+      "walked": {
+        "x": -220,
+        "y": 70.52947116885034,
+        "z": -344.7933333333337
+      },
+      "rigs": 6
+    },
+    {
+      "id": "bottle-post",
+      "region": "coast",
+      "walked": {
+        "x": 216.2375,
+        "y": 1.0277823832596427,
+        "z": 758.4097999999994
+      },
+      "rigs": 1
+    },
+    {
+      "id": "driftwatch",
+      "region": "coast",
+      "walked": {
+        "x": 709.8899,
+        "y": 2.5133850000002056,
+        "z": 381.75509999999946
+      },
+      "rigs": 14
+    },
+    {
+      "id": "rookery",
+      "region": "castle",
+      "walked": {
+        "x": -490.7,
+        "y": 109.1,
+        "z": -168.39999999999986
+      },
+      "rigs": 4
+    },
+    {
+      "id": "moon-garden",
+      "region": "castle",
+      "walked": {
+        "x": -418.7,
+        "y": 109.1,
+        "z": -236.39999999999986
+      },
+      "rigs": 7
+    },
+    {
+      "id": "shell-choir",
+      "region": "atlantis",
+      "walked": {
+        "x": 516,
+        "y": -23.126884989782578,
+        "z": 644.2888888888913
+      },
+      "rigs": 6
+    },
+    {
+      "id": "glassfin",
+      "region": "atlantis",
+      "walked": {
+        "x": 658,
+        "y": -23.489778806056197,
+        "z": 696.2888888888913
+      },
+      "rigs": 8
+    },
+    {
+      "id": "cloud-laundry",
+      "region": "sky",
+      "walked": {
+        "x": 177.5,
+        "y": 147,
+        "z": -182.79999999999987
+      },
+      "rigs": 5
+    },
+    {
+      "id": "kite-garden",
+      "region": "sky",
+      "walked": {
+        "x": 234,
+        "y": 147,
+        "z": -212.79999999999987
+      },
+      "rigs": 7
+    }
+  ],
+  "errors": [],
+  "art": {
+    "loaded": 236,
+    "lodsLoaded": 84,
+    "failed": [],
+    "replaced": 683
+  },
+  "passed": true
+}

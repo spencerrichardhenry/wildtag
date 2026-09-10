@@ -196,6 +196,8 @@ export class PlayerController {
    * false so headless/unit use (no main.ts wiring) never suppresses anything.
    */
   grappleSuppressed = false;
+  worldRaycast: (a: Vec3, b: Vec3) => Vec3 | null = () => null;
+  resolveWorldMovement: (prev: Vec3, next: MoveState, radius: number) => MoveState = (_p,n) => n;
   private teleportSerial = 0;
   /** Invalidates render interpolation on respawn, recovery and debug warps. */
   get teleportVersion(): number { return this.teleportSerial; }
@@ -222,9 +224,14 @@ export class PlayerController {
     return this.hook !== null && this.hook.phase !== 'done';
   }
 
+  get grappleAnchorId(): string | null { return this.hook?.anchorDrone ?? null; }
+  get grappleSnapshot(): HookState | null { return this.hook ? structuredClone(this.hook) : null; }
+
   /** Camera look direction as a plain vector (unit). */
   private lookDir(): Vec3 {
-    this.camera.getWorldDirection(this._look);
+    // A same-frame look + click must use the latest input, before camera sync.
+    const cp=Math.cos(this.input.pitch);
+    this._look.set(-Math.sin(this.input.yaw)*cp,Math.sin(this.input.pitch),-Math.cos(this.input.yaw)*cp);
     return { x: this._look.x, y: this._look.y, z: this._look.z };
   }
 
@@ -247,6 +254,7 @@ export class PlayerController {
   private hookQueries(): HookQueries {
     return {
       heightAt: this.ground.heightAt,
+      raycastWorld: this.worldRaycast,
       getGrappleColliders: this.grappleColliders,
       raycastDrones: this.anchors
         ? (a, b) => {
@@ -262,6 +270,8 @@ export class PlayerController {
 
   /** True if terrain rises above the player→anchor segment (rope occluded). */
   private segmentOccluded(a: Vec3, b: Vec3): boolean {
+    const solid = this.worldRaycast(a,b);
+    if(solid && Math.hypot(solid.x-b.x,solid.y-b.y,solid.z-b.z)>.25)return true;
     const n = GRAPPLE.occlusionSamples;
     for (let i = 1; i < n; i++) {
       const t = i / n;
@@ -391,7 +401,7 @@ export class PlayerController {
         next.pos.x = resolved.x;
         next.pos.z = resolved.z;
       }
-      this.state = next;
+      this.state = this.resolveWorldMovement(this.state.pos, next, INPUT.playerRadius);
       this.updateGrappleVisuals(); // hides any stale rope
       this.syncCamera();
       return;
@@ -455,7 +465,8 @@ export class PlayerController {
     // (Zipline mode already returned above, so `mode` is only 'normal'|'swim'.)
     {
       const submerged =
-        this.ground.heightAt(this.state.pos.x, this.state.pos.z) < TERRAIN.seaLevel;
+        this.ground.heightAt(this.state.pos.x, this.state.pos.z) < TERRAIN.seaLevel &&
+        this.state.pos.y <= TERRAIN.seaLevel + .25;
       const desired = submerged ? 'swim' : 'normal';
       if (this.state.mode !== desired) {
         this.state = { ...this.state, mode: desired };
@@ -627,7 +638,7 @@ export class PlayerController {
           this.hook = null;
         } else {
           this.grappleSteps++; // latched work done — enables the release boost
-          const res = stepAttached(this.hook, next, dt, this.ground.heightAt);
+          const res = stepAttached(this.hook, next, dt, (x,z)=>this.ground.heightBelow?.(x,z,next.pos.y+.45)??this.ground.heightAt(x,z));
           this.hook = res.h;
           if (res.pin) {
             // Hang: pinned to real geometry, gravity suspended (not flight).
@@ -644,7 +655,7 @@ export class PlayerController {
     // Jump-release boost: a bit of lift so the release flows into a leap.
     if (jumpRelease) next.vel.y += GRAPPLE.jumpReleaseBoost;
 
-    this.state = next;
+    this.state = this.resolveWorldMovement(prev.pos, next, INPUT.playerRadius);
     this.updateGrappleVisuals();
     this.syncCamera();
   }

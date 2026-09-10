@@ -1,0 +1,878 @@
+[
+  {
+    "id": "bumblepost",
+    "region": "meadow",
+    "name": "The Bumblepost",
+    "action": "Open the tiny mailbox",
+    "story": "Letters smell of clover here. The little brass bee sends its visitors home with pollen on their feet.",
+    "theme": "meadow",
+    "shape": "mailbox",
+    "pos": {
+      "x": -61,
+      "z": 114,
+      "y": 5.5624
+    },
+    "radius": 6,
+    "approach": {
+      "x": -61,
+      "y": 5.5141,
+      "z": 118
+    },
+    "focus": {
+      "x": -61,
+      "y": 6.9624,
+      "z": 115
+    },
+    "floors": [],
+    "walls": [
+      {
+        "id": "body",
+        "x": 0,
+        "z": -0.3,
+        "w": 2,
+        "d": 1.4,
+        "y": -0.25,
+        "h": 1.5,
+        "sector": "curiosity",
+        "style": "wall"
+      }
+    ]
+  },
+  {
+    "id": "tea-circle",
+    "region": "meadow",
+    "name": "The Unfinished Tea Party",
+    "action": "Warm the teapot",
+    "story": "Three cups, four stools, and a kettle that never quite cools. Someone is always expected back.",
+    "theme": "meadow",
+    "shape": "tea",
+    "pos": {
+      "x": 197,
+      "z": 130,
+      "y": 6.4689
+    },
+    "radius": 6,
+    "approach": {
+      "x": 197,
+      "y": 6.4582,
+      "z": 134
+    },
+    "focus": {
+      "x": 197,
+      "y": 7.8689,
+      "z": 131
+    },
+    "floors": [],
+    "walls": [
+      {
+        "id": "body",
+        "x": 0,
+        "z": -0.3,
+        "w": 2,
+        "d": 1.4,
+        "y": -0.25,
+        "h": 1.5,
+        "sector": "curiosity",
+        "style": "wall"
+      }
+    ]
+  },
+  {
+    "id": "rootlight",
+    "region": "forest",
+    "name": "Rootlight Hollow",
+    "action": "Wake the fireflies",
+    "story": "The fallen tree shelters a whole miniature night sky. Its lights settle back into the mushrooms when you leave.",
+    "theme": "forest",
+    "shape": "hollow",
+    "pos": {
+      "x": 106,
+      "z": -306,
+      "y": 22.7906
+    },
+    "radius": 7,
+    "approach": {
+      "x": 106,
+      "y": 22.7548,
+      "z": -302
+    },
+    "focus": {
+      "x": 106,
+      "y": 24.1906,
+      "z": -305
+    },
+    "floors": [],
+    "walls": [
+      {
+        "id": "left-root",
+        "x": -1.8,
+        "z": 0,
+        "w": 1.2,
+        "d": 4.8,
+        "y": -0.4,
+        "h": 2.9,
+        "sector": "curiosity",
+        "style": "wall"
+      },
+      {
+        "id": "right-root",
+        "x": 1.8,
+        "z": 0,
+        "w": 1.2,
+        "d": 4.8,
+        "y": -0.4,
+        "h": 2.9,
+        "sector": "curiosity",
+        "style": "wall"
+      },
+      {
+        "id": "canopy",
+        "x": 0,
+        "z": 0,
+        "w": 4.5,
+        "d": 4.8,
+        "y": 2.9,
+        "h": 0.7,
+        "sector": "curiosity",
+        "style": "wall"
+      }
+    ]
+  },
+  {
+    "id": "woodpecker",
+    "region": "forest",
+    "name": "The Woodpecker’s Workshop",
+    "action": "Wind the acorn wheel",
+    "story": "A patient wooden bird has been making the same acorn into a masterpiece for years.",
+    "theme": "forest",
+    "shape": "workshop",
+    "pos": {
+      "x": 270,
+      "z": -168,
+      "y": 18.9015
+    },
+    "radius": 6,
+    "approach": {
+      "x": 270,
+      "y": 18.8869,
+      "z": -164
+    },
+    "focus": {
+      "x": 270,
+      "y": 20.3015,
+      "z": -167
+    },
+    "floors": [],
+    "walls": [
+      {
+        "id": "body",
+        "x": 0,
+        "z": -0.3,
+        "w": 2,
+        "d": 1.4,
+        "y": -0.25,
+        "h": 1.5,
+        "sector": "curiosity",
+        "style": "wall"
+      }
+    ]
+  },
+  {
+    "id": "reed-organ",
+    "region": "wetland",
+    "name": "The Reed Organ",
+    "action": "Play the reed pipes",
+    "story": "A forgotten foot pump gives the marsh its own small orchestra. Even the frog-shaped keys join in.",
+    "theme": "wetland",
+    "shape": "organ",
+    "pos": {
+      "x": -34,
+      "z": 279,
+      "y": 2.7636
+    },
+    "radius": 6,
+    "approach": {
+      "x": -34,
+      "y": 2.7848,
+      "z": 283
+    },
+    "focus": {
+      "x": -34,
+      "y": 4.1636,
+      "z": 280
+    },
+    "floors": [],
+    "walls": [
+      {
+        "id": "body",
+        "x": 0,
+        "z": -0.3,
+        "w": 2,
+        "d": 1.4,
+        "y": -0.25,
+        "h": 1.5,
+        "sector": "curiosity",
+        "style": "wall"
+      }
+    ]
+  },
+  {
+    "id": "moss-ferry",
+    "region": "wetland",
+    "name": "The Moss Ferry",
+    "action": "Light the ferry lanterns",
+    "story": "The water left this little ferry behind. Moss took the seats; someone still tends its lamps.",
+    "theme": "wetland",
+    "shape": "skiff",
+    "pos": {
+      "x": -100,
+      "z": 352,
+      "y": 3.065
+    },
+    "radius": 6,
+    "approach": {
+      "x": -100,
+      "y": 3.0093,
+      "z": 356
+    },
+    "focus": {
+      "x": -100,
+      "y": 4.465,
+      "z": 353
+    },
+    "floors": [],
+    "walls": [
+      {
+        "id": "body",
+        "x": 0,
+        "z": -0.3,
+        "w": 3.8,
+        "d": 2.2,
+        "y": -0.25,
+        "h": 1.5,
+        "sector": "curiosity",
+        "style": "wall"
+      }
+    ]
+  },
+  {
+    "id": "windbone",
+    "region": "crags",
+    "name": "Windbone Harp",
+    "action": "Strum the wind strings",
+    "story": "The weathered ribs catch every passing gust. No two storms ever play exactly the same song.",
+    "theme": "crags",
+    "shape": "harp",
+    "pos": {
+      "x": -122,
+      "z": 211,
+      "y": 7.0927
+    },
+    "radius": 8,
+    "approach": {
+      "x": -122,
+      "y": 7.071,
+      "z": 215
+    },
+    "focus": {
+      "x": -122,
+      "y": 8.4927,
+      "z": 212
+    },
+    "floors": [
+      {
+        "id": "plinth",
+        "x": 0,
+        "z": 0,
+        "w": 6,
+        "d": 6,
+        "y": 0,
+        "rise": 0,
+        "axis": "z",
+        "thickness": 1.2705,
+        "sector": "curiosity"
+      },
+      {
+        "id": "approach",
+        "x": 0,
+        "z": 5,
+        "w": 3,
+        "d": 4,
+        "y": -0.0868,
+        "rise": 0.0868,
+        "axis": "z",
+        "thickness": 2.8,
+        "sector": "curiosity"
+      }
+    ],
+    "walls": [
+      {
+        "id": "harp-left",
+        "x": -1.8,
+        "z": 0,
+        "w": 0.7,
+        "d": 1,
+        "y": -0.3,
+        "h": 3.8,
+        "sector": "curiosity",
+        "style": "wall"
+      },
+      {
+        "id": "harp-right",
+        "x": 1.8,
+        "z": 0,
+        "w": 0.7,
+        "d": 1,
+        "y": -0.3,
+        "h": 3.8,
+        "sector": "curiosity",
+        "style": "wall"
+      }
+    ]
+  },
+  {
+    "id": "prospector",
+    "region": "crags",
+    "name": "The Prospector’s Pocket",
+    "action": "Turn the old winch",
+    "story": "A cart of blue stone waits beneath the last beam. The winch still works, though its owner has gone wandering.",
+    "theme": "crags",
+    "shape": "mine",
+    "pos": {
+      "x": -241,
+      "z": 56,
+      "y": 36.6397
+    },
+    "radius": 8,
+    "approach": {
+      "x": -241,
+      "y": 37.1762,
+      "z": 60
+    },
+    "focus": {
+      "x": -241,
+      "y": 38.0397,
+      "z": 57
+    },
+    "floors": [
+      {
+        "id": "plinth",
+        "x": 0,
+        "z": 0,
+        "w": 6,
+        "d": 6,
+        "y": 0,
+        "rise": 0,
+        "axis": "z",
+        "thickness": 2.6782,
+        "sector": "curiosity"
+      },
+      {
+        "id": "approach",
+        "x": 0,
+        "z": 5,
+        "w": 3,
+        "d": 4,
+        "y": 2.1459,
+        "rise": -2.1459,
+        "axis": "z",
+        "thickness": 2.8,
+        "sector": "curiosity"
+      }
+    ],
+    "walls": [
+      {
+        "id": "body",
+        "x": 0,
+        "z": -0.3,
+        "w": 2,
+        "d": 1.4,
+        "y": -0.25,
+        "h": 1.5,
+        "sector": "curiosity",
+        "style": "wall"
+      }
+    ]
+  },
+  {
+    "id": "star-cairn",
+    "region": "highlands",
+    "name": "The Stargazer’s Cairn",
+    "action": "Turn the star mirror",
+    "story": "The stones remember where the constellations rise. A bronze mirror turns a little daylight into a star.",
+    "theme": "highlands",
+    "shape": "cairn",
+    "pos": {
+      "x": -210,
+      "z": -266,
+      "y": 81.5995
+    },
+    "radius": 6,
+    "approach": {
+      "x": -210,
+      "y": 81.7216,
+      "z": -262
+    },
+    "focus": {
+      "x": -210,
+      "y": 82.9995,
+      "z": -265
+    },
+    "floors": [],
+    "walls": [
+      {
+        "id": "body",
+        "x": 0,
+        "z": -0.3,
+        "w": 2,
+        "d": 1.4,
+        "y": -0.25,
+        "h": 2.6,
+        "sector": "curiosity",
+        "style": "wall"
+      }
+    ]
+  },
+  {
+    "id": "shepherd",
+    "region": "highlands",
+    "name": "The Bell Shepherd’s Shelter",
+    "action": "Ring the little bells",
+    "story": "A dry bench, a spare cup, and bells tuned to carry through fog. It is still a good place to wait out the weather.",
+    "theme": "highlands",
+    "shape": "shelter",
+    "pos": {
+      "x": -220,
+      "z": -349,
+      "y": 70.3185
+    },
+    "radius": 7,
+    "approach": {
+      "x": -220,
+      "y": 70.5497,
+      "z": -345
+    },
+    "focus": {
+      "x": -220,
+      "y": 71.7185,
+      "z": -348
+    },
+    "floors": [],
+    "walls": [
+      {
+        "id": "post--2.2--1.8",
+        "x": -2.2,
+        "z": -1.8,
+        "w": 0.3,
+        "d": 0.3,
+        "y": -0.5,
+        "h": 3.8,
+        "sector": "curiosity",
+        "style": "wall"
+      },
+      {
+        "id": "post--2.2-1.8",
+        "x": -2.2,
+        "z": 1.8,
+        "w": 0.3,
+        "d": 0.3,
+        "y": -0.5,
+        "h": 3.8,
+        "sector": "curiosity",
+        "style": "wall"
+      },
+      {
+        "id": "post-2.2--1.8",
+        "x": 2.2,
+        "z": -1.8,
+        "w": 0.3,
+        "d": 0.3,
+        "y": -0.5,
+        "h": 3.8,
+        "sector": "curiosity",
+        "style": "wall"
+      },
+      {
+        "id": "post-2.2-1.8",
+        "x": 2.2,
+        "z": 1.8,
+        "w": 0.3,
+        "d": 0.3,
+        "y": -0.5,
+        "h": 3.8,
+        "sector": "curiosity",
+        "style": "wall"
+      },
+      {
+        "id": "roof",
+        "x": 0,
+        "z": 0,
+        "w": 5.4,
+        "d": 4.8,
+        "y": 3.3,
+        "h": 0.4,
+        "sector": "curiosity",
+        "style": "wall"
+      },
+      {
+        "id": "bench",
+        "x": 0,
+        "z": -1.5,
+        "w": 3.2,
+        "d": 0.7,
+        "y": 0,
+        "h": 0.7,
+        "sector": "curiosity",
+        "style": "wall"
+      }
+    ]
+  },
+  {
+    "id": "bottle-post",
+    "region": "coast",
+    "name": "The Tide Post",
+    "action": "Uncork a sea letter",
+    "story": "The tide delivers slowly. Every bottle contains a folded paper boat, ready for another voyage.",
+    "theme": "coast",
+    "shape": "bottles",
+    "pos": {
+      "x": 216.2375,
+      "z": 754.1098,
+      "y": 1.1875
+    },
+    "radius": 6,
+    "approach": {
+      "x": 216.2375,
+      "y": 1.045,
+      "z": 758.1098
+    },
+    "focus": {
+      "x": 216.2375,
+      "y": 2.5875,
+      "z": 755.1098
+    },
+    "floors": [],
+    "walls": [
+      {
+        "id": "body",
+        "x": 0,
+        "z": -0.3,
+        "w": 2,
+        "d": 1.4,
+        "y": -0.25,
+        "h": 1.5,
+        "sector": "curiosity",
+        "style": "wall"
+      }
+    ]
+  },
+  {
+    "id": "driftwatch",
+    "region": "coast",
+    "name": "Driftwood Lookout",
+    "action": "Turn the lookout glass",
+    "story": "A patchwork telescope watches the offshore ruins. Tiny tin gulls wheel above its weather vane.",
+    "theme": "coast",
+    "shape": "lookout",
+    "pos": {
+      "x": 709.8899,
+      "z": 377.4551,
+      "y": 2.9928
+    },
+    "radius": 8,
+    "approach": {
+      "x": 709.8899,
+      "y": 2.6232,
+      "z": 381.4551
+    },
+    "focus": {
+      "x": 709.8899,
+      "y": 4.3928,
+      "z": 378.4551
+    },
+    "floors": [
+      {
+        "id": "plinth",
+        "x": 0,
+        "z": 0,
+        "w": 6,
+        "d": 6,
+        "y": 0,
+        "rise": 0,
+        "axis": "z",
+        "thickness": 2.0875,
+        "sector": "curiosity"
+      },
+      {
+        "id": "approach",
+        "x": 0,
+        "z": 5,
+        "w": 3,
+        "d": 4,
+        "y": -1.4782,
+        "rise": 1.4782,
+        "axis": "z",
+        "thickness": 2.8,
+        "sector": "curiosity"
+      }
+    ],
+    "walls": [
+      {
+        "id": "body",
+        "x": 0,
+        "z": -0.3,
+        "w": 2,
+        "d": 1.4,
+        "y": -0.25,
+        "h": 1.5,
+        "sector": "curiosity",
+        "style": "wall"
+      }
+    ]
+  },
+  {
+    "id": "rookery",
+    "region": "castle",
+    "name": "The Clockwork Rookery",
+    "action": "Wind the brass rook",
+    "story": "The watch kept a mechanical bird for days when the real ones refused to fly. It still checks its nest.",
+    "theme": "castle",
+    "shape": "rookery",
+    "pos": {
+      "x": -490.7,
+      "z": -172.6,
+      "y": 109.1
+    },
+    "radius": 6,
+    "approach": {
+      "x": -490.7,
+      "y": 109.1,
+      "z": -168.6
+    },
+    "focus": {
+      "x": -490.7,
+      "y": 110.5,
+      "z": -171.6
+    },
+    "floors": [],
+    "walls": [
+      {
+        "id": "body",
+        "x": 0,
+        "z": -0.3,
+        "w": 2,
+        "d": 1.4,
+        "y": -0.25,
+        "h": 1.5,
+        "sector": "curiosity",
+        "style": "wall"
+      }
+    ]
+  },
+  {
+    "id": "moon-garden",
+    "region": "castle",
+    "name": "The Midnight Potting Bench",
+    "action": "Open the moonflower lantern",
+    "story": "A warden grew flowers above the maze. Their pale moths still return to the little rooftop garden.",
+    "theme": "castle",
+    "shape": "garden",
+    "pos": {
+      "x": -418.7,
+      "z": -240.6,
+      "y": 109.1
+    },
+    "radius": 6,
+    "approach": {
+      "x": -418.7,
+      "y": 109.1,
+      "z": -236.6
+    },
+    "focus": {
+      "x": -418.7,
+      "y": 110.5,
+      "z": -239.6
+    },
+    "floors": [],
+    "walls": [
+      {
+        "id": "body",
+        "x": 0,
+        "z": -0.3,
+        "w": 2,
+        "d": 1.4,
+        "y": -0.25,
+        "h": 1.5,
+        "sector": "curiosity",
+        "style": "wall"
+      }
+    ]
+  },
+  {
+    "id": "shell-choir",
+    "region": "atlantis",
+    "name": "The Whale-song Shell",
+    "action": "Listen to the shell",
+    "story": "Someone carved a listening seat into an enormous shell. The sea answers with a voice too deep to belong to anything nearby.",
+    "theme": "atlantis",
+    "shape": "shell",
+    "pos": {
+      "x": 516,
+      "z": 640,
+      "y": -23.5548
+    },
+    "radius": 6,
+    "approach": {
+      "x": 516,
+      "y": -23.5548,
+      "z": 644
+    },
+    "focus": {
+      "x": 516,
+      "y": -22.1548,
+      "z": 641
+    },
+    "floors": [],
+    "walls": [
+      {
+        "id": "body",
+        "x": 0,
+        "z": -0.3,
+        "w": 2,
+        "d": 1.4,
+        "y": -0.25,
+        "h": 1.5,
+        "sector": "curiosity",
+        "style": "wall"
+      }
+    ]
+  },
+  {
+    "id": "glassfin",
+    "region": "atlantis",
+    "name": "The Glassfin Nursery",
+    "action": "Ring the nursery chime",
+    "story": "Small glassfins shelter in the coral rings. A soft note brings them together before they scatter among the fronds.",
+    "theme": "atlantis",
+    "shape": "nursery",
+    "pos": {
+      "x": 658,
+      "z": 692,
+      "y": -23.8789
+    },
+    "radius": 6,
+    "approach": {
+      "x": 658,
+      "y": -23.8789,
+      "z": 696
+    },
+    "focus": {
+      "x": 658,
+      "y": -22.4789,
+      "z": 693
+    },
+    "floors": [],
+    "walls": [
+      {
+        "id": "body",
+        "x": 0,
+        "z": -0.3,
+        "w": 2,
+        "d": 1.4,
+        "y": -0.25,
+        "h": 1.5,
+        "sector": "curiosity",
+        "style": "wall"
+      }
+    ]
+  },
+  {
+    "id": "cloud-laundry",
+    "region": "sky",
+    "name": "The Cloudkeeper’s Laundry",
+    "action": "Give the line a gust",
+    "story": "Cloudkeepers dry their scarves on the western terrace. Every cloth carries the shape of a different wind.",
+    "theme": "sky",
+    "shape": "laundry",
+    "pos": {
+      "x": 177.5,
+      "z": -187,
+      "y": 147
+    },
+    "radius": 6,
+    "approach": {
+      "x": 177.5,
+      "y": 147,
+      "z": -183
+    },
+    "focus": {
+      "x": 177.5,
+      "y": 148.4,
+      "z": -186
+    },
+    "floors": [],
+    "walls": [
+      {
+        "id": "line-post--2.2",
+        "x": -2.2,
+        "z": 0,
+        "w": 0.22,
+        "d": 0.3,
+        "y": 0,
+        "h": 3.3,
+        "sector": "curiosity",
+        "style": "wall"
+      },
+      {
+        "id": "line-post-2.2",
+        "x": 2.2,
+        "z": 0,
+        "w": 0.22,
+        "d": 0.3,
+        "y": 0,
+        "h": 3.3,
+        "sector": "curiosity",
+        "style": "wall"
+      }
+    ]
+  },
+  {
+    "id": "kite-garden",
+    "region": "sky",
+    "name": "The Weatherwright’s Kite Garden",
+    "action": "Turn the weather wheel",
+    "story": "Paper cranes circle a little wind machine. They have crossed more sky than their strings will ever allow.",
+    "theme": "sky",
+    "shape": "kites",
+    "pos": {
+      "x": 234,
+      "z": -217,
+      "y": 147
+    },
+    "radius": 6,
+    "approach": {
+      "x": 234,
+      "y": 147,
+      "z": -213
+    },
+    "focus": {
+      "x": 234,
+      "y": 148.4,
+      "z": -216
+    },
+    "floors": [],
+    "walls": [
+      {
+        "id": "body",
+        "x": 0,
+        "z": -0.3,
+        "w": 2,
+        "d": 1.4,
+        "y": -0.25,
+        "h": 1.5,
+        "sector": "curiosity",
+        "style": "wall"
+      }
+    ]
+  }
+]

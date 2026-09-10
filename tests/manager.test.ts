@@ -3,6 +3,16 @@ import * as THREE from 'three';
 import { CritterManager } from '../src/critters/manager.ts';
 import { AI, SIM_DT, TRACKING } from '../src/core/constants.ts';
 
+it('bonds the linked creature even when an unlinked flockmate is closer', () => {
+  const m = new CritterManager(new THREE.Scene());
+  const nearer = m.debugSpawn('puffle', { x: 0, y: 0, z: 2 })!;
+  const linked = m.debugSpawn('puffle', { x: 0, y: 0, z: 5 })!;
+  m.setLinked(linked);
+  const origin = { x: 0, y: 0, z: 0 }, aim = { x: 0, y: 0, z: 1 };
+  expect(m.nearestInCone(origin, aim, 30, .7)?.id).toBe(nearer);
+  expect(m.nearestInCone(origin, aim, 30, .7, true)?.id).toBe(linked);
+});
+
 // The manager caches its list() snapshot per sim step so tracker + HUD + darts
 // share one array (allocation churn cut); update() and any flag change bust it.
 

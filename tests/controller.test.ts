@@ -132,3 +132,17 @@ describe('isGrappleFireAttempt', () => {
     expect(isGrappleFireAttempt(zipping)).toBe(false);
   });
 });
+
+// Regression: mouse-look can change between fixed simulation steps.
+import * as THREE from 'three';
+import { PlayerController } from '../src/player/controller.ts';
+import type { Input } from '../src/player/input.ts';
+it('fires the grapple along the latest same-frame aim',()=>{
+  const raw={yaw:0,pitch:0,rmbHeld:false,diveHeld:false,riseHeld:false,state:()=>input({yaw:raw.yaw})};
+  const camera=new THREE.PerspectiveCamera();
+  const player=new PlayerController(camera,raw as unknown as Input,flat,{x:0,y:30,z:0});
+  player.unlocks.add('grapple');raw.yaw=-Math.PI/2;raw.pitch=Math.PI/4;raw.rmbHeld=true;
+  player.update(DT);
+  const hook=player.grappleSnapshot!;
+  expect(hook.phase).toBe('flying');expect(hook.vel.x).toBeGreaterThan(35);expect(hook.vel.y).toBeGreaterThan(35);expect(Math.abs(hook.vel.z)).toBeLessThan(.01);
+});

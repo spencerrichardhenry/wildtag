@@ -1,4 +1,6 @@
-import { refineArt } from '../art/library.ts';
+import { refineArt, hasArtAsset, isSharedArtMaterial } from '../art/library.ts';
+import { buildLandmark } from '../landmarks/presentation.ts';
+import { CASTLE_DEPTH } from '../landmarks/world.ts';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { CASTLE, CASTLE_COLORS, CRYSTAL, SPIRES, WARD, WARD_COLORS, WORLD_SEED } from '../core/constants.ts';
@@ -1064,6 +1066,9 @@ function buildSpires(root: THREE.Group, purified: boolean): void {
  * for another.
  */
 export function buildCastle(scene: THREE.Scene, purified: boolean): THREE.Group {
+  if(hasArtAsset(`castle_district_keep_${purified?'purified':'cursed'}`)){
+    const root=buildLandmark(CASTLE_DEPTH,purified);root.position.copy(CASTLE_DEPTH.center);scene.add(root);return root;
+  }
   const layout = castleLayout();
   const colors: Colors = purified ? CASTLE_COLORS.purified : CASTLE_COLORS.cursed;
   const baseY = CASTLE.padHeight;
@@ -1092,8 +1097,8 @@ export function removeCastle(scene: THREE.Scene): void {
     if (!(o instanceof THREE.Mesh)) return;
     o.geometry.dispose();
     const m = o.material;
-    if (Array.isArray(m)) m.forEach((mm) => mm.dispose());
-    else m.dispose();
+    if (Array.isArray(m)) m.forEach((mm) => {if(!isSharedArtMaterial(mm))mm.dispose();});
+    else if(!isSharedArtMaterial(m))m.dispose();
   });
   scene.remove(g);
 }

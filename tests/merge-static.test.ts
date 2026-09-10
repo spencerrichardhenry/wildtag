@@ -22,4 +22,7 @@ it('preserves world bounds and triangle counts while retaining moving pieces and
   expect(meshes.every(m=>m.material===material)).toBe(true);
   expect(meshes.reduce((n,m)=>n+(m.geometry.index?.count??m.geometry.getAttribute('position').count)/3,0)).toBe(60);
   expect(meshes.find(m=>m!==moving)?.castShadow).toBe(true);
+  // Four indexed boxes retain 96 vertices rather than expanding to 144.
+  expect(meshes.find(m=>m!==moving)?.geometry.getAttribute('position').count).toBe(96);
+  expect(meshes.find(m=>m!==moving)?.geometry.index?.count).toBe(144);
 });

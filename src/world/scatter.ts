@@ -1,3 +1,4 @@
+import { inSkyApproach } from '../sky/layout.ts';
 import { CASTLE, CHUNKS, ENV, PATHS, SCATTER, TERRAIN, WORLD_SEED } from '../core/constants.ts';
 import { pathMask } from './paths.ts';
 import { inLogisticsCorridor } from '../logistics/layout.ts';
@@ -6,6 +7,14 @@ import type { Obstacle } from '../player/collision.ts';
 import type { GrappleCollider } from '../player/grapple.ts';
 import { hash2 } from '../core/rng.ts';
 import { groundNormalAt, heightAt, biomeAt } from './terrain.ts';
+import atlantisLayout from '../landmarks/atlantis.json';
+
+/** Authored floors reserve their paths; tall kelp belongs around the city. */
+export function inAtlantisFloor(x:number,z:number):boolean {
+  const a=atlantisLayout;x-=a.center.x;z-=a.center.z;
+  if(Math.abs(x)>100||Math.abs(z)>110)return false;
+  return a.floors.some(f=>Math.abs(x-f.x)<f.w/2+4&&Math.abs(z-f.z)<f.d/2+4);
+}
 
 // ---------------------------------------------------------------------------
 // Deterministic prop / resource scatter. `scatterForChunk(cx, cz)` is pure and
@@ -275,7 +284,7 @@ export function scatterForChunk(cx: number, cz: number): PropPlacement[] {
       // kelp (Bounce Wave — pure decoration, swim-through, rooted on the
       // seabed so the fronds rise toward the surface).
       if (biome === 'water') {
-        if (y < -SCATTER.kelpMinDepth && !capped('kelp') && h(S_KELP, gx, gz) < SCATTER.kelpChance) {
+        if (y < -SCATTER.kelpMinDepth && !capped('kelp') && h(S_KELP, gx, gz) < SCATTER.kelpChance && !inAtlantisFloor(x,z)) {
           out.push({
             kind: 'kelp',
             x,
@@ -439,7 +448,7 @@ export function scatterForChunk(cx: number, cz: number): PropPlacement[] {
   // the choke point for ALL prop kinds (including grass tufts) and can never
   // touch the mushrooms themselves.
   const cleared = out.filter(
-    (p) => !inCastleFootprint(p.x, p.z) && !inLogisticsCorridor(p.x, p.z) && pathMask(p.x, p.z) < PATHS.scatterMaskThreshold,
+    (p) => !inCastleFootprint(p.x, p.z) && !inLogisticsCorridor(p.x, p.z) && !inSkyApproach(p.x,p.z) && pathMask(p.x, p.z) < PATHS.scatterMaskThreshold,
   );
 
   // Cursed Castle approach: mushroom clusters seeded along the ring around

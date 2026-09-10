@@ -1,0 +1,62 @@
+{
+  "backend": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspecified Version)",
+  "viewport": [
+    1440,
+    900
+  ],
+  "devicePixelRatio": 2,
+  "drawingBuffer": [
+    2880,
+    1800
+  ],
+  "scenario": "wonder-reed-organ",
+  "pan": false,
+  "frameMs": 16.666016713091924,
+  "fps": 60.002339924119596,
+  "p95Ms": 16.700000000000728,
+  "p99Ms": 16.800000000000182,
+  "over50Ms": 0,
+  "samples": 359,
+  "stats": {
+    "drawCalls": 1369,
+    "triangles": 4565077,
+    "geometries": 671,
+    "textures": 49,
+    "scenery": {
+      "near": 43,
+      "mid": 394,
+      "far": 8784
+    },
+    "view": {
+      "x": -34,
+      "y": 4.434775370996185,
+      "z": 283
+    },
+    "performance": {
+      "samples": 120,
+      "fps": 60.00300015000748,
+      "frameMs": 16.66583333333334,
+      "p95Ms": 16.700000000000728,
+      "simulationMs": 0.32833333561817807,
+      "renderMs": 5.102500000596047,
+      "gpuMs": 10.883780084504782
+    }
+  },
+  "quality": {
+    "id": "high",
+    "flags": {
+      "shadowCascades": 2,
+      "shadowRes": 2048,
+      "ssao": true,
+      "bloom": true,
+      "waterReflections": false,
+      "terrainDetailShader": true,
+      "standardMaterials": true,
+      "terrainDetailHigh": true,
+      "nearLod": true
+    }
+  },
+  "overlay": "60 FPS  ·  16.7 ms/frame\np95 16.7 ms  ·  high · 2.00×\nCPU sim 0.3 / render 5.1 ms\nGPU 10.9 ms\n1369 draws  ·  4.57M triangles",
+  "uncapped": false,
+  "errors": []
+}

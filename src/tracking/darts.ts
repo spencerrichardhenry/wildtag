@@ -139,6 +139,7 @@ const SLOW_DART_COLOR = 0x77d6b2;
 const TIDE_DART_COLOR = 0x4af5e8;
 
 export interface DartSystemOpts {
+  raycastWorld?: (a:Vec3,b:Vec3)=>Vec3|null;
   /** Hostile underwater targets are tested before ordinary wildlife. */
   hostileTargets?: () => { id: number; pos: Vec3; size: number }[];
   /** Called once when any dart hits an underwater hostile. */
@@ -214,6 +215,8 @@ export class DartSystem {
     for (let i = this.live.length - 1; i >= 0; i--) {
       const dart = this.live[i]!;
       dart.state = stepDart(dart.state, dt, this.ground, dart.tuning);
+      const solidHit=this.opts.raycastWorld?.(dart.state.prev,dart.state.pos);
+      if(solidHit){dart.state.pos=solidHit;dart.state.dead=true;}
       const p = dart.state.pos;
 
       // Atlantis enemies take priority over ordinary wildlife occupying the

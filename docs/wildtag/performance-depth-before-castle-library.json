@@ -1,0 +1,61 @@
+{
+  "backend": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspecified Version)",
+  "viewport": [
+    1440,
+    900
+  ],
+  "devicePixelRatio": 2,
+  "drawingBuffer": [
+    2880,
+    1800
+  ],
+  "scenario": "castle-library",
+  "frameMs": 21.772701949860725,
+  "fps": 45.929072207154185,
+  "p95Ms": 33.400000000000546,
+  "p99Ms": 33.400000000001455,
+  "over50Ms": 0,
+  "samples": 359,
+  "stats": {
+    "drawCalls": 728,
+    "triangles": 4110277,
+    "geometries": 620,
+    "textures": 43,
+    "scenery": {
+      "near": 20,
+      "mid": 306,
+      "far": 5675
+    },
+    "view": {
+      "x": -420.2,
+      "y": 102.83,
+      "z": -242.1
+    },
+    "performance": {
+      "samples": 120,
+      "fps": 45.284727725574555,
+      "frameMs": 22.082499999999996,
+      "p95Ms": 33.399999999999636,
+      "simulationMs": 0.8716666703422864,
+      "renderMs": 8.950000001490116,
+      "gpuMs": 45.000297301736126
+    }
+  },
+  "quality": {
+    "id": "high",
+    "flags": {
+      "shadowCascades": 2,
+      "shadowRes": 2048,
+      "ssao": true,
+      "bloom": true,
+      "waterReflections": false,
+      "terrainDetailShader": true,
+      "standardMaterials": true,
+      "terrainDetailHigh": true,
+      "nearLod": true
+    }
+  },
+  "overlay": "45 FPS  ·  22.1 ms/frame\np95 33.4 ms  ·  high · 2.00×\nCPU sim 0.9 / render 9.0 ms\nGPU 44.8 ms\n728 draws  ·  4.11M triangles",
+  "uncapped": false,
+  "errors": []
+}

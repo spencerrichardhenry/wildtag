@@ -1301,7 +1301,8 @@
       "sourceTriangles": 31108,
       "bytes": 8623276,
       "parts": 3,
-      "authoring": "Blender MCP"
+      "authoring": "Blender MCP",
+      "load": false
     },
     {
       "id": "castle_purified",
@@ -1310,7 +1311,8 @@
       "sourceTriangles": 30954,
       "bytes": 8576768,
       "parts": 2,
-      "authoring": "Blender MCP"
+      "authoring": "Blender MCP",
+      "load": false
     },
     {
       "id": "ward_crystal",
@@ -1328,7 +1330,8 @@
       "sourceTriangles": 7660,
       "bytes": 1584452,
       "parts": 402,
-      "authoring": "Blender MCP"
+      "authoring": "Blender MCP",
+      "load": false
     },
     {
       "id": "dive_marker",
@@ -1752,6 +1755,1095 @@
       "bytes": 58428,
       "parts": 14,
       "authoring": "Blender MCP"
+    },
+    {
+      "id": "sky_sector_aerie",
+      "category": "sky",
+      "triangles": 6596,
+      "sourceTriangles": 0,
+      "bytes": 166452,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "sky_sector_arrival",
+      "category": "sky",
+      "triangles": 21300,
+      "sourceTriangles": 0,
+      "bytes": 525256,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "sky_sector_city",
+      "category": "sky",
+      "triangles": 6748,
+      "sourceTriangles": 0,
+      "bytes": 168788,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "sky_sector_market",
+      "category": "sky",
+      "triangles": 6268,
+      "sourceTriangles": 0,
+      "bytes": 156256,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "sky_sector_observatory",
+      "category": "sky",
+      "triangles": 15508,
+      "sourceTriangles": 0,
+      "bytes": 379972,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "sky_sector_sanctuary",
+      "category": "sky",
+      "triangles": 34284,
+      "sourceTriangles": 0,
+      "bytes": 843816,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "sky_sector_tunnel",
+      "category": "sky",
+      "triangles": 35596,
+      "sourceTriangles": 0,
+      "bytes": 871536,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "sky_lantern",
+      "category": "sky",
+      "triangles": 1000,
+      "sourceTriangles": 0,
+      "bytes": 27608,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "sky_planter",
+      "category": "sky",
+      "triangles": 3448,
+      "sourceTriangles": 0,
+      "bytes": 87240,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "sky_stall",
+      "category": "sky",
+      "triangles": 3620,
+      "sourceTriangles": 0,
+      "bytes": 90528,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "sky_bench",
+      "category": "sky",
+      "triangles": 1128,
+      "sourceTriangles": 0,
+      "bytes": 28748,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "sky_bookshelf",
+      "category": "sky",
+      "triangles": 7144,
+      "sourceTriangles": 0,
+      "bytes": 175448,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "sky_nest",
+      "category": "sky",
+      "triangles": 2672,
+      "sourceTriangles": 0,
+      "bytes": 68836,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "sky_spire",
+      "category": "sky",
+      "triangles": 2048,
+      "sourceTriangles": 0,
+      "bytes": 52652,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "sky_orrery",
+      "category": "sky",
+      "triangles": 2396,
+      "sourceTriangles": 0,
+      "bytes": 61012,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "sky_bell",
+      "category": "sky",
+      "triangles": 1232,
+      "sourceTriangles": 0,
+      "bytes": 33068,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "sky_chime",
+      "category": "sky",
+      "triangles": 4100,
+      "sourceTriangles": 0,
+      "bytes": 102564,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "sky_skyglass",
+      "category": "sky",
+      "triangles": 608,
+      "sourceTriangles": 0,
+      "bytes": 17312,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "sky_anchor",
+      "category": "sky",
+      "triangles": 1628,
+      "sourceTriangles": 0,
+      "bytes": 42472,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "sky_launch_pad",
+      "category": "sky",
+      "triangles": 2056,
+      "sourceTriangles": 0,
+      "bytes": 54868,
+      "parts": 2,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "sky_drone_pad",
+      "category": "sky",
+      "triangles": 6008,
+      "sourceTriangles": 0,
+      "bytes": 151344,
+      "parts": 6,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "critter_suncresteagle",
+      "category": "creature",
+      "triangles": 4368,
+      "sourceTriangles": 0,
+      "bytes": 114896,
+      "parts": 7,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "critter_seraphlet",
+      "category": "creature",
+      "triangles": 10288,
+      "sourceTriangles": 0,
+      "bytes": 258416,
+      "parts": 11,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "castle_detail_banner_cursed",
+      "category": "landmark",
+      "triangles": 788,
+      "sourceTriangles": 0,
+      "bytes": 22796,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "castle_detail_barrels_cursed",
+      "category": "landmark",
+      "triangles": 1776,
+      "sourceTriangles": 0,
+      "bytes": 45152,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "castle_detail_bench_cursed",
+      "category": "landmark",
+      "triangles": 752,
+      "sourceTriangles": 0,
+      "bytes": 19628,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "castle_detail_brazier_cursed",
+      "category": "landmark",
+      "triangles": 1888,
+      "sourceTriangles": 0,
+      "bytes": 48900,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "castle_detail_chandelier_cursed",
+      "category": "landmark",
+      "triangles": 3200,
+      "sourceTriangles": 0,
+      "bytes": 81100,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "castle_detail_forge_cursed",
+      "category": "landmark",
+      "triangles": 3952,
+      "sourceTriangles": 0,
+      "bytes": 98248,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "castle_detail_market_stall_cursed",
+      "category": "landmark",
+      "triangles": 2956,
+      "sourceTriangles": 0,
+      "bytes": 74404,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "castle_detail_memorial_cursed",
+      "category": "landmark",
+      "triangles": 1024,
+      "sourceTriangles": 0,
+      "bytes": 27196,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "castle_detail_planter_cursed",
+      "category": "landmark",
+      "triangles": 3248,
+      "sourceTriangles": 0,
+      "bytes": 82496,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "castle_detail_reading_table_cursed",
+      "category": "landmark",
+      "triangles": 632,
+      "sourceTriangles": 0,
+      "bytes": 17400,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "castle_detail_relic_cursed",
+      "category": "landmark",
+      "triangles": 1128,
+      "sourceTriangles": 0,
+      "bytes": 30852,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "castle_detail_shelf_cursed",
+      "category": "landmark",
+      "triangles": 6956,
+      "sourceTriangles": 0,
+      "bytes": 170884,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "castle_detail_throne_cursed",
+      "category": "landmark",
+      "triangles": 1648,
+      "sourceTriangles": 0,
+      "bytes": 42452,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "castle_detail_war_table_cursed",
+      "category": "landmark",
+      "triangles": 712,
+      "sourceTriangles": 0,
+      "bytes": 19608,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "castle_detail_banner_purified",
+      "category": "landmark",
+      "triangles": 788,
+      "sourceTriangles": 0,
+      "bytes": 22804,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "castle_detail_barrels_purified",
+      "category": "landmark",
+      "triangles": 1776,
+      "sourceTriangles": 0,
+      "bytes": 45156,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "castle_detail_bench_purified",
+      "category": "landmark",
+      "triangles": 752,
+      "sourceTriangles": 0,
+      "bytes": 19628,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "castle_detail_brazier_purified",
+      "category": "landmark",
+      "triangles": 1888,
+      "sourceTriangles": 0,
+      "bytes": 48904,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "castle_detail_chandelier_purified",
+      "category": "landmark",
+      "triangles": 3200,
+      "sourceTriangles": 0,
+      "bytes": 81108,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "castle_detail_forge_purified",
+      "category": "landmark",
+      "triangles": 3952,
+      "sourceTriangles": 0,
+      "bytes": 98252,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "castle_detail_market_stall_purified",
+      "category": "landmark",
+      "triangles": 2956,
+      "sourceTriangles": 0,
+      "bytes": 74408,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "castle_detail_memorial_purified",
+      "category": "landmark",
+      "triangles": 1024,
+      "sourceTriangles": 0,
+      "bytes": 27204,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "castle_detail_planter_purified",
+      "category": "landmark",
+      "triangles": 3248,
+      "sourceTriangles": 0,
+      "bytes": 82504,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "castle_detail_reading_table_purified",
+      "category": "landmark",
+      "triangles": 632,
+      "sourceTriangles": 0,
+      "bytes": 17404,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "castle_detail_relic_purified",
+      "category": "landmark",
+      "triangles": 1128,
+      "sourceTriangles": 0,
+      "bytes": 30856,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "castle_detail_shelf_purified",
+      "category": "landmark",
+      "triangles": 6956,
+      "sourceTriangles": 0,
+      "bytes": 170888,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "castle_detail_throne_purified",
+      "category": "landmark",
+      "triangles": 1648,
+      "sourceTriangles": 0,
+      "bytes": 42456,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "castle_detail_war_table_purified",
+      "category": "landmark",
+      "triangles": 712,
+      "sourceTriangles": 0,
+      "bytes": 19608,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "atlantis_detail_amphora",
+      "category": "landmark",
+      "triangles": 1540,
+      "sourceTriangles": 0,
+      "bytes": 39264,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "atlantis_detail_astrolabe",
+      "category": "landmark",
+      "triangles": 2252,
+      "sourceTriangles": 0,
+      "bytes": 57448,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "atlantis_detail_chart_table",
+      "category": "landmark",
+      "triangles": 1048,
+      "sourceTriangles": 0,
+      "bytes": 27524,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "atlantis_detail_coral_planter",
+      "category": "landmark",
+      "triangles": 2732,
+      "sourceTriangles": 0,
+      "bytes": 70440,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "atlantis_detail_coral_spire",
+      "category": "landmark",
+      "triangles": 3740,
+      "sourceTriangles": 0,
+      "bytes": 95572,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "atlantis_detail_pearl_cache",
+      "category": "landmark",
+      "triangles": 3344,
+      "sourceTriangles": 0,
+      "bytes": 83436,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "atlantis_detail_reef_lantern",
+      "category": "landmark",
+      "triangles": 692,
+      "sourceTriangles": 0,
+      "bytes": 19812,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "atlantis_detail_relic",
+      "category": "landmark",
+      "triangles": 1128,
+      "sourceTriangles": 0,
+      "bytes": 30852,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "atlantis_detail_shell_stall",
+      "category": "landmark",
+      "triangles": 1332,
+      "sourceTriangles": 0,
+      "bytes": 35176,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "atlantis_detail_tablet_shelf",
+      "category": "landmark",
+      "triangles": 5644,
+      "sourceTriangles": 0,
+      "bytes": 143128,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "atlantis_detail_tidal_throne",
+      "category": "landmark",
+      "triangles": 1428,
+      "sourceTriangles": 0,
+      "bytes": 37260,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "atlantis_detail_tide_engine",
+      "category": "landmark",
+      "triangles": 3780,
+      "sourceTriangles": 0,
+      "bytes": 96780,
+      "parts": 2,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "atlantis_detail_airbell",
+      "category": "landmark",
+      "triangles": 3904,
+      "sourceTriangles": 0,
+      "bytes": 98648,
+      "parts": 2,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "castle_district_court_cursed",
+      "category": "landmark",
+      "triangles": 332,
+      "sourceTriangles": 0,
+      "bytes": 10152,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "castle_district_forge_cursed",
+      "category": "landmark",
+      "triangles": 9056,
+      "sourceTriangles": 0,
+      "bytes": 223420,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "castle_district_galleries_cursed",
+      "category": "landmark",
+      "triangles": 1796,
+      "sourceTriangles": 0,
+      "bytes": 47752,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "castle_district_garden_cursed",
+      "category": "landmark",
+      "triangles": 332,
+      "sourceTriangles": 0,
+      "bytes": 10160,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "castle_district_gate_cursed",
+      "category": "landmark",
+      "triangles": 10416,
+      "sourceTriangles": 0,
+      "bytes": 257220,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "castle_district_library_cursed",
+      "category": "landmark",
+      "triangles": 9056,
+      "sourceTriangles": 0,
+      "bytes": 223312,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "castle_district_market_cursed",
+      "category": "landmark",
+      "triangles": 332,
+      "sourceTriangles": 0,
+      "bytes": 10156,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "castle_district_spires_cursed",
+      "category": "landmark",
+      "triangles": 16240,
+      "sourceTriangles": 0,
+      "bytes": 396864,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "castle_district_ward_north_cursed",
+      "category": "landmark",
+      "triangles": 181180,
+      "sourceTriangles": 0,
+      "bytes": 5583972,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "castle_district_ward_south_cursed",
+      "category": "landmark",
+      "triangles": 189328,
+      "sourceTriangles": 0,
+      "bytes": 5820276,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "castle_district_court_purified",
+      "category": "landmark",
+      "triangles": 332,
+      "sourceTriangles": 0,
+      "bytes": 10156,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "castle_district_forge_purified",
+      "category": "landmark",
+      "triangles": 9056,
+      "sourceTriangles": 0,
+      "bytes": 223424,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "castle_district_galleries_purified",
+      "category": "landmark",
+      "triangles": 1796,
+      "sourceTriangles": 0,
+      "bytes": 47752,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "castle_district_garden_purified",
+      "category": "landmark",
+      "triangles": 332,
+      "sourceTriangles": 0,
+      "bytes": 10160,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "castle_district_gate_purified",
+      "category": "landmark",
+      "triangles": 10416,
+      "sourceTriangles": 0,
+      "bytes": 257220,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "castle_district_library_purified",
+      "category": "landmark",
+      "triangles": 9056,
+      "sourceTriangles": 0,
+      "bytes": 223316,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "castle_district_market_purified",
+      "category": "landmark",
+      "triangles": 332,
+      "sourceTriangles": 0,
+      "bytes": 10156,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "castle_district_spires_purified",
+      "category": "landmark",
+      "triangles": 16240,
+      "sourceTriangles": 0,
+      "bytes": 396864,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "castle_district_ward_north_purified",
+      "category": "landmark",
+      "triangles": 181180,
+      "sourceTriangles": 0,
+      "bytes": 5583976,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "castle_district_ward_south_purified",
+      "category": "landmark",
+      "triangles": 189328,
+      "sourceTriangles": 0,
+      "bytes": 5820276,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "castle_shadow",
+      "category": "landmark",
+      "triangles": 19402,
+      "sourceTriangles": 0,
+      "bytes": 551792,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "atlantis_district_arcade",
+      "category": "landmark",
+      "triangles": 30016,
+      "sourceTriangles": 0,
+      "bytes": 736044,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "atlantis_district_gallery",
+      "category": "landmark",
+      "triangles": 960,
+      "sourceTriangles": 0,
+      "bytes": 26880,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "atlantis_district_gate",
+      "category": "landmark",
+      "triangles": 9292,
+      "sourceTriangles": 0,
+      "bytes": 229340,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "atlantis_district_market",
+      "category": "landmark",
+      "triangles": 1080,
+      "sourceTriangles": 0,
+      "bytes": 30484,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "atlantis_district_reef",
+      "category": "landmark",
+      "triangles": 6296,
+      "sourceTriangles": 0,
+      "bytes": 156384,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "atlantis_district_roads",
+      "category": "landmark",
+      "triangles": 13000,
+      "sourceTriangles": 0,
+      "bytes": 321164,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "atlantis_district_tideworks",
+      "category": "landmark",
+      "triangles": 22972,
+      "sourceTriangles": 0,
+      "bytes": 562728,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "atlantis_shadow",
+      "category": "landmark",
+      "triangles": 25456,
+      "sourceTriangles": 0,
+      "bytes": 732264,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "castle_district_keep_cursed",
+      "category": "landmark",
+      "triangles": 51892,
+      "sourceTriangles": 0,
+      "bytes": 1271148,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "castle_district_ramparts_cursed",
+      "category": "landmark",
+      "triangles": 141444,
+      "sourceTriangles": 0,
+      "bytes": 4244316,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "castle_district_keep_purified",
+      "category": "landmark",
+      "triangles": 51892,
+      "sourceTriangles": 0,
+      "bytes": 1271152,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "castle_district_ramparts_purified",
+      "category": "landmark",
+      "triangles": 141444,
+      "sourceTriangles": 0,
+      "bytes": 4244316,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "atlantis_district_archive",
+      "category": "landmark",
+      "triangles": 23644,
+      "sourceTriangles": 0,
+      "bytes": 579844,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "atlantis_district_crypt",
+      "category": "landmark",
+      "triangles": 12448,
+      "sourceTriangles": 0,
+      "bytes": 306092,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "atlantis_district_hall",
+      "category": "landmark",
+      "triangles": 45440,
+      "sourceTriangles": 0,
+      "bytes": 1110764,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "atlantis_district_observatory",
+      "category": "landmark",
+      "triangles": 28212,
+      "sourceTriangles": 0,
+      "bytes": 690424,
+      "parts": 1,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "discovery_bumblepost",
+      "category": "discovery",
+      "triangles": 4864,
+      "sourceTriangles": 0,
+      "bytes": 129960,
+      "parts": 8,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "discovery_tea-circle",
+      "category": "discovery",
+      "triangles": 5268,
+      "sourceTriangles": 0,
+      "bytes": 132884,
+      "parts": 4,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "discovery_rootlight",
+      "category": "discovery",
+      "triangles": 5688,
+      "sourceTriangles": 0,
+      "bytes": 148620,
+      "parts": 7,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "discovery_woodpecker",
+      "category": "discovery",
+      "triangles": 3920,
+      "sourceTriangles": 0,
+      "bytes": 104956,
+      "parts": 5,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "discovery_reed-organ",
+      "category": "discovery",
+      "triangles": 6836,
+      "sourceTriangles": 0,
+      "bytes": 165628,
+      "parts": 9,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "discovery_moss-ferry",
+      "category": "discovery",
+      "triangles": 5048,
+      "sourceTriangles": 0,
+      "bytes": 128436,
+      "parts": 2,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "discovery_windbone",
+      "category": "discovery",
+      "triangles": 3172,
+      "sourceTriangles": 0,
+      "bytes": 87584,
+      "parts": 10,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "discovery_prospector",
+      "category": "discovery",
+      "triangles": 5756,
+      "sourceTriangles": 0,
+      "bytes": 146664,
+      "parts": 4,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "discovery_star-cairn",
+      "category": "discovery",
+      "triangles": 2924,
+      "sourceTriangles": 0,
+      "bytes": 78248,
+      "parts": 2,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "discovery_shepherd",
+      "category": "discovery",
+      "triangles": 3700,
+      "sourceTriangles": 0,
+      "bytes": 97392,
+      "parts": 7,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "discovery_bottle-post",
+      "category": "discovery",
+      "triangles": 2047,
+      "sourceTriangles": 0,
+      "bytes": 54012,
+      "parts": 2,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "discovery_driftwatch",
+      "category": "discovery",
+      "triangles": 5168,
+      "sourceTriangles": 0,
+      "bytes": 134976,
+      "parts": 14,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "discovery_rookery",
+      "category": "discovery",
+      "triangles": 2320,
+      "sourceTriangles": 0,
+      "bytes": 64352,
+      "parts": 5,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "discovery_moon-garden",
+      "category": "discovery",
+      "triangles": 7300,
+      "sourceTriangles": 0,
+      "bytes": 188472,
+      "parts": 7,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "discovery_shell-choir",
+      "category": "discovery",
+      "triangles": 2868,
+      "sourceTriangles": 0,
+      "bytes": 78364,
+      "parts": 6,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "discovery_glassfin",
+      "category": "discovery",
+      "triangles": 3302,
+      "sourceTriangles": 0,
+      "bytes": 85864,
+      "parts": 8,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "discovery_cloud-laundry",
+      "category": "discovery",
+      "triangles": 2296,
+      "sourceTriangles": 0,
+      "bytes": 59084,
+      "parts": 6,
+      "authoring": "Blender MCP"
+    },
+    {
+      "id": "discovery_kite-garden",
+      "category": "discovery",
+      "triangles": 1201,
+      "sourceTriangles": 0,
+      "bytes": 43908,
+      "parts": 7,
+      "authoring": "Blender MCP"
     }
-  ]
+  ],
+  "skyKingdom": {
+    "layoutSha256": "3b19cb0d3f1672872eed3d6bfe6655561677b21a6d75f12d21910693193a7074",
+    "source": "art/wildtag/sky/sky-kingdom.blend"
+  },
+  "landmarks": {
+    "castle": {
+      "layoutSha256": "66e365ef5cd17cb843ecfc783d2d70b5e92692ba5fe6f8b090916fde38f78999",
+      "source": "art/wildtag/landmarks/castle-and-atlantis.blend"
+    },
+    "atlantis": {
+      "layoutSha256": "2643abf4a2cc24239d5b95d43996b79ef1fd2cf9459c66db2f723c8cfd493780",
+      "source": "art/wildtag/landmarks/castle-and-atlantis.blend"
+    }
+  },
+  "discoveries": {
+    "layoutSha256": "8a27c5f9ab8ef73fbaf562e53fdc0d6454f54e115e4a4a806b97c63828cafdd9",
+    "source": "art/wildtag/discoveries/small-wonders.blend"
+  }
 }

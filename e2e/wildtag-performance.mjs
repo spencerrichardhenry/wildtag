@@ -13,6 +13,7 @@ const browser = await chromium.launch({ channel: 'chrome', headless: true,
 const dpr = Number(process.env.PERF_DPR ?? 1);
 const scenario = process.env.PERF_SCENE ?? 'haven';
 const frames = Number(process.env.PERF_FRAMES ?? 240);
+const pan = process.env.PERF_PAN === '1';
 const page = await browser.newPage({ viewport: {
   width: Number(process.env.PERF_WIDTH ?? 1440), height: Number(process.env.PERF_HEIGHT ?? 900),
 }, deviceScaleFactor: dpr });
@@ -39,6 +40,28 @@ try {
     if (scenario === 'forest') { g.player.teleport(160, g.groundY(160,-130)+.5, -130); g.setLook(-.5, -.08); }
     if (scenario === 'castle') { g.player.teleport(-424, g.groundY(-424,-65)+.5, -65); g.setLook(0, -.04); g.setTimeOfDay('night'); }
     if (scenario === 'lagoon') { window.__underwater.dive(); }
+    const skyViews={
+      'sky-court':[237,147,-195,.35,-.03],
+      'sky-gallery':[177,147,-234,0,-.03],
+      'sky-sanctuary':[229,155,-230,0,.08],
+      'sky-aerie':[263,147,-215,0,.05],
+    };
+    if(skyViews[scenario]){const [x,y,z,yaw,pitch]=skyViews[scenario];g.player.teleport(x,y,z);g.setLook(yaw,pitch);}
+    const landmarkViews={
+      'castle-crown':[-427.7,121.1,-178.6,0,-.24],
+      'castle-library':[-420.2,101.18,-242.1,1.8,-.04],
+      'castle-forge':[-483.2,101.18,-185.1,.8,-.04],
+      'atlantis-nave':[594,-15.65,659,Math.PI,.05],
+      'atlantis-arcade':[543,-19.65,643,Math.PI,-.05],
+      'atlantis-crown':[590,-9.65,692,0,-.10],
+    };
+    if(landmarkViews[scenario]){const [x,y,z,yaw,pitch]=landmarkViews[scenario];g.player.teleport(x,y,z);g.setLook(yaw,pitch);g.setTimeOfDay('day');}
+    if(scenario.startsWith('wonder-')){
+      const site=window.__wonders.sites.find(s=>s.id===scenario.slice(7));
+      if(!site)throw new Error(`Unknown discovery: ${scenario}`);
+      const p=site.approach,t=site.focus;g.player.teleport(p.x,p.y,p.z);
+      g.setLook(Math.atan2(p.x-t.x,p.z-t.z),Math.atan2(t.y-p.y-1.65,Math.hypot(t.x-p.x,t.z-p.z)));g.setTimeOfDay('day');
+    }
   }, scenario);
   if (!legacy) await page.locator('#dev-performance').waitFor();
   console.log('Game ready; warming up.');
@@ -47,12 +70,14 @@ try {
     let n = 0; function tick() { if (++n >= 90) resolve(); else requestAnimationFrame(tick); }
     requestAnimationFrame(tick);
   }));
+  if(scenario.startsWith('wonder-')){await page.keyboard.press('f');await page.waitForFunction(()=>window.__wonders.state().active.length>0);}
   const cdp = process.env.PERF_PROFILE ? await page.context().newCDPSession(page) : null;
   if (cdp) { await cdp.send('Profiler.enable'); await cdp.send('Profiler.start'); }
-  const result = await page.evaluate(({scenario, frames}) => new Promise(resolve => {
+  const result = await page.evaluate(({scenario, frames, pan}) => new Promise(resolve => {
     const samples = []; let last = performance.now();
     function tick(now) {
       samples.push(now - last); last = now;
+      if(pan)window.__game.setLook((scenario.startsWith('atlantis')?Math.PI:1.8)+Math.sin(samples.length*.013)*.65,-.04);
       if (scenario === 'traverse') {
         const g = window.__game, x = 76 + samples.length * .75, z = -26 - samples.length * .5;
         g.player.teleport(x, g.groundY(x,z) + 2, z); g.setLook(-1, -.15);
@@ -64,14 +89,14 @@ try {
       const ext = gl.getExtension('WEBGL_debug_renderer_info');
       resolve({ backend: ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : 'unknown', viewport: [innerWidth, innerHeight], devicePixelRatio,
         drawingBuffer: [gl.drawingBufferWidth, gl.drawingBufferHeight],
-        scenario, frameMs: mean, fps: 1000 / mean, p95Ms: sorted[Math.ceil(sorted.length*.95)-1], p99Ms: sorted[Math.ceil(sorted.length*.99)-1],
+        scenario, pan, frameMs: mean, fps: 1000 / mean, p95Ms: sorted[Math.ceil(sorted.length*.95)-1], p99Ms: sorted[Math.ceil(sorted.length*.99)-1],
         over50Ms: sorted.filter(x=>x>50).length, samples: sorted.length,
         stats: window.__game.renderStats(), quality: window.__game.quality(),
         routes: scenario==='industry' ? window.__game.logistics().state.sites.map(s=>({id:s.id,built:s.built,worker:s.worker,phase:s.phase})) : undefined,
         overlay: document.querySelector('#dev-performance')?.textContent });
     }
     requestAnimationFrame(tick);
-  }), {scenario, frames});
+  }), {scenario, frames, pan});
   if (cdp) {
     const {profile} = await cdp.send('Profiler.stop');
     mkdirSync('.codex-drafts', {recursive:true});

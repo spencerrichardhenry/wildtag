@@ -93,6 +93,12 @@ export function buildPostPipeline(
       composer.setSize(width, height);
     },
     render(): void {
+      // Atlantis changes the far plane at its opaque fog boundary. SSAOPass
+      // refreshes projection matrices itself, but caches these depth uniforms.
+      if(ssao)for(const m of [ssao.ssaoMaterial,ssao.depthRenderMaterial]){
+        m.uniforms['cameraNear']!.value=(camera as THREE.PerspectiveCamera).near;
+        m.uniforms['cameraFar']!.value=(camera as THREE.PerspectiveCamera).far;
+      }
       composer.render();
     },
     dispose(): void {

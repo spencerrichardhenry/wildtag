@@ -5,6 +5,7 @@ import type { GroundQuery, Vec3 } from '../core/types.ts';
 import type { DartKind } from '../tracking/darts.ts';
 import { mulberry32 } from '../core/rng.ts';
 import { clamSpawns, crocSpawns } from './layout.ts';
+import { atlantisArchitecture } from '../landmarks/world.ts';
 import {
   buildAtlantis,
   buildClamGuard,
@@ -124,7 +125,7 @@ export class UnderwaterSystem {
     this.restoreLinked = linkedRestore;
 
     for (const s of clamSpawns()) {
-      const y = this.ground.heightAt(s.x, s.z) + s.lift;
+      const y = Math.max(this.ground.heightAt(s.x, s.z),atlantisArchitecture.floorBelow(s.x,s.z,UNDERWATER.floorY+5)) + s.lift;
       if (this.purified.has(s.id)) {
         this.spawnTurtle(s.id, { x: s.x, y, z: s.z });
         continue;
@@ -278,6 +279,8 @@ export class UnderwaterSystem {
 
     this.updateBubbles();
     this.palace.traverse((o) => {
+      if(o.userData.part==='tideRotor')o.rotation.z=this.t*.45;
+      if(o.userData.part==='bellPearl')o.position.y=(o.userData.landmarkBaseY??1)+Math.sin(this.t*1.5)*.13;
       const phase = o.userData.seaweedPhase;
       if (typeof phase === 'number') o.rotation.z = Math.sin(this.t * 0.8 + phase) * 0.12;
     });
@@ -385,7 +388,9 @@ export class UnderwaterSystem {
     const dist = Math.hypot(dx, dy, dz);
     enemy.yaw = Math.atan2(-dx, -dz);
 
-    if (!submerged || dist > UNDERWATER.clamNoticeR) {
+    const occluded = dist <= UNDERWATER.clamNoticeR && !!atlantisArchitecture.raycast(
+      { ...enemy.pos, y: enemy.pos.y + .45 }, { ...p, y: p.y + .7 });
+    if (!submerged || dist > UNDERWATER.clamNoticeR || occluded) {
       enemy.phase = 'idle';
       enemy.timer = 0;
     } else if (enemy.phase === 'idle') {
@@ -426,7 +431,8 @@ export class UnderwaterSystem {
     const dz = p.z - enemy.pos.z;
     const dist = Math.hypot(dx, dy, dz);
     // Linked (befriended) crocs never chase or bite — they lazily patrol.
-    const chasing = !enemy.linked && submerged && dist <= UNDERWATER.crocNoticeR;
+    const chasing = !enemy.linked && submerged && dist <= UNDERWATER.crocNoticeR
+      && !atlantisArchitecture.raycast(enemy.pos, { ...p, y: p.y + .7 });
 
     let tx: number;
     let ty: number;
@@ -454,11 +460,16 @@ export class UnderwaterSystem {
     const mz = tz - enemy.pos.z;
     const len = Math.hypot(mx, my, mz) || 1;
     const step = Math.min(speed * dt, len);
+    const previous = { ...enemy.pos };
     enemy.pos.x += (mx / len) * step;
     enemy.pos.y += (my / len) * step;
     enemy.pos.z += (mz / len) * step;
     const floor = this.ground.heightAt(enemy.pos.x, enemy.pos.z) + 1.1;
     enemy.pos.y = Math.max(floor, Math.min(-2, enemy.pos.y));
+    // The body stays on its side of masonry; rooms are safe from bites through walls.
+    // Stop at contact rather than sliding a long crocodile sideways through a door.
+    const contact = atlantisArchitecture.raycast(previous, enemy.pos);
+    if (contact) enemy.pos = previous;
     enemy.yaw = Math.atan2(-mx, -mz);
 
     if (enemy.croc) {

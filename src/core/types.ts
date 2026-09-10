@@ -2,7 +2,7 @@
 // Pure modules must not import three — vectors are plain { x, y, z } objects.
 
 export type Vec3 = { x: number; y: number; z: number };
-export type Biome = 'meadow' | 'forest' | 'wetland' | 'crags' | 'highlands' | 'water';
+export type Biome = 'meadow' | 'forest' | 'wetland' | 'crags' | 'highlands' | 'water' | 'sky';
 export type ResourceKind =
   | 'fiber'
   | 'resin'
@@ -122,6 +122,8 @@ export interface MoveState {
 export interface GroundQuery {
   heightAt(x: number, z: number): number;
   normalAt(x: number, z: number): Vec3;
+  /** Optional layered surfaces (floating floors, bridges and rooms). */
+  heightBelow?(x: number, z: number, maxY: number): number;
 }
 
 /**

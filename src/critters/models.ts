@@ -1,4 +1,4 @@
-import { refineArt } from '../art/library.ts';
+import { refineArt, cloneArtAsset, isSharedArtMaterial } from '../art/library.ts';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { CRITTER_VARIATION } from '../core/constants.ts';
@@ -69,7 +69,7 @@ const sharedMaterials = new WeakSet<THREE.Material>();
 
 /** True when `m` came from the shared critter-material cache (skip disposal). */
 export function isSharedCritterMaterial(m: THREE.Material): boolean {
-  return sharedMaterials.has(m);
+  return sharedMaterials.has(m) || isSharedArtMaterial(m);
 }
 
 function mat(color: number, opts: MatOpts = {}): THREE.Material {
@@ -2834,6 +2834,15 @@ export function buildCritterModel(
   speciesId: string,
   rng: () => number,
 ): { group: THREE.Group; parts: CritterParts } {
+  if(speciesId==='suncresteagle'||speciesId==='seraphlet'){
+    const group=cloneArtAsset(`critter_${speciesId}`);
+    const nodes:THREE.Object3D[]=[];group.traverse(o=>{if(o.userData.part)nodes.push(o);});
+    const body=nodes.find(o=>o.userData.part==='body')??new THREE.Group();
+    const head=nodes.find(o=>o.userData.part==='head')??new THREE.Group();
+    const tail=nodes.find(o=>o.userData.part==='tail');
+    group.scale.setScalar(.95+rng()*.1);
+    return {group,parts:{body,head,tail,legs:nodes.filter(o=>o.userData.part==='leg'),wings:nodes.filter(o=>o.userData.part==='wing')}};
+  }
   const build = BUILDERS[speciesId];
   if (!build) throw new Error(`buildCritterModel: unknown species '${speciesId}'`);
   const out = build(rng);

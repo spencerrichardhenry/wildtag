@@ -1,0 +1,3481 @@
+{
+  "label": "baseline",
+  "uncapped": true,
+  "viewport": [
+    1440,
+    900
+  ],
+  "dpr": 2,
+  "quality": "high",
+  "pairs": [
+    {
+      "scene": "haven",
+      "on": {
+        "fps": 110.3325914147284,
+        "frameMs": 9.073955431754872,
+        "gpuMs": 14.493264334628616,
+        "simulationMs": 0.0008333330353101094,
+        "renderMs": 8.472083332886298,
+        "drawCalls": 1137,
+        "triangles": 4221092
+      },
+      "off": {
+        "fps": 113.01358383901608,
+        "frameMs": 8.850974930362113,
+        "gpuMs": 14.650520832075578,
+        "simulationMs": 0,
+        "renderMs": 8.514583333084982,
+        "drawCalls": 1137,
+        "triangles": 4221092
+      },
+      "samples": [
+        {
+          "enabled": true,
+          "fps": 114.07689863361932,
+          "frameMs": 8.766016713091922,
+          "p95Ms": 11.900000000000546,
+          "p99Ms": 14.5,
+          "over50Ms": 0,
+          "gpuMs": 14.765502960148813,
+          "simulationMs": 0.001666666070620219,
+          "renderMs": 8.359999998410542,
+          "drawCalls": 1137,
+          "triangles": 4221092,
+          "state": {
+            "enabled": true,
+            "visited": [],
+            "nearby": null,
+            "visible": [],
+            "active": [],
+            "rigs": [
+              {
+                "id": "bumblepost",
+                "count": 8
+              },
+              {
+                "id": "tea-circle",
+                "count": 3
+              },
+              {
+                "id": "rootlight",
+                "count": 7
+              },
+              {
+                "id": "woodpecker",
+                "count": 4
+              },
+              {
+                "id": "reed-organ",
+                "count": 8
+              },
+              {
+                "id": "moss-ferry",
+                "count": 1
+              },
+              {
+                "id": "windbone",
+                "count": 9
+              },
+              {
+                "id": "prospector",
+                "count": 3
+              },
+              {
+                "id": "star-cairn",
+                "count": 1
+              },
+              {
+                "id": "shepherd",
+                "count": 6
+              },
+              {
+                "id": "bottle-post",
+                "count": 1
+              },
+              {
+                "id": "driftwatch",
+                "count": 14
+              },
+              {
+                "id": "rookery",
+                "count": 4
+              },
+              {
+                "id": "moon-garden",
+                "count": 7
+              },
+              {
+                "id": "shell-choir",
+                "count": 6
+              },
+              {
+                "id": "glassfin",
+                "count": 8
+              },
+              {
+                "id": "cloud-laundry",
+                "count": 5
+              },
+              {
+                "id": "kite-garden",
+                "count": 7
+              }
+            ]
+          }
+        },
+        {
+          "enabled": false,
+          "fps": 114.90573888551037,
+          "frameMs": 8.702785515320333,
+          "p95Ms": 11.299999999999272,
+          "p99Ms": 12.600000000000364,
+          "over50Ms": 0,
+          "gpuMs": 14.711212661929189,
+          "simulationMs": 0,
+          "renderMs": 8.337500002483527,
+          "drawCalls": 1137,
+          "triangles": 4221092,
+          "state": {
+            "enabled": false,
+            "visited": [],
+            "nearby": null,
+            "visible": [],
+            "active": [],
+            "rigs": [
+              {
+                "id": "bumblepost",
+                "count": 8
+              },
+              {
+                "id": "tea-circle",
+                "count": 3
+              },
+              {
+                "id": "rootlight",
+                "count": 7
+              },
+              {
+                "id": "woodpecker",
+                "count": 4
+              },
+              {
+                "id": "reed-organ",
+                "count": 8
+              },
+              {
+                "id": "moss-ferry",
+                "count": 1
+              },
+              {
+                "id": "windbone",
+                "count": 9
+              },
+              {
+                "id": "prospector",
+                "count": 3
+              },
+              {
+                "id": "star-cairn",
+                "count": 1
+              },
+              {
+                "id": "shepherd",
+                "count": 6
+              },
+              {
+                "id": "bottle-post",
+                "count": 1
+              },
+              {
+                "id": "driftwatch",
+                "count": 14
+              },
+              {
+                "id": "rookery",
+                "count": 4
+              },
+              {
+                "id": "moon-garden",
+                "count": 7
+              },
+              {
+                "id": "shell-choir",
+                "count": 6
+              },
+              {
+                "id": "glassfin",
+                "count": 8
+              },
+              {
+                "id": "cloud-laundry",
+                "count": 5
+              },
+              {
+                "id": "kite-garden",
+                "count": 7
+              }
+            ]
+          }
+        },
+        {
+          "enabled": false,
+          "fps": 111.12142879252178,
+          "frameMs": 8.999164345403896,
+          "p95Ms": 12.600000000000364,
+          "p99Ms": 15.899999999999636,
+          "over50Ms": 0,
+          "gpuMs": 14.58982900222197,
+          "simulationMs": 0,
+          "renderMs": 8.691666663686435,
+          "drawCalls": 1137,
+          "triangles": 4221092,
+          "state": {
+            "enabled": false,
+            "visited": [],
+            "nearby": null,
+            "visible": [],
+            "active": [],
+            "rigs": [
+              {
+                "id": "bumblepost",
+                "count": 8
+              },
+              {
+                "id": "tea-circle",
+                "count": 3
+              },
+              {
+                "id": "rootlight",
+                "count": 7
+              },
+              {
+                "id": "woodpecker",
+                "count": 4
+              },
+              {
+                "id": "reed-organ",
+                "count": 8
+              },
+              {
+                "id": "moss-ferry",
+                "count": 1
+              },
+              {
+                "id": "windbone",
+                "count": 9
+              },
+              {
+                "id": "prospector",
+                "count": 3
+              },
+              {
+                "id": "star-cairn",
+                "count": 1
+              },
+              {
+                "id": "shepherd",
+                "count": 6
+              },
+              {
+                "id": "bottle-post",
+                "count": 1
+              },
+              {
+                "id": "driftwatch",
+                "count": 14
+              },
+              {
+                "id": "rookery",
+                "count": 4
+              },
+              {
+                "id": "moon-garden",
+                "count": 7
+              },
+              {
+                "id": "shell-choir",
+                "count": 6
+              },
+              {
+                "id": "glassfin",
+                "count": 8
+              },
+              {
+                "id": "cloud-laundry",
+                "count": 5
+              },
+              {
+                "id": "kite-garden",
+                "count": 7
+              }
+            ]
+          }
+        },
+        {
+          "enabled": true,
+          "fps": 106.58828419583746,
+          "frameMs": 9.381894150417823,
+          "p95Ms": 14.100000000002183,
+          "p99Ms": 29.299999999999272,
+          "over50Ms": 0,
+          "gpuMs": 14.22102570910842,
+          "simulationMs": 0,
+          "renderMs": 8.584166667362053,
+          "drawCalls": 1137,
+          "triangles": 4221092,
+          "state": {
+            "enabled": true,
+            "visited": [],
+            "nearby": null,
+            "visible": [],
+            "active": [],
+            "rigs": [
+              {
+                "id": "bumblepost",
+                "count": 8
+              },
+              {
+                "id": "tea-circle",
+                "count": 3
+              },
+              {
+                "id": "rootlight",
+                "count": 7
+              },
+              {
+                "id": "woodpecker",
+                "count": 4
+              },
+              {
+                "id": "reed-organ",
+                "count": 8
+              },
+              {
+                "id": "moss-ferry",
+                "count": 1
+              },
+              {
+                "id": "windbone",
+                "count": 9
+              },
+              {
+                "id": "prospector",
+                "count": 3
+              },
+              {
+                "id": "star-cairn",
+                "count": 1
+              },
+              {
+                "id": "shepherd",
+                "count": 6
+              },
+              {
+                "id": "bottle-post",
+                "count": 1
+              },
+              {
+                "id": "driftwatch",
+                "count": 14
+              },
+              {
+                "id": "rookery",
+                "count": 4
+              },
+              {
+                "id": "moon-garden",
+                "count": 7
+              },
+              {
+                "id": "shell-choir",
+                "count": 6
+              },
+              {
+                "id": "glassfin",
+                "count": 8
+              },
+              {
+                "id": "cloud-laundry",
+                "count": 5
+              },
+              {
+                "id": "kite-garden",
+                "count": 7
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "scene": "castle-crown",
+      "on": {
+        "fps": 139.95698884500098,
+        "frameMs": 7.167827298050135,
+        "gpuMs": 13.640896306105597,
+        "simulationMs": 0.0008333335320154826,
+        "renderMs": 6.538749998559554,
+        "drawCalls": 783,
+        "triangles": 2406709
+      },
+      "off": {
+        "fps": 147.93477850477143,
+        "frameMs": 6.761281337047352,
+        "gpuMs": 13.315033470542541,
+        "simulationMs": 0.0008333332836627961,
+        "renderMs": 6.377499999602636,
+        "drawCalls": 749,
+        "triangles": 2384709
+      },
+      "samples": [
+        {
+          "enabled": true,
+          "fps": 147.84614117453253,
+          "frameMs": 6.763788300835657,
+          "p95Ms": 9,
+          "p99Ms": 11,
+          "over50Ms": 0,
+          "gpuMs": 13.66758483149236,
+          "simulationMs": 0.0016666670640309651,
+          "renderMs": 6.533333331843218,
+          "drawCalls": 783,
+          "triangles": 2406709,
+          "state": {
+            "enabled": true,
+            "visited": [],
+            "nearby": null,
+            "visible": [
+              "rookery",
+              "moon-garden"
+            ],
+            "active": [],
+            "rigs": [
+              {
+                "id": "bumblepost",
+                "count": 8
+              },
+              {
+                "id": "tea-circle",
+                "count": 3
+              },
+              {
+                "id": "rootlight",
+                "count": 7
+              },
+              {
+                "id": "woodpecker",
+                "count": 4
+              },
+              {
+                "id": "reed-organ",
+                "count": 8
+              },
+              {
+                "id": "moss-ferry",
+                "count": 1
+              },
+              {
+                "id": "windbone",
+                "count": 9
+              },
+              {
+                "id": "prospector",
+                "count": 3
+              },
+              {
+                "id": "star-cairn",
+                "count": 1
+              },
+              {
+                "id": "shepherd",
+                "count": 6
+              },
+              {
+                "id": "bottle-post",
+                "count": 1
+              },
+              {
+                "id": "driftwatch",
+                "count": 14
+              },
+              {
+                "id": "rookery",
+                "count": 4
+              },
+              {
+                "id": "moon-garden",
+                "count": 7
+              },
+              {
+                "id": "shell-choir",
+                "count": 6
+              },
+              {
+                "id": "glassfin",
+                "count": 8
+              },
+              {
+                "id": "cloud-laundry",
+                "count": 5
+              },
+              {
+                "id": "kite-garden",
+                "count": 7
+              }
+            ]
+          }
+        },
+        {
+          "enabled": false,
+          "fps": 150.17150506149093,
+          "frameMs": 6.659052924791082,
+          "p95Ms": 8.400000000001455,
+          "p99Ms": 9.899999999997817,
+          "over50Ms": 0,
+          "gpuMs": 13.252451190366303,
+          "simulationMs": 0.0008333330353101094,
+          "renderMs": 6.370833332836628,
+          "drawCalls": 749,
+          "triangles": 2384709,
+          "state": {
+            "enabled": false,
+            "visited": [],
+            "nearby": null,
+            "visible": [],
+            "active": [],
+            "rigs": [
+              {
+                "id": "bumblepost",
+                "count": 8
+              },
+              {
+                "id": "tea-circle",
+                "count": 3
+              },
+              {
+                "id": "rootlight",
+                "count": 7
+              },
+              {
+                "id": "woodpecker",
+                "count": 4
+              },
+              {
+                "id": "reed-organ",
+                "count": 8
+              },
+              {
+                "id": "moss-ferry",
+                "count": 1
+              },
+              {
+                "id": "windbone",
+                "count": 9
+              },
+              {
+                "id": "prospector",
+                "count": 3
+              },
+              {
+                "id": "star-cairn",
+                "count": 1
+              },
+              {
+                "id": "shepherd",
+                "count": 6
+              },
+              {
+                "id": "bottle-post",
+                "count": 1
+              },
+              {
+                "id": "driftwatch",
+                "count": 14
+              },
+              {
+                "id": "rookery",
+                "count": 4
+              },
+              {
+                "id": "moon-garden",
+                "count": 7
+              },
+              {
+                "id": "shell-choir",
+                "count": 6
+              },
+              {
+                "id": "glassfin",
+                "count": 8
+              },
+              {
+                "id": "cloud-laundry",
+                "count": 5
+              },
+              {
+                "id": "kite-garden",
+                "count": 7
+              }
+            ]
+          }
+        },
+        {
+          "enabled": false,
+          "fps": 145.69805194805195,
+          "frameMs": 6.8635097493036215,
+          "p95Ms": 10.099999999998545,
+          "p99Ms": 14.5,
+          "over50Ms": 0,
+          "gpuMs": 13.377615750718778,
+          "simulationMs": 0.0008333335320154826,
+          "renderMs": 6.384166666368643,
+          "drawCalls": 749,
+          "triangles": 2384709,
+          "state": {
+            "enabled": false,
+            "visited": [],
+            "nearby": null,
+            "visible": [],
+            "active": [],
+            "rigs": [
+              {
+                "id": "bumblepost",
+                "count": 8
+              },
+              {
+                "id": "tea-circle",
+                "count": 3
+              },
+              {
+                "id": "rootlight",
+                "count": 7
+              },
+              {
+                "id": "woodpecker",
+                "count": 4
+              },
+              {
+                "id": "reed-organ",
+                "count": 8
+              },
+              {
+                "id": "moss-ferry",
+                "count": 1
+              },
+              {
+                "id": "windbone",
+                "count": 9
+              },
+              {
+                "id": "prospector",
+                "count": 3
+              },
+              {
+                "id": "star-cairn",
+                "count": 1
+              },
+              {
+                "id": "shepherd",
+                "count": 6
+              },
+              {
+                "id": "bottle-post",
+                "count": 1
+              },
+              {
+                "id": "driftwatch",
+                "count": 14
+              },
+              {
+                "id": "rookery",
+                "count": 4
+              },
+              {
+                "id": "moon-garden",
+                "count": 7
+              },
+              {
+                "id": "shell-choir",
+                "count": 6
+              },
+              {
+                "id": "glassfin",
+                "count": 8
+              },
+              {
+                "id": "cloud-laundry",
+                "count": 5
+              },
+              {
+                "id": "kite-garden",
+                "count": 7
+              }
+            ]
+          }
+        },
+        {
+          "enabled": true,
+          "fps": 132.06783651546945,
+          "frameMs": 7.571866295264612,
+          "p95Ms": 10.900000000001455,
+          "p99Ms": 12.89999999999418,
+          "over50Ms": 0,
+          "gpuMs": 13.614207780718836,
+          "simulationMs": 0,
+          "renderMs": 6.544166665275892,
+          "drawCalls": 783,
+          "triangles": 2406709,
+          "state": {
+            "enabled": true,
+            "visited": [],
+            "nearby": null,
+            "visible": [
+              "rookery",
+              "moon-garden"
+            ],
+            "active": [],
+            "rigs": [
+              {
+                "id": "bumblepost",
+                "count": 8
+              },
+              {
+                "id": "tea-circle",
+                "count": 3
+              },
+              {
+                "id": "rootlight",
+                "count": 7
+              },
+              {
+                "id": "woodpecker",
+                "count": 4
+              },
+              {
+                "id": "reed-organ",
+                "count": 8
+              },
+              {
+                "id": "moss-ferry",
+                "count": 1
+              },
+              {
+                "id": "windbone",
+                "count": 9
+              },
+              {
+                "id": "prospector",
+                "count": 3
+              },
+              {
+                "id": "star-cairn",
+                "count": 1
+              },
+              {
+                "id": "shepherd",
+                "count": 6
+              },
+              {
+                "id": "bottle-post",
+                "count": 1
+              },
+              {
+                "id": "driftwatch",
+                "count": 14
+              },
+              {
+                "id": "rookery",
+                "count": 4
+              },
+              {
+                "id": "moon-garden",
+                "count": 7
+              },
+              {
+                "id": "shell-choir",
+                "count": 6
+              },
+              {
+                "id": "glassfin",
+                "count": 8
+              },
+              {
+                "id": "cloud-laundry",
+                "count": 5
+              },
+              {
+                "id": "kite-garden",
+                "count": 7
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "scene": "atlantis-nave",
+      "on": {
+        "fps": 112.36747018835285,
+        "frameMs": 8.901253481894148,
+        "gpuMs": 19.686192953820175,
+        "simulationMs": 0.0008333330353101094,
+        "renderMs": 8.60000000372529,
+        "drawCalls": 480,
+        "triangles": 1301857
+      },
+      "off": {
+        "fps": 112.47773119109098,
+        "frameMs": 8.890807799442905,
+        "gpuMs": 19.63725027514205,
+        "simulationMs": 0.0004166665176550547,
+        "renderMs": 8.555416665722927,
+        "drawCalls": 475,
+        "triangles": 1298009
+      },
+      "samples": [
+        {
+          "enabled": true,
+          "fps": 114.00082563272052,
+          "frameMs": 8.77186629526462,
+          "p95Ms": 12.60000000000582,
+          "p99Ms": 14.69999999999709,
+          "over50Ms": 0,
+          "gpuMs": 19.131631515562386,
+          "simulationMs": 0,
+          "renderMs": 8.453333337604999,
+          "drawCalls": 480,
+          "triangles": 1301857,
+          "state": {
+            "enabled": true,
+            "visited": [],
+            "nearby": null,
+            "visible": [
+              "shell-choir",
+              "glassfin"
+            ],
+            "active": [],
+            "rigs": [
+              {
+                "id": "bumblepost",
+                "count": 8
+              },
+              {
+                "id": "tea-circle",
+                "count": 3
+              },
+              {
+                "id": "rootlight",
+                "count": 7
+              },
+              {
+                "id": "woodpecker",
+                "count": 4
+              },
+              {
+                "id": "reed-organ",
+                "count": 8
+              },
+              {
+                "id": "moss-ferry",
+                "count": 1
+              },
+              {
+                "id": "windbone",
+                "count": 9
+              },
+              {
+                "id": "prospector",
+                "count": 3
+              },
+              {
+                "id": "star-cairn",
+                "count": 1
+              },
+              {
+                "id": "shepherd",
+                "count": 6
+              },
+              {
+                "id": "bottle-post",
+                "count": 1
+              },
+              {
+                "id": "driftwatch",
+                "count": 14
+              },
+              {
+                "id": "rookery",
+                "count": 4
+              },
+              {
+                "id": "moon-garden",
+                "count": 7
+              },
+              {
+                "id": "shell-choir",
+                "count": 6
+              },
+              {
+                "id": "glassfin",
+                "count": 8
+              },
+              {
+                "id": "cloud-laundry",
+                "count": 5
+              },
+              {
+                "id": "kite-garden",
+                "count": 7
+              }
+            ]
+          }
+        },
+        {
+          "enabled": false,
+          "fps": 112.95346568920482,
+          "frameMs": 8.853203342618393,
+          "p95Ms": 12.900000000001455,
+          "p99Ms": 14.299999999995634,
+          "over50Ms": 0,
+          "gpuMs": 19.39383375207672,
+          "simulationMs": 0.0008333330353101094,
+          "renderMs": 8.495833332836629,
+          "drawCalls": 475,
+          "triangles": 1298009,
+          "state": {
+            "enabled": false,
+            "visited": [],
+            "nearby": null,
+            "visible": [],
+            "active": [],
+            "rigs": [
+              {
+                "id": "bumblepost",
+                "count": 8
+              },
+              {
+                "id": "tea-circle",
+                "count": 3
+              },
+              {
+                "id": "rootlight",
+                "count": 7
+              },
+              {
+                "id": "woodpecker",
+                "count": 4
+              },
+              {
+                "id": "reed-organ",
+                "count": 8
+              },
+              {
+                "id": "moss-ferry",
+                "count": 1
+              },
+              {
+                "id": "windbone",
+                "count": 9
+              },
+              {
+                "id": "prospector",
+                "count": 3
+              },
+              {
+                "id": "star-cairn",
+                "count": 1
+              },
+              {
+                "id": "shepherd",
+                "count": 6
+              },
+              {
+                "id": "bottle-post",
+                "count": 1
+              },
+              {
+                "id": "driftwatch",
+                "count": 14
+              },
+              {
+                "id": "rookery",
+                "count": 4
+              },
+              {
+                "id": "moon-garden",
+                "count": 7
+              },
+              {
+                "id": "shell-choir",
+                "count": 6
+              },
+              {
+                "id": "glassfin",
+                "count": 8
+              },
+              {
+                "id": "cloud-laundry",
+                "count": 5
+              },
+              {
+                "id": "kite-garden",
+                "count": 7
+              }
+            ]
+          }
+        },
+        {
+          "enabled": false,
+          "fps": 112.00199669297716,
+          "frameMs": 8.928412256267418,
+          "p95Ms": 12,
+          "p99Ms": 14.599999999998545,
+          "over50Ms": 0,
+          "gpuMs": 19.880666798207383,
+          "simulationMs": 0,
+          "renderMs": 8.614999998609225,
+          "drawCalls": 475,
+          "triangles": 1298009,
+          "state": {
+            "enabled": false,
+            "visited": [],
+            "nearby": null,
+            "visible": [],
+            "active": [],
+            "rigs": [
+              {
+                "id": "bumblepost",
+                "count": 8
+              },
+              {
+                "id": "tea-circle",
+                "count": 3
+              },
+              {
+                "id": "rootlight",
+                "count": 7
+              },
+              {
+                "id": "woodpecker",
+                "count": 4
+              },
+              {
+                "id": "reed-organ",
+                "count": 8
+              },
+              {
+                "id": "moss-ferry",
+                "count": 1
+              },
+              {
+                "id": "windbone",
+                "count": 9
+              },
+              {
+                "id": "prospector",
+                "count": 3
+              },
+              {
+                "id": "star-cairn",
+                "count": 1
+              },
+              {
+                "id": "shepherd",
+                "count": 6
+              },
+              {
+                "id": "bottle-post",
+                "count": 1
+              },
+              {
+                "id": "driftwatch",
+                "count": 14
+              },
+              {
+                "id": "rookery",
+                "count": 4
+              },
+              {
+                "id": "moon-garden",
+                "count": 7
+              },
+              {
+                "id": "shell-choir",
+                "count": 6
+              },
+              {
+                "id": "glassfin",
+                "count": 8
+              },
+              {
+                "id": "cloud-laundry",
+                "count": 5
+              },
+              {
+                "id": "kite-garden",
+                "count": 7
+              }
+            ]
+          }
+        },
+        {
+          "enabled": true,
+          "fps": 110.73411474398519,
+          "frameMs": 9.030640668523677,
+          "p95Ms": 11.299999999995634,
+          "p99Ms": 13.099999999998545,
+          "over50Ms": 0,
+          "gpuMs": 20.240754392077967,
+          "simulationMs": 0.001666666070620219,
+          "renderMs": 8.746666669845581,
+          "drawCalls": 480,
+          "triangles": 1301857,
+          "state": {
+            "enabled": true,
+            "visited": [],
+            "nearby": null,
+            "visible": [
+              "shell-choir",
+              "glassfin"
+            ],
+            "active": [],
+            "rigs": [
+              {
+                "id": "bumblepost",
+                "count": 8
+              },
+              {
+                "id": "tea-circle",
+                "count": 3
+              },
+              {
+                "id": "rootlight",
+                "count": 7
+              },
+              {
+                "id": "woodpecker",
+                "count": 4
+              },
+              {
+                "id": "reed-organ",
+                "count": 8
+              },
+              {
+                "id": "moss-ferry",
+                "count": 1
+              },
+              {
+                "id": "windbone",
+                "count": 9
+              },
+              {
+                "id": "prospector",
+                "count": 3
+              },
+              {
+                "id": "star-cairn",
+                "count": 1
+              },
+              {
+                "id": "shepherd",
+                "count": 6
+              },
+              {
+                "id": "bottle-post",
+                "count": 1
+              },
+              {
+                "id": "driftwatch",
+                "count": 14
+              },
+              {
+                "id": "rookery",
+                "count": 4
+              },
+              {
+                "id": "moon-garden",
+                "count": 7
+              },
+              {
+                "id": "shell-choir",
+                "count": 6
+              },
+              {
+                "id": "glassfin",
+                "count": 8
+              },
+              {
+                "id": "cloud-laundry",
+                "count": 5
+              },
+              {
+                "id": "kite-garden",
+                "count": 7
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "scene": "sky-sanctuary",
+      "on": {
+        "fps": 121.6721159275258,
+        "frameMs": 8.22632311977716,
+        "gpuMs": 17.44795261777967,
+        "simulationMs": 0,
+        "renderMs": 8.034999998658895,
+        "drawCalls": 591,
+        "triangles": 1776307
+      },
+      "off": {
+        "fps": 124.13501564254707,
+        "frameMs": 8.056685236768798,
+        "gpuMs": 17.3867591040566,
+        "simulationMs": 0,
+        "renderMs": 7.617916665722927,
+        "drawCalls": 584,
+        "triangles": 1774703
+      },
+      "samples": [
+        {
+          "enabled": true,
+          "fps": 117.9950698438784,
+          "frameMs": 8.474930362116991,
+          "p95Ms": 13.099999999998545,
+          "p99Ms": 15.200000000004366,
+          "over50Ms": 0,
+          "gpuMs": 17.18133750096901,
+          "simulationMs": 0,
+          "renderMs": 8.459166664878527,
+          "drawCalls": 591,
+          "triangles": 1776307,
+          "state": {
+            "enabled": true,
+            "visited": [],
+            "nearby": null,
+            "visible": [
+              "woodpecker",
+              "cloud-laundry",
+              "kite-garden"
+            ],
+            "active": [],
+            "rigs": [
+              {
+                "id": "bumblepost",
+                "count": 8
+              },
+              {
+                "id": "tea-circle",
+                "count": 3
+              },
+              {
+                "id": "rootlight",
+                "count": 7
+              },
+              {
+                "id": "woodpecker",
+                "count": 4
+              },
+              {
+                "id": "reed-organ",
+                "count": 8
+              },
+              {
+                "id": "moss-ferry",
+                "count": 1
+              },
+              {
+                "id": "windbone",
+                "count": 9
+              },
+              {
+                "id": "prospector",
+                "count": 3
+              },
+              {
+                "id": "star-cairn",
+                "count": 1
+              },
+              {
+                "id": "shepherd",
+                "count": 6
+              },
+              {
+                "id": "bottle-post",
+                "count": 1
+              },
+              {
+                "id": "driftwatch",
+                "count": 14
+              },
+              {
+                "id": "rookery",
+                "count": 4
+              },
+              {
+                "id": "moon-garden",
+                "count": 7
+              },
+              {
+                "id": "shell-choir",
+                "count": 6
+              },
+              {
+                "id": "glassfin",
+                "count": 8
+              },
+              {
+                "id": "cloud-laundry",
+                "count": 5
+              },
+              {
+                "id": "kite-garden",
+                "count": 7
+              }
+            ]
+          }
+        },
+        {
+          "enabled": false,
+          "fps": 122.79381584348071,
+          "frameMs": 8.143732590529243,
+          "p95Ms": 10,
+          "p99Ms": 12.200000000004366,
+          "over50Ms": 0,
+          "gpuMs": 17.386230145344772,
+          "simulationMs": 0,
+          "renderMs": 7.656666667759419,
+          "drawCalls": 584,
+          "triangles": 1774703,
+          "state": {
+            "enabled": false,
+            "visited": [],
+            "nearby": null,
+            "visible": [],
+            "active": [],
+            "rigs": [
+              {
+                "id": "bumblepost",
+                "count": 8
+              },
+              {
+                "id": "tea-circle",
+                "count": 3
+              },
+              {
+                "id": "rootlight",
+                "count": 7
+              },
+              {
+                "id": "woodpecker",
+                "count": 4
+              },
+              {
+                "id": "reed-organ",
+                "count": 8
+              },
+              {
+                "id": "moss-ferry",
+                "count": 1
+              },
+              {
+                "id": "windbone",
+                "count": 9
+              },
+              {
+                "id": "prospector",
+                "count": 3
+              },
+              {
+                "id": "star-cairn",
+                "count": 1
+              },
+              {
+                "id": "shepherd",
+                "count": 6
+              },
+              {
+                "id": "bottle-post",
+                "count": 1
+              },
+              {
+                "id": "driftwatch",
+                "count": 14
+              },
+              {
+                "id": "rookery",
+                "count": 4
+              },
+              {
+                "id": "moon-garden",
+                "count": 7
+              },
+              {
+                "id": "shell-choir",
+                "count": 6
+              },
+              {
+                "id": "glassfin",
+                "count": 8
+              },
+              {
+                "id": "cloud-laundry",
+                "count": 5
+              },
+              {
+                "id": "kite-garden",
+                "count": 7
+              }
+            ]
+          }
+        },
+        {
+          "enabled": false,
+          "fps": 125.47621544161343,
+          "frameMs": 7.969637883008352,
+          "p95Ms": 9.599999999998545,
+          "p99Ms": 11.400000000001455,
+          "over50Ms": 0,
+          "gpuMs": 17.387288062768434,
+          "simulationMs": 0,
+          "renderMs": 7.5791666636864345,
+          "drawCalls": 584,
+          "triangles": 1774703,
+          "state": {
+            "enabled": false,
+            "visited": [],
+            "nearby": null,
+            "visible": [],
+            "active": [],
+            "rigs": [
+              {
+                "id": "bumblepost",
+                "count": 8
+              },
+              {
+                "id": "tea-circle",
+                "count": 3
+              },
+              {
+                "id": "rootlight",
+                "count": 7
+              },
+              {
+                "id": "woodpecker",
+                "count": 4
+              },
+              {
+                "id": "reed-organ",
+                "count": 8
+              },
+              {
+                "id": "moss-ferry",
+                "count": 1
+              },
+              {
+                "id": "windbone",
+                "count": 9
+              },
+              {
+                "id": "prospector",
+                "count": 3
+              },
+              {
+                "id": "star-cairn",
+                "count": 1
+              },
+              {
+                "id": "shepherd",
+                "count": 6
+              },
+              {
+                "id": "bottle-post",
+                "count": 1
+              },
+              {
+                "id": "driftwatch",
+                "count": 14
+              },
+              {
+                "id": "rookery",
+                "count": 4
+              },
+              {
+                "id": "moon-garden",
+                "count": 7
+              },
+              {
+                "id": "shell-choir",
+                "count": 6
+              },
+              {
+                "id": "glassfin",
+                "count": 8
+              },
+              {
+                "id": "cloud-laundry",
+                "count": 5
+              },
+              {
+                "id": "kite-garden",
+                "count": 7
+              }
+            ]
+          }
+        },
+        {
+          "enabled": true,
+          "fps": 125.34916201117318,
+          "frameMs": 7.977715877437326,
+          "p95Ms": 9.60000000000582,
+          "p99Ms": 11.80000000000291,
+          "over50Ms": 0,
+          "gpuMs": 17.71456773459033,
+          "simulationMs": 0,
+          "renderMs": 7.610833332439264,
+          "drawCalls": 591,
+          "triangles": 1776307,
+          "state": {
+            "enabled": true,
+            "visited": [],
+            "nearby": null,
+            "visible": [
+              "woodpecker",
+              "cloud-laundry",
+              "kite-garden"
+            ],
+            "active": [],
+            "rigs": [
+              {
+                "id": "bumblepost",
+                "count": 8
+              },
+              {
+                "id": "tea-circle",
+                "count": 3
+              },
+              {
+                "id": "rootlight",
+                "count": 7
+              },
+              {
+                "id": "woodpecker",
+                "count": 4
+              },
+              {
+                "id": "reed-organ",
+                "count": 8
+              },
+              {
+                "id": "moss-ferry",
+                "count": 1
+              },
+              {
+                "id": "windbone",
+                "count": 9
+              },
+              {
+                "id": "prospector",
+                "count": 3
+              },
+              {
+                "id": "star-cairn",
+                "count": 1
+              },
+              {
+                "id": "shepherd",
+                "count": 6
+              },
+              {
+                "id": "bottle-post",
+                "count": 1
+              },
+              {
+                "id": "driftwatch",
+                "count": 14
+              },
+              {
+                "id": "rookery",
+                "count": 4
+              },
+              {
+                "id": "moon-garden",
+                "count": 7
+              },
+              {
+                "id": "shell-choir",
+                "count": 6
+              },
+              {
+                "id": "glassfin",
+                "count": 8
+              },
+              {
+                "id": "cloud-laundry",
+                "count": 5
+              },
+              {
+                "id": "kite-garden",
+                "count": 7
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "scene": "bumblepost",
+      "on": {
+        "fps": 101.13637814957119,
+        "frameMs": 9.88802228412255,
+        "gpuMs": 15.189232771225086,
+        "simulationMs": 0.0004166665176550547,
+        "renderMs": 9.471666665623586,
+        "drawCalls": 1255,
+        "triangles": 5029431
+      },
+      "off": {
+        "fps": 102.95087684812665,
+        "frameMs": 9.71337047353758,
+        "gpuMs": 15.088514699845174,
+        "simulationMs": 0.0008333332836627961,
+        "renderMs": 9.350833333283664,
+        "drawCalls": 1223,
+        "triangles": 5013663
+      },
+      "samples": [
+        {
+          "enabled": true,
+          "fps": 100.50673311122948,
+          "frameMs": 9.949582172701934,
+          "p95Ms": 11.900000000008731,
+          "p99Ms": 14.099999999991269,
+          "over50Ms": 0,
+          "gpuMs": 14.79730304655818,
+          "simulationMs": 0.0008333330353101094,
+          "renderMs": 9.471666666368643,
+          "drawCalls": 1255,
+          "triangles": 5029431,
+          "state": {
+            "enabled": true,
+            "visited": [
+              "bumblepost"
+            ],
+            "nearby": "bumblepost",
+            "visible": [
+              "bumblepost",
+              "reed-organ",
+              "windbone"
+            ],
+            "active": [
+              "bumblepost"
+            ],
+            "rigs": [
+              {
+                "id": "bumblepost",
+                "count": 8
+              },
+              {
+                "id": "tea-circle",
+                "count": 3
+              },
+              {
+                "id": "rootlight",
+                "count": 7
+              },
+              {
+                "id": "woodpecker",
+                "count": 4
+              },
+              {
+                "id": "reed-organ",
+                "count": 8
+              },
+              {
+                "id": "moss-ferry",
+                "count": 1
+              },
+              {
+                "id": "windbone",
+                "count": 9
+              },
+              {
+                "id": "prospector",
+                "count": 3
+              },
+              {
+                "id": "star-cairn",
+                "count": 1
+              },
+              {
+                "id": "shepherd",
+                "count": 6
+              },
+              {
+                "id": "bottle-post",
+                "count": 1
+              },
+              {
+                "id": "driftwatch",
+                "count": 14
+              },
+              {
+                "id": "rookery",
+                "count": 4
+              },
+              {
+                "id": "moon-garden",
+                "count": 7
+              },
+              {
+                "id": "shell-choir",
+                "count": 6
+              },
+              {
+                "id": "glassfin",
+                "count": 8
+              },
+              {
+                "id": "cloud-laundry",
+                "count": 5
+              },
+              {
+                "id": "kite-garden",
+                "count": 7
+              }
+            ]
+          }
+        },
+        {
+          "enabled": false,
+          "fps": 102.94201984286305,
+          "frameMs": 9.71420612813369,
+          "p95Ms": 12.80000000000291,
+          "p99Ms": 13.89999999999418,
+          "over50Ms": 0,
+          "gpuMs": 14.955023716350293,
+          "simulationMs": 0.0008333330353101094,
+          "renderMs": 9.334166670342286,
+          "drawCalls": 1223,
+          "triangles": 5013663,
+          "state": {
+            "enabled": false,
+            "visited": [
+              "bumblepost"
+            ],
+            "nearby": null,
+            "visible": [],
+            "active": [
+              "bumblepost"
+            ],
+            "rigs": [
+              {
+                "id": "bumblepost",
+                "count": 8
+              },
+              {
+                "id": "tea-circle",
+                "count": 3
+              },
+              {
+                "id": "rootlight",
+                "count": 7
+              },
+              {
+                "id": "woodpecker",
+                "count": 4
+              },
+              {
+                "id": "reed-organ",
+                "count": 8
+              },
+              {
+                "id": "moss-ferry",
+                "count": 1
+              },
+              {
+                "id": "windbone",
+                "count": 9
+              },
+              {
+                "id": "prospector",
+                "count": 3
+              },
+              {
+                "id": "star-cairn",
+                "count": 1
+              },
+              {
+                "id": "shepherd",
+                "count": 6
+              },
+              {
+                "id": "bottle-post",
+                "count": 1
+              },
+              {
+                "id": "driftwatch",
+                "count": 14
+              },
+              {
+                "id": "rookery",
+                "count": 4
+              },
+              {
+                "id": "moon-garden",
+                "count": 7
+              },
+              {
+                "id": "shell-choir",
+                "count": 6
+              },
+              {
+                "id": "glassfin",
+                "count": 8
+              },
+              {
+                "id": "cloud-laundry",
+                "count": 5
+              },
+              {
+                "id": "kite-garden",
+                "count": 7
+              }
+            ]
+          }
+        },
+        {
+          "enabled": false,
+          "fps": 102.95973385339026,
+          "frameMs": 9.712534818941473,
+          "p95Ms": 12.69999999999709,
+          "p99Ms": 14,
+          "over50Ms": 0,
+          "gpuMs": 15.222005683340052,
+          "simulationMs": 0.0008333335320154826,
+          "renderMs": 9.367499996225039,
+          "drawCalls": 1223,
+          "triangles": 5013663,
+          "state": {
+            "enabled": false,
+            "visited": [
+              "bumblepost"
+            ],
+            "nearby": null,
+            "visible": [],
+            "active": [
+              "bumblepost"
+            ],
+            "rigs": [
+              {
+                "id": "bumblepost",
+                "count": 8
+              },
+              {
+                "id": "tea-circle",
+                "count": 3
+              },
+              {
+                "id": "rootlight",
+                "count": 7
+              },
+              {
+                "id": "woodpecker",
+                "count": 4
+              },
+              {
+                "id": "reed-organ",
+                "count": 8
+              },
+              {
+                "id": "moss-ferry",
+                "count": 1
+              },
+              {
+                "id": "windbone",
+                "count": 9
+              },
+              {
+                "id": "prospector",
+                "count": 3
+              },
+              {
+                "id": "star-cairn",
+                "count": 1
+              },
+              {
+                "id": "shepherd",
+                "count": 6
+              },
+              {
+                "id": "bottle-post",
+                "count": 1
+              },
+              {
+                "id": "driftwatch",
+                "count": 14
+              },
+              {
+                "id": "rookery",
+                "count": 4
+              },
+              {
+                "id": "moon-garden",
+                "count": 7
+              },
+              {
+                "id": "shell-choir",
+                "count": 6
+              },
+              {
+                "id": "glassfin",
+                "count": 8
+              },
+              {
+                "id": "cloud-laundry",
+                "count": 5
+              },
+              {
+                "id": "kite-garden",
+                "count": 7
+              }
+            ]
+          }
+        },
+        {
+          "enabled": true,
+          "fps": 101.7660231879129,
+          "frameMs": 9.826462395543167,
+          "p95Ms": 12.80000000000291,
+          "p99Ms": 14.30000000000291,
+          "over50Ms": 0,
+          "gpuMs": 15.581162495891991,
+          "simulationMs": 0,
+          "renderMs": 9.471666664878528,
+          "drawCalls": 1255,
+          "triangles": 5029431,
+          "state": {
+            "enabled": true,
+            "visited": [
+              "bumblepost"
+            ],
+            "nearby": "bumblepost",
+            "visible": [
+              "bumblepost",
+              "reed-organ",
+              "windbone"
+            ],
+            "active": [
+              "bumblepost"
+            ],
+            "rigs": [
+              {
+                "id": "bumblepost",
+                "count": 8
+              },
+              {
+                "id": "tea-circle",
+                "count": 3
+              },
+              {
+                "id": "rootlight",
+                "count": 7
+              },
+              {
+                "id": "woodpecker",
+                "count": 4
+              },
+              {
+                "id": "reed-organ",
+                "count": 8
+              },
+              {
+                "id": "moss-ferry",
+                "count": 1
+              },
+              {
+                "id": "windbone",
+                "count": 9
+              },
+              {
+                "id": "prospector",
+                "count": 3
+              },
+              {
+                "id": "star-cairn",
+                "count": 1
+              },
+              {
+                "id": "shepherd",
+                "count": 6
+              },
+              {
+                "id": "bottle-post",
+                "count": 1
+              },
+              {
+                "id": "driftwatch",
+                "count": 14
+              },
+              {
+                "id": "rookery",
+                "count": 4
+              },
+              {
+                "id": "moon-garden",
+                "count": 7
+              },
+              {
+                "id": "shell-choir",
+                "count": 6
+              },
+              {
+                "id": "glassfin",
+                "count": 8
+              },
+              {
+                "id": "cloud-laundry",
+                "count": 5
+              },
+              {
+                "id": "kite-garden",
+                "count": 7
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "scene": "woodpecker",
+      "on": {
+        "fps": 123.14548653640162,
+        "frameMs": 8.12144846796657,
+        "gpuMs": 14.721002158133913,
+        "simulationMs": 0,
+        "renderMs": 7.594583334277074,
+        "drawCalls": 572,
+        "triangles": 2639839
+      },
+      "off": {
+        "fps": 127.67135518169775,
+        "frameMs": 7.833565459610007,
+        "gpuMs": 14.179248927780534,
+        "simulationMs": 0.0004166665176550547,
+        "renderMs": 7.422916665921608,
+        "drawCalls": 546,
+        "triangles": 2626391
+      },
+      "samples": [
+        {
+          "enabled": true,
+          "fps": 121.79813401187445,
+          "frameMs": 8.210306406685238,
+          "p95Ms": 12.19999999999709,
+          "p99Ms": 17.69999999999709,
+          "over50Ms": 0,
+          "gpuMs": 14.746106782619778,
+          "simulationMs": 0,
+          "renderMs": 7.603333332637946,
+          "drawCalls": 572,
+          "triangles": 2639839,
+          "state": {
+            "enabled": true,
+            "visited": [
+              "bumblepost",
+              "woodpecker"
+            ],
+            "nearby": "woodpecker",
+            "visible": [
+              "woodpecker",
+              "cloud-laundry",
+              "kite-garden"
+            ],
+            "active": [
+              "bumblepost",
+              "woodpecker"
+            ],
+            "rigs": [
+              {
+                "id": "bumblepost",
+                "count": 8
+              },
+              {
+                "id": "tea-circle",
+                "count": 3
+              },
+              {
+                "id": "rootlight",
+                "count": 7
+              },
+              {
+                "id": "woodpecker",
+                "count": 4
+              },
+              {
+                "id": "reed-organ",
+                "count": 8
+              },
+              {
+                "id": "moss-ferry",
+                "count": 1
+              },
+              {
+                "id": "windbone",
+                "count": 9
+              },
+              {
+                "id": "prospector",
+                "count": 3
+              },
+              {
+                "id": "star-cairn",
+                "count": 1
+              },
+              {
+                "id": "shepherd",
+                "count": 6
+              },
+              {
+                "id": "bottle-post",
+                "count": 1
+              },
+              {
+                "id": "driftwatch",
+                "count": 14
+              },
+              {
+                "id": "rookery",
+                "count": 4
+              },
+              {
+                "id": "moon-garden",
+                "count": 7
+              },
+              {
+                "id": "shell-choir",
+                "count": 6
+              },
+              {
+                "id": "glassfin",
+                "count": 8
+              },
+              {
+                "id": "cloud-laundry",
+                "count": 5
+              },
+              {
+                "id": "kite-garden",
+                "count": 7
+              }
+            ]
+          }
+        },
+        {
+          "enabled": false,
+          "fps": 126.26173812119772,
+          "frameMs": 7.920055710306374,
+          "p95Ms": 11.80000000000291,
+          "p99Ms": 14.099999999991269,
+          "over50Ms": 0,
+          "gpuMs": 14.372779348912674,
+          "simulationMs": 0,
+          "renderMs": 7.528333334624767,
+          "drawCalls": 546,
+          "triangles": 2626391,
+          "state": {
+            "enabled": false,
+            "visited": [
+              "bumblepost",
+              "woodpecker"
+            ],
+            "nearby": null,
+            "visible": [],
+            "active": [
+              "bumblepost",
+              "woodpecker"
+            ],
+            "rigs": [
+              {
+                "id": "bumblepost",
+                "count": 8
+              },
+              {
+                "id": "tea-circle",
+                "count": 3
+              },
+              {
+                "id": "rootlight",
+                "count": 7
+              },
+              {
+                "id": "woodpecker",
+                "count": 4
+              },
+              {
+                "id": "reed-organ",
+                "count": 8
+              },
+              {
+                "id": "moss-ferry",
+                "count": 1
+              },
+              {
+                "id": "windbone",
+                "count": 9
+              },
+              {
+                "id": "prospector",
+                "count": 3
+              },
+              {
+                "id": "star-cairn",
+                "count": 1
+              },
+              {
+                "id": "shepherd",
+                "count": 6
+              },
+              {
+                "id": "bottle-post",
+                "count": 1
+              },
+              {
+                "id": "driftwatch",
+                "count": 14
+              },
+              {
+                "id": "rookery",
+                "count": 4
+              },
+              {
+                "id": "moon-garden",
+                "count": 7
+              },
+              {
+                "id": "shell-choir",
+                "count": 6
+              },
+              {
+                "id": "glassfin",
+                "count": 8
+              },
+              {
+                "id": "cloud-laundry",
+                "count": 5
+              },
+              {
+                "id": "kite-garden",
+                "count": 7
+              }
+            ]
+          }
+        },
+        {
+          "enabled": false,
+          "fps": 129.08097224219776,
+          "frameMs": 7.747075208913641,
+          "p95Ms": 9.299999999988358,
+          "p99Ms": 10.5,
+          "over50Ms": 0,
+          "gpuMs": 13.985718506648393,
+          "simulationMs": 0.0008333330353101094,
+          "renderMs": 7.31749999721845,
+          "drawCalls": 546,
+          "triangles": 2626391,
+          "state": {
+            "enabled": false,
+            "visited": [
+              "bumblepost",
+              "woodpecker"
+            ],
+            "nearby": null,
+            "visible": [],
+            "active": [
+              "bumblepost",
+              "woodpecker"
+            ],
+            "rigs": [
+              {
+                "id": "bumblepost",
+                "count": 8
+              },
+              {
+                "id": "tea-circle",
+                "count": 3
+              },
+              {
+                "id": "rootlight",
+                "count": 7
+              },
+              {
+                "id": "woodpecker",
+                "count": 4
+              },
+              {
+                "id": "reed-organ",
+                "count": 8
+              },
+              {
+                "id": "moss-ferry",
+                "count": 1
+              },
+              {
+                "id": "windbone",
+                "count": 9
+              },
+              {
+                "id": "prospector",
+                "count": 3
+              },
+              {
+                "id": "star-cairn",
+                "count": 1
+              },
+              {
+                "id": "shepherd",
+                "count": 6
+              },
+              {
+                "id": "bottle-post",
+                "count": 1
+              },
+              {
+                "id": "driftwatch",
+                "count": 14
+              },
+              {
+                "id": "rookery",
+                "count": 4
+              },
+              {
+                "id": "moon-garden",
+                "count": 7
+              },
+              {
+                "id": "shell-choir",
+                "count": 6
+              },
+              {
+                "id": "glassfin",
+                "count": 8
+              },
+              {
+                "id": "cloud-laundry",
+                "count": 5
+              },
+              {
+                "id": "kite-garden",
+                "count": 7
+              }
+            ]
+          }
+        },
+        {
+          "enabled": true,
+          "fps": 124.49283906092879,
+          "frameMs": 8.032590529247903,
+          "p95Ms": 9.60000000000582,
+          "p99Ms": 10.60000000000582,
+          "over50Ms": 0,
+          "gpuMs": 14.69589753364805,
+          "simulationMs": 0,
+          "renderMs": 7.585833335916202,
+          "drawCalls": 572,
+          "triangles": 2639839,
+          "state": {
+            "enabled": true,
+            "visited": [
+              "bumblepost",
+              "woodpecker"
+            ],
+            "nearby": "woodpecker",
+            "visible": [
+              "woodpecker",
+              "cloud-laundry",
+              "kite-garden"
+            ],
+            "active": [
+              "bumblepost",
+              "woodpecker"
+            ],
+            "rigs": [
+              {
+                "id": "bumblepost",
+                "count": 8
+              },
+              {
+                "id": "tea-circle",
+                "count": 3
+              },
+              {
+                "id": "rootlight",
+                "count": 7
+              },
+              {
+                "id": "woodpecker",
+                "count": 4
+              },
+              {
+                "id": "reed-organ",
+                "count": 8
+              },
+              {
+                "id": "moss-ferry",
+                "count": 1
+              },
+              {
+                "id": "windbone",
+                "count": 9
+              },
+              {
+                "id": "prospector",
+                "count": 3
+              },
+              {
+                "id": "star-cairn",
+                "count": 1
+              },
+              {
+                "id": "shepherd",
+                "count": 6
+              },
+              {
+                "id": "bottle-post",
+                "count": 1
+              },
+              {
+                "id": "driftwatch",
+                "count": 14
+              },
+              {
+                "id": "rookery",
+                "count": 4
+              },
+              {
+                "id": "moon-garden",
+                "count": 7
+              },
+              {
+                "id": "shell-choir",
+                "count": 6
+              },
+              {
+                "id": "glassfin",
+                "count": 8
+              },
+              {
+                "id": "cloud-laundry",
+                "count": 5
+              },
+              {
+                "id": "kite-garden",
+                "count": 7
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "scene": "reed-organ",
+      "on": {
+        "fps": 107.2779783071756,
+        "frameMs": 9.33955431754873,
+        "gpuMs": 12.919445454678687,
+        "simulationMs": 0.0004166665176550547,
+        "renderMs": 9.094583335022131,
+        "drawCalls": 1380,
+        "triangles": 4671375
+      },
+      "off": {
+        "fps": 107.06430833791325,
+        "frameMs": 9.345264623955424,
+        "gpuMs": 13.965049980572626,
+        "simulationMs": 0,
+        "renderMs": 8.988333331048489,
+        "drawCalls": 1296,
+        "triangles": 4632063
+      },
+      "samples": [
+        {
+          "enabled": true,
+          "fps": 102.57142857142857,
+          "frameMs": 9.749303621169917,
+          "p95Ms": 13,
+          "p99Ms": 14.89999999999418,
+          "over50Ms": 0,
+          "gpuMs": 11.670844514094465,
+          "simulationMs": 0.0008333330353101094,
+          "renderMs": 9.507499999304612,
+          "drawCalls": 1380,
+          "triangles": 4671375,
+          "state": {
+            "enabled": true,
+            "visited": [
+              "bumblepost",
+              "woodpecker",
+              "reed-organ"
+            ],
+            "nearby": "reed-organ",
+            "visible": [
+              "bumblepost",
+              "reed-organ",
+              "moss-ferry",
+              "windbone"
+            ],
+            "active": [
+              "bumblepost",
+              "woodpecker",
+              "reed-organ"
+            ],
+            "rigs": [
+              {
+                "id": "bumblepost",
+                "count": 8
+              },
+              {
+                "id": "tea-circle",
+                "count": 3
+              },
+              {
+                "id": "rootlight",
+                "count": 7
+              },
+              {
+                "id": "woodpecker",
+                "count": 4
+              },
+              {
+                "id": "reed-organ",
+                "count": 8
+              },
+              {
+                "id": "moss-ferry",
+                "count": 1
+              },
+              {
+                "id": "windbone",
+                "count": 9
+              },
+              {
+                "id": "prospector",
+                "count": 3
+              },
+              {
+                "id": "star-cairn",
+                "count": 1
+              },
+              {
+                "id": "shepherd",
+                "count": 6
+              },
+              {
+                "id": "bottle-post",
+                "count": 1
+              },
+              {
+                "id": "driftwatch",
+                "count": 14
+              },
+              {
+                "id": "rookery",
+                "count": 4
+              },
+              {
+                "id": "moon-garden",
+                "count": 7
+              },
+              {
+                "id": "shell-choir",
+                "count": 6
+              },
+              {
+                "id": "glassfin",
+                "count": 8
+              },
+              {
+                "id": "cloud-laundry",
+                "count": 5
+              },
+              {
+                "id": "kite-garden",
+                "count": 7
+              }
+            ]
+          }
+        },
+        {
+          "enabled": false,
+          "fps": 104.56716765699647,
+          "frameMs": 9.56323119777158,
+          "p95Ms": 11.799999999988358,
+          "p99Ms": 13.80000000000291,
+          "over50Ms": 0,
+          "gpuMs": 13.565285607883265,
+          "simulationMs": 0,
+          "renderMs": 9.073333331942559,
+          "drawCalls": 1296,
+          "triangles": 4632063,
+          "state": {
+            "enabled": false,
+            "visited": [
+              "bumblepost",
+              "woodpecker",
+              "reed-organ"
+            ],
+            "nearby": null,
+            "visible": [],
+            "active": [
+              "bumblepost",
+              "woodpecker",
+              "reed-organ"
+            ],
+            "rigs": [
+              {
+                "id": "bumblepost",
+                "count": 8
+              },
+              {
+                "id": "tea-circle",
+                "count": 3
+              },
+              {
+                "id": "rootlight",
+                "count": 7
+              },
+              {
+                "id": "woodpecker",
+                "count": 4
+              },
+              {
+                "id": "reed-organ",
+                "count": 8
+              },
+              {
+                "id": "moss-ferry",
+                "count": 1
+              },
+              {
+                "id": "windbone",
+                "count": 9
+              },
+              {
+                "id": "prospector",
+                "count": 3
+              },
+              {
+                "id": "star-cairn",
+                "count": 1
+              },
+              {
+                "id": "shepherd",
+                "count": 6
+              },
+              {
+                "id": "bottle-post",
+                "count": 1
+              },
+              {
+                "id": "driftwatch",
+                "count": 14
+              },
+              {
+                "id": "rookery",
+                "count": 4
+              },
+              {
+                "id": "moon-garden",
+                "count": 7
+              },
+              {
+                "id": "shell-choir",
+                "count": 6
+              },
+              {
+                "id": "glassfin",
+                "count": 8
+              },
+              {
+                "id": "cloud-laundry",
+                "count": 5
+              },
+              {
+                "id": "kite-garden",
+                "count": 7
+              }
+            ]
+          }
+        },
+        {
+          "enabled": false,
+          "fps": 109.56144901883,
+          "frameMs": 9.127298050139268,
+          "p95Ms": 11.10000000000582,
+          "p99Ms": 12.89999999999418,
+          "over50Ms": 0,
+          "gpuMs": 14.36481435326199,
+          "simulationMs": 0,
+          "renderMs": 8.90333333015442,
+          "drawCalls": 1296,
+          "triangles": 4632063,
+          "state": {
+            "enabled": false,
+            "visited": [
+              "bumblepost",
+              "woodpecker",
+              "reed-organ"
+            ],
+            "nearby": null,
+            "visible": [],
+            "active": [
+              "bumblepost",
+              "woodpecker",
+              "reed-organ"
+            ],
+            "rigs": [
+              {
+                "id": "bumblepost",
+                "count": 8
+              },
+              {
+                "id": "tea-circle",
+                "count": 3
+              },
+              {
+                "id": "rootlight",
+                "count": 7
+              },
+              {
+                "id": "woodpecker",
+                "count": 4
+              },
+              {
+                "id": "reed-organ",
+                "count": 8
+              },
+              {
+                "id": "moss-ferry",
+                "count": 1
+              },
+              {
+                "id": "windbone",
+                "count": 9
+              },
+              {
+                "id": "prospector",
+                "count": 3
+              },
+              {
+                "id": "star-cairn",
+                "count": 1
+              },
+              {
+                "id": "shepherd",
+                "count": 6
+              },
+              {
+                "id": "bottle-post",
+                "count": 1
+              },
+              {
+                "id": "driftwatch",
+                "count": 14
+              },
+              {
+                "id": "rookery",
+                "count": 4
+              },
+              {
+                "id": "moon-garden",
+                "count": 7
+              },
+              {
+                "id": "shell-choir",
+                "count": 6
+              },
+              {
+                "id": "glassfin",
+                "count": 8
+              },
+              {
+                "id": "cloud-laundry",
+                "count": 5
+              },
+              {
+                "id": "kite-garden",
+                "count": 7
+              }
+            ]
+          }
+        },
+        {
+          "enabled": true,
+          "fps": 111.98452804292262,
+          "frameMs": 8.929805013927544,
+          "p95Ms": 12.30000000000291,
+          "p99Ms": 14.69999999999709,
+          "over50Ms": 0,
+          "gpuMs": 14.168046395262909,
+          "simulationMs": 0,
+          "renderMs": 8.68166667073965,
+          "drawCalls": 1380,
+          "triangles": 4671375,
+          "state": {
+            "enabled": true,
+            "visited": [
+              "bumblepost",
+              "woodpecker",
+              "reed-organ"
+            ],
+            "nearby": "reed-organ",
+            "visible": [
+              "bumblepost",
+              "reed-organ",
+              "moss-ferry",
+              "windbone"
+            ],
+            "active": [
+              "bumblepost",
+              "woodpecker",
+              "reed-organ"
+            ],
+            "rigs": [
+              {
+                "id": "bumblepost",
+                "count": 8
+              },
+              {
+                "id": "tea-circle",
+                "count": 3
+              },
+              {
+                "id": "rootlight",
+                "count": 7
+              },
+              {
+                "id": "woodpecker",
+                "count": 4
+              },
+              {
+                "id": "reed-organ",
+                "count": 8
+              },
+              {
+                "id": "moss-ferry",
+                "count": 1
+              },
+              {
+                "id": "windbone",
+                "count": 9
+              },
+              {
+                "id": "prospector",
+                "count": 3
+              },
+              {
+                "id": "star-cairn",
+                "count": 1
+              },
+              {
+                "id": "shepherd",
+                "count": 6
+              },
+              {
+                "id": "bottle-post",
+                "count": 1
+              },
+              {
+                "id": "driftwatch",
+                "count": 14
+              },
+              {
+                "id": "rookery",
+                "count": 4
+              },
+              {
+                "id": "moon-garden",
+                "count": 7
+              },
+              {
+                "id": "shell-choir",
+                "count": 6
+              },
+              {
+                "id": "glassfin",
+                "count": 8
+              },
+              {
+                "id": "cloud-laundry",
+                "count": 5
+              },
+              {
+                "id": "kite-garden",
+                "count": 7
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "scene": "kite-garden",
+      "on": {
+        "fps": 115.49987649850308,
+        "frameMs": 8.662674094707524,
+        "gpuMs": 16.477698959233777,
+        "simulationMs": 0,
+        "renderMs": 8.179166668156782,
+        "drawCalls": 722,
+        "triangles": 2349819
+      },
+      "off": {
+        "fps": 123.18023773365448,
+        "frameMs": 8.1193593314763,
+        "gpuMs": 15.681155599405571,
+        "simulationMs": 0.0004166667660077413,
+        "renderMs": 7.785000001390776,
+        "drawCalls": 685,
+        "triangles": 2345813
+      },
+      "samples": [
+        {
+          "enabled": true,
+          "fps": 112.82212445003091,
+          "frameMs": 8.863509749303661,
+          "p95Ms": 13.69999999999709,
+          "p99Ms": 18.09999999999127,
+          "over50Ms": 0,
+          "gpuMs": 16.5974621330477,
+          "simulationMs": 0,
+          "renderMs": 8.339166667560736,
+          "drawCalls": 722,
+          "triangles": 2349819,
+          "state": {
+            "enabled": true,
+            "visited": [
+              "bumblepost",
+              "woodpecker",
+              "reed-organ",
+              "kite-garden"
+            ],
+            "nearby": "kite-garden",
+            "visible": [
+              "woodpecker",
+              "cloud-laundry",
+              "kite-garden"
+            ],
+            "active": [
+              "bumblepost",
+              "woodpecker",
+              "reed-organ",
+              "kite-garden"
+            ],
+            "rigs": [
+              {
+                "id": "bumblepost",
+                "count": 8
+              },
+              {
+                "id": "tea-circle",
+                "count": 3
+              },
+              {
+                "id": "rootlight",
+                "count": 7
+              },
+              {
+                "id": "woodpecker",
+                "count": 4
+              },
+              {
+                "id": "reed-organ",
+                "count": 8
+              },
+              {
+                "id": "moss-ferry",
+                "count": 1
+              },
+              {
+                "id": "windbone",
+                "count": 9
+              },
+              {
+                "id": "prospector",
+                "count": 3
+              },
+              {
+                "id": "star-cairn",
+                "count": 1
+              },
+              {
+                "id": "shepherd",
+                "count": 6
+              },
+              {
+                "id": "bottle-post",
+                "count": 1
+              },
+              {
+                "id": "driftwatch",
+                "count": 14
+              },
+              {
+                "id": "rookery",
+                "count": 4
+              },
+              {
+                "id": "moon-garden",
+                "count": 7
+              },
+              {
+                "id": "shell-choir",
+                "count": 6
+              },
+              {
+                "id": "glassfin",
+                "count": 8
+              },
+              {
+                "id": "cloud-laundry",
+                "count": 5
+              },
+              {
+                "id": "kite-garden",
+                "count": 7
+              }
+            ]
+          }
+        },
+        {
+          "enabled": false,
+          "fps": 121.69904064544585,
+          "frameMs": 8.216991643454023,
+          "p95Ms": 10.199999999982538,
+          "p99Ms": 13.89999999999418,
+          "over50Ms": 0,
+          "gpuMs": 16.26142609103132,
+          "simulationMs": 0.0008333335320154826,
+          "renderMs": 7.7966666678587595,
+          "drawCalls": 685,
+          "triangles": 2345813,
+          "state": {
+            "enabled": false,
+            "visited": [
+              "bumblepost",
+              "woodpecker",
+              "reed-organ",
+              "kite-garden"
+            ],
+            "nearby": null,
+            "visible": [],
+            "active": [
+              "bumblepost",
+              "woodpecker",
+              "reed-organ",
+              "kite-garden"
+            ],
+            "rigs": [
+              {
+                "id": "bumblepost",
+                "count": 8
+              },
+              {
+                "id": "tea-circle",
+                "count": 3
+              },
+              {
+                "id": "rootlight",
+                "count": 7
+              },
+              {
+                "id": "woodpecker",
+                "count": 4
+              },
+              {
+                "id": "reed-organ",
+                "count": 8
+              },
+              {
+                "id": "moss-ferry",
+                "count": 1
+              },
+              {
+                "id": "windbone",
+                "count": 9
+              },
+              {
+                "id": "prospector",
+                "count": 3
+              },
+              {
+                "id": "star-cairn",
+                "count": 1
+              },
+              {
+                "id": "shepherd",
+                "count": 6
+              },
+              {
+                "id": "bottle-post",
+                "count": 1
+              },
+              {
+                "id": "driftwatch",
+                "count": 14
+              },
+              {
+                "id": "rookery",
+                "count": 4
+              },
+              {
+                "id": "moon-garden",
+                "count": 7
+              },
+              {
+                "id": "shell-choir",
+                "count": 6
+              },
+              {
+                "id": "glassfin",
+                "count": 8
+              },
+              {
+                "id": "cloud-laundry",
+                "count": 5
+              },
+              {
+                "id": "kite-garden",
+                "count": 7
+              }
+            ]
+          }
+        },
+        {
+          "enabled": false,
+          "fps": 124.66143482186312,
+          "frameMs": 8.021727019498575,
+          "p95Ms": 10.400000000023283,
+          "p99Ms": 13.799999999988358,
+          "over50Ms": 0,
+          "gpuMs": 15.100885107779819,
+          "simulationMs": 0,
+          "renderMs": 7.773333334922791,
+          "drawCalls": 685,
+          "triangles": 2345813,
+          "state": {
+            "enabled": false,
+            "visited": [
+              "bumblepost",
+              "woodpecker",
+              "reed-organ",
+              "kite-garden"
+            ],
+            "nearby": null,
+            "visible": [],
+            "active": [
+              "bumblepost",
+              "woodpecker",
+              "reed-organ",
+              "kite-garden"
+            ],
+            "rigs": [
+              {
+                "id": "bumblepost",
+                "count": 8
+              },
+              {
+                "id": "tea-circle",
+                "count": 3
+              },
+              {
+                "id": "rootlight",
+                "count": 7
+              },
+              {
+                "id": "woodpecker",
+                "count": 4
+              },
+              {
+                "id": "reed-organ",
+                "count": 8
+              },
+              {
+                "id": "moss-ferry",
+                "count": 1
+              },
+              {
+                "id": "windbone",
+                "count": 9
+              },
+              {
+                "id": "prospector",
+                "count": 3
+              },
+              {
+                "id": "star-cairn",
+                "count": 1
+              },
+              {
+                "id": "shepherd",
+                "count": 6
+              },
+              {
+                "id": "bottle-post",
+                "count": 1
+              },
+              {
+                "id": "driftwatch",
+                "count": 14
+              },
+              {
+                "id": "rookery",
+                "count": 4
+              },
+              {
+                "id": "moon-garden",
+                "count": 7
+              },
+              {
+                "id": "shell-choir",
+                "count": 6
+              },
+              {
+                "id": "glassfin",
+                "count": 8
+              },
+              {
+                "id": "cloud-laundry",
+                "count": 5
+              },
+              {
+                "id": "kite-garden",
+                "count": 7
+              }
+            ]
+          }
+        },
+        {
+          "enabled": true,
+          "fps": 118.17762854697524,
+          "frameMs": 8.461838440111388,
+          "p95Ms": 11,
+          "p99Ms": 13.10000000000582,
+          "over50Ms": 0,
+          "gpuMs": 16.357935785419855,
+          "simulationMs": 0,
+          "renderMs": 8.01916666875283,
+          "drawCalls": 722,
+          "triangles": 2349819,
+          "state": {
+            "enabled": true,
+            "visited": [
+              "bumblepost",
+              "woodpecker",
+              "reed-organ",
+              "kite-garden"
+            ],
+            "nearby": "kite-garden",
+            "visible": [
+              "woodpecker",
+              "cloud-laundry",
+              "kite-garden"
+            ],
+            "active": [
+              "bumblepost",
+              "woodpecker",
+              "reed-organ",
+              "kite-garden"
+            ],
+            "rigs": [
+              {
+                "id": "bumblepost",
+                "count": 8
+              },
+              {
+                "id": "tea-circle",
+                "count": 3
+              },
+              {
+                "id": "rootlight",
+                "count": 7
+              },
+              {
+                "id": "woodpecker",
+                "count": 4
+              },
+              {
+                "id": "reed-organ",
+                "count": 8
+              },
+              {
+                "id": "moss-ferry",
+                "count": 1
+              },
+              {
+                "id": "windbone",
+                "count": 9
+              },
+              {
+                "id": "prospector",
+                "count": 3
+              },
+              {
+                "id": "star-cairn",
+                "count": 1
+              },
+              {
+                "id": "shepherd",
+                "count": 6
+              },
+              {
+                "id": "bottle-post",
+                "count": 1
+              },
+              {
+                "id": "driftwatch",
+                "count": 14
+              },
+              {
+                "id": "rookery",
+                "count": 4
+              },
+              {
+                "id": "moon-garden",
+                "count": 7
+              },
+              {
+                "id": "shell-choir",
+                "count": 6
+              },
+              {
+                "id": "glassfin",
+                "count": 8
+              },
+              {
+                "id": "cloud-laundry",
+                "count": 5
+              },
+              {
+                "id": "kite-garden",
+                "count": 7
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "cold": [
+    {
+      "run": 0,
+      "enabled": true,
+      "readyMs": 4103.199999988079,
+      "firstFrameMs": 4253.399999976158,
+      "requests": 327,
+      "bytes": 68975504,
+      "discoveryRequests": 18,
+      "discoveryBytes": 1929404,
+      "heapBytes": 212053713,
+      "art": {
+        "loaded": 236,
+        "lodsLoaded": 84,
+        "failed": [],
+        "replaced": 674
+      }
+    },
+    {
+      "run": 0,
+      "enabled": false,
+      "readyMs": 3955.699999988079,
+      "firstFrameMs": 4115,
+      "requests": 309,
+      "bytes": 67046100,
+      "discoveryRequests": 0,
+      "discoveryBytes": 0,
+      "heapBytes": 291255799,
+      "art": {
+        "loaded": 218,
+        "lodsLoaded": 84,
+        "failed": [],
+        "replaced": 674
+      }
+    },
+    {
+      "run": 1,
+      "enabled": false,
+      "readyMs": 3947.300000011921,
+      "firstFrameMs": 4106.100000023842,
+      "requests": 309,
+      "bytes": 67046100,
+      "discoveryRequests": 0,
+      "discoveryBytes": 0,
+      "heapBytes": 197070078,
+      "art": {
+        "loaded": 218,
+        "lodsLoaded": 84,
+        "failed": [],
+        "replaced": 674
+      }
+    },
+    {
+      "run": 1,
+      "enabled": true,
+      "readyMs": 4047.599999964237,
+      "firstFrameMs": 4189.399999976158,
+      "requests": 327,
+      "bytes": 68975504,
+      "discoveryRequests": 18,
+      "discoveryBytes": 1929404,
+      "heapBytes": 201677165,
+      "art": {
+        "loaded": 236,
+        "lodsLoaded": 84,
+        "failed": [],
+        "replaced": 674
+      }
+    },
+    {
+      "run": 2,
+      "enabled": true,
+      "readyMs": 4073.7999999523163,
+      "firstFrameMs": 4199.5,
+      "requests": 327,
+      "bytes": 68975504,
+      "discoveryRequests": 18,
+      "discoveryBytes": 1929404,
+      "heapBytes": 201383681,
+      "art": {
+        "loaded": 236,
+        "lodsLoaded": 84,
+        "failed": [],
+        "replaced": 674
+      }
+    },
+    {
+      "run": 2,
+      "enabled": false,
+      "readyMs": 3943.599999964237,
+      "firstFrameMs": 4083.599999964237,
+      "requests": 309,
+      "bytes": 67046100,
+      "discoveryRequests": 0,
+      "discoveryBytes": 0,
+      "heapBytes": 194831666,
+      "art": {
+        "loaded": 218,
+        "lodsLoaded": 84,
+        "failed": [],
+        "replaced": 674
+      }
+    }
+  ],
+  "errors": [],
+  "network": {
+    "cache": "disabled, fresh browser context per sample",
+    "latencyMs": 20,
+    "downloadMiBps": 20
+  },
+  "passed": true
+}

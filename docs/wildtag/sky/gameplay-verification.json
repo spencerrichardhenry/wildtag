@@ -1,0 +1,372 @@
+{
+  "checks": [
+    "ground trampoline -> drone trampoline -> ballistic midair grapple -> walkable landing",
+    "complete walk-only city loop, all seven places, all three wind chimes",
+    "real dart, tracking and F bond: suncresteagle",
+    "real dart, tracking and F bond: seraphlet",
+    "normal save/reload preserves altitude, chimes, rewards, resource cooldown and bonded sky creature; release restores original sky home"
+  ],
+  "route": [
+    {
+      "x": 184.0254383989799,
+      "y": 147,
+      "z": -184.14395186877766
+    },
+    {
+      "x": 184.0002081323496,
+      "y": 147,
+      "z": -190.9439050622674
+    },
+    {
+      "x": 189.01168244385235,
+      "y": 147,
+      "z": -189.9977944846138
+    },
+    {
+      "x": 210.98886609032263,
+      "y": 147,
+      "z": -190.99949252753618
+    },
+    {
+      "x": 219.97819187629585,
+      "y": 147,
+      "z": -196.98547798639336
+    },
+    {
+      "x": 219.99996832450367,
+      "y": 147,
+      "z": -206.98545427568106
+    },
+    {
+      "x": 219.99999995399264,
+      "y": 147,
+      "z": -216.98545427563207
+    },
+    {
+      "x": 203.10000614026782,
+      "y": 147,
+      "z": -216.9999144316614
+    },
+    {
+      "x": 202.99858045145027,
+      "y": 147,
+      "z": -209.90063891724026
+    },
+    {
+      "x": 184.19883755570817,
+      "y": 147,
+      "z": -209.9989600952093
+    },
+    {
+      "x": 177.01314586364413,
+      "y": 147,
+      "z": -219.98173700880602
+    },
+    {
+      "x": 177.0001109088554,
+      "y": 147,
+      "z": -233.88173089693126
+    },
+    {
+      "x": 175.05245941228753,
+      "y": 147,
+      "z": -240.81330024650228
+    },
+    {
+      "x": 177.03405313108317,
+      "y": 147,
+      "z": -244.05572007336474
+    },
+    {
+      "x": 205.0339975546059,
+      "y": 147,
+      "z": -243.99993226239582
+    },
+    {
+      "x": 204.9998002190307,
+      "y": 147,
+      "z": -261.0998980676896
+    },
+    {
+      "x": 204.99999999842137,
+      "y": 147,
+      "z": -273.9998980661451
+    },
+    {
+      "x": 228.8999999982027,
+      "y": 151,
+      "z": -273.99999957527564
+    },
+    {
+      "x": 229.00027739209398,
+      "y": 155,
+      "z": -237.9001388491674
+    },
+    {
+      "x": 248.1834734675726,
+      "y": 155,
+      "z": -240.02027760166362
+    },
+    {
+      "x": 251.03886591568101,
+      "y": 155,
+      "z": -245.06871636699321
+    },
+    {
+      "x": 255.93839595442978,
+      "y": 154.63767391777998,
+      "z": -245.00085327389496
+    },
+    {
+      "x": 255.99992892326225,
+      "y": 147,
+      "z": -223.02538386664173
+    },
+    {
+      "x": 264.999893127335,
+      "y": 147,
+      "z": -223.00000030142445
+    },
+    {
+      "x": 264.99999999999596,
+      "y": 147,
+      "z": -215.0000003021388
+    },
+    {
+      "x": 241.19999999999482,
+      "y": 147,
+      "z": -215.00000000251788
+    },
+    {
+      "x": 255.09999999999408,
+      "y": 147,
+      "z": -214.99999999998175
+    },
+    {
+      "x": 262.9042927329954,
+      "y": 147,
+      "z": -220.927310936452
+    },
+    {
+      "x": 262.999546598535,
+      "y": 147,
+      "z": -215.02807991019952
+    },
+    {
+      "x": 240.1995635910331,
+      "y": 147,
+      "z": -215.00024364513843
+    },
+    {
+      "x": 238.01093571623258,
+      "y": 147,
+      "z": -193.10938007090692
+    }
+  ],
+  "hang": {
+    "pos": {
+      "x": 170.56155417432382,
+      "y": 147.8016367230803,
+      "z": -148.01168503973412
+    },
+    "sky": {
+      "progress": {
+        "discovered": [],
+        "chimes": [],
+        "glassCooldowns": [
+          0,
+          0,
+          0
+        ],
+        "ascent": true
+      },
+      "journey": "grapple",
+      "bounces": {
+        "ground": 1,
+        "drone": 1
+      },
+      "launch": {
+        "ground": {
+          "x": 145,
+          "y": 10.657763169,
+          "z": -128
+        },
+        "drone": {
+          "x": 154,
+          "y": 36.223973189,
+          "z": -136
+        },
+        "anchor": {
+          "x": 170.5,
+          "y": 149,
+          "z": -148
+        }
+      },
+      "chimes": [
+        {
+          "x": 189,
+          "y": 147,
+          "z": -190
+        },
+        {
+          "x": 175,
+          "y": 147,
+          "z": -241
+        },
+        {
+          "x": 248,
+          "y": 155,
+          "z": -240
+        }
+      ],
+      "glass": [
+        {
+          "x": 269,
+          "y": 147,
+          "z": -224
+        },
+        {
+          "x": 178,
+          "y": 147,
+          "z": -245
+        },
+        {
+          "x": 249,
+          "y": 155,
+          "z": -243
+        }
+      ],
+      "zones": [
+        {
+          "id": "arrival",
+          "name": "Galehook Landing",
+          "x": -36,
+          "z": 60,
+          "w": 24,
+          "d": 24,
+          "y": 0,
+          "story": "A city held aloft by sleeping cloudstone. Follow the brass inlay uphill."
+        },
+        {
+          "id": "market",
+          "name": "Windswept Market",
+          "x": -36,
+          "z": -3,
+          "w": 28,
+          "d": 22,
+          "y": 4,
+          "story": "Its canvas is always full of wind. A lantern-lit passage curls behind the western stalls."
+        },
+        {
+          "id": "court",
+          "name": "Sunwash Court",
+          "x": 4,
+          "z": 4,
+          "w": 44,
+          "d": 36,
+          "y": 4,
+          "story": "Eagles ride the warm air above the eastern nests. The observatory doors are open."
+        },
+        {
+          "id": "observatory",
+          "name": "The Weather Room",
+          "x": -2,
+          "z": 2,
+          "w": 18,
+          "d": 14,
+          "y": 4,
+          "story": "An orrery charts the island below. The scribes left three wind chimes listening across the kingdom."
+        },
+        {
+          "id": "tunnel",
+          "name": "Whisper Gallery",
+          "x": -30,
+          "z": -34,
+          "w": 40,
+          "d": 36,
+          "y": 4,
+          "story": "Turn with the blue lanterns. This sheltered route passes beneath the sanctuary."
+        },
+        {
+          "id": "aerie",
+          "name": "Eaglewatch Aerie",
+          "x": 43,
+          "z": -13,
+          "w": 22,
+          "d": 26,
+          "y": 4,
+          "story": "Suncrest Eagles return to these nests. Tag one and follow its circuit to form a link."
+        },
+        {
+          "id": "sanctuary",
+          "name": "Sanctuary of the Six Wings",
+          "x": 9,
+          "z": -28,
+          "w": 28,
+          "d": 26,
+          "y": 12,
+          "story": "Seraphlets keep a quiet vigil. Listen for the final chime on the eastern balcony."
+        }
+      ]
+    },
+    "hook": {
+      "phase": "latched",
+      "pos": {
+        "x": 171.81442647412368,
+        "y": 145.53903130065933,
+        "z": -148.85672557234327
+      },
+      "vel": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "anchor": {
+        "x": 170.5,
+        "y": 149,
+        "z": -148
+      },
+      "anchorDrone": "sky-gate",
+      "length": 1.2,
+      "hang": true,
+      "flightTime": 1.566666666666666
+    }
+  },
+  "ascent": {
+    "ground": 1,
+    "drone": 1
+  },
+  "art": {
+    "loaded": 218,
+    "lodsLoaded": 84,
+    "failed": [],
+    "replaced": 916
+  },
+  "performance": {
+    "drawCalls": 582,
+    "triangles": 1582041,
+    "geometries": 1056,
+    "textures": 55,
+    "scenery": {
+      "near": 42,
+      "mid": 358,
+      "far": 11287
+    },
+    "view": {
+      "x": 238.01093571623258,
+      "y": 148.65,
+      "z": -193.10938007090692
+    },
+    "performance": {
+      "samples": 120,
+      "fps": 60.00300015000767,
+      "frameMs": 16.665833333333286,
+      "p95Ms": 16.70000000001164,
+      "simulationMs": 0.3983333359162013,
+      "renderMs": 4.6691666632890705,
+      "gpuMs": 9.924995053078424
+    }
+  },
+  "errors": [],
+  "passed": true
+}

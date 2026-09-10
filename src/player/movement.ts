@@ -216,7 +216,7 @@ export function stepMovement(s: MoveState, input: MoveInput, dt: number, g: Grou
   n.pos.z += n.vel.z * dt;
 
   // --- Ground resolve ---------------------------------------------------------
-  const h = g.heightAt(n.pos.x, n.pos.z);
+  const h = g.heightBelow?.(n.pos.x, n.pos.z, s.pos.y + .45) ?? g.heightAt(n.pos.x, n.pos.z);
   if (n.pos.y <= h) {
     n.pos.y = h;
     n.vel.y = 0;

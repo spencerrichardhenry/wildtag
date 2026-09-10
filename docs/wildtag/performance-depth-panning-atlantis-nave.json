@@ -1,0 +1,62 @@
+{
+  "backend": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspecified Version)",
+  "viewport": [
+    1440,
+    900
+  ],
+  "devicePixelRatio": 2,
+  "drawingBuffer": [
+    2880,
+    1800
+  ],
+  "scenario": "atlantis-nave",
+  "pan": true,
+  "frameMs": 7.9116991643454035,
+  "fps": 126.39509910924903,
+  "p95Ms": 9.200000000000273,
+  "p99Ms": 14,
+  "over50Ms": 1,
+  "samples": 359,
+  "stats": {
+    "drawCalls": 521,
+    "triangles": 1220567,
+    "geometries": 561,
+    "textures": 42,
+    "scenery": {
+      "near": 119,
+      "mid": 576,
+      "far": 2070
+    },
+    "view": {
+      "x": 594,
+      "y": -14,
+      "z": 659
+    },
+    "performance": {
+      "samples": 120,
+      "fps": 126.24934245134139,
+      "frameMs": 7.920833333333333,
+      "p95Ms": 9.5,
+      "simulationMs": 0.18500000288089116,
+      "renderMs": 7.440000001092752,
+      "gpuMs": 17.795395807784107
+    }
+  },
+  "quality": {
+    "id": "high",
+    "flags": {
+      "shadowCascades": 2,
+      "shadowRes": 2048,
+      "ssao": true,
+      "bloom": true,
+      "waterReflections": false,
+      "terrainDetailShader": true,
+      "standardMaterials": true,
+      "terrainDetailHigh": true,
+      "nearLod": true
+    }
+  },
+  "overlay": "126 FPS  ·  7.9 ms/frame\np95 9.5 ms  ·  high · 2.00×\nCPU sim 0.2 / render 7.4 ms\nGPU 17.7 ms\n519 draws  ·  1.21M triangles",
+  "uncapped": true,
+  "errors": []
+}

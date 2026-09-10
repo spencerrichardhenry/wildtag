@@ -1,0 +1,85 @@
+{
+  "method": "Discovery draw counts are the within-world on minus off difference, including shadow and post passes. Timing changes include run-to-run noise.",
+  "views": [
+    {
+      "view": "haven",
+      "discoveryDrawsBefore": 0,
+      "discoveryDrawsAfter": 0,
+      "drawReductionPercent": 0,
+      "finalOnFps": 114.38040763275495,
+      "finalOffFps": 115.08417109502827,
+      "finalOnFrameMs": 8.742757660167129,
+      "finalOffFrameMs": 8.689693593314761
+    },
+    {
+      "view": "castle-crown",
+      "discoveryDrawsBefore": 34,
+      "discoveryDrawsAfter": 30,
+      "drawReductionPercent": 11.764705882352942,
+      "finalOnFps": 139.59595217772616,
+      "finalOffFps": 150.61879807826045,
+      "finalOnFrameMs": 7.173676880222847,
+      "finalOffFrameMs": 6.639832869080782
+    },
+    {
+      "view": "atlantis-nave",
+      "discoveryDrawsBefore": 5,
+      "discoveryDrawsAfter": 4,
+      "drawReductionPercent": 20.0,
+      "finalOnFps": 113.7627667231773,
+      "finalOffFps": 113.62102595960137,
+      "finalOnFrameMs": 8.791782729805014,
+      "finalOffFrameMs": 8.801949860724228
+    },
+    {
+      "view": "sky-sanctuary",
+      "discoveryDrawsBefore": 7,
+      "discoveryDrawsAfter": 6,
+      "drawReductionPercent": 14.285714285714286,
+      "finalOnFps": 126.76874907389121,
+      "finalOffFps": 119.7885026344742,
+      "finalOnFrameMs": 7.893454038997225,
+      "finalOffFrameMs": 8.348885793871865
+    },
+    {
+      "view": "bumblepost",
+      "discoveryDrawsBefore": 32,
+      "discoveryDrawsAfter": 26,
+      "drawReductionPercent": 18.75,
+      "finalOnFps": 100.77406567732748,
+      "finalOffFps": 104.41677895350219,
+      "finalOnFrameMs": 9.957242339832874,
+      "finalOffFrameMs": 9.577019498607246
+    },
+    {
+      "view": "woodpecker",
+      "discoveryDrawsBefore": 26,
+      "discoveryDrawsAfter": 18,
+      "drawReductionPercent": 30.76923076923077,
+      "finalOnFps": 131.78916215847232,
+      "finalOffFps": 136.61516370322096,
+      "finalOnFrameMs": 7.587883008356534,
+      "finalOffFrameMs": 7.325208913649025
+    },
+    {
+      "view": "reed-organ",
+      "discoveryDrawsBefore": 84,
+      "discoveryDrawsAfter": 59,
+      "drawReductionPercent": 29.761904761904763,
+      "finalOnFps": 117.5644373628613,
+      "finalOffFps": 119.54312510425645,
+      "finalOnFrameMs": 8.506545961002782,
+      "finalOffFrameMs": 8.365459610027868
+    },
+    {
+      "view": "kite-garden",
+      "discoveryDrawsBefore": 37,
+      "discoveryDrawsAfter": 24,
+      "drawReductionPercent": 35.13513513513514,
+      "finalOnFps": 121.88609700510631,
+      "finalOffFps": 124.594390710585,
+      "finalOnFrameMs": 8.206545961002789,
+      "finalOffFrameMs": 8.026044568245101
+    }
+  ]
+}

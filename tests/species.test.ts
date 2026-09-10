@@ -25,11 +25,13 @@ const TABLE = [
   { id: 'cragdrake', bold: false, rideable: false, awareness: 15, fleeStyle: 'dive', trackRadius: 15, trackTime: 17, rewardRP: 20, rewardSparks: 3, farmRole: { kind: 'produce', resource: 'horn', amount: 1 } },
   { id: 'shark', bold: true, rideable: false, awareness: 14, fleeStyle: 'packhunt', trackRadius: 13, trackTime: 14, rewardRP: 22, rewardSparks: 3, farmRole: { kind: 'aura', auraPct: 20 } },
   { id: 'skywyvern', bold: true, rideable: false, awareness: 18, fleeStyle: 'skyglide', trackRadius: 16, trackTime: 12, rewardRP: 36, rewardSparks: 5, farmRole: { kind: 'aura', auraPct: 30 } },
+  {id:'suncresteagle',bold:true,rideable:false,awareness:18,fleeStyle:'perch',trackRadius:22,trackTime:14,rewardRP:32,rewardSparks:4,farmRole:{kind:'produce',resource:'spark',amount:2}},
+  {id:'seraphlet',bold:true,rideable:false,awareness:13,fleeStyle:'perch',trackRadius:18,trackTime:12,rewardRP:38,rewardSparks:5,farmRole:{kind:'aura',auraPct:30}},
 ] as const;
 
 describe('SPECIES roster', () => {
-  it('has exactly 20 species', () => {
-    expect(SPECIES).toHaveLength(20);
+  it('has exactly 22 species', () => {
+    expect(SPECIES).toHaveLength(22);
   });
 
   it('has unique ids', () => {

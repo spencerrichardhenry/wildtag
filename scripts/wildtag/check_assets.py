@@ -1,12 +1,34 @@
 """Validate the actual shipping GLBs, their catalog coverage, and Blender geometry."""
-import json,struct,math,gzip
+import json,struct,math,gzip,hashlib
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2]
 manifest=json.loads((ROOT/'public/wildtag/asset-manifest.json').read_text())
+if 'skyKingdom' in manifest:
+    assert manifest['skyKingdom']['layoutSha256']==hashlib.sha256((ROOT/'src/sky/layout-data.json').read_bytes()).hexdigest(), 'Sky collision layout changed without rebuilding Blender architecture'
+    assert (ROOT/manifest['skyKingdom']['source']).is_file()
 ref=ROOT/'art/wildtag/design-reference.json'
 references=json.loads(ref.read_text() if ref.exists() else gzip.decompress(ref.with_suffix('.json.gz').read_bytes()))
 ids={a['id'] for a in manifest['assets']}
 assert len(ids)==len(manifest['assets'])
+if 'discoveries' in manifest:
+    discovery_path=ROOT/'src/discoveries/data.json';discoveries=json.loads(discovery_path.read_text())
+    assert manifest['discoveries']['layoutSha256']==hashlib.sha256(discovery_path.read_bytes()).hexdigest(), 'Discovery layout changed without rebuilding Blender models'
+    assert (ROOT/manifest['discoveries']['source']).is_file()
+    assert len(discoveries)==18 and len({p['region'] for p in discoveries})==9
+    assert all('discovery_'+p['id'] in ids for p in discoveries)
+    assert sum(a['triangles'] for a in manifest['assets'] if a.get('category')=='discovery')<100000, 'Small-wonder geometry budget exceeded'
+for place,source in manifest.get('landmarks',{}).items():
+    layout_path=ROOT/'src/landmarks'/f'{place}.json';layout=json.loads(layout_path.read_text())
+    assert source['layoutSha256']==hashlib.sha256(layout_path.read_bytes()).hexdigest(), f'{place} layout changed without rebuilding Blender architecture'
+    assert (ROOT/source['source']).is_file()
+    assert place+'_shadow' in ids
+    sectors={p['sector'] for key in ['floors','walls','towers'] for p in layout[key]}
+    for variant in (['_cursed','_purified'] if place=='castle' else ['']):
+        required={f'{place}_district_{s}{variant}' for s in sectors}|{f'{place}_detail_{p["kind"]}{variant}' for p in layout['props']}
+        assert required<=ids, required-ids
+    assert len(layout['zones'])==10 and len(layout['relics'])==3
+if manifest.get('landmarks'):
+    assert all(a.get('load') is False for a in manifest['assets'] if a['id'] in ['castle_cursed','castle_purified','atlantis'])
 assert all(a['id'] in ids for a in references)
 reference_by_id={a['id']:a for a in references}
 shipping=[]

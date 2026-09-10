@@ -28,7 +28,7 @@ export const UPGRADE_COST = { stone: 8, wood: 6, shard: 3 };
 /** All creatures can help; specialists have a tangible advantage. */
 export function haulingTraits(species: string, kind: DepositKind) {
   const heavy = ['bellowbuck', 'prismhorse', 'bumblewhale', 'cragdrake'].includes(species);
-  const fast = ['skitterling', 'emberpup', 'zephyrfinch', 'skywyvern'].includes(species);
+  const fast = ['skitterling', 'emberpup', 'zephyrfinch', 'skywyvern', 'suncresteagle'].includes(species);
   const specialist = (species === 'timberchomp' && kind === 'wood') ||
     (species === 'pebbleshrew' && kind === 'stone') || (species === 'craghorn' && kind === 'shard');
   return { capacity: specialist ? 14 : heavy ? 12 : 6, speed: fast ? 5 : heavy ? 3 : 3.8, specialist };

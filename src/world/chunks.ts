@@ -36,6 +36,7 @@ const STEP = stepFor(CHUNKS.verts); // 2 m
 
 // Pre-resolved biome → THREE.Color lookup (built once).
 const BIOME_COLOR: Record<Biome, THREE.Color> = {
+  sky: new THREE.Color(0xd7e4e7),
   meadow: new THREE.Color(ENV.biomeColors.meadow),
   forest: new THREE.Color(ENV.biomeColors.forest),
   wetland: new THREE.Color(ENV.biomeColors.wetland),

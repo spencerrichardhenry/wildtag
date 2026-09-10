@@ -1,3 +1,11 @@
+import { constrainSkyWildlife } from './sky/wildlife.ts';
+import { SmallWonders } from './discoveries/wonders.ts';
+import { CURIOSITIES, curiosityFloorBelow, curiosityRaycast, resolveCuriosityMovement } from './discoveries/world.ts';
+import { landmarkFloorBelow, landmarkRaycast, resolveLandmarkMovement, castleArchitecture, breathingAirbell, LANDMARKS, landmarkWorld } from './landmarks/world.ts';
+import { LandmarkJourney, restoreLandmarkProgress } from './landmarks/progress.ts';
+import { SkyKingdom } from './sky/kingdom.ts';
+import { skyFloorBelow, SKY_CRITTER_SLOTS, inSkyBounds } from './sky/layout.ts';
+import { raycastSky, resolveSkyMovement } from './sky/collision.ts';
 import { startAnalytics } from './analytics';
 import { loadArtLibrary, artStats } from './art/library.ts';
 import { resourceDeposits, DEPOT } from './logistics/layout.ts';
@@ -93,8 +101,6 @@ import { buildVillage, villageObstacles, updateWindmill } from './village/buildi
 import { buildCastle } from './castle/builders.ts';
 import {
   castleLayout,
-  castleObstacles,
-  castleGrappleColliders,
   spireObstacles,
   spireGrappleColliders,
   inCastleRegion,
@@ -102,8 +108,6 @@ import {
 } from './castle/layout.ts';
 import { CastleSystem } from './castle/system.ts';
 import {
-  wardObstaclesNear,
-  wardGrappleNear,
   inHall,
   inHallBelowRoof,
   retreatPath,
@@ -184,7 +188,8 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 // Dev hook: `?preview=critters` takes over the renderer with the critter
 // showcase (all 18 species in a scrollable turntable gallery) and skips the
 // normal player spawn.
-await loadArtLibrary();
+const discoveryPerfOff=new URLSearchParams(window.location.search).get('dev')==='1'&&new URLSearchParams(window.location.search).get('wonders')==='off';
+await loadArtLibrary({skipDiscoveries:discoveryPerfOff});
 if (new URLSearchParams(window.location.search).get('preview') === 'critters') {
   runCritterPreview(renderer);
 } else {
@@ -249,6 +254,7 @@ function bootGame(): void {
     !(devMode && new URLSearchParams(window.location.search).get('lod') === '0'),
     devMode && new URLSearchParams(window.location.search).get('sortProps') === '1');
   const critters = new CritterManager(scene);
+  critters.constrainMovement = constrainSkyWildlife;
 
   /**
    * Esc-menu quality change: persist the choice, and — because shadows/post/LOD
@@ -324,6 +330,7 @@ function bootGame(): void {
     scene.traverse((obj) => {
       const mesh = obj as THREE.Mesh;
       if (!(mesh as unknown as { isMesh?: boolean }).isMesh) return;
+      if(mesh.userData.noShadow)return;
       if (
         mesh.name === 'skyDome' ||
         mesh.name === 'water' ||
@@ -360,8 +367,6 @@ function bootGame(): void {
   // actually built, so they're wired in regardless of the save's
   // `castlePurified` flag. The castle mesh itself is built further down, once
   // the save has been loaded (its dressing depends on `loaded.castlePurified`).
-  const castleObs = castleObstacles();
-  const castleGrapple = castleGrappleColliders();
   // Gargoyle-hunting spires (daze-eject-spires design spec §2): same pure,
   // memoised-circle convention as the castle geometry above — wired in
   // alongside it regardless of dressing (the spires themselves are built
@@ -425,16 +430,27 @@ function bootGame(): void {
       const b = build.topAt(x, z);
       return b > t ? b : t;
     },
+    heightBelow: (x, z, maxY) => Math.max(heightAt(x,z), build.topAt(x,z), skyFloorBelow(x,z,maxY), landmarkFloorBelow(x,z,maxY),curiosityFloorBelow(x,z,maxY)),
     normalAt: (x, z) => (build.topAt(x, z) > heightAt(x, z) ? { x: 0, y: 1, z: 0 } : groundNormalAt(x, z)),
   };
 
   // Grapple anchor registry — drones (Task 13) register tracked spheres here;
   // the controller raycasts it alongside the terrain when a grapple is fired.
   const anchors = new AnchorRegistry();
+  const skyKingdom = new SkyKingdom(scene, anchors, toast);
 
   const input = new Input(canvas as HTMLCanvasElement);
   const player = new PlayerController(camera, input, ground, spawn, scene, anchors);
   player.canDiveAt = inDiveZone;
+  const worldRaycast:typeof raycastSky=(a,b)=>{
+    let best:Vec3|null=null,distance=Infinity;
+    for(const hit of [raycastSky(a,b),landmarkRaycast(a,b),curiosityRaycast(a,b)]){
+      if(!hit)continue;const d=(hit.x-a.x)**2+(hit.y-a.y)**2+(hit.z-a.z)**2;
+      if(d<distance){best=hit;distance=d;}
+    }return best;
+  };
+  player.worldRaycast = worldRaycast;
+  player.resolveWorldMovement = (a,b,r)=>resolveCuriosityMovement(a,resolveLandmarkMovement(a,resolveSkyMovement(a,b,r),r),r);
   // First-person hands (Inventory+Building Task 6): a camera-child viewmodel,
   // purely cosmetic — constructed right after the camera/player so it's ready
   // for the very first render() call below.
@@ -444,8 +460,6 @@ function bootGame(): void {
   player.grappleColliders = (x, z) =>
     props
       .getGrappleColliders(x, z)
-      .concat(castleGrapple)
-      .concat(wardGrappleNear(x, z))
       .concat(spireGrapple)
       .concat(build.grappleNear(x, z));
   // Castle Ward Task 5: "No sky in here!" — no grapple/glider while the
@@ -619,6 +633,7 @@ function bootGame(): void {
   // over it safely: no update/fire can run until boot has completed.
   let underwater: UnderwaterSystem | null = null;
   const darts = new DartSystem(scene, camera, critters, inventory, ground, {
+    raycastWorld: worldRaycast,
     hostileTargets: () => underwater?.dartTargets() ?? [],
     onHostileHit: (id, kind) => {
       underwater?.hitEnemy(id, kind);
@@ -705,16 +720,17 @@ function bootGame(): void {
       // — otherwise the player could resurrect buried in or floating far above
       // the new ground.
       const savedPos = loaded.player.pos;
-      const savedGround = ground.heightAt(savedPos.x, savedPos.z);
+      const savedGround = ground.heightBelow!(savedPos.x, savedPos.z, savedPos.y + .45);
+      skyKingdom.restore(loaded.skyKingdom);
       // A legitimate saved dive position is intentionally several metres
       // above its seabed, so the generic terrain-drift guard would mistake it
       // for an old floating save and snap it to the floor. Preserve only a
       // position inside the authored lagoon and between floor/surface; all
       // other saves keep the existing defensive snap.
       const restoredPos =
-        inDiveZone(savedPos.x, savedPos.z) &&
+        (inSkyBounds(savedPos) || castleArchitecture.contains(savedPos,3) || inDiveZone(savedPos.x, savedPos.z) &&
         savedPos.y >= savedGround + UNDERWATER.floorClearance &&
-        savedPos.y <= UNDERWATER.surfaceY
+        savedPos.y <= UNDERWATER.surfaceY)
           ? { ...savedPos }
           : snapToGround(savedPos, savedGround);
       player.teleport(restoredPos.x, restoredPos.y, restoredPos.z);
@@ -959,6 +975,10 @@ function bootGame(): void {
   // → `onPurified` below), so this is a `let`, not a boot-time constant.
   let castlePurified = loaded?.castlePurified ?? false;
   buildCastle(scene, castlePurified);
+  const landmarkJourney=new LandmarkJourney(toast,()=>castlePurified);
+  landmarkJourney.progress=restoreLandmarkProgress(loaded?.landmarkExploration);
+  const smallWonders=new SmallWonders(scene,toast,worldRaycast,!discoveryPerfOff);
+  smallWonders.restore(loaded?.curiosities);
 
   /** Direction from `from` toward `to`, scaled to `mag` (horizontal), plus a
    *  modest vertical lift — the lift matters: while airborne with no player
@@ -1025,6 +1045,7 @@ function bootGame(): void {
   // last position. On a crystal hit (Task 14), `castleSys.purifyCastle()`
   // runs the whole finale sequence.
   const purifier = new PurifierSystem(scene, camera, inventory, ground, {
+    raycastWorld: worldRaycast,
     goblinTargets: () => castleSys.goblinTargets(),
     onPurifyGoblin: (id) => {
       const pos = castleSys.purifyGoblin(id);
@@ -1142,6 +1163,8 @@ function bootGame(): void {
     })),
   );
 
+  critters.addFixedSlots(SKY_CRITTER_SLOTS.map((s,i)=>({...s,id:-88001-i})));
+
   if (devMode) {
     // Playtest loadout: every unlock, deep stacks of everything. The counts
     // are finite so all existing spend/decrement paths still exercise.
@@ -1214,6 +1237,9 @@ function bootGame(): void {
     return {
       v: 3,
       logistics: structuredClone(economy),
+      skyKingdom: structuredClone(skyKingdom.progress),
+      landmarkExploration: structuredClone(landmarkJourney.progress),
+      curiosities: [...smallWonders.visited],
       inventory: { ...inventory, kits: { ...inventory.kits } },
       unlocks: [...player.unlocks],
       critterPersist: critters.exportRegistry(),
@@ -1324,7 +1350,7 @@ function bootGame(): void {
    */
   function tryBondInteract(): boolean {
     if (inventory.charms <= 0) return false;
-    const target = critters.nearestInCone(camera.position, cameraLook(), BOND_MAX_DIST, BOND_COS);
+    const target = critters.nearestInCone(camera.position, cameraLook(), BOND_MAX_DIST, BOND_COS, true);
     if (!target || !target.linked) return false;
     const sp = speciesById(target.species);
     if (!sp) return false;
@@ -1364,11 +1390,11 @@ function bootGame(): void {
     }
     // Re-open the original wild slot (persists, returns at home); fall back to
     // the ephemeral debug spawn only for ad-hoc negative-id (debug-bonded) ones.
-    if (id < 0 || !critters.releaseSlot(id)) {
+    if ((id < 0 && !critters.hasFixedSlot(id)) || !critters.releaseSlot(id)) {
       const p = player.pos;
       const rx = p.x + 3;
       const rz = p.z;
-      critters.debugSpawn(entry.speciesId, { x: rx, y: heightAt(rx, rz), z: rz });
+      critters.debugSpawn(entry.speciesId, { x: rx, y: ground.heightBelow!(rx,rz,p.y+.45), z: rz });
     }
     toast(`${entry.nickname} released to the wild`);
   }
@@ -1647,8 +1673,6 @@ function bootGame(): void {
         .getObstacles(prev.x, prev.z)
         .concat(villageObs)
         .concat(logisticsVisuals.obstacles(economy))
-        .concat(castleObs)
-        .concat(wardObstaclesNear(prev.x, prev.z))
         .concat(spireObs)
         .concat(build.obstaclesNear(prev.x, prev.z));
       // Maze-aware daze ejection (daze-eject-spires design spec §1) — replaces
@@ -1758,6 +1782,7 @@ function bootGame(): void {
       player.grappleSuppressed = shouldTreatRmbAsPlacementConfirm(build.active, input.snapHeld);
       const wasMounted = player.mounted;
       player.update(dt);
+      skyKingdom.step(dt, prev, player, inventory);
       // Prismhorse mount: pin/animate the actor under the camera while riding,
       // or loosely trail the player while idle (also handles hold-Space dismount).
       mounts.update(dt, player, input);
@@ -1769,14 +1794,15 @@ function bootGame(): void {
       // wall/ramp/cube/kit slot gets its ghost back immediately on dismount.
       if (wasMounted && !player.mounted) syncHotbarPlacement(true);
 
-      const breathStep = stepBreath(breath, player.underwater, dt, breathLevel);
+      const shelteredAir=breathingAirbell({x:player.pos.x,y:player.pos.y+1.65,z:player.pos.z})!==null;
+      const breathStep = stepBreath(breath, player.underwater&&!shelteredAir, dt, breathLevel);
       breath = breathStep.state;
       if (player.underwater && breath.remaining <= 5 && breath.remaining > 0 && !breathWarned) {
         breathWarned = true;
         toast('Air is running low — E to rise!');
         blip(310, 0.08);
       }
-      if (!player.underwater && breath.remaining > 5) breathWarned = false;
+      if ((!player.underwater||shelteredAir) && breath.remaining > 5) breathWarned = false;
       for (let i = 0; i < breathStep.drownHits; i++) {
         if (!isDazed(health)) health = applyHit(health, UNDERWATER.drownDamage);
       }
@@ -1828,7 +1854,7 @@ function bootGame(): void {
     }
     wasInDiveZone = inLagoon;
     chunks.update(p.x, p.z);
-    props.update(p.x, p.z, worldTime);
+    props.update(p.x, p.z, worldTime, p.y + 1.65);
     critters.update(dt, p);
     npcs.update(dt, p);
     // Night goblins (Task 11): frozen while a screen is open, parity with the
@@ -1950,6 +1976,8 @@ function bootGame(): void {
         continue;
       }
       if (action.type === 'interact') {
+        if(landmarkJourney.interact(player.pos,inventory)){doSave();continue;}
+        if(skyKingdom.interact(player, inventory)){doSave();continue;}
         const deposit=deposits.find(d=>Math.hypot(player.pos.x-d.pos.x,player.pos.z-d.pos.z)<=6);
         if(deposit){logisticsAction('gather',deposit.id);continue;}
         if(Math.hypot(player.pos.x-DEPOT.x,player.pos.z-DEPOT.z)<5){screens.open('logistics');continue;}
@@ -1977,6 +2005,8 @@ function bootGame(): void {
         }
         // BOND: aiming at a Linked critter (within trackRadius) with a charm.
         if (tryBondInteract()) continue;
+        const curiosityResult=smallWonders.interact(camera);
+        if(curiosityResult){if(curiosityResult==='remembered')doSave();continue;}
         // FARM: standing by a plot whose hopper holds something → collect it.
         const cp = farmVisuals.nearestCollectable(farm, player.pos);
         if (cp !== null) {
@@ -2062,6 +2092,10 @@ function bootGame(): void {
     const daylightSample = daylightAt(worldClock);
     daylight.update(daylightSample);
     underwater?.applyView(player.underwater, daylightSample.darkness);
+    // Nothing beyond the underwater fog is visible. Keep it out of the
+    // beauty/AO draw lists, restoring the full island view on surfacing.
+    const viewFar=player.underwater?UNDERWATER.fogFar:CAMERA.far;
+    if(camera.far!==viewFar){camera.far=viewFar;camera.updateProjectionMatrix();}
     shadowRig.setSunScale(daylight.sunScale);
     updateShadowFollow();
     // Water 1.5: advance the shader ripple/shimmer clock (one uniform write).
@@ -2073,6 +2107,9 @@ function bootGame(): void {
     // Bounce Wave: trampoline cosmetics + the bounce impulse. The launch apex
     // is fixed relative to the PAD, so chained bounces plateau (free-flight
     // invariant). Uses the movement core's gravity for an exact apex.
+    skyKingdom.render(worldTime, player.pos, screens.isOpen());
+    landmarkJourney.step(dt,player.pos,inventory,screens.isOpen());
+    smallWonders.update(dt,worldTime,camera,screens.isOpen()||document.hidden);
     tramps.update(dt);
     {
       const bvy = tramps.bounceVelocity(player.pos, player.vel.y, MOVE.gravity);
@@ -2331,6 +2368,10 @@ function bootGame(): void {
   // value can neither stall nor explode the accumulator).
   // -------------------------------------------------------------------------
   let timeScale = 1;
+
+  if(devMode)(window as unknown as {__sky:unknown}).__sky={state:()=>skyKingdom.snapshot(),floor:(x:number,z:number,y:number)=>skyFloorBelow(x,z,y),hook:()=>player.grappleSnapshot};
+  if(devSession)(window as unknown as {__landmarks:unknown}).__landmarks={layouts:LANDMARKS,progress:()=>structuredClone(landmarkJourney.progress),airbell:()=>breathingAirbell(camera.position),world:landmarkWorld};
+  if(devSession)(window as unknown as {__wonders:unknown}).__wonders={sites:CURIOSITIES,state:()=>smallWonders.snapshot(),presentation:(enabled:boolean)=>smallWonders.setPresentationEnabled(enabled),freezeWorld:(enabled:boolean)=>{timeScale=enabled?0:1;}};
 
   (window as unknown as { __game: unknown }).__game = buildDebugHandle({
     player,

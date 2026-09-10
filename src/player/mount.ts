@@ -162,7 +162,7 @@ export function mountStep(s: MoveState, input: MoveInput, dt: number, g: GroundQ
   n.pos.y += n.vel.y * dt;
   n.pos.z += n.vel.z * dt;
 
-  const h = g.heightAt(n.pos.x, n.pos.z);
+  const h = g.heightBelow?.(n.pos.x,n.pos.z,s.pos.y+.45) ?? g.heightAt(n.pos.x, n.pos.z);
   if (n.pos.y <= h) {
     n.pos.y = h;
     n.vel.y = 0;

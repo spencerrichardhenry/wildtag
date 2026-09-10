@@ -1,0 +1,276 @@
+{
+  "state": {
+    "sky": {
+      "progress": {
+        "discovered": [
+          "arrival",
+          "market",
+          "tunnel",
+          "observatory",
+          "sanctuary",
+          "aerie"
+        ],
+        "chimes": [],
+        "glassCooldowns": [
+          0,
+          0,
+          0
+        ],
+        "ascent": false
+      },
+      "journey": "arrived",
+      "bounces": {
+        "ground": 0,
+        "drone": 0
+      },
+      "launch": {
+        "ground": {
+          "x": 145,
+          "y": 10.657763169,
+          "z": -128
+        },
+        "drone": {
+          "x": 154,
+          "y": 36.223973189,
+          "z": -136
+        },
+        "anchor": {
+          "x": 170.5,
+          "y": 149,
+          "z": -148
+        }
+      },
+      "chimes": [
+        {
+          "x": 189,
+          "y": 147,
+          "z": -190
+        },
+        {
+          "x": 175,
+          "y": 147,
+          "z": -241
+        },
+        {
+          "x": 248,
+          "y": 155,
+          "z": -240
+        }
+      ],
+      "glass": [
+        {
+          "x": 269,
+          "y": 147,
+          "z": -224
+        },
+        {
+          "x": 178,
+          "y": 147,
+          "z": -245
+        },
+        {
+          "x": 249,
+          "y": 155,
+          "z": -243
+        }
+      ],
+      "zones": [
+        {
+          "id": "arrival",
+          "name": "Galehook Landing",
+          "x": -36,
+          "z": 60,
+          "w": 24,
+          "d": 24,
+          "y": 0,
+          "story": "A city held aloft by sleeping cloudstone. Follow the brass inlay uphill."
+        },
+        {
+          "id": "market",
+          "name": "Windswept Market",
+          "x": -36,
+          "z": -3,
+          "w": 28,
+          "d": 22,
+          "y": 4,
+          "story": "Its canvas is always full of wind. A lantern-lit passage curls behind the western stalls."
+        },
+        {
+          "id": "court",
+          "name": "Sunwash Court",
+          "x": 4,
+          "z": 4,
+          "w": 44,
+          "d": 36,
+          "y": 4,
+          "story": "Eagles ride the warm air above the eastern nests. The observatory doors are open."
+        },
+        {
+          "id": "observatory",
+          "name": "The Weather Room",
+          "x": -2,
+          "z": 2,
+          "w": 18,
+          "d": 14,
+          "y": 4,
+          "story": "An orrery charts the island below. The scribes left three wind chimes listening across the kingdom."
+        },
+        {
+          "id": "tunnel",
+          "name": "Whisper Gallery",
+          "x": -30,
+          "z": -34,
+          "w": 40,
+          "d": 36,
+          "y": 4,
+          "story": "Turn with the blue lanterns. This sheltered route passes beneath the sanctuary."
+        },
+        {
+          "id": "aerie",
+          "name": "Eaglewatch Aerie",
+          "x": 43,
+          "z": -13,
+          "w": 22,
+          "d": 26,
+          "y": 4,
+          "story": "Suncrest Eagles return to these nests. Tag one and follow its circuit to form a link."
+        },
+        {
+          "id": "sanctuary",
+          "name": "Sanctuary of the Six Wings",
+          "x": 9,
+          "z": -28,
+          "w": 28,
+          "d": 26,
+          "y": 12,
+          "story": "Seraphlets keep a quiet vigil. Listen for the final chime on the eastern balcony."
+        }
+      ]
+    },
+    "art": {
+      "loaded": 143,
+      "lodsLoaded": 84,
+      "failed": [],
+      "replaced": 1461
+    },
+    "render": {
+      "drawCalls": 470,
+      "triangles": 1316149,
+      "geometries": 707,
+      "textures": 46,
+      "scenery": {
+        "near": 44,
+        "mid": 362,
+        "far": 11281
+      },
+      "view": {
+        "x": 229,
+        "y": 156.65,
+        "z": -230
+      },
+      "performance": {
+        "samples": 120,
+        "fps": 60.00300015000757,
+        "frameMs": 16.665833333333314,
+        "p95Ms": 16.799999999995634,
+        "simulationMs": 0.07249999990065893,
+        "renderMs": 4.785833332935969,
+        "gpuMs": 7.580905107936495
+      }
+    },
+    "creatures": {
+      "pos": {
+        "x": 229,
+        "y": 155,
+        "z": -230
+      },
+      "stamina": 100,
+      "exhausted": false,
+      "inventory": {
+        "fiber": 9999,
+        "resin": 9999,
+        "shard": 9999,
+        "spark": 9999,
+        "honey": 999,
+        "mushroom": 999,
+        "wood": 9999,
+        "stone": 9999,
+        "shell": 999,
+        "horn": 999,
+        "scale": 999,
+        "rp": 1029,
+        "darts": 999,
+        "slowDarts": 999,
+        "tideDarts": 999,
+        "charms": 999,
+        "purifiers": 99,
+        "walls": 50,
+        "ramps": 50,
+        "cubes": 50,
+        "kits": {
+          "zipline": 9,
+          "beacon": 0,
+          "drone": 9,
+          "trampoline": 4,
+          "skytramp": 2
+        }
+      },
+      "unlocks": [
+        "grapple",
+        "boots",
+        "glider",
+        "rocket",
+        "currentboard"
+      ],
+      "linkedSpeciesCount": 0,
+      "linked": [],
+      "rosterCount": 0,
+      "rewards": [],
+      "activeCritters": 64,
+      "structures": {
+        "ziplines": 0,
+        "drones": 0,
+        "riding": false,
+        "placing": false
+      },
+      "grappling": false,
+      "timeScale": 0.1,
+      "quality": "high",
+      "hp": 100,
+      "goblinCount": 0,
+      "goblinPositions": [],
+      "elfCount": 0,
+      "castlePurified": false,
+      "inHall": false,
+      "selectedSlot": 0,
+      "hotbarSlots": [
+        "darts",
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "placedPieces": 0,
+      "building": false,
+      "hands": {
+        "rootVisible": true,
+        "rightVisible": true,
+        "hookVisible": true,
+        "leftItem": "darts",
+        "rightWorldPos": [
+          229.63017615628817,
+          156.4698859692594,
+          -230.87232212551024
+        ],
+        "leftWorldPos": [
+          228.40614311241978,
+          156.46726718042842,
+          -230.89805158473825
+        ]
+      },
+      "demolish": false
+    }
+  },
+  "errors": []
+}
