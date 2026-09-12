@@ -199,7 +199,7 @@ export class GrandpaSystem {
     const point = (net.guest ? this.child.position : this.model.root.position).clone(); point.y += net.guest ? 2.5 : 5.2;
     point.project(camera); this.label.hidden = point.z > 1 || point.z < -1 || Math.abs(point.x) > 1 || Math.abs(point.y) > 1 || ui.isOpen;
     this.label.style.left = `${(point.x * .5 + .5) * innerWidth}px`; this.label.style.top = `${(-point.y * .5 + .5) * innerHeight}px`;
-    this.label.textContent = net.guest ? 'Your grandchild' : 'Grandpa Longlegs';
+    this.label.textContent = net.guest ? 'Your grandchild' : 'Grandpa Featherfoot';
   }
   get placing(): boolean { return this.ghost !== null; }
   startPlacement(): void {

@@ -2195,6 +2195,7 @@ export const DISCOVERY_HINTS = {
 
 /** Grandpa's body supplies all movement; these are initial playtest values. */
 export const GRANDPA = {
+  groundFollow: .65,
   walkSpeed: 5.2, radius: .85, gravity: -27,
   airSpeed: 18, airControl: 3, energyRegen: 19,
   vaultCharge: .85, vaultSpeed: 14, vaultLift: 19, vaultCost: 28, vaultCooldown: 2.6,

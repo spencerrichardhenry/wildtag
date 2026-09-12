@@ -3,8 +3,9 @@
 **Grandpa visits (prototype):** use **Invite Grandpa** in Wildtag to share a
 code or link, then join through `/grandpa.html`. Grandpa has a charged vault,
 talon drift, and a sneeze launch that leaves an updraft. Tagging starts a 1v1
-chase; the first capture earns one placeable statue. The custom dragon-emu art
-is pending concept approval, so the prototype uses an existing creature model.
+chase; the first capture earns one placeable statue. Grandpa Featherfoot is an
+original golden running bird, modeled through Blender MCP with animated legs,
+tiny wings, a feather beard, and an extravagant tail.
 See the [Grandpa implementation notes](docs/grandpa/README.md) for controls,
 verification, and the optional TURN relay setup.
 

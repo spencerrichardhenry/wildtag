@@ -28,6 +28,35 @@ describe('Grandpa movement through real fixed steps', () => {
     const landed = run(flight, 4);
     expect(landed.grounded).toBe(true); expect(landed.pos.y).toBe(floor); expect(landed.energy).toBeLessThanOrEqual(100);
   });
+  it('walks continuous mountain slopes without repeatedly stumbling and can charge downhill', () => {
+    for (const slope of [-1.4, -.4, .4, 1.4]) {
+      const h = (x: number, z: number) => floor + 40 + slope * z + Math.sin(z * 3) * .12 + x * .2;
+      const env = { ...world, ground: { ...world.ground, heightAt: h } };
+      let s = createGrandpa({ x: 0, y: h(0, 0), z: 0 });
+      for (let n = 0; n < 180; n++) {
+        s = stepGrandpa(s, { ...REST_INPUT, forward: 1 }, 1 / 60, env);
+        expect(s.grounded).toBe(true);
+        expect(s.recovery).toBe(0);
+        expect(s.pos.y).toBeCloseTo(h(s.pos.x, s.pos.z));
+      }
+      expect(s.pos.z).toBeLessThan(-14);
+      s = run(s, .8, { forward: 1, vault: true }, env);
+      expect(s.charge).toBeGreaterThan(.75);
+      const launched = run(s, .2, { forward: 1 }, env);
+      expect(launched.grounded).toBe(false);
+      expect(launched.vel.y).toBeGreaterThan(0);
+      expect(launched.pos.y).toBeGreaterThanOrEqual(h(launched.pos.x, launched.pos.z));
+    }
+  });
+  it('falls off real ledges and does not magnetize airborne stunts to the floor', () => {
+    const env = { ...world, ground: { ...world.ground, heightAt: (_x: number, z: number) => z > -2 ? floor + 6 : floor } };
+    let s = run(createGrandpa({ ...start, y: floor + 6 }), .6, { forward: 1 }, env);
+    expect(s.pos.z).toBeLessThan(-2); expect(s.grounded).toBe(false); expect(s.pos.y).toBeGreaterThan(floor + 4);
+    s = run(s, 1, { forward: 1 }, env);
+    expect(s.grounded).toBe(true); expect(s.pos.y).toBe(floor);
+    const descending = { ...createGrandpa({ ...start, y: floor + .5 }), grounded: false, vel: { x: 0, y: -1, z: 0 } };
+    expect(run(descending, 1 / 60).grounded).toBe(false);
+  });
   it('rewards a timed landing press with one smaller rebound', () => {
     let s = run(createGrandpa(start), .8, { vault: true }); s = run(s, .1);
     while (!(s.vel.y < 0 && s.pos.y < floor + 1.5)) s = run(s, 1 / 60);

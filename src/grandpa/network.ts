@@ -6,7 +6,8 @@ import { GRANDPA, WORLD_SEED } from '../core/constants.ts';
 import { finiteVec, REST_INPUT, type ChaseState, type GrandpaInput, type GrandpaState } from './core.ts';
 import { peerOptions } from './ice.ts';
 
-export const GRANDPA_PROTOCOL = 1;
+// Ground-following changes prediction; an older host must refresh as well.
+export const GRANDPA_PROTOCOL = 2;
 const PREFIX = 'wildtag-grandpa-v1-';
 const CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 export type ConnectionStatus = 'idle' | 'opening' | 'waiting' | 'connecting' | 'connected' | 'disconnected' | 'error';

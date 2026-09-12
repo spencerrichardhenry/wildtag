@@ -183,7 +183,14 @@ export function stepGrandpa(prev: GrandpaState, input: GrandpaInput, dt: number,
   }
   const floor = Math.max(TERRAIN.seaLevel, world.ground.heightBelow?.(s.pos.x, s.pos.z, Math.max(from.y, s.pos.y) + .45) ?? world.ground.heightAt(s.pos.x, s.pos.z));
   const wasAirborne = !s.grounded;
-  if (s.pos.y <= floor && s.vel.y <= 0) {
+  // An uphill launch can meet rising terrain before its apex. Keep the feet
+  // outside the hillside without consuming upward momentum or a rebound.
+  if (s.pos.y < floor && s.vel.y > 0) s.pos.y = floor;
+  // Long legs follow small downhill steps. Without adhesion every terrain dip
+  // becomes a flight/landing and repeatedly applies the stunt recovery penalty.
+  // Only an already grounded walker can adhere: vaults and actual ledges fall.
+  const followsGround = prev.grounded && !launched && s.pos.y - floor <= GRANDPA.groundFollow;
+  if ((s.pos.y <= floor || followsGround) && s.vel.y <= 0) {
     s.pos.y = floor; s.vel.y = 0; s.grounded = true; s.airSneezeUsed = false;
     if (wasAirborne) {
       if (s.canRebound && s.reboundBuffer > 0 && s.energy >= 12 && !caught) {

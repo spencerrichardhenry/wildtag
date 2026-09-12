@@ -35,7 +35,7 @@ export class GrandpaUI {
     this.panel.setAttribute('role', 'dialog'); this.panel.setAttribute('aria-modal', 'true'); this.panel.setAttribute('aria-label', net.guest ? 'Join as Grandpa' : 'Invite Grandpa');
     const card = document.createElement('section'); card.className = 'gp-card';
     const eyebrow = document.createElement('div'); eyebrow.className = 'gp-eyebrow'; eyebrow.textContent = 'WILDTAG · A FAMILY VISIT';
-    const title = document.createElement('h1'); title.textContent = net.guest ? 'Grandpa Longlegs' : 'Here comes Grandpa';
+    const title = document.createElement('h1'); title.textContent = net.guest ? 'Grandpa Featherfoot' : 'Here comes Grandpa';
     const intro = document.createElement('p'); intro.className = 'gp-intro';
     intro.textContent = net.guest ? 'Big legs. Tiny wings. Absolutely no intention of behaving.' : 'Invite Grandpa into your world. Land a tracker dart to start the chase.';
     this.status.className = 'gp-status'; this.status.setAttribute('role', 'status');

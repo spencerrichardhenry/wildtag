@@ -3,9 +3,10 @@
 ## Agreed experience
 
 One child plays their existing Wildtag save with their own unlocked equipment.
-Grandpa joins that world as a mischievous fantasy dragon-emu: a top-heavy,
-long-legged, chicken-walker silhouette with tiny wings, a counterweight tail,
-expressive eyebrows, and a feather beard.
+Grandpa joins that world as a mischievous fantasy running bird: a top-heavy,
+long-legged silhouette with tiny wings, a feathery counterweight tail,
+expressive eyebrows, and a feather beard. The revised bird direction was
+requested after the initial dragon-emu concept.
 
 Landing a tracker dart starts the round immediately. Staying within tracking
 range fills the capture meter; escaping pauses progress. Capture ends in a
@@ -54,8 +55,12 @@ Aim at nearby ground, click to place, press R to rotate, or Esc to cancel.
 - `src/grandpa/system.ts`: scene/controller integration, pursuit, camera,
   temporary updraft visuals, first-catch reward, statue placement.
 - `src/grandpa/ui.ts` and `style.css`: invitation, joining, controls, tracking.
-- `src/grandpa/model.ts`: provisional reuse of Wildtag's existing Cragdrake for
-  functional verification while the new visual concept awaits approval.
+- `src/grandpa/model.ts`: the original Blender-authored Featherfoot character,
+  with separate body, head, tail, wings, hips, knees and feet for procedural
+  waddle, crouch, airborne tuck, drift and surrender poses.
+- `scripts/wildtag/grandpa/build_model.py`: reproducible Blender MCP authoring,
+  local GLB export, named animation pivots, and studio render.
+- `art/wildtag/grandpa-featherfoot.blend`: editable source scene.
 - `src/main.ts`: host and guest boot paths, shared world and wildlife, save isolation.
 - `src/core/save.ts`: optional `grandpa` data and preservation of placed trampolines.
 
@@ -104,6 +109,7 @@ npm run build
 npm test
 node e2e/grandpa-network.mjs
 node e2e/grandpa.mjs
+node e2e/grandpa-terrain.mjs
 # After configuring working TURN credentials:
 VERIFY_RELAY=1 node e2e/grandpa-network.mjs
 ```
@@ -118,17 +124,29 @@ gameplay test uses real controls, a real thrown dart, cumulative tracking,
 statue placement, and guest save isolation. Fixture teleports only position
 the players; they do not grant captures or rewards.
 
-Initial verification: production build passed; the full configured Vitest suite
-passed 2,180 tests (including the repository's existing draft-copy suites).
 Real public-service networking and the two-browser gameplay sequence passed.
-The creature in these screenshots is the provisional existing Cragdrake.
+Movement regression tests cover continuous steep and undulating slopes,
+charging on slopes, uphill launch clearance, and falling from real ledges.
+The terrain browser scenario walks down the actual western mountain terrain.
+
+The downhill bug came from treating every small drop in the height field as
+airtime, then applying the landing stumble. Grounded walking now follows drops
+up to 0.65 m per step; launched or already airborne movement cannot snap down.
+Ascending jumps are kept outside rising ground without losing their impulse.
+
+The new local GLB is 375,220 bytes, 10,956 triangles and 12 meshes. Named pivots
+survive export. Host, guest and bronze reward statue all use this same model.
+`verify/featherfoot-blender.png` is the Blender render; gameplay screenshots
+show the actual exported asset in Three.js.
 
 ## Visual reference
 
-`concept.png` was generated with the built-in imagegen tool. It includes front
-three-quarter, side, and rear views. Approval is pending under the repository's
-`.claude/skills/critter-modeling/SKILL.md` concept-before-build instruction.
-The in-game placeholder is existing art, not the finished dragon-emu.
+`concept.png` records the initial dragon-emu concept generated with the built-in
+imagegen tool. The user then explicitly requested a new, more Chocobo-like bird
+through the MCP server. That direction supersedes the initial concept and
+procedural-only workflow in `.claude/skills/critter-modeling/SKILL.md`.
+Featherfoot is original geometry authored in the local Blender MCP session;
+no external character mesh or texture is imported.
 
 Generation prompt:
 

@@ -2826,6 +2826,15 @@
       "bytes": 43908,
       "parts": 7,
       "authoring": "Blender MCP"
+    },
+    {
+      "id": "grandpa_featherfoot",
+      "category": "visitor",
+      "triangles": 10956,
+      "sourceTriangles": 0,
+      "bytes": 375220,
+      "parts": 12,
+      "authoring": "Blender MCP"
     }
   ],
   "skyKingdom": {
