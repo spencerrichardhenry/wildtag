@@ -2,6 +2,7 @@ import type { Vec3 } from './types.ts';
 import { PLAYER_START, UNDERWATER } from './constants.ts';
 import type { Inventory } from '../craft/inventory.ts';
 import { isItemId } from '../craft/hotbar.ts';
+import { parseReward, type GrandpaReward } from '../grandpa/core.ts';
 import type { StructuresSave } from '../structures/placement.ts';
 import type { RosterEntry } from '../critters/roster.ts';
 import type { FarmState } from '../farm/farm.ts';
@@ -42,6 +43,8 @@ export interface CritterPersistEntry {
 
 export interface SaveV3 {
   v: 3;
+  /** First Grandpa capture and its one movable statue. Absent in older saves. */
+  grandpa?: GrandpaReward;
   skyKingdom?: import('../sky/progress.ts').SkyProgress;
   landmarkExploration?: import('../landmarks/progress.ts').LandmarkProgress;
   curiosities?: string[];
@@ -611,6 +614,14 @@ export function decodeSave(json: string): SaveV3 | null {
     if (underwater !== undefined) sanitized.underwater = underwater;
     delete sanitized.hotbar;
     if (hotbar !== undefined) sanitized.hotbar = hotbar;
+    if (o.grandpa !== undefined) sanitized.grandpa = parseReward(o.grandpa);
+    if (Array.isArray(structures.trampolines)) {
+      (sanitized.structures as Record<string, unknown>).trampolines = structures.trampolines.filter((t: unknown) => {
+        if (!t || typeof t !== 'object') return false;
+        const v = t as Record<string, unknown>;
+        return typeof v.id === 'string' && Number.isFinite(v.x) && Number.isFinite(v.z) && (v.kind === 'ground' || v.kind === 'sky');
+      });
+    }
     return sanitized as unknown as SaveV3;
   } catch {
     return null;

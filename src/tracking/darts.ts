@@ -140,6 +140,9 @@ const TIDE_DART_COLOR = 0x4af5e8;
 
 export interface DartSystemOpts {
   raycastWorld?: (a:Vec3,b:Vec3)=>Vec3|null;
+  /** Guest creatures participate in the same swept dart collision as wildlife. */
+  extraTargets?: () => { id: number; pos: Vec3; size: number }[];
+  onExtraHit?: (id: number, kind: DartKind) => void;
   /** Hostile underwater targets are tested before ordinary wildlife. */
   hostileTargets?: () => { id: number; pos: Vec3; size: number }[];
   /** Called once when any dart hits an underwater hostile. */
@@ -238,9 +241,15 @@ export class DartSystem {
             id: c.id,
             pos: c.pos,
             size: speciesById(c.species)?.size ?? 0.5,
-          }));
+          })).concat(this.opts.extraTargets?.() ?? []);
       const hitId = dartHitCritter(dart.state, targets);
       if (hitId !== null) {
+        if ((this.opts.extraTargets?.() ?? []).some(target => target.id === hitId)) {
+          this.opts.onExtraHit?.(hitId, dart.kind);
+          blip(880, .06);
+          this.removeAt(i);
+          continue;
+        }
         if (dart.kind === 'slowing') {
           const hit = this.manager.byId(hitId);
           this.manager.setSlowed(hitId);
@@ -280,6 +289,8 @@ export class DartSystem {
       if (dart.state.dead) this.removeAt(i);
     }
   }
+
+  snapshot(): Vec3[] { return this.live.map(d => ({ ...d.state.pos })); }
 
   private removeAt(i: number): void {
     const dart = this.live[i]!;

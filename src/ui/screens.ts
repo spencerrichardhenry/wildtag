@@ -952,6 +952,7 @@ export interface InventoryScreenDeps {
   setHotbar(next: HotbarState): void;
   manager: ScreenManager;
   quality?: QualityControl;
+  onGrandpa?: () => void;
 }
 
 const RESOURCE_KINDS: readonly ResourceKind[] = [
@@ -1012,6 +1013,12 @@ export function createInventoryScreen(deps: InventoryScreenDeps): ScreenDef {
       controlsBtn.textContent = 'Controls';
       controlsBtn.addEventListener('click', () => manager.open('help'));
       panel.appendChild(controlsBtn);
+
+      if (deps.onGrandpa) {
+        const grandpaBtn = document.createElement('button');
+        grandpaBtn.type = 'button'; grandpaBtn.className = 'wt-inv-controls-btn'; grandpaBtn.textContent = 'Grandpa visit';
+        grandpaBtn.addEventListener('click', deps.onGrandpa); panel.appendChild(grandpaBtn);
+      }
 
       const h1 = document.createElement('h1');
       h1.textContent = 'Inventory';

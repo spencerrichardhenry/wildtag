@@ -10,7 +10,7 @@ export default defineConfig(({ command, isPreview }) => ({
   build: {
     rollupOptions: {
       input: {
-        wildtag: 'index.html', tide: 'tiny-tide.html', siege: 'royal-yeet.html', wildtagAlias: 'wildtag.html',
+        wildtag: 'index.html', tide: 'tiny-tide.html', siege: 'royal-yeet.html', wildtagAlias: 'wildtag.html', grandpa: 'grandpa.html',
         ...(existsSync('mineral-wage.html') ? { miner: 'mineral-wage.html' } : {}),
       },
     },

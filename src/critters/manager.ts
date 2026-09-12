@@ -493,6 +493,26 @@ export class CritterManager {
    * must treat the result as read-only (the shared snapshot is not defensively
    * frozen for perf, but no caller mutates it).
    */
+  /** Guest rendering follows host wildlife and never runs a second AI simulation. */
+  applyRemote(views: readonly CritterView[], dt: number): void {
+    this.worldTime += dt;
+    const keep = new Set(views.map(v => v.id));
+    for (const id of this.active.keys()) if (!keep.has(id)) this.deactivate(id);
+    for (const v of views) {
+      if (!speciesById(v.species) || !Number.isFinite(v.id) || !v.pos || ![v.pos.x, v.pos.y, v.pos.z].every(Number.isFinite)) continue;
+      if (this.active.get(v.id)?.state.species !== v.species) this.deactivate(v.id);
+      if (!this.active.has(v.id)) this.activate({ id: v.id, species: v.species, home: v.pos, flightHeight: 0 });
+      const e = this.active.get(v.id)!;
+      const dx = v.pos.x - e.group.position.x, dz = v.pos.z - e.group.position.z;
+      const blend = Math.min(1, dt * 16);
+      e.group.position.lerp(new THREE.Vector3(v.pos.x, v.pos.y, v.pos.z), Math.hypot(dx, dz) > 10 ? 1 : blend);
+      if (Math.hypot(dx, dz) > .015) e.group.rotation.y = Math.atan2(dx, dz);
+      Object.assign(e.state, v, { pos: { ...v.pos } });
+      animateCritter(e.parts, Math.min(15, Math.hypot(dx, dz) * 16), this.worldTime, dt, v.species);
+    }
+    this.invalidateList();
+  }
+
   list(): CritterView[] {
     if (this.listCache) return this.listCache;
     const out: CritterView[] = [];

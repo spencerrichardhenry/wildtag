@@ -2192,3 +2192,17 @@ export const DISCOVERY_HINTS = {
    *  if the player hasn't already discovered the inventory some other way. */
   inventoryHintDelayS: 60,
 } as const;
+
+/** Grandpa's body supplies all movement; these are initial playtest values. */
+export const GRANDPA = {
+  walkSpeed: 5.2, radius: .85, gravity: -27,
+  airSpeed: 18, airControl: 3, energyRegen: 19,
+  vaultCharge: .85, vaultSpeed: 14, vaultLift: 19, vaultCost: 28, vaultCooldown: 2.6,
+  reboundWindow: .22, reboundLift: 13, landingRecovery: .45,
+  driftTurn: 1.8, driftDrain: 17, driftMaxSpeed: 25, driftMaxSeconds: 2.6, driftCooldown: 2,
+  sneezeWindup: .8, sneezeSpeed: 25, sneezeLift: 22, sneezeCost: 38, sneezeCooldown: 7,
+  updraftSeconds: 6, updraftHeight: 23, updraftRadius: 4, updraftLift: 17, updraftAcceleration: 45,
+  trackRadius: 15, trackSeconds: 18, surrenderSeconds: 3.5,
+  snapshotHz: 20, inputHz: 30, connectionTimeoutMs: 15000, staleInputMs: 300,
+  maxPendingInputs: 180, statueRange: 10,
+} as const;

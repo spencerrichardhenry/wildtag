@@ -1,5 +1,13 @@
 # Wildtag
 
+**Grandpa visits (prototype):** use **Invite Grandpa** in Wildtag to share a
+code or link, then join through `/grandpa.html`. Grandpa has a charged vault,
+talon drift, and a sneeze launch that leaves an updraft. Tagging starts a 1v1
+chase; the first capture earns one placeable statue. The custom dragon-emu art
+is pending concept approval, so the prototype uses an existing creature model.
+See the [Grandpa implementation notes](docs/grandpa/README.md) for controls,
+verification, and the optional TURN relay setup.
+
 **Small wonders:** 18 optional Blender scenes add little discoveries to every biome: a firefly hollow, an old reed organ, a brass rookery, a cloudkeeper’s laundry line and more. Walk up and press **F**. See the [small-wonders review](docs/WILDTAG-SMALL-WONDERS-REVIEW.md) for the full list, design and verification.
 
 **Castle & Atlantis rebuilt:** explore the castle’s battlements, roof galleries, library, forge and climbable keep, then dive through Atlantis’s winding arcade, archive, hidden crypt, tideworks and upper observatory. Each biome has ten discoveries and three records; fourteen airbells support longer underwater routes. Read the [castle and Atlantis review](docs/WILDTAG-CASTLE-ATLANTIS-REVIEW.md) for the design and verification.

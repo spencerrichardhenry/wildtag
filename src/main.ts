@@ -1,4 +1,7 @@
 import { constrainSkyWildlife } from './sky/wildlife.ts';
+import { GrandpaNetwork } from './grandpa/network.ts';
+import { GrandpaUI } from './grandpa/ui.ts';
+import { GrandpaSystem } from './grandpa/system.ts';
 import { SmallWonders } from './discoveries/wonders.ts';
 import { CURIOSITIES, curiosityFloorBelow, curiosityRaycast, resolveCuriosityMovement } from './discoveries/world.ts';
 import { landmarkFloorBelow, landmarkRaycast, resolveLandmarkMovement, castleArchitecture, breathingAirbell, LANDMARKS, landmarkWorld } from './landmarks/world.ts';
@@ -169,6 +172,15 @@ const canvas = document.getElementById('game');
 if (!(canvas instanceof HTMLCanvasElement)) {
   throw new Error('canvas#game not found');
 }
+
+// Grandpa starts as a guest BEFORE any world/save simulation is booted.
+const grandpaGuest = document.body.dataset.grandpa === 'true';
+const guestNetwork = grandpaGuest ? new GrandpaNetwork(true) : null;
+const guestUI = guestNetwork ? new GrandpaUI(guestNetwork) : null;
+if (grandpaGuest) document.body.classList.add('gp-guest');
+const guestWorld = guestNetwork ? await new Promise<SaveV3>(resolve => {
+  guestNetwork.onJoin = () => { if (guestNetwork.initialWorld) resolve(guestNetwork.initialWorld); };
+}) : null;
 
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 // ACES filmic tone mapping + sRGB output: the whole scene is authored/lit in
@@ -632,8 +644,11 @@ function bootGame(): void {
   // Assigned after save restore/castle wiring below. The dart callbacks close
   // over it safely: no update/fire can run until boot has completed.
   let underwater: UnderwaterSystem | null = null;
+  let grandpa: GrandpaSystem | null = null;
   const darts = new DartSystem(scene, camera, critters, inventory, ground, {
-    raycastWorld: worldRaycast,
+    raycastWorld: (a, b) => grandpaRaycast(a, b),
+    extraTargets: () => grandpa?.targets() ?? [],
+    onExtraHit: () => grandpa?.tag(),
     hostileTargets: () => underwater?.dartTargets() ?? [],
     onHostileHit: (id, kind) => {
       underwater?.hitEnemy(id, kind);
@@ -673,7 +688,7 @@ function bootGame(): void {
   const performanceHUD = devMode ? createPerformanceHUD(renderer) : null;
   // Count the entire frame, including shadow and post passes, not just the last pass.
   renderer.info.autoReset = false;
-  let loaded: SaveV3 | null = freshStart || devMode ? null : loadSave();
+  let loaded: SaveV3 | null = grandpaGuest ? guestWorld : freshStart || devMode ? null : loadSave();
   // Day/night clock (Cursed Castle Task 5): seconds since world start, fed
   // through `daylightAt()` each frame. Restored from the save (absent on
   // pre-v3 saves → fresh day-1 boot).
@@ -966,6 +981,7 @@ function bootGame(): void {
       setHotbar,
       manager: screens,
       quality: { current: currentQuality, apply: applyQuality },
+      onGrandpa: () => { screens.close(); grandpaUi.open(); },
     }),
   );
 
@@ -1231,11 +1247,73 @@ function bootGame(): void {
   const supplyButton=document.createElement('button');supplyButton.textContent='N · Supply routes';supplyButton.setAttribute('aria-label','Open supply routes');
   supplyButton.style.cssText='position:fixed;right:18px;top:18px;z-index:12;pointer-events:auto;background:#193a31dd;color:#e4e7bf;border:1px solid #afc89a66;border-radius:6px;padding:10px 14px;cursor:pointer;font:13px system-ui';
   supplyButton.onclick=()=>screens.toggle('logistics');hud.append(supplyButton);
+  if (grandpaGuest) supplyButton.hidden = true;
+
+  const grandpaNet = guestNetwork ?? new GrandpaNetwork(false, buildSaveState);
+  const grandpaUi = guestUI ?? new GrandpaUI(grandpaNet);
+  const grandpaRaycast = (a: Vec3, b: Vec3): Vec3 | null => {
+    const delta = { x: b.x - a.x, y: b.y - a.y, z: b.z - a.z };
+    const length = Math.hypot(delta.x, delta.y, delta.z);
+    if (length < .001) return null;
+    const dir = { x: delta.x / length, y: delta.y / length, z: delta.z / length };
+    const terrain = raycastTerrain(a, dir, heightAt, length);
+    const piece = pieceAtRayHit(build.pieces(), a, dir, length);
+    const hits = [worldRaycast(a, b), terrain, piece?.point ?? null].filter((p): p is Vec3 => p !== null);
+    hits.sort((p, q) => Math.hypot(p.x-a.x,p.y-a.y,p.z-a.z)-Math.hypot(q.x-a.x,q.y-a.y,q.z-a.z));
+    return hits[0] ?? null;
+  };
+  grandpa = new GrandpaSystem({ scene, camera, input, player, net: grandpaNet, ui: grandpaUi, reward: loaded?.grandpa,
+    world: { ground,
+      obstacles: p => props.getObstacles(p.x,p.z).concat(villageObs, logisticsVisuals.obstacles(economy), spireObs, build.obstaclesNear(p.x,p.z)),
+      resolve: player.resolveWorldMovement,
+    },
+    raycast: grandpaRaycast,
+    save: () => { if (!grandpaGuest && !devSession) doSave(); },
+    hostSnapshot: () => ({
+      child: { pos: player.pos, yaw: input.yaw, vel: player.vel, grapple: player.grappleSnapshot?.anchor ?? null, mounted: player.mounted },
+      critters: critters.list(), clock: worldClock, darts: darts.snapshot(),
+    }),
+  });
+  grandpaUi.onRejoin = () => { location.hash = `join=${grandpaNet.code}`; location.reload(); };
+  grandpaUi.onPlace = () => { build.cancel(); placement.cancel(); setDemolish(false); grandpa!.startPlacement(); };
+  document.addEventListener('visibilitychange', () => {
+    if (!grandpaGuest && grandpa?.state && grandpaNet.connected) {
+      grandpaNet.sendSnapshot({
+        grandpa: grandpa.state, chase: grandpa.chase,
+        child: { pos: player.pos, yaw: input.yaw, vel: player.vel, grapple: player.grappleSnapshot?.anchor ?? null, mounted: player.mounted },
+        critters: critters.list(), clock: worldClock, darts: darts.snapshot(),
+        paused: document.hidden || screens.isOpen() || grandpaUi.isOpen,
+      });
+    }
+  });
+  if (grandpaGuest) {
+    let previousStructures = JSON.stringify({ builds: loaded?.builds, structures: loaded?.structures });
+    let previousPens = JSON.stringify(loaded?.pens);
+    grandpaNet.onWorld = world => {
+      const structuresKey = JSON.stringify({ builds: world.builds, structures: world.structures });
+      if (structuresKey !== previousStructures) {
+        previousStructures = structuresKey; build.deserialize(world.builds ?? []); deserializeStructures(world.structures, ziplines, drones, tramps);
+      }
+      const pensKey = JSON.stringify(world.pens);
+      if (pensKey !== previousPens) {
+        previousPens = pensKey;
+        for (const p of (world.pens ?? []).slice(pens.serialize().length)) pens.add(p.npcId, p.speciesId, p.nickname);
+      }
+      if (world.farm) farm = world.farm;
+      roster = world.roster ?? [];
+      if (world.logistics) Object.assign(economy, world.logistics);
+      if (world.castlePurified && !castlePurified) { castlePurified = true; castleSys.purifyCastle(); }
+      for (const id of world.underwater?.purifiedClams ?? []) underwater?.purifyClam(id);
+      grandpa?.restoreReward(world.grandpa);
+    };
+    grandpaUi.ready();
+  }
 
   /** Build the current in-memory state as a plain-data SaveV3 snapshot. */
   function buildSaveState(): SaveV3 {
     return {
       v: 3,
+      ...(grandpa?.reward.caught ? { grandpa: grandpa.reward } : {}),
       logistics: structuredClone(economy),
       skyKingdom: structuredClone(skyKingdom.progress),
       landmarkExploration: structuredClone(landmarkJourney.progress),
@@ -1281,6 +1359,7 @@ function bootGame(): void {
   }
 
   function doSave(): void {
+    if (grandpaGuest) return;
     writeSave(buildSaveState());
   }
 
@@ -1289,7 +1368,7 @@ function bootGame(): void {
   // `?screen=roster` injects phantom roster entries for screenshots — treat it
   // as a dev session too so they can never autosave into a real save.
   const devSession =
-    freshStart || devMode || debugParam !== null || screenParam === 'roster' || forceFx;
+    grandpaGuest || freshStart || devMode || debugParam !== null || screenParam === 'roster' || forceFx;
 
   // Autosave every 10 s + on tab close/hide (mobile-safe: pagehide fires
   // where beforeunload sometimes doesn't).
@@ -1646,13 +1725,25 @@ function bootGame(): void {
   /** Advance simulation state by a fixed timestep. Systems hook in here. */
   function update(dt: number): void {
     worldTime += dt;
+    if (grandpaGuest) {
+      grandpa!.step(dt, false);
+      const p = player.pos;
+      chunks.update(p.x, p.z); props.update(p.x, p.z, worldTime, p.y + 4);
+      if (grandpaNet.latest) {
+        worldClock = grandpaNet.latest.clock;
+        critters.applyRemote(grandpaNet.latest.critters, dt);
+      }
+      drones.update(dt); npcs.update(dt, p); pens.update(dt, worldTime);
+      return;
+    }
     if (worldTime >= DISCOVERY_HINTS.inventoryHintDelayS) maybeShowInventoryHint();
 
     // While a screen (crafting) is open: don't step movement/collision, and
     // ignore gameplay action edges (interact) — only the screen-toggle edges
     // below still fire so KeyC/Esc can close it. Chunk/prop streaming keeps
     // running so nothing pops in when the menu closes.
-    const paused = screens.isOpen();
+    const paused = screens.isOpen() || grandpaUi.isOpen || document.hidden;
+    grandpa!.step(dt, paused);
     if (!paused) health = stepHealth(health, dt);
 
     // `?debug=grapple`/`?debug=structures` freeze the player for a clean static
@@ -1774,7 +1865,7 @@ function bootGame(): void {
       // firing the rocket — drop the rocket edge BEFORE player.update()
       // reads it via input.state(), so the same R press never ALSO boosts
       // the player this frame. A no-op when R wasn't pressed.
-      if (build.active) input.clearRocketEdge();
+      if (build.active || grandpa!.placing) input.clearRocketEdge();
       // Final-review Fix 2 (defensive, macOS click translation): while
       // snap-confirming a build ghost, mask RMB out of the grapple entirely —
       // see `shouldTreatRmbAsPlacementConfirm`'s doc in input.ts and the
@@ -1905,6 +1996,11 @@ function bootGame(): void {
     }
 
     for (const action of input.consumeActions()) {
+      if (action.type === 'escape' && grandpaUi.isOpen) { grandpaUi.close(); continue; }
+      if (grandpaUi.isOpen) continue;
+      if (grandpa!.placing && action.type === 'escape') { grandpa!.cancelPlacement(); continue; }
+      if (grandpa!.placing && action.type === 'rotate') { grandpa!.rotatePlacement(); continue; }
+      if (grandpa!.placing && action.type === 'lmb') { grandpa!.confirmPlacement(); continue; }
       if (action.type === 'toggleC') {
         screens.toggle('craft');
         continue;
@@ -2076,6 +2172,7 @@ function bootGame(): void {
    *  viewmodel's idle-sway/walk-bob clock, which is a wall-clock cosmetic
    *  effect rather than part of the fixed-step sim. */
   function render(dt: number): void {
+    grandpa!.render(dt);
     // Lantern Charm reward: a soft glow tracking the player once owned.
     if (getRewards().has('lanternCharm')) {
       lantern.visible = true;
@@ -2107,13 +2204,13 @@ function bootGame(): void {
     // Bounce Wave: trampoline cosmetics + the bounce impulse. The launch apex
     // is fixed relative to the PAD, so chained bounces plateau (free-flight
     // invariant). Uses the movement core's gravity for an exact apex.
-    skyKingdom.render(worldTime, player.pos, screens.isOpen());
-    landmarkJourney.step(dt,player.pos,inventory,screens.isOpen());
-    smallWonders.update(dt,worldTime,camera,screens.isOpen()||document.hidden);
+    skyKingdom.render(worldTime, player.pos, grandpaGuest || screens.isOpen());
+    if (!grandpaGuest) landmarkJourney.step(dt,player.pos,inventory,screens.isOpen());
+    smallWonders.update(dt,worldTime,camera,grandpaGuest||screens.isOpen()||document.hidden);
     tramps.update(dt);
     {
       const bvy = tramps.bounceVelocity(player.pos, player.vel.y, MOVE.gravity);
-      if (bvy !== null) player.bounce(bvy);
+      if (!grandpaGuest && bvy !== null) player.bounce(bvy);
     }
 
     // First-person hands (Inventory+Building Task 6) — must run before the
@@ -2130,7 +2227,7 @@ function bootGame(): void {
       grappleUnlocked: player.unlocks.has('grapple'),
       hookLive: player.isGrappling(),
       riding: player.mounted,
-      hidden: screens.isOpen() || ejectPhase === 'blackout' || debugFrozen || player.mounted,
+      hidden: grandpaGuest || screens.isOpen() || ejectPhase === 'blackout' || debugFrozen || player.mounted,
     });
 
     // High + fxAllowed → the post composer (SSAO + bloom + tone-map output);
@@ -2142,6 +2239,7 @@ function bootGame(): void {
     else renderer.render(scene, camera);
     performanceHUD?.gpu.end();
     npcs.updateLabels(camera);
+    if (grandpaGuest) return;
     const p = player.pos;
     const aimed = props.findHarvestable(camera.position, cameraLook(), worldTime);
     // Build pickup prompt (Inventory+Building Task 5): aiming at a placed
@@ -2207,7 +2305,7 @@ function bootGame(): void {
   // when a save was loaded, otherwise the fresh spawn point.
   chunks.update(primePos.x, primePos.z);
   props.primeAround(primePos.x, primePos.z, worldTime);
-  critters.update(SIM_DT, primePos);
+  if (!grandpaGuest) critters.update(SIM_DT, primePos);
 
   // -------------------------------------------------------------------------
   // Debug swing (`?debug=grapple`): drop the player onto a highlands ridge,
@@ -2368,6 +2466,21 @@ function bootGame(): void {
   // value can neither stall nor explode the accumulator).
   // -------------------------------------------------------------------------
   let timeScale = 1;
+
+  if (devSession) (window as unknown as { __grandpa: unknown }).__grandpa = {
+    state: () => ({ role: grandpaGuest ? 'grandpa' : 'child', status: grandpaNet.status, code: grandpaNet.code, message: grandpaNet.message, creature: structuredClone(grandpa!.state), chase: { ...grandpa!.chase }, reward: structuredClone(grandpa!.reward), placing: grandpa!.placing }),
+    aim: () => {
+      const p = grandpa!.state?.pos; if (!p) return;
+      const dx = p.x - player.pos.x, dz = p.z - player.pos.z, dy = p.y + 3.3 - camera.position.y;
+      input.yaw = Math.atan2(-dx, -dz); input.pitch = Math.atan2(dy, Math.hypot(dx, dz));
+    },
+    // Fixture positioning only; darts, input, tracking and rewards use their real paths.
+    positionCreature: (x: number, y: number, z: number) => {
+      if (grandpaGuest || !grandpa!.state) return;
+      grandpa!.state.pos = { x, y, z }; grandpa!.state.vel = { x: 0, y: 0, z: 0 };
+    },
+    structureState: () => ({ builds: build.serialize(), structures: serializeStructures(ziplines, drones, tramps) }),
+  };
 
   if(devMode)(window as unknown as {__sky:unknown}).__sky={state:()=>skyKingdom.snapshot(),floor:(x:number,z:number,y:number)=>skyFloorBelow(x,z,y),hook:()=>player.grappleSnapshot};
   if(devSession)(window as unknown as {__landmarks:unknown}).__landmarks={layouts:LANDMARKS,progress:()=>structuredClone(landmarkJourney.progress),airbell:()=>breathingAirbell(camera.position),world:landmarkWorld};
