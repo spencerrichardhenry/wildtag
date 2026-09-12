@@ -56,6 +56,30 @@ try {
   });
   await host.waitForTimeout(300);
   await host.screenshot({ path: 'docs/grandpa/verify/featherfoot-in-world.png' });
+  const pad = await host.evaluate(() => {
+    const p = __grandpa.state().creature.pos;
+    const id = __game.placeTrampoline('ground', p.x, p.z);
+    return { id, x: p.x, z: p.z, serial: __grandpa.state().creature.bounceSerial };
+  });
+  assert(pad.id, 'Ground trampoline placed');
+  await guest.waitForFunction(id => __grandpa.structureState().structures.trampolines.some(t => t.id === id), pad.id, { timeout: 6000 });
+  await guest.bringToFront();
+  if (!(await guest.evaluate(() => !!document.pointerLockElement))) await guest.locator('#game').click({ position: { x: 600, y: 380 } });
+  await guest.keyboard.press('Space');
+  await host.waitForFunction(serial => __grandpa.state().creature.bounceSerial > serial, pad.serial, { timeout: 5000 });
+  assert((await host.evaluate(() => __grandpa.state().creature.vel.y)) > 20, 'Normal jump triggered a trampoline launch');
+  await guest.waitForFunction(serial => __grandpa.state().creature.bounceSerial > serial, pad.serial);
+  await guest.screenshot({ path: 'docs/grandpa/verify/trampoline-bounce.png' });
+  const sky = await host.evaluate(p => ({ id: __game.placeTrampoline('sky', p.x + 14, p.z), x: p.x + 14, z: p.z }), pad);
+  assert(sky.id, 'Sky trampoline placed');
+  await guest.waitForFunction(id => __grandpa.structureState().structures.trampolines.some(t => t.id === id), sky.id, { timeout: 6000 });
+  const serial = await host.evaluate(p => {
+    __grandpa.positionCreature(p.x, __game.groundY(p.x, p.z) + 45, p.z);
+    return __grandpa.state().creature.bounceSerial;
+  }, sky);
+  await host.waitForFunction(n => __grandpa.state().creature.bounceSerial > n, serial, { timeout: 7000 });
+  await guest.waitForFunction(n => __grandpa.state().creature.bounceSerial > n, serial);
+  await guest.screenshot({ path: 'docs/grandpa/verify/sky-trampoline-bounce.png' });
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({ result: 'passed', slope, walked: initial.z - last.pos.z, descended: initial.y - last.pos.y, checks: ['real mountain terrain', 'continuous downhill walk', 'no repeated stumble', 'Blender bird in both clients'] }));
+  console.log(JSON.stringify({ result: 'passed', slope, walked: initial.z - last.pos.z, descended: initial.y - last.pos.y, checks: ['real mountain terrain', 'continuous downhill walk', 'no repeated stumble', 'Blender bird in both clients', 'normal jump onto ground trampoline', 'sky trampoline', 'both clients receive trampoline launches'] }));
 } finally { await browser.close(); }

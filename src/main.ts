@@ -2,6 +2,7 @@ import { constrainSkyWildlife } from './sky/wildlife.ts';
 import { GrandpaNetwork } from './grandpa/network.ts';
 import { GrandpaUI } from './grandpa/ui.ts';
 import { GrandpaSystem } from './grandpa/system.ts';
+import { GrandpaScenery } from './grandpa/scenery.ts';
 import { SmallWonders } from './discoveries/wonders.ts';
 import { CURIOSITIES, curiosityFloorBelow, curiosityRaycast, resolveCuriosityMovement } from './discoveries/world.ts';
 import { landmarkFloorBelow, landmarkRaycast, resolveLandmarkMovement, castleArchitecture, breathingAirbell, LANDMARKS, landmarkWorld } from './landmarks/world.ts';
@@ -25,6 +26,7 @@ import {
   DISCOVERY_HINTS,
   ENV,
   GOBLIN,
+  GRANDPA,
   HEALTH,
   MAX_FRAME_DT,
   MOUNT,
@@ -1250,6 +1252,7 @@ function bootGame(): void {
   if (grandpaGuest) supplyButton.hidden = true;
 
   const grandpaNet = guestNetwork ?? new GrandpaNetwork(false, buildSaveState);
+  const grandpaScenery = new GrandpaScenery();
   const grandpaUi = guestUI ?? new GrandpaUI(grandpaNet);
   const grandpaRaycast = (a: Vec3, b: Vec3): Vec3 | null => {
     const delta = { x: b.x - a.x, y: b.y - a.y, z: b.z - a.z };
@@ -1264,7 +1267,8 @@ function bootGame(): void {
   };
   grandpa = new GrandpaSystem({ scene, camera, input, player, net: grandpaNet, ui: grandpaUi, reward: loaded?.grandpa,
     world: { ground,
-      obstacles: p => props.getObstacles(p.x,p.z).concat(villageObs, logisticsVisuals.obstacles(economy), spireObs, build.obstaclesNear(p.x,p.z)),
+      bounce: (from, to, velY) => tramps.sweptBounce(from, to, velY, GRANDPA.gravity),
+      obstacles: p => grandpaScenery.near(p.x,p.z).concat(villageObs, logisticsVisuals.obstacles(economy), spireObs, build.obstaclesNear(p.x,p.z)),
       resolve: player.resolveWorldMovement,
     },
     raycast: grandpaRaycast,

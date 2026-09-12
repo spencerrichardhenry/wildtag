@@ -22,6 +22,7 @@ export class GrandpaUI {
   private meterText = document.createElement('span');
   private stamina = document.createElement('div');
   private actionText = document.createElement('div');
+  private cooldownText = document.createElement('div');
   private opened = false;
   private reward: GrandpaReward = { caught: false, statue: null };
   onPlace: () => void = () => {};
@@ -49,7 +50,7 @@ export class GrandpaUI {
       const label = document.createElement('label'); label.textContent = 'YOUR INVITE CODE'; label.className = 'gp-label'; label.append(this.codeInput);
       card.append(label, this.joinButton);
       const how = document.createElement('div'); how.className = 'gp-how';
-      how.innerHTML = '<div><kbd>Space</kbd><span><b>Accordion Vault</b>Hold to crouch. Release to leap. Tap just before landing to rebound.</span></div><div><kbd>Shift</kbd><span><b>Turkey Drift</b>Hold and steer with the mouse. Release to burst out of a turn.</span></div><div><kbd>Q</kbd><span><b>Sneeze Launch</b>Aim your face. The sneeze throws you backward and leaves an updraft.</span></div><p>WASD to waddle · Mouse to look · Hold RMB to look behind · Esc for this menu</p>';
+      how.innerHTML = '<div><kbd>Space</kbd><span><b>Jump</b>A normal hop, with no energy cost. Land on a trampoline to bounce.</span></div><div><kbd>E</kbd><span><b>Accordion Vault</b>Hold to crouch. Release for a huge forward leap. Tap E just before landing to rebound.</span></div><div><kbd>Shift</kbd><span><b>Chicken Zoom</b>Press once for 4× running speed for 6 seconds. Ready again 30 seconds after pressing. Steer with WASD; jump while zooming.</span></div><div><kbd>Q</kbd><span><b>Sneeze Launch</b>Aim your face. The sneeze throws you backward and leaves an updraft.</span></div><p>WASD to waddle · Mouse to look · Hold RMB to look behind · Esc for this menu</p>';
       card.append(how);
     } else {
       this.room.className = 'gp-room';
@@ -70,8 +71,9 @@ export class GrandpaUI {
     this.meter.append(this.meterText, track);
     this.controls.className = 'gp-controls';
     const energy = document.createElement('div'); energy.className = 'gp-energy'; this.stamina.className = 'gp-energy-fill'; energy.append(this.stamina);
-    this.controls.innerHTML = '<div class="gp-control-keys"><span><kbd>Space</kbd> Vault</span><span><kbd>Shift</kbd> Drift</span><span><kbd>Q</kbd> Sneeze</span></div>';
+    this.controls.innerHTML = '<div class="gp-control-keys"><span><kbd>Space</kbd> Jump</span><span><kbd>E</kbd> Vault</span><span><kbd>Shift</kbd> Zoom</span><span><kbd>Q</kbd> Sneeze</span></div>';
     this.actionText.className = 'gp-action-text'; this.controls.append(energy, this.actionText);
+    this.cooldownText.className = 'gp-action-text'; this.controls.append(this.cooldownText);
     this.root.append(this.launch, this.meter, this.controls); document.body.append(this.root);
     net.onChange = () => this.refresh();
     this.opened = net.guest; this.refresh();
@@ -123,6 +125,7 @@ export class GrandpaUI {
     this.progress.style.width = `${chase.progress * 100}%`;
     this.meter.dataset.close = String(distance <= GRANDPA.trackRadius);
     this.stamina.style.width = `${s.energy}%`;
-    this.actionText.textContent = s.sneezeWindup > 0 ? 'Ah… ah… aim your sneeze!' : s.charge > 0 ? `Vault charged ${Math.round(s.charge / GRANDPA.vaultCharge * 100)}% · Release Space` : s.drifting ? 'Carve your turn · Release Shift for a burst' : s.recovery > 0 ? 'Finding your feet…' : s.sneezeCooldown > 0 ? `Sneeze ready in ${s.sneezeCooldown.toFixed(1)}s · Feet on the ground restore energy` : 'Sneeze ready · Feet on the ground restore energy';
+    this.actionText.textContent = s.sneezeWindup > 0 ? 'Ah… ah… aim your sneeze!' : s.charge > 0 ? `Vault charged ${Math.round(s.charge / GRANDPA.vaultCharge * 100)}% · Release E` : s.sprintRemaining > 0 ? `CHICKEN ZOOM · 4× speed · ${s.sprintRemaining.toFixed(1)}s left` : s.recovery > 0 ? 'Finding your feet…' : 'Space to hop · E for a big leap · Feet on the ground restore energy';
+    this.cooldownText.textContent = `Zoom ${s.sprintCooldown > 0 ? `${Math.ceil(s.sprintCooldown)}s` : 'ready'} · Vault ${s.vaultCooldown > 0 ? `${s.vaultCooldown.toFixed(1)}s` : 'ready'} · Sneeze ${s.sneezeCooldown > 0 ? `${s.sneezeCooldown.toFixed(1)}s` : 'ready'}`;
   }
 }

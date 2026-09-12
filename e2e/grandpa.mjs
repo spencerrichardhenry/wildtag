@@ -40,16 +40,24 @@ try {
 
   await lock(guest);
   const y0 = (await state(host)).creature.pos.y;
-  await hold(guest, 'Space', 900);
+  await guest.keyboard.press('Space');
+  await host.waitForFunction(y => __grandpa.state().creature.pos.y > y + .7, y0);
+  assert.equal((await state(host)).creature.charge, 0);
+  await host.waitForFunction(() => __grandpa.state().creature.grounded);
+  assert.equal((await state(host)).creature.recovery, 0);
+  await hold(guest, 'e', 900);
   await host.waitForFunction(y => __grandpa.state().creature.pos.y > y + 4, y0, { timeout: 6000 });
   assert.equal((await state(host)).creature.stunt, 'vault');
   await host.waitForFunction(() => __grandpa.state().creature.grounded && __grandpa.state().creature.recovery === 0, null, { timeout: 8000 });
-  await guest.keyboard.down('Shift');
-  await host.waitForFunction(() => __grandpa.state().creature.drifting, null, { timeout: 4000 });
-  await guest.mouse.move(740, 380);
-  await guest.waitForTimeout(500); await guest.keyboard.up('Shift');
-  await host.waitForFunction(() => !__grandpa.state().creature.drifting);
-  await guest.waitForTimeout(1800);
+  await guest.keyboard.press('Shift');
+  await guest.keyboard.down('w');
+  await host.waitForFunction(() => __grandpa.state().creature.sprintRemaining > 0, null, { timeout: 4000 });
+  await host.waitForFunction(() => { const s = __grandpa.state().creature; return Math.hypot(s.vel.x, s.vel.z) > 20; });
+  await guest.screenshot({ path: 'docs/grandpa/verify/speed-burst.png' });
+  await guest.waitForTimeout(700); await guest.keyboard.up('w');
+  await host.waitForFunction(() => __grandpa.state().creature.sprintRemaining === 0, null, { timeout: 7500 });
+  assert((await state(host)).creature.sprintCooldown > 22);
+  await host.waitForFunction(() => __grandpa.state().creature.grounded && __grandpa.state().creature.recovery === 0);
   await hold(guest, 'q', 150);
   await host.waitForFunction(() => __grandpa.state().creature.sneezeWindup > 0);
   await host.waitForFunction(() => __grandpa.state().creature.updraft !== null, null, { timeout: 5000 });
@@ -99,7 +107,7 @@ try {
   assert.deepEqual(reloaded, JSON.parse(JSON.stringify(reward)));
   await host.screenshot({ path: 'docs/grandpa/verify/reloaded-reward.png' });
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({ result: 'passed', checks: ['invite UI', 'dedicated Grandpa URL', 'shared world', 'vault', 'drift', 'sneeze', 'child rides updraft', 'real dart tag', 'tracking holds on escape', 'first-catch reward', 'place statue', 'save and reload statue', 'guest save isolation'] }));
+  console.log(JSON.stringify({ result: 'passed', checks: ['invite UI', 'dedicated Grandpa URL', 'shared world', 'quick-tap normal jump', 'faster E vault', 'six-second speed burst', 'sneeze', 'child rides updraft', 'real dart tag', 'tracking holds on escape', 'first-catch reward', 'place statue', 'save and reload statue', 'guest save isolation'] }));
 } catch (err) {
   console.error('page errors', errors);
   for (const [name, page] of [['host', host], ['guest', guest]]) {

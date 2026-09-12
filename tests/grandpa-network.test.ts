@@ -12,8 +12,8 @@ describe('Grandpa invitation and input boundaries', () => {
     expect(inviteLink('ABCDEFGH', 'http://localhost:5199/')).toBe('http://localhost:5199/grandpa.html#join=ABCDEFGH');
   });
   it('only accepts bounded movement intents, never guest-supplied positions or rewards', () => {
-    const good = { forward: 1, strafe: 0, yaw: Math.PI, vault: true, drift: false, sneeze: false };
+    const good = { forward: 1, strafe: 0, yaw: Math.PI, jumpId: 1, sprintId: 0, vault: true, sneeze: false };
     expect(readGrandpaInput({ ...good, pos: { x: 200, y: 200, z: 200 }, reward: true })).toEqual(good);
-    for (const bad of [null, {}, { ...good, forward: 2 }, { ...good, yaw: Infinity }, { ...good, vault: 'true' }]) expect(readGrandpaInput(bad)).toBeNull();
+    for (const bad of [null, {}, { ...good, forward: 2 }, { ...good, yaw: Infinity }, { ...good, vault: 'true' }, { ...good, jumpId: -1 }, { ...good, sprintId: .5 }]) expect(readGrandpaInput(bad)).toBeNull();
   });
 });

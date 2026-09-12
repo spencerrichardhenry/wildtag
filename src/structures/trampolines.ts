@@ -184,6 +184,23 @@ export class TrampolineSystem {
     return null;
   }
 
+  /** Descending feet cross the membrane, even during a very fast fall.
+   * Passing underneath or jumping up through it cannot trigger a bounce. */
+  sweptBounce(from: Vec3, to: Vec3, velY: number, gravity: number): { pos: Vec3; velocity: number } | null {
+    if (velY > 0 || to.y >= from.y) return null;
+    let first: { t: number; pad: Tramp; pos: Vec3 } | null = null;
+    for (const pad of this.tramps.values()) {
+      if (from.y < pad.padY || to.y > pad.padY) continue;
+      const t = (from.y - pad.padY) / (from.y - to.y);
+      const pos = { x: from.x + (to.x - from.x) * t, y: pad.padY, z: from.z + (to.z - from.z) * t };
+      if (Math.hypot(pos.x - pad.x, pos.z - pad.z) > STRUCTURES.trampolinePadR || (first && t >= first.t)) continue;
+      first = { t, pad, pos };
+    }
+    if (!first) return null;
+    first.pad.membrane.scale.y = .4;
+    return { pos: first.pos, velocity: bounceLaunchVelocity(gravity, STRUCTURES.trampolineBounceFactor * STRUCTURES.droneHover) };
+  }
+
   /** Cosmetic: membrane relax + sky-rotor spin. */
   update(dt: number): void {
     for (const t of this.tramps.values()) {

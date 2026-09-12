@@ -10,6 +10,7 @@ import { createGrandpa, createChase, earnStatue, parseReward, REST_INPUT, stepCh
 import type { GrandpaNetwork, GrandpaSnapshot } from './network.ts';
 import type { GrandpaUI } from './ui.ts';
 import { GrandpaModel, makeChildAvatar } from './model.ts';
+import { GrandpaControls } from './controls.ts';
 
 interface GrandpaDeps {
   scene: THREE.Scene;
@@ -50,8 +51,10 @@ export class GrandpaSystem {
   private paused = false;
   private guestInput = { ...REST_INPUT };
   private visitCode = '';
+  private readonly controls: GrandpaControls | null;
 
   constructor(private readonly d: GrandpaDeps) {
+    this.controls = d.net.guest ? new GrandpaControls(d.input, () => !d.ui.isOpen, () => this.state) : null;
     this.reward = parseReward(d.reward);
     d.scene.add(this.model.root, this.child, this.wind);
     this.model.root.visible = false; this.child.visible = false;
@@ -115,11 +118,8 @@ export class GrandpaSystem {
     const { net, input, player, world } = this.d;
     this.time += dt;
     if (net.guest) {
-      const movement = input.state();
-      this.guestInput = !this.d.ui.isOpen && input.locked && !document.hidden ? {
-        forward: movement.forward, strafe: movement.strafe, yaw: input.yaw,
-        vault: movement.jumpHeld, drift: movement.sprint, sneeze: input.diveHeld,
-      } : { ...REST_INPUT, yaw: input.yaw };
+      input.state(); // Drain the ordinary player's unused movement edges.
+      this.guestInput = this.controls!.read();
       for (const action of input.consumeActions()) if (action.type === 'escape') this.d.ui.toggle();
       if (this.state && net.connected && !this.paused) this.state = stepGrandpa(this.state, this.guestInput, dt, world, this.chase.phase === 'caught');
       this.accumulator += dt;
@@ -164,10 +164,10 @@ export class GrandpaSystem {
     ui.update(s, this.chase, distance, net.connected, this.paused);
     if (!s || !net.connected) { this.label.hidden = true; return; }
     this.correction.multiplyScalar(Math.exp(-dt * 12));
-    this.model.animate(s, this.time, this.chase.phase === 'caught');
     this.model.root.position.set(s.pos.x, s.pos.y, s.pos.z);
+    if (net.guest) this.model.root.position.add(this.correction);
+    this.model.animate(s, this.time, this.chase.phase === 'caught', dt, this.d.world.ground);
     if (net.guest) {
-      this.model.root.position.add(this.correction);
       const yaw = input.yaw + (input.rmbHeld ? Math.PI : 0);
       const focus = this.model.root.position.clone().add(new THREE.Vector3(0, 2.8, 0));
       const pitch = Math.max(-.65, Math.min(.75, input.pitch));

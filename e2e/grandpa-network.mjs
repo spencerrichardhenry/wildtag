@@ -36,7 +36,7 @@ try {
   assert(joined.connected, joined.message);
   assert.deepEqual(joined.world.unlocks, ['grapple']);
   assert.equal(joined.world.structures.trampolines.length, 1);
-  await guest.evaluate(() => n.sendInput({ forward: 1, strafe: 0, yaw: .2, vault: true, drift: false, sneeze: false }));
+  await guest.evaluate(() => n.sendInput({ forward: 1, strafe: 0, yaw: .2, jumpId: 0, sprintId: 0, vault: true, sneeze: false }));
   await host.waitForFunction(() => n.remoteInput.vault);
   await host.evaluate(() => n.sendSnapshot(snap));
   await guest.waitForFunction(() => n.latest?.clock === 100);

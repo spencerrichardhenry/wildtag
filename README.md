@@ -2,7 +2,7 @@
 
 **Grandpa visits (prototype):** use **Invite Grandpa** in Wildtag to share a
 code or link, then join through `/grandpa.html`. Grandpa has a charged vault,
-talon drift, and a sneeze launch that leaves an updraft. Tagging starts a 1v1
+normal jump, six-second Chicken Zoom, and a sneeze launch that leaves an updraft. Tagging starts a 1v1
 chase; the first capture earns one placeable statue. Grandpa Featherfoot is an
 original golden running bird, modeled through Blender MCP with animated legs,
 tiny wings, a feather beard, and an extravagant tail.

@@ -7,7 +7,7 @@ import { finiteVec, REST_INPUT, type ChaseState, type GrandpaInput, type Grandpa
 import { peerOptions } from './ice.ts';
 
 // Ground-following changes prediction; an older host must refresh as well.
-export const GRANDPA_PROTOCOL = 2;
+export const GRANDPA_PROTOCOL = 3;
 const PREFIX = 'wildtag-grandpa-v1-';
 const CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 export type ConnectionStatus = 'idle' | 'opening' | 'waiting' | 'connecting' | 'connected' | 'disconnected' | 'error';
@@ -36,8 +36,9 @@ export function inviteLink(code: string, base = window.location.href): string {
 export function readGrandpaInput(value: unknown): GrandpaInput | null {
   if (!value || typeof value !== 'object') return null;
   const i = value as GrandpaInput;
-  if (![i.forward, i.strafe, i.yaw].every(Number.isFinite) || Math.abs(i.forward) > 1 || Math.abs(i.strafe) > 1 || Math.abs(i.yaw) > 1e6 || ![i.vault, i.drift, i.sneeze].every(v => typeof v === 'boolean')) return null;
-  return { forward: i.forward, strafe: i.strafe, yaw: i.yaw, vault: i.vault, drift: i.drift, sneeze: i.sneeze };
+  if (![i.forward, i.strafe, i.yaw].every(Number.isFinite) || Math.abs(i.forward) > 1 || Math.abs(i.strafe) > 1 || Math.abs(i.yaw) > 1e6 ||
+    ![i.jumpId, i.sprintId].every(v => Number.isSafeInteger(v) && v >= 0 && v <= 1e9) || ![i.vault, i.sneeze].every(v => typeof v === 'boolean')) return null;
+  return { forward: i.forward, strafe: i.strafe, yaw: i.yaw, jumpId: i.jumpId, sprintId: i.sprintId, vault: i.vault, sneeze: i.sneeze };
 }
 function validSnapshot(v: unknown): v is GrandpaSnapshot {
   if (!v || typeof v !== 'object') return false;

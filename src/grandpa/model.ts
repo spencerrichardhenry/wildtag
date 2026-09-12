@@ -2,6 +2,24 @@ import * as THREE from 'three';
 import { cloneArtAsset, hasArtAsset } from '../art/library.ts';
 import { GRANDPA } from '../core/constants.ts';
 import type { GrandpaState } from './core.ts';
+import type { GroundQuery } from '../core/types.ts';
+
+type BirdLeg = { hip: THREE.Object3D; knee: THREE.Object3D; foot: THREE.Object3D; wing: THREE.Object3D };
+const upperBone = new THREE.Vector3(0, -.78, .2);
+const lowerBone = new THREE.Vector3(0, -1.2, -.22);
+/** Preserve the Blender joint lengths while planting the toes on the ground. */
+function plantLeg(leg: BirdLeg, target: THREE.Vector3): void {
+  const upper = upperBone.length(), lower = lowerBone.length();
+  const distance = THREE.MathUtils.clamp(target.length(), Math.abs(upper - lower) + .01, upper + lower - .003);
+  const direction = target.clone().normalize();
+  const along = (upper * upper + distance * distance - lower * lower) / (2 * distance);
+  const bend = new THREE.Vector3(0, 0, 1).addScaledVector(direction, -direction.z).normalize();
+  const knee = direction.clone().multiplyScalar(along).addScaledVector(bend, Math.sqrt(Math.max(0, upper * upper - along * along)));
+  leg.hip.quaternion.setFromUnitVectors(upperBone.clone().normalize(), knee.clone().normalize());
+  const shin = direction.multiplyScalar(distance).sub(knee).applyQuaternion(leg.hip.quaternion.clone().invert()).normalize();
+  leg.knee.quaternion.setFromUnitVectors(lowerBone.clone().normalize(), shin);
+  leg.foot.quaternion.copy(leg.hip.quaternion).multiply(leg.knee.quaternion).invert();
+}
 
 /** Original Blender MCP bird, with named pivots for the exaggerated stunt kit. */
 export class GrandpaModel {
@@ -10,7 +28,10 @@ export class GrandpaModel {
   private readonly body: THREE.Object3D;
   private readonly head: THREE.Object3D;
   private readonly tail: THREE.Object3D;
-  private readonly legs: { hip: THREE.Object3D; knee: THREE.Object3D; foot: THREE.Object3D; wing: THREE.Object3D }[];
+  private readonly legs: BirdLeg[];
+  private gait = 0;
+  private lastPosition: THREE.Vector3 | null = null;
+  private moving = 0;
   constructor(statue = false) {
     if (!hasArtAsset('grandpa_featherfoot')) throw new Error('Grandpa Featherfoot art has not loaded');
     this.creature = cloneArtAsset('grandpa_featherfoot');
@@ -39,27 +60,52 @@ export class GrandpaModel {
       base.position.y = .15; this.root.add(base);
     }
   }
-  animate(s: GrandpaState, time: number, caught: boolean): void {
+  animate(s: GrandpaState, time: number, caught: boolean, dt = 1 / 60, ground?: GroundQuery): void {
     const speed = Math.hypot(s.vel.x, s.vel.z);
-    const stride = s.grounded && !s.drifting && !caught ? Math.min(1, speed / GRANDPA.walkSpeed) : 0;
-    const phase = time * (5 + Math.min(speed, 12) * .8);
+    let distance = this.lastPosition ? Math.hypot(s.pos.x - this.lastPosition.x, s.pos.z - this.lastPosition.z) : speed * dt;
+    if (distance > 3) distance = 0;
+    (this.lastPosition ??= new THREE.Vector3()).set(s.pos.x, s.pos.y, s.pos.z);
+    const strideLength = s.sprintRemaining > 0 ? 2.8 : 2.4;
+    if (s.grounded && !caught) this.gait = (this.gait + distance / strideLength) % 1;
+    const moving = s.grounded && !caught ? Math.min(1, distance / Math.max(.001, dt) / 3) : 0;
+    this.moving += (moving - this.moving) * (1 - Math.exp(-dt * 15));
+    const stride = this.moving;
+    const phase = this.gait * Math.PI * 2;
     const charge = s.charge / GRANDPA.vaultCharge;
     const windup = s.sneezeWindup > 0 ? 1 - s.sneezeWindup / GRANDPA.sneezeWindup : 0;
     const air = !s.grounded ? 1 : 0;
     this.root.rotation.y = s.yaw + Math.PI;
-    this.body.position.y = 2.55 - charge * .48 - (caught ? .45 : 0) + Math.abs(Math.sin(phase)) * .08 * stride;
-    this.body.rotation.set((caught ? .28 : 0) + charge * .16 + windup * -.16 + (s.drifting ? .2 : 0), 0, s.drifting ? -.19 : Math.sin(phase) * .035 * stride);
+    const zoom = s.sprintRemaining > 0 && stride > .1;
+    const cos = Math.cos(this.root.rotation.y), sin = Math.sin(this.root.rotation.y);
+    const travel = speed > .1 ? new THREE.Vector3((cos * s.vel.x - sin * s.vel.z) / speed, 0, (sin * s.vel.x + cos * s.vel.z) / speed) : new THREE.Vector3(0, 0, 1);
+    const feet = this.legs.map((_, i) => {
+      const cycle = (this.gait + i * .5) % 1;
+      const swing = Math.max(0, (cycle - .6) / .4);
+      const offset = (cycle < .6 ? .5 - cycle / .6 : -.5 + swing) * strideLength * .6 * stride;
+      const foot = new THREE.Vector3((i === 0 ? -.52 : .52) + travel.x * offset, 0, -.02 + travel.z * offset);
+      const x = this.root.position.x + cos * foot.x + sin * foot.z;
+      const z = this.root.position.z - sin * foot.x + cos * foot.z;
+      const y = ground ? ground.heightBelow?.(x, z, s.pos.y + 1.2) ?? ground.heightAt(x, z) : s.pos.y;
+      foot.y = THREE.MathUtils.clamp(y - this.root.position.y, -.9, .9) + Math.sin(swing * Math.PI) * (zoom ? .5 : .3) * stride;
+      return foot;
+    });
+    const slopeCrouch = s.grounded ? Math.min(.65, Math.max(0, -Math.min(...feet.map(p => p.y))) * .9) : 0;
+    this.body.position.y = 2.55 - stride * .2 - slopeCrouch - charge * .48 - (caught ? .45 : 0) + Math.abs(Math.sin(phase)) * .045 * stride;
+    this.body.rotation.set((caught ? .28 : 0) + charge * .16 - windup * .16 + (zoom ? .24 : 0), 0, Math.sin(phase) * .035 * stride);
     this.head.rotation.set(caught ? .4 : -windup * .4 + air * -.1 + Math.sin(phase) * .045 * stride, Math.sin(time * 1.2) * .045, s.recovery > 0 ? Math.sin(time * 18) * .08 : 0);
     this.tail.rotation.set(charge * .25 - air * .2, Math.sin(time * 3) * .08 + Math.sin(phase) * .07 * stride, 0);
     this.legs.forEach((leg, i) => {
       const side = i === 0 ? -1 : 1;
-      const gait = Math.sin(phase + i * Math.PI) * stride;
-      leg.hip.position.y = 2.3 - charge * .34 - (caught ? .28 : 0);
-      leg.hip.rotation.x = -gait * .45 - charge * .48 + air * .4;
-      leg.knee.rotation.x = Math.max(0, gait) * .55 + charge * .95 + air * .9;
-      leg.foot.rotation.x = -(leg.hip.rotation.x + leg.knee.rotation.x) * .7;
+      leg.hip.position.y = 2.3 - stride * .2 - slopeCrouch - charge * .34 - (caught ? .28 : 0);
+      if (s.grounded) {
+        const foot = feet[i]!;
+        plantLeg(leg, new THREE.Vector3(foot.x - leg.hip.position.x, foot.y + .3 - leg.hip.position.y, foot.z - leg.hip.position.z));
+      } else {
+        const tuck = s.stunt === 'jump' ? .45 : 1;
+        leg.hip.rotation.set(.4 * tuck, 0, 0); leg.knee.rotation.set(.9 * tuck, 0, 0); leg.foot.rotation.set(-.9 * tuck, 0, 0);
+      }
       leg.wing.rotation.z = side * -(caught ? 1.1 : air ? .85 + Math.sin(time * 17) * .15 : .08 + charge * .28 + windup * .4);
-      leg.wing.rotation.x = s.drifting ? -.4 : 0;
+      leg.wing.rotation.x = zoom ? -.6 : 0;
     });
   }
   dispose(): void {
