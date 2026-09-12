@@ -126,9 +126,12 @@ export class GrandpaSystem {
       if (this.accumulator >= 1 / GRANDPA.inputHz) { this.accumulator = 0; net.sendInput(this.guestInput); }
       if (this.state) player.rideStep(this.state.pos, this.state.vel);
     } else if (net.connected && this.state) {
-      this.paused = paused;
+      // Sharing the invite or opening the child's inventory must not disable
+      // Grandpa's controls. Only a backgrounded host suspends his simulation;
+      // chase progress still pauses with the child's menus below.
+      this.paused = document.hidden;
+      if (!this.paused) this.state = stepGrandpa(this.state, net.remoteInput, dt, world, this.chase.phase === 'caught');
       if (!paused) {
-        this.state = stepGrandpa(this.state, net.remoteInput, dt, world, this.chase.phase === 'caught');
         const target = { ...this.state.pos, y: this.state.pos.y + 2.5 };
         const child = { ...player.pos, y: player.pos.y + 1.5 };
         this.close = Math.hypot(child.x - target.x, child.y - target.y, child.z - target.z) <= GRANDPA.trackRadius && !this.d.raycast(child, target);
@@ -147,7 +150,7 @@ export class GrandpaSystem {
       this.accumulator += dt; this.worldAccumulator += dt;
       if (this.accumulator >= 1 / GRANDPA.snapshotHz) {
         this.accumulator = 0;
-        net.sendSnapshot({ ...this.d.hostSnapshot(), grandpa: this.state, chase: this.chase, paused });
+        net.sendSnapshot({ ...this.d.hostSnapshot(), grandpa: this.state, chase: this.chase, paused: this.paused });
       }
       if (this.worldAccumulator >= 1) { this.worldAccumulator = 0; net.syncWorld(); }
     }

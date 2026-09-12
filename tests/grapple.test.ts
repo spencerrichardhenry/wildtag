@@ -161,6 +161,23 @@ describe('stepHook — prop-cylinder latch', () => {
 });
 
 describe('stepHook — drone sphere latch', () => {
+  it('does not snap back to an overhead drone late in a missed forward arc', () => {
+    const reg = new AnchorRegistry();
+    reg.registerAnchor('overhead', () => ({ x: 0, y: 25, z: 0 }), 4.8);
+    const q = emptyQueries({
+      raycastDrones: (a, b) => {
+        const dir = { x: b.x - a.x, y: b.y - a.y, z: b.z - a.z };
+        return reg.raycastAnchors(a, dir, Math.hypot(dir.x, dir.y, dir.z));
+      },
+    });
+    const origin = { x: 0, y: 5.3, z: 0 };
+    let h = fireHook(origin, { x: 0, y: Math.sin(.5), z: -Math.cos(.5) });
+    while (h.phase === 'flying') h = stepHook(h, origin, q, DT);
+    expect(h.phase).toBe('done');
+    expect(h.anchorDrone).toBeNull();
+    expect(h.pos.z).toBeLessThan(-90);
+  });
+
   it('latches to a drone anchor and records its id for live tracking', () => {
     const reg = new AnchorRegistry();
     reg.registerAnchor('drone-1', () => ({ x: 6, y: 2, z: 0 }), 1.2);

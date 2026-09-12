@@ -49,7 +49,8 @@ export class AnchorRegistry {
    * null. `dir` need not be unit — it is normalized internally.
    */
   raycastAnchors(origin: Vec3, dir: Vec3, maxDist: number): AnchorHit | null {
-    const dl = Math.hypot(dir.x, dir.y, dir.z) || 1;
+    const dl = Math.hypot(dir.x, dir.y, dir.z);
+    if (dl < 1e-9 || maxDist < 0) return null;
     const dx = dir.x / dl;
     const dy = dir.y / dl;
     const dz = dir.z / dl;
@@ -67,11 +68,11 @@ export class AnchorRegistry {
       const disc = b * b - cc;
       if (disc < 0) continue; // ray misses the sphere
 
-      const sq = Math.sqrt(disc);
-      let t = -b - sq; // near root
-      if (t < 0) t = -b + sq; // origin inside/behind: take the far root
-      if (t < 0) t = 0; // origin inside the sphere → immediate hit
-      if (t > maxDist || t >= bestT) continue;
+      // Only an origin actually INSIDE the sphere is immediate contact.
+      // A negative entry from outside means the sphere is behind the hook;
+      // clamping that to zero made missed shots snap backward to a drone.
+      const t = cc <= 0 ? 0 : -b - Math.sqrt(disc);
+      if (t < 0 || t > maxDist || t >= bestT) continue;
 
       bestT = t;
       best = {

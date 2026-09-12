@@ -1286,7 +1286,7 @@ function bootGame(): void {
         grandpa: grandpa.state, chase: grandpa.chase,
         child: { pos: player.pos, yaw: input.yaw, vel: player.vel, grapple: player.grappleSnapshot?.anchor ?? null, mounted: player.mounted },
         critters: critters.list(), clock: worldClock, darts: darts.snapshot(),
-        paused: document.hidden || screens.isOpen() || grandpaUi.isOpen,
+        paused: document.hidden,
       });
     }
   });

@@ -1,6 +1,8 @@
 import type { Input } from '../player/input.ts';
 import { REST_INPUT, type GrandpaInput, type GrandpaState } from './core.ts';
 
+const MOVEMENT_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD']);
+
 /** Numbered presses survive a quick tap between network sends or prediction
  * corrections. Holding Space/Shift never repeatedly fires the action. */
 export class GrandpaControls {
@@ -11,9 +13,21 @@ export class GrandpaControls {
     document.addEventListener('keydown', this.down);
     document.addEventListener('keyup', this.up);
     window.addEventListener('blur', this.clear);
-    document.addEventListener('pointerlockchange', this.clear);
+    document.addEventListener('pointerlockchange', () => { if (!this.input.locked) this.clear(); });
   }
   private down = (e: KeyboardEvent): void => {
+    // A player often holds W BEFORE clicking into the world or resuming.
+    // Remember movement independently of mouse capture, including repeats
+    // after focus changes. read() still blocks it while the menu is open.
+    // Discrete tricks below require a fresh press during active play.
+    if (MOVEMENT_KEYS.has(e.code)) {
+      const target = e.target;
+      const typing = target instanceof HTMLElement && (target.isContentEditable ||
+        target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement ||
+        (target instanceof HTMLInputElement && !target.readOnly));
+      if (!typing) this.held.add(e.code);
+      return;
+    }
     if (!this.enabled() || !this.input.locked || e.repeat || this.held.has(e.code)) return;
     this.held.add(e.code);
     if (e.code === 'Space') this.jumpId = Math.max(this.jumpId, this.state()?.jumpId ?? 0) + 1;

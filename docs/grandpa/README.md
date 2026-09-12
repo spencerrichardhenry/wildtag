@@ -122,11 +122,13 @@ npm test
 node e2e/grandpa-network.mjs
 node e2e/grandpa.mjs
 node e2e/grandpa-terrain.mjs
+node e2e/grandpa-join-input.mjs
+node e2e/grapple-drones.mjs
 # After configuring working TURN credentials:
 VERIFY_RELAY=1 node e2e/grandpa-network.mjs
 ```
 
-Both browser scripts use real Chrome and WebRTC through the public handshake
+The visit browser scripts use real Chrome and WebRTC through the public handshake
 service. Start the Vite server first; `VERIFY_URL` can override the default
 `http://localhost:5199`. Screenshots are saved in `docs/grandpa/verify/`.
 
@@ -153,6 +155,19 @@ movement uses short collision steps; trampoline contact sweeps across the pad
 instead of missing it during a fast fall. A second correction keeps scenery
 collision independent of camera streaming, which previously let the two peers
 disagree when Grandpa ran far ahead of the child.
+
+The join-input regression reproduces holding W across the first world click
+and menu resume, and joining while the child's invite card remains open.
+Previously all three could block movement. Movement holds now survive capture
+and resume, with movement disabled in Grandpa's own menu and action presses
+made in that menu discarded. The child's menus pause chase progress without
+disabling Grandpa's movement; a backgrounded host still pauses the visit.
+
+The drone-grapple regression covers shooting down beneath a drone, shooting
+forward with a drone behind, a full missed ballistic arc, and a legitimate
+upward hit. Previously a negative sphere intersection became a zero-distance
+hit, even 1.7 seconds into a flight with the drone 85 metres behind the hook.
+Only an origin actually inside the sphere now counts as immediate contact.
 
 The new local GLB is 375,220 bytes, 10,956 triangles and 12 meshes. Named pivots
 survive export. Host, guest and bronze reward statue all use this same model.
