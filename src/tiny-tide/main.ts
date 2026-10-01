@@ -11,6 +11,7 @@ import { entityRadius, provoke, type EcoEvent, type Entity } from './ecosystem';
 import { canApproachFood, type Traversal } from './food-access';
 import { openEditor, type EditorResult, type SubmitOutcome } from './editor';
 import { openPathScreen, type PathChoice } from './path-screen';
+import { renderPreview } from './preview';
 import { cardSummary, COAST_READY, eligibleChildren, leadsTo, type BodyPlan } from './plans';
 import { quoteDesign } from './economy';
 import { newRuntime, type Actor, type Capsule, type CombatInput, type Constraint, type MutVec3, type Orientation, type RecoveryResult, type Vec3, type WorldQueries } from './combat-types';
@@ -56,6 +57,7 @@ app.innerHTML = `
   <main id="home">
     <div class="home-copy"><div class="eyebrow"><span class="tiny-star">✳</span> DESIGN IT. FEED IT. EVOLVE IT.</div><h1>Small fry.<br><em>Big appetite.</em></h1><p>Build your own little creature. <br>Grow it until it eats the universe.</p><div class="start-row"><button id="start" class="primary">Let’s eat ${icons.arrow}</button><span class="play-note">YOUR CREATURE.<br>YOUR RULES.</span></div><button id="fresh" class="text-button" hidden>Start a fresh adventure</button><div class="home-hint"><span class="hint-line"></span> A cozy 3D eat-and-evolve adventure</div></div>
     <div class="creature-caption"><span class="caption-line"></span><span id="home-name">little tide<br><small>big things start small.</small></span><span class="caption-spark">✧</span></div>
+    <section id="home-notes" aria-label="Save notices" hidden></section>
     <div class="journey"><div class="journey-heading"><span>YOUR NEXT BIG THING</span><span>5 SIZES · ONE HUNGRY LITTLE SOUL</span></div><div class="journey-track">${STAGES.map((s, i) => `<div class="journey-step ${i === 0 ? 'current' : ''}"><span class="step-icon">${species[i]}</span><div><span class="step-number">0${i + 1}</span><span class="step-name">${s.title}</span><small>${['Nibble', 'Swim', 'Breach', 'Take flight', 'Devour the stars'][i]}</small></div>${i < 4 ? '<span class="step-dots">···</span>' : ''}<span class="sr-only">${s.size}</span></div>`).join('')}</div></div>
   </main>
   <section id="game-ui" hidden aria-label="Game controls">
@@ -104,15 +106,41 @@ function legality(stage: number): Legality {
 }
 /** A design is buildable only when the body has a start anchor at both growth ends (spec §3). */
 const BUILD: Build = { coast: COAST_READY, anchorCheck: (g, p) => [1, 1.38].every(growth => startAnchor(playerActor(p, g, p.size, growth), p.size, legality(p.size)).ok) };
-/** Older keys are read for migration only. They are never written. */
+/** A second v4 key. It holds a new run when `SAVE_KEY` holds a kept or unreadable save, so those bytes stay untouched. */
+const FRESH_KEY = 'tiny-tide-adventure-v4-fresh';
+const V4_KEYS = [FRESH_KEY, SAVE_KEY];
+/** Older keys are read for migration only, and only when no v4 key exists. They are never written. */
 const LEGACY_KEYS = ['tiny-tide-adventure-v2', 'tiny-tide-adventure-v1'];
 let saved: Run | null = null;
+/** The key the resumable run came from, or null. */
+let loadedKey: string | null = null;
+/** The message of a kept (coast) save, shown on the home screen. */
+let keptMessage: string | null = null;
+/** The one key this session writes, or null when no key is safe to write. */
+let writeKey: string | null = null;
+/** True when every v4 key holds a save that cannot load, so this session cannot save. */
+let unsavable = false;
 try {
-  for (const key of [SAVE_KEY, ...LEGACY_KEYS]) {
+  const present = new Set<string>(), blocked = new Set<string>();
+  for (const key of V4_KEYS) {
     const raw = localStorage.getItem(key); if (raw === null) continue;
-    const loaded = parseSaveWithNotes(raw, BUILD); if (loaded?.status === 'ok') { saved = loaded.run; break; }
-    if (loaded?.status === 'kept') break;   // Plan C shows the kept-save message.
+    present.add(key);
+    const loaded = parseSaveWithNotes(raw, BUILD);
+    if (loaded?.status === 'kept') { keptMessage ??= loaded.message; blocked.add(key); }
+    else if (loaded?.status === 'ok') { if (!loadedKey) { saved = loaded.run; loadedKey = key; } }
+    else blocked.add(key);   // Unreadable: keep the bytes, they may be recoverable.
   }
+  // A v4 key that exists but cannot load never falls back to an older legacy run.
+  if (present.size === 0) {
+    for (const key of LEGACY_KEYS) {
+      const loaded = parseSaveWithNotes(localStorage.getItem(key), BUILD);
+      if (loaded?.status === 'ok') { saved = loaded.run; loadedKey = key; break; }
+    }
+  }
+  unsavable = present.size > 0 && blocked.size === V4_KEYS.length;
+  writeKey = loadedKey && V4_KEYS.includes(loadedKey) ? loadedKey : [SAVE_KEY, FRESH_KEY].find(key => !blocked.has(key)) ?? null;
+  // A migrated run is written once to its v4 key, so the legacy keys are not read again.
+  if (saved && loadedKey && LEGACY_KEYS.includes(loadedKey) && writeKey) localStorage.setItem(writeKey, JSON.stringify(saved));
   audio.muted = localStorage.getItem('tiny-tide-muted') === 'true'; } catch { /* Storage is optional. */ }
 let run = saved && !saved.completed ? structuredClone(saved) : freshRun();
 let mode: 'menu' | 'playing' | 'paused' | 'evolving' | 'editing' | 'fainted' | 'stuck' | 'won' = 'menu';
@@ -244,7 +272,8 @@ function tryRespawn(): boolean {
   if (!anchor.ok || !resolveRespawn(run, rt, time, anchor)) return false;
   installPose(anchor, actor, true); refreshDerived(); save(); return true;
 }
-function save() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(run)); saved = structuredClone(run); } catch { /* Continue without saving in private contexts. */ } }
+/** Writes the run to the write key only. A kept, unreadable or legacy key is never written. */
+function save() { try { if (writeKey) localStorage.setItem(writeKey, JSON.stringify(run)); saved = structuredClone(run); } catch { /* Continue without saving in private contexts. */ } }
 function clearInput() { keys.clear(); holdingChomp = false; rising = false; diving = false; chompTapped = false; riseTapped = false; lastIntent = RELEASED; stickX = 0; stickZ = 0; stickPointer = null; target = null; el('stick').style.transform = ''; el('chomp').classList.remove('pressed'); el('special').classList.remove('pressed'); el('dive').classList.remove('pressed'); }
 function syncSound() { el('sound').innerHTML = audio.muted ? icons.mute : icons.sound; el('sound').setAttribute('aria-label', audio.muted ? 'Unmute sound' : 'Mute sound'); el('sound').setAttribute('aria-pressed', String(audio.muted)); }
 syncSound();
@@ -252,6 +281,37 @@ function syncHome() {
   const resume = saved && !saved.completed;
   el('start').innerHTML = resume ? `Keep munching ${icons.arrow}` : `Let’s eat ${icons.arrow}`; el('fresh').hidden = !resume;
   el('home-name').innerHTML = `${escapeHtml(run.name.toLowerCase())}<br><small>${resume ? `${STAGES[run.stage]!.title.toLowerCase()} and still hungry.` : 'big things start small.'}</small>`;
+  syncNotes();
+}
+/** Kept-save message, run notices and the archive on the home screen. Everything comes from the save. */
+function syncNotes() {
+  const notes: string[] = [], notices = saved?.notices ?? [], original = saved?.archive[0];
+  if (keptMessage) notes.push(`<p class="home-note kept" role="status">${escapeHtml(keptMessage)}</p>`);
+  if (unsavable) notes.push('<p class="home-note kept" role="status">Your saved adventure could not be read. It is kept untouched, but this adventure will not be saved.</p>');
+  if (notices.length) notes.push(`<div class="home-note away"><div class="eyebrow">WHILE YOU WERE AWAY</div><ul>${notices.map(n => `<li>${escapeHtml(n)}</li>`).join('')}</ul><button id="notices-ok" class="text-button">Got it</button></div>`);
+  if (original) notes.push(`<button id="view-original" class="text-button">View your original ${escapeHtml(original.name)}</button>`);
+  const box = el('home-notes'); box.innerHTML = notes.join(''); box.hidden = notes.length === 0;
+  if (notices.length) el('notices-ok').onclick = clearNotices;
+  if (original) el('view-original').onclick = viewOriginal;
+}
+/** "Got it": the notices go away and the save without them goes to the write key. */
+function clearNotices() {
+  if (!saved) return;
+  saved.notices = []; run.notices = [];
+  try { if (writeKey) localStorage.setItem(writeKey, JSON.stringify(saved)); } catch { /* Continue without saving in private contexts. */ }
+  syncNotes();
+}
+function viewOriginal() {
+  const original = saved?.archive[0]; if (!original) return;
+  const paint = original.genome.paint, swatch = (label: string, color: string) => `<span class="paint-swatch"><i style="background:${escapeHtml(color)}"></i>${label}</span>`;
+  dialogReturn = 'menu';
+  showDialog(`<img class="archive-preview" width="160" height="160" alt="${escapeHtml(original.name)} preview" src="${renderPreview(original.genome, 160)}"><div class="eyebrow">YOUR ORIGINAL DESIGN</div><h2 id="modal-title">${escapeHtml(original.name)}</h2><p>${escapeHtml(original.reason)}</p><div class="archive-paint">${swatch('Base', paint.base)}${swatch('Belly', paint.belly)}${swatch('Accent', paint.accent)}<span class="paint-swatch">${escapeHtml(paint.pattern)}</span></div><button id="copy-design" class="primary">Copy design</button><button id="close-original" class="text-button">Close</button>`);
+  el('close-original').onclick = closeDialog;
+  el('copy-design').onclick = async () => {
+    const button = el('copy-design');
+    try { await navigator.clipboard.writeText(JSON.stringify(original)); button.textContent = 'Copied!'; }
+    catch { button.textContent = 'Copy failed'; }
+  };
 }
 function escapeHtml(text: string) { return text.replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`); }
 syncHome();
@@ -683,6 +743,6 @@ if (QA) {
     plan: currentPlan(run).id, plans: [...run.plans], zone: zoneNow(), velocity: copy(rt.controlledVelocity), externalVelocity: copy(rt.externalVelocity),
     orientation: { ...rt.orientation }, permit: rt.permit ? { ...rt.permit } : null, arc: rt.arc ? { ...rt.arc } : null, breachReadyAt: rt.breachReadyAt, invulnerableUntil: rt.invulnerableUntil,
     pendingRespawn: run.pendingRespawn, caps: capsOf(), contactNow, lastContact: lastContact === null ? null : `${lastContact}`, hazardSources: hazardSources(), growth: growthOf(run), acceptedHits, rejectedHits,
-    faintLog: faintLog.map(f => ({ ...f })), stage: run.stage, dna: dnaOf(run), stageDna: run.stageDna, goal: STAGES[run.stage]!.goal, health: run.health, maxHealth: derived.maxHealth, deaths: run.deaths, diet: dietOf(run.genome), genome: structuredClone(run.genome), name: run.name, unlocked: [...run.unlocked], evolveReady: evolveReady(run), bites: run.bites, totalDna: run.totalDna, elapsed: run.elapsed, completed: run.completed, eatenPlanets: [...run.eatenPlanets], player: { x: world.player.position.x, y: world.player.position.y, z: world.player.position.z }, foods: world.edibleFoods.map(f => ({ ...f.data, tag: f.entity.spec.tag, label: f.entity.spec.label, mode: f.entity.mode, hp: f.entity.hp, approachable: approachable(f.entity) })), threats: world.threats.map(f => ({ ...f.data, label: f.entity.spec.label, mode: f.entity.mode })), landmarks: world.foods.filter(f => f.model.visible && f.tier > run.stage).map(f => ({ tier: f.tier, kind: f.data.kind, x: f.data.x, y: f.data.y, z: f.data.z })), world: world.diagnostics, assets: assetDiagnostics(), time, render: { calls: world.renderer.info.render.calls, triangles: world.renderer.info.render.triangles, geometries: world.renderer.info.memory.geometries } }) });
+    faintLog: faintLog.map(f => ({ ...f })), stage: run.stage, dna: dnaOf(run), stageDna: run.stageDna, goal: STAGES[run.stage]!.goal, health: run.health, maxHealth: derived.maxHealth, deaths: run.deaths, diet: dietOf(run.genome), genome: structuredClone(run.genome), name: run.name, unlocked: [...run.unlocked], evolveReady: evolveReady(run), bites: run.bites, totalDna: run.totalDna, elapsed: run.elapsed, completed: run.completed, eatenPlanets: [...run.eatenPlanets], player: { x: world.player.position.x, y: world.player.position.y, z: world.player.position.z }, foods: world.edibleFoods.map(f => ({ ...f.data, tag: f.entity.spec.tag, label: f.entity.spec.label, mode: f.entity.mode, hp: f.entity.hp, approachable: approachable(f.entity) })), threats: world.threats.map(f => ({ ...f.data, label: f.entity.spec.label, mode: f.entity.mode })), landmarks: world.foods.filter(f => f.model.visible && f.tier > run.stage).map(f => ({ tier: f.tier, kind: f.data.kind, x: f.data.x, y: f.data.y, z: f.data.z })), world: world.diagnostics, assets: assetDiagnostics(), saveKey: writeKey, loadedKey, time, render: { calls: world.renderer.info.render.calls, triangles: world.renderer.info.render.triangles, geometries: world.renderer.info.memory.geometries } }) });
 }
 requestAnimationFrame(frame);
