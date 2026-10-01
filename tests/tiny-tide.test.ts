@@ -134,7 +134,7 @@ describe('Tiny Tide world generation', () => {
 });
 
 describe('Tiny Tide ecosystem', () => {
-  const ctx = (eco: Ecosystem, stage: number, player: { x: number; y: number; z: number }, extra = {}) => ({ stage, dt: .1, time: 0, player, playerRadius: .6 * SIZES[stage]!, stealthFactor: 1, vulnerable: true, ...extra });
+  const ctx = (_eco: Ecosystem, stage: number, player: { x: number; y: number; z: number }, extra = {}) => ({ stage, dt: .1, time: 0, player, playerRadius: .6 * SIZES[stage]!, stealthFactor: 1, vulnerable: true, ...extra });
   it('lets a crab notice, hunt and bite a nearby tiny creature, and stealth hides it', () => {
     const eco = new Ecosystem(7), crab = eco.entities.find(e => e.spec.key === '1:crab')!;
     const player = { x: crab.x + 6, y: crab.y, z: crab.z };
