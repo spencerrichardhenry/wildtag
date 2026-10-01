@@ -1,0 +1,73 @@
+// The combat contract: plain data types shared by profiles, registries, motion, mounts and the ecosystem.
+// Ownership rules: positions and velocities are physical (not stage-local); `CombatRuntime` is never saved;
+// cooldown keys are `${actorId}:${partUid}:${grantId}`; hit ledger keys are `${actionInstanceId}:${hitGroupId}:${targetId}`;
+// hit resolution order is guard/counter -> immunity -> damage -> stagger -> impulse; an impulse changes `externalVelocity`
+// by `impulse / mass x (1 - knockbackResistance)`; cooldowns start at the end of recovery; the resolver never owns a velocity.
+import type { Medium } from './plans';
+export type Vec3 = Readonly<{ x: number; y: number; z: number }>;
+export type MutVec3 = { x: number; y: number; z: number };
+export type PartUid = string; export type ActorId = string; export type ActiveSlot = 0 | 1;
+export type CombatTrait = 'weapon' | 'protection' | 'locomotion' | 'concealment';
+export type MovementMode = 'ground' | 'swim' | 'surface' | 'glide' | 'fly' | 'burrow' | 'space';
+export interface PivotRef { kind: 'jaw' | 'seg' | 'flap' | 'swing'; index: number }
+export interface CombatSocket { id: string; pivot?: PivotRef; origin: Vec3; forward: Vec3 }   // part space, at rest
+export interface AttackGrant { id: string; attackId: string; socketIds: readonly string[] }
+export interface ActiveGrant { id: string; abilityId: string; socketIds: readonly string[]; mirrorPolicy: 'shared-cast' }
+export interface PartCombatFields { traits: readonly CombatTrait[]; sockets: readonly CombatSocket[]; basicAttacks: readonly AttackGrant[]; activeGrants: readonly ActiveGrant[] }
+export interface AbilityBinding { partUid: PartUid; grantId: string }
+export interface CombatLoadout { active: [AbilityBinding | null, AbilityBinding | null] }
+export type AttackShape = { kind: 'cone'; range: number; halfAngle: number } | { kind: 'capsule'; start: Vec3; end: Vec3; radius: number };   // part-local units, scaled once by the mount
+export interface AttackSpec { id: string; shape: AttackShape; poseProfileId: string; windupSeconds: number; activeSeconds: number; recoverySeconds: number; cooldownSeconds: number;
+  aimLockAtSeconds: number; maxTrackingRadiansPerSecond: number; damage: number; impulse: number; staggerSeconds: number; blockable: boolean; parryable: boolean; interruptible: boolean;
+  maxTargets: number; hitGroup: 'shared-grant' | 'per-emitter'; maxHitsPerTarget: number; repeatHitSeconds: number; crossing: 'same-medium' | 'water-surface' | 'any-medium'; obstruction: 'terrain-and-cover'; telegraphProfileId: string }
+export interface AbilitySpec { id: string; cooldownSeconds: number; allowedMotionModes: readonly MovementMode[]; effectProfileId: string }
+export interface ContactHazard { id: string; damage: number; cadenceSeconds: number; invulnerabilitySeconds: number; impulse: number }
+export interface HabitatProfile { id: string; media: readonly Medium[]; maxWaterDepthBodyLengths: number | null; maxFloorGapBodyLengths: number | null; maxLandSlopeRadians: number;
+  surfaceBandBodyLengths: number | null; wadingSupportBodyLengths: number | null; refugeTags: readonly string[]; isStaticProp?: boolean }
+export interface MovementProfile { id: string; mode: MovementMode; speedMultiplier: number; acceleration: number; braking: number; maxYawRate: number; maxPitchRate: number;
+  facing: 'move' | 'aim' | 'lock-during-action'; evasionProfileId?: string }
+export interface PursuitPolicy { id: string; memorySeconds: number; blockedWaitSeconds: number; reacquireSeconds: number; leashBodyLengths: number; giveUpBodyLengths: number }
+export interface SpeciesCombatFields { movementProfileId: string; habitatProfileId: string; hullProfileId: string; attackMountProfileId: string; attackIds: readonly string[]; contactHazardId?: string; pursuitId: string }
+export interface EnvironmentSample { medium: Medium; groundHeight: number; surfaceHeight: number | null; waterDepth: number; groundClearance: number; groundNormal: Vec3; coverIds: readonly string[]; refugeId: string | null }
+/** sway: horizontal and heave: vertical animation envelope; the occupied volume is the capsule swept by any such offset. */
+export interface Capsule { start: Vec3; end: Vec3; radius: number; sway?: number; heave?: number }
+export type EmitterSource = { kind: 'part'; partUid: PartUid; copy: 0 | 1; socketId: string } | { kind: 'actor'; actorId: ActorId; mountId: string; socketId: string };
+export interface Emitter { source: EmitterSource; origin: Vec3; forward: Vec3; localToWorld: readonly number[] }
+export interface CombatPose { actorId: ActorId; position: Vec3; forward: Vec3; bodyLength: number; mass: number; knockbackResistance: number; hull: readonly Capsule[]; hurtboxes: readonly Capsule[]; emitters: readonly Emitter[] }
+export interface Orientation { yaw: number; pitch: number }
+export interface TraversalPermit { id: string; startsAt: number; expiresAt: number; media: readonly Medium[]; landingRequired: boolean }
+export interface Actor { id: ActorId; hull: readonly Capsule[]; habitat: HabitatProfile; bodyLength: number }   // hull in body space, physical scale, not oriented
+export interface Terrain { groundAt(x: number, z: number): number; surface: number; space: boolean; slopeBound: number }
+export type Constraint = 'ground' | 'surface-top' | 'floor-gap' | 'depth' | 'water' | 'land-band' | 'air' | 'space' | 'bounds-x' | 'bounds-z' | 'bounds-y' | 'refuge';
+export interface AdmissionContext { time: number; permit?: TraversalPermit | null; bounds?: { half: number; maxY?: number } }
+/** On failure, `normal` is the unit direction back into the admitted region at `point` (motion uses it for contacts). */
+export interface Admission { ok: boolean; constraint: Constraint | null; point: Vec3 | null; normal: Vec3 | null }
+export interface WorldQueries {
+  terrain: Terrain;
+  sampleEnvironment(p: Vec3): EnvironmentSample;
+  visibility(from: Vec3, to: Vec3): number;
+  refugeAt(p: Vec3): string | null;                                                   // for environment samples only
+  refugeOverlap(world: readonly Capsule[]): { id: string; normal: Vec3 } | null;    // extent-aware: the first refuge the posed hull touches
+  refugeAccess(actor: Actor, refugeId: string): boolean;
+  overlapHull(actor: Actor, at: Vec3, o: Orientation, ctx: AdmissionContext): Admission;
+}
+export interface LegalityContext { queries: WorldQueries; bounds?: { half: number; maxY?: number } }
+export interface MotionRequest { actorId: ActorId; from: Vec3; displacement: Vec3; orientation: Orientation; turn?: Orientation; hull: readonly Capsule[]; habitatProfileId: string;
+  cause: 'locomotion' | 'dash' | 'knockback' | 'recovery'; traversalPermit?: TraversalPermit | null }
+export interface Contact { point: Vec3; normal: Vec3; constraint: Constraint; distanceFraction: number; time: number }
+export interface MotionResult { status: 'moved' | 'blocked' | 'clamped' | 'invalid-start' | 'needs-recovery'; position: Vec3; orientation: Orientation; contacts: readonly Contact[]; unconsumed: Vec3; time: number }
+export type RecoveryResult = { ok: true; position: Vec3; orientation: Orientation } | { ok: false; reason: string };
+export interface ActionState { instanceId: string; definitionId: string; grantId: string; source: EmitterSource; phase: 'windup' | 'active' | 'recovery' | 'interrupted'; startedAt: number; aim: Vec3; committedPose: CombatPose | null; hitCounts: Map<string, number>; lastHitAt: Map<string, number> }
+export interface BreachArc { startedAt: number; duration: number; fromY: number }
+export interface CombatRuntime { targetable: boolean; perceivable: boolean; damageable: boolean; invulnerableUntil: number; staggerUntil: number; guardProfileId: string | null;
+  controlledVelocity: MutVec3; externalVelocity: MutVec3; orientation: Orientation; cooldowns: Map<string, number>; actions: ActionState[]; permit: TraversalPermit | null;
+  arc: BreachArc | null; breachReadyAt: number; groundOffset: number }
+export interface HitRequest { source: ActorId; target: ActorId; actionInstanceId: string; attackId: string; emitter: EmitterSource; hitGroupId: string; point: Vec3; normal: Vec3; damage: number; impulse: Vec3 }
+export interface CombatInput { move: Vec3; aim: Vec3 | null; basicHeld: boolean; basicPressed: boolean; activePressed: [boolean, boolean]; activeHeld: [boolean, boolean]; activeReleased: [boolean, boolean]; activeCanceled: [boolean, boolean]; traversal: 'none' | 'rise' | 'dive' | 'breach' }
+export type { DnaCredit } from './economy';
+/** A fresh runtime: every flag true, every clock 0, zero velocities, empty maps. Never saved. */
+export function newRuntime(orientation: Orientation = { yaw: 0, pitch: 0 }): CombatRuntime {
+  return { targetable: true, perceivable: true, damageable: true, invulnerableUntil: 0, staggerUntil: 0, guardProfileId: null,
+    controlledVelocity: { x: 0, y: 0, z: 0 }, externalVelocity: { x: 0, y: 0, z: 0 }, orientation: { yaw: orientation.yaw, pitch: orientation.pitch },
+    cooldowns: new Map(), actions: [], permit: null, arc: null, breachReadyAt: 0, groundOffset: 0 };
+}

@@ -3,6 +3,7 @@ import { applyDesign, commitEvolution, currentPlan, dnaOf, eat, faint, freshRun,
 import { adaptToPlan, nextUid, type Genome } from '../../src/tiny-tide/genome';
 import { plan } from '../../src/tiny-tide/plans';
 import { species } from '../../src/tiny-tide/species';
+import { PARTS, type PartSpec } from '../../src/tiny-tide/parts';
 
 const build = { coast: false };
 const ready = (seed = 1) => { const r = freshRun(seed); r.stageDna = STAGES[0]!.goal; return r; };
@@ -93,4 +94,20 @@ describe('planets', () => {
     expect(eat(run, planet, 3).dna).toBe(0);
     expect(eat(run, planet, 11).win).toBe(true); expect(run.completed).toBe(true);
   });
+});
+
+const grantParts: PartSpec[] = PARTS.map(p => p.id === 'claw_pincer' ? { ...p, activeGrants: [{ id: 'snap', abilityId: 'dash', socketIds: ['pinch'], mirrorPolicy: 'shared-cast' as const }] } : p);
+const clawRun = () => { const r = freshRun(1); r.genome.parts.push({ uid: 'p5', id: 'claw_pincer', t: .45, angle: 2, scale: 1, mirror: true, roll: 0 }); r.nextPartSerial = 6;
+  r.economy.parts.p5 = { basis: 24, credit: { banked: 24, atRisk: 0 } }; r.loadout.active = [{ partUid: 'p5', grantId: 'snap' }, null]; return r; };   // claw pair: round(12 × 2 × 1) = 24
+it('validates a binding against the catalog it is given', () => {
+  expect(validateRun(clawRun(), build, grantParts)).toEqual([]);
+  expect(validateRun(clawRun(), build)).toContain('loadout 0: grant snap');
+});
+it('rejects the same binding in both slots, and extra keys', () => {
+  const r = clawRun(); r.loadout.active = [{ partUid: 'p5', grantId: 'snap' }, { partUid: 'p5', grantId: 'snap' }]; expect(validateRun(r, build, grantParts)).toContain('loadout: duplicate binding');
+  const s = clawRun(); (s.loadout.active as unknown[])[0] = { partUid: 'p5', grantId: 'snap', extra: 1 }; expect(validateRun(s, build, grantParts)).toContain('loadout 0: shape');
+});
+it('clears a binding when its part is removed', () => {
+  const r = clawRun(), g = structuredClone(r.genome); g.parts = g.parts.filter(p => p.uid !== 'p5');
+  expect(applyDesign(r, g, r.name, build, r.nextPartSerial, grantParts)).toEqual({ ok: true, clearedBindings: [0] }); expect(r.loadout.active).toEqual([null, null]);
 });

@@ -1,6 +1,7 @@
 // The evolution tree. A body plan sets habitat, movement, body rules, part
 // rules and the lineage commitments a run keeps to the end.
 import type { PartKind, Stats } from './parts';
+import { HABITATS, MOVEMENTS, PLAN_HABITAT_IDS, PLAN_MOVEMENT_IDS } from './profiles';
 
 export type Medium = 'water' | 'air' | 'land' | 'burrow' | 'space';
 export type Region = 'head' | 'middle' | 'tail';
@@ -14,25 +15,15 @@ export interface BodyPlan {
   spine: { min: number; max: number; head: SegmentRule; middle: SegmentRule; tail: SegmentRule };
   regions: Record<Region, RegionRule>; requiresKinds: readonly PartKind[]; requiresCapabilities: readonly CapabilityRule[]; bans: readonly PartKind[];
   bonuses: Partial<Stats>; foraging: readonly Foraging[]; physics: { massPerBodyLength: number; knockbackResistance: number };
-  commits: readonly Commitment[]; keystone?: { closesLines: readonly string[]; note: string }; needs?: 'coast'; feedingStrategy: 'bite';
+  commits: readonly Commitment[]; hullProfile: string; keystone?: { closesLines: readonly string[]; note: string }; needs?: 'coast'; feedingStrategy: 'bite';
 }
-/** Habitat facts for comparison and commitments (body lengths; null = unlimited). Plan B's profiles.ts owns the full profiles. */
-export const HABITAT_FACTS: Record<string, { media: readonly Medium[]; maxDepth: number | null; floorGap: number | null; wading: number | null; surfaceBand: number | null }> = {
-  seabed: { media: ['water'], maxDepth: null, floorGap: 1.1, wading: 1.1, surfaceBand: null }, 'open-water': { media: ['water'], maxDepth: null, floorGap: null, wading: null, surfaceBand: null },
-  'shallow-shore': { media: ['water', 'land'], maxDepth: 2.5, floorGap: null, wading: 1.1, surfaceBand: null }, land: { media: ['land'], maxDepth: null, floorGap: null, wading: null, surfaceBand: null },
-  'seabed-land': { media: ['water', 'land'], maxDepth: null, floorGap: 1.1, wading: 1.1, surfaceBand: null }, 'sky-sea': { media: ['water', 'air'], maxDepth: null, floorGap: null, wading: null, surfaceBand: null },
-  space: { media: ['space'], maxDepth: null, floorGap: null, wading: null, surfaceBand: null },
-};
+/** Habitat facts for comparison and commitments (body lengths; null = unlimited). A derived view of the profiles in profiles.ts. */
+export const HABITAT_FACTS: Record<string, { media: readonly Medium[]; maxDepth: number | null; floorGap: number | null; wading: number | null; surfaceBand: number | null }> = Object.fromEntries(
+  PLAN_HABITAT_IDS.map(id => { const h = HABITATS[id]!; return [id, { media: h.media, maxDepth: h.maxWaterDepthBodyLengths, floorGap: h.maxFloorGapBodyLengths, wading: h.wadingSupportBodyLengths, surfaceBand: h.surfaceBandBodyLengths }]; }));
 type Mode = 'ground' | 'swim' | 'surface' | 'glide' | 'fly' | 'burrow' | 'space';
-/** speed = multiplier; acceleration/braking in stage-local units/s²; yaw/pitch in rad/s. */
-export const MOVEMENT_FACTS: Record<string, { mode: Mode; speed: number; acceleration: number; braking: number; yaw: number; pitch: number }> = {
-  speck: { mode: 'ground', speed: 1, acceleration: 30, braking: 30, yaw: 10, pitch: 0 }, swimmer: { mode: 'swim', speed: 1, acceleration: 24, braking: 18, yaw: 8, pitch: 3 },
-  darter: { mode: 'swim', speed: 1.15, acceleration: 40, braking: 30, yaw: 12, pitch: 5 }, bulk: { mode: 'swim', speed: .9, acceleration: 14, braking: 10, yaw: 5, pitch: 2 },
-  crawler: { mode: 'ground', speed: 1, acceleration: 26, braking: 26, yaw: 9, pitch: 0 }, shellback: { mode: 'ground', speed: .8, acceleration: 16, braking: 20, yaw: 6, pitch: 0 },
-  burrower: { mode: 'ground', speed: .95, acceleration: 24, braking: 24, yaw: 9, pitch: 0 }, shore: { mode: 'ground', speed: 1, acceleration: 24, braking: 24, yaw: 8, pitch: 0 },
-  flyer: { mode: 'fly', speed: 1, acceleration: 20, braking: 14, yaw: 6, pitch: 3 }, colossus: { mode: 'ground', speed: .85, acceleration: 14, braking: 16, yaw: 5, pitch: 0 },
-  space: { mode: 'space', speed: 1, acceleration: 16, braking: 12, yaw: 4, pitch: 3 }, 'space-slow': { mode: 'space', speed: .85, acceleration: 12, braking: 10, yaw: 3.5, pitch: 2.5 },
-};
+/** speed = multiplier; acceleration/braking in stage-local units/s²; yaw/pitch in rad/s. A derived view of the profiles in profiles.ts. */
+export const MOVEMENT_FACTS: Record<string, { mode: Mode; speed: number; acceleration: number; braking: number; yaw: number; pitch: number }> = Object.fromEntries(
+  PLAN_MOVEMENT_IDS.map(id => { const m = MOVEMENTS[id]!; return [id, { mode: m.mode, speed: m.speedMultiplier, acceleration: m.acceleration, braking: m.braking, yaw: m.maxYawRate, pitch: m.maxPitchRate }]; }));
 export const COAST_READY = false;
 export const ROOT_PLAN = 'speck';
 const ANY: SegmentRule = { radius: [.25, 1.2], height: [.25, 1.2] };
@@ -42,7 +33,7 @@ const not = (kinds: readonly PartKind[], drop: readonly PartKind[]) => kinds.fil
 const R = (head: readonly PartKind[], hs: number, middle: readonly PartKind[], ms: number, tail: readonly PartKind[], ts: number): Record<Region, RegionRule> => ({ head: { kinds: head, slots: hs }, middle: { kinds: middle, slots: ms }, tail: { kinds: tail, slots: ts } });
 const spine = (min: number, max: number, middle = ANY, head = ANY, tail = ANY) => ({ min, max, head, middle, tail });
 type Draft = Pick<BodyPlan, 'id' | 'name' | 'blurb' | 'size' | 'parents' | 'line' | 'habitat' | 'movement' | 'spine' | 'regions'> & Partial<BodyPlan>;
-const P = (d: Draft): BodyPlan => ({ requiresKinds: [], requiresCapabilities: [], bans: [], bonuses: {}, foraging: [], physics: { massPerBodyLength: 1, knockbackResistance: 0 }, commits: [], feedingStrategy: 'bite', ...d });
+const P = (d: Draft): BodyPlan => ({ requiresKinds: [], requiresCapabilities: [], bans: [], bonuses: {}, foraging: [], physics: { massPerBodyLength: 1, knockbackResistance: 0 }, commits: [], hullProfile: 'spine-capsules', feedingStrategy: 'bite', ...d });
 const SEABED_FOOD = (m: number): Foraging[] => [{ habitat: 'sp-seabed', dnaMultiplier: m }];
 const BIG_HEAD = not(ALL, ['tail', 'leg', 'wing', 'jet']);
 

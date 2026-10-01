@@ -1,17 +1,35 @@
 // Creature parts for the editor. Each part is a Blender GLB named `part_<id>`.
 // See docs/TINY-TIDE-EVOLUTION.md for the attach conventions.
+import type { CombatSocket, CombatTrait, PartCombatFields, PivotRef } from './combat-types';
 export type PartKind = 'mouth' | 'eye' | 'fin' | 'tail' | 'leg' | 'wing' | 'jet' | 'arm' | 'armor' | 'sense' | 'cosmic';
 export type Diet = 'herbivore' | 'carnivore' | 'omnivore';
 export type TintSlot = 'base' | 'belly' | 'accent';
 export interface Stats { speed: number; bite: number; reach: number; armor: number; health: number; sense: number; stealth: number }
-export interface PartSpec {
+export interface PartSpec extends PartCombatFields {
   id: string; name: string; kind: PartKind; stage: number; cost: number; stats: Partial<Stats>;
   tint: TintSlot; mirror: boolean; diet?: Diet; blurb: string;
   /** Where the editor puts a new part: t along the body, angle around it. */
   t: number; angle: number;
 }
+const W: CombatTrait[] = ['weapon'], WL: CombatTrait[] = ['weapon', 'locomotion'], PR: CombatTrait[] = ['protection'], L: CombatTrait[] = ['locomotion'];
+const TRAITS: Record<string, readonly CombatTrait[]> = {
+  claw_pincer: W, horn: W, tentacle: W, tentacle_long: W, tail_paddle: WL, tail_fan: WL, tail_fluke: WL,
+  spike: PR, shell_plate: PR, tower: PR, leg_crab: ['locomotion', 'protection'],
+  fin_side: L, fin_dorsal: L, leg_little: L, wing_feather: L, jet_vent: L, nebula_fin: L, fin_frill: ['locomotion', 'concealment'], cloak_fronds: ['concealment'], eye_big: ['concealment'],
+};
+const UP = { x: 0, y: 1, z: 0 };
+const socket = (id: string, y: number, z: number, pivot?: PivotRef, x = 0, forward = UP): CombatSocket => ({ id, ...(pivot ? { pivot } : {}), origin: { x, y, z }, forward });
+const mouth = (y: number) => [socket('bite', y, 0, { kind: 'jaw', index: 0 })];
+const SOCKETS: Record<string, readonly CombatSocket[]> = {
+  mouth_nibbler: mouth(.3), mouth_snapper: mouth(.5), mouth_beak: mouth(.6), mouth_filter: mouth(.3), mouth_fangs: mouth(.3), mouth_maw: mouth(.35),
+  claw_pincer: [socket('pinch', .6, .7, { kind: 'swing', index: 0 }, 0, { x: 0, y: 0, z: 1 })],
+  horn: [socket('gore', .75, .2)], spike: [socket('spike', .5, 0)],
+  tentacle: [socket('lash', .9, .3, { kind: 'seg', index: 3 })], tentacle_long: [socket('lash', 1.5, .5, { kind: 'seg', index: 4 })],
+  tail_paddle: [socket('slap', 1.1, 0, { kind: 'seg', index: 3 })], tail_fan: [socket('slap', 1.1, 0, { kind: 'seg', index: 2 })], tail_fluke: [socket('slap', 1, 0, { kind: 'seg', index: 3 })],
+  jet_vent: [socket('thrust', .7, 0)],
+};
 const p = (id: string, name: string, kind: PartKind, stage: number, cost: number, stats: Partial<Stats>, tint: TintSlot, mirror: boolean, t: number, angle: number, blurb: string, diet?: Diet): PartSpec =>
-  ({ id, name, kind, stage, cost, stats, tint, mirror, t, angle, blurb, diet });
+  ({ id, name, kind, stage, cost, stats, tint, mirror, t, angle, blurb, diet, traits: TRAITS[id] ?? (kind === 'mouth' ? ['weapon'] : []), sockets: SOCKETS[id] ?? [], basicAttacks: [], activeGrants: [] });
 const HALF = Math.PI / 2;
 export const PARTS: readonly PartSpec[] = [
   p('mouth_nibbler', 'Nibbler', 'mouth', 0, 0, { reach: .2 }, 'belly', false, 0, 0, 'Soft lips for plants.', 'herbivore'),

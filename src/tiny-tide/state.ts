@@ -4,6 +4,7 @@ import { PARTS, part, type Diet, type PartSpec } from './parts';
 import { closedLinesOf, commitmentsOf, eligibleChildren, plan, ROOT_PLAN, violates, type BodyPlan } from './plans';
 import { PLANET_COUNT } from './biomes';
 import type { FoodTag, Species } from './species';
+import type { CombatLoadout } from './combat-types';
 
 export { PLANET_COUNT, SIZES, WATER_LEVEL, random, seabedHeight } from './biomes';
 export interface Stage {
@@ -32,7 +33,7 @@ export interface Run {
   /** DNA earned in the current stage. It fills the growth bar. */
   stageDna: number; totalDna: number; bites: number; elapsed: number; deaths: number; health: number;
   genome: Genome; nextPartSerial: number; unlocked: string[]; eatenPlanets: number[]; completed: boolean;
-  loadout: { active: [unknown | null, unknown | null] }; pendingRespawn: boolean; mechanics: Record<string, unknown>; archive: ArchivedDesign[]; notices: string[];
+  loadout: CombatLoadout; pendingRespawn: boolean; mechanics: Record<string, unknown>; archive: ArchivedDesign[]; notices: string[];
 }
 export interface Build { coast: boolean; anchorCheck?: DesignContext['anchorCheck'] }
 export type Commit = { ok: true; clearedBindings: number[] } | { ok: false; reason: string; shortfall?: number };
@@ -96,15 +97,14 @@ export function unlock(run: Run, id: string | undefined) {
 }
 const serialAfter = (g: Genome, ...floors: number[]) => Math.max(...floors, ...g.parts.map(p => uidSerial(p.uid) + 1));
 type Failure = { ok: false; reason: string; shortfall?: number };
-/** Clears bindings whose part is gone or whose catalog spec no longer has the grant (Plan B extends the binding type). */
+/** Clears bindings whose part is gone or whose catalog spec no longer has the grant. */
 function clearMissing(run: Run, catalog: readonly PartSpec[]) {
   const cleared: number[] = [];
-  run.loadout.active = run.loadout.active.map((b, i) => {
-    const binding = b as { partUid?: string; grantId?: string } | null; if (!binding) return b;
+  run.loadout.active = run.loadout.active.map((binding, i) => {
+    if (!binding) return binding;
     const placed = run.genome.parts.find(p => p.uid === binding.partUid), spec = placed && catalog.find(s => s.id === placed.id);
-    const hasGrant = !!spec && ((spec as { activeGrants?: { id: string }[] }).activeGrants ?? []).some(g => g.id === binding.grantId);
-    if (!placed || (binding.grantId !== undefined && !hasGrant)) { cleared.push(i); return null; } return b;
-  }) as Run['loadout']['active'];
+    if (!placed || !spec?.activeGrants.some(g => g.id === binding.grantId)) { cleared.push(i); return null; } return binding;
+  }) as CombatLoadout['active'];
   return cleared;
 }
 /** Runs every check on a copy; returns the copy only when it is valid. Never mutates `run`. */
@@ -197,7 +197,18 @@ export function validateRun(run: Run, build: Build, catalog: readonly PartSpec[]
     if (!finite(run.health) || run.health > maxHealthOf(run)) out.push('health');
   }
   const active = run.loadout?.active;
-  if (!isObject(run.loadout) || !Array.isArray(active) || active.length !== 2 || !active.every(b => b === null || isObject(b))) out.push('loadout');
+  if (!isObject(run.loadout) || !Array.isArray(active) || active.length !== 2) out.push('loadout');
+  else {
+    active.forEach((b, i) => {
+      if (b === null) return;
+      if (!isObject(b) || Object.keys(b).length !== 2 || typeof b.partUid !== 'string' || typeof b.grantId !== 'string') { out.push(`loadout ${i}: shape`); return; }
+      const placed = run.genome.parts.find(p => p.uid === b.partUid);
+      if (!placed) out.push(`loadout ${i}: part ${b.partUid}`);
+      else if (!catalog.find(s => s.id === placed.id)?.activeGrants.some(g => g.id === b.grantId)) out.push(`loadout ${i}: grant ${b.grantId}`);
+    });
+    const [x, y] = active as unknown[];
+    if (isObject(x) && isObject(y) && x.partUid === y.partUid && x.grantId === y.grantId) out.push('loadout: duplicate binding');
+  }
   if (typeof run.pendingRespawn !== 'boolean') out.push('pendingRespawn');
   if (!isObject(run.mechanics)) out.push('mechanics');
   if (!Array.isArray(run.archive) || !run.archive.every(a => isObject(a) && sanitizeGenome(a.genome) !== null && typeof a.name === 'string' && typeof a.savedAt === 'string' && typeof a.reason === 'string')) out.push('archive');

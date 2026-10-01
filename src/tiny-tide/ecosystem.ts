@@ -90,7 +90,7 @@ export class Ecosystem {
       if (!relevant || !ctx.vulnerable || !contact || e.cooldown > 0) continue;
       if ((e.mode === 'hunt' || e.mode === 'angry') && e.spec.damage > 0) {
         events.push({ type: 'attack', entity: e, damage: e.spec.damage + Math.max(0, e.spec.tier - ctx.stage) }); e.cooldown = ATTACK_COOLDOWN;
-      } else if (e.spec.stings.includes(ctx.stage)) {
+      } else if (e.spec.stingsStages.includes(ctx.stage)) {
         events.push({ type: 'sting', entity: e, damage: e.spec.damage }); e.cooldown = ATTACK_COOLDOWN + .4;
       }
     }
