@@ -1,4 +1,4 @@
-import { part, PARTS, type Diet, type PartSpec, type Stats } from './parts';
+import { part, PARTS, type Diet, type PartKind, type PartSpec, type Stats } from './parts';
 import { regionOf, segmentRule, type BodyPlan, type Region } from './plans';
 
 export interface SpinePoint { radius: number; height: number; lift: number }
@@ -174,3 +174,119 @@ export function repairLegacyGenome(raw: unknown): Genome | null {
   return { spine, parts, paint };
 }
 export const cloneGenome = (g: Genome): Genome => structuredClone(g);
+
+// ---- adaptToPlan: the automatic proposal that fits a creature to a new body plan ----
+const REGIONS: readonly Region[] = ['head', 'middle', 'tail'];
+const REGION_T: Record<Region, number> = { head: .12, middle: .5, tail: .92 };
+const regionGap = (a: Region, b: Region) => Math.abs(REGION_T[a] - REGION_T[b]);
+const hasStats = (spec: PartSpec) => Object.values(spec.stats).some(v => v !== 0);
+export type Adaptation = { ok: true; genome: Genome; changes: string[]; nextSerial: number } | { ok: false; reasons: string[] };
+
+export function adaptToPlan(g: Genome, p: BodyPlan, ctx: DesignContext, nextSerial: number): Adaptation {
+  const out = cloneGenome(g), changes: string[] = [], added: PlacedPart[] = [];
+  let serial = nextSerial;
+  const kindOf = (x: PlacedPart) => part(x.id)!.kind;
+  const nameOf = (x: PlacedPart) => part(x.id)!.name;
+  const drop = (x: PlacedPart, why: string) => { out.parts = out.parts.filter(q => q !== x); changes.push(`${nameOf(x)} removed: ${why}`); };
+  const allows = (r: Region, kind: PartKind) => p.regions[r].kinds.includes(kind);
+  const pending = new Set<PlacedPart>();   // parts waiting for a new region (step 5)
+  const usedIn = (r: Region) => out.parts.reduce((n, x) => n + (!pending.has(x) && regionOf(x.t) === r ? partSlots(x) : 0), 0);
+  const room = (r: Region) => p.regions[r].slots - usedIn(r);
+
+  // 2. unknown, locked and banned parts
+  for (const x of [...out.parts]) {
+    const spec = part(x.id);
+    if (!spec) { out.parts = out.parts.filter(q => q !== x); changes.push(`${x.id} removed: unknown part.`); }
+    else if (!isUnlocked(x.id, p.size, ctx.unlocked)) drop(x, 'still locked.');
+  }
+  for (const x of [...out.parts]) if (p.bans.includes(kindOf(x))) drop(x, `${p.name}s can't use it.`);
+
+  // 3. unpair bad mirrors
+  for (const x of out.parts) if (x.mirror && (badMirror(x) || !part(x.id)!.mirror)) { x.mirror = false; changes.push(`${nameOf(x)} unpaired.`); }
+
+  // 4. exactly one mouth
+  let mouthSpot: { t: number; angle: number } | undefined;
+  const mouths = out.parts.filter(x => kindOf(x) === 'mouth');
+  if (ctx.diet && mouths.length && !mouths.some(x => part(x.id)!.diet === ctx.diet)) {
+    mouthSpot = { t: mouths[0]!.t, angle: mouths[0]!.angle };
+    for (const x of mouths) drop(x, `your diet is now ${ctx.diet}.`);
+  } else if (mouths.length > 1) {
+    const keep = mouths.find(x => part(x.id)!.diet === ctx.diet) ?? mouths[0]!;
+    for (const x of mouths) if (x !== keep) drop(x, 'only one mouth.');
+  }
+
+  // 5. region fit
+  for (const x of out.parts) if (!allows(regionOf(x.t), kindOf(x))) pending.add(x);
+  for (const x of [...pending]) {
+    const from = regionOf(x.t), slots = partSlots(x);
+    const target = REGIONS.filter(r => allows(r, kindOf(x))).sort((a, b) => regionGap(from, a) - regionGap(from, b)).find(r => room(r) >= slots);
+    pending.delete(x);
+    if (!target) { drop(x, `no room for it on a ${p.name}.`); continue; }
+    x.t = REGION_T[target]; changes.push(`${nameOf(x)} moved to the ${target}.`);
+  }
+
+  // 6. requirements
+  const choices = (match: (s: PartSpec) => boolean) => PARTS.filter(s => match(s) && isUnlocked(s.id, p.size, ctx.unlocked) && !p.bans.includes(s.kind) && REGIONS.some(r => allows(r, s.kind))).sort((a, b) => a.cost - b.cost)[0];
+  const add = (spec: PartSpec, t0: number, angle: number) => {
+    const x: PlacedPart = { uid: nextUid(serial++), id: spec.id, t: Math.min(1, t0), angle, scale: 1, mirror: false, roll: 0 };
+    const home = regionOf(x.t), byGap = REGIONS.filter(r => allows(r, spec.kind)).sort((a, b) => regionGap(home, a) - regionGap(home, b));
+    if (!(allows(home, spec.kind) && room(home) >= 1)) {
+      const target = byGap.find(r => room(r) >= 1) ?? byGap[0];
+      if (target && (target !== home || room(target) >= 1)) x.t = REGION_T[target];
+    }
+    out.parts.push(x); added.push(x); changes.push(`${spec.name} added: ${p.name}s need it.`);
+  };
+  if (!out.parts.some(x => kindOf(x) === 'mouth')) {
+    const spec = choices(s => s.kind === 'mouth' && s.diet === (ctx.diet ?? 'herbivore'));
+    if (spec) add(spec, mouthSpot?.t ?? 0, mouthSpot?.angle ?? 0);
+  }
+  for (const kind of p.requiresKinds) if (!out.parts.some(x => kindOf(x) === kind)) { const spec = choices(s => s.kind === kind); if (spec) add(spec, spec.t, spec.angle); }
+  for (const c of p.requiresCapabilities) {
+    const spec = choices(s => (s.stats[c.stat] ?? 0) > 0);
+    for (let k = 0; spec && k < 40 && partStats(out)[c.stat] < c.min; k++) add(spec, spec.t + .06 * k, spec.angle);
+  }
+
+  // 7. make room
+  const optional = (pool: PlacedPart[]) => pool.filter(x => {
+    if (kindOf(x) === 'mouth' || p.requiresKinds.includes(kindOf(x))) return false;
+    const rest = { ...out, parts: out.parts.filter(q => q !== x) }, st = partStats(rest);
+    return p.requiresCapabilities.every(c => st[c.stat] >= c.min || partStats(out)[c.stat] < c.min);
+  }).sort((a, b) => Number(hasStats(part(a.id)!)) - Number(hasStats(part(b.id)!)) || partCost(a) - partCost(b) || uidSerial(b.uid) - uidSerial(a.uid))[0];
+  for (const r of REGIONS) while (usedIn(r) > p.regions[r].slots) {
+    const victim = optional(out.parts.filter(x => regionOf(x.t) === r));
+    if (!victim) return { ok: false, reasons: [`The ${r} can't hold the parts a ${p.name} needs.`] };
+    drop(victim, `the ${r} is full.`);
+  }
+  while (instanceCount(out) > PART_LIMITS[p.size]!) {
+    const victim = optional(out.parts);
+    if (!victim) return { ok: false, reasons: [`A ${p.name} can't hold the parts it needs.`] };
+    drop(victim, 'the body is full.');
+  }
+
+  // 8. spine
+  const spineBefore = JSON.stringify(out.spine);
+  while (out.spine.length > p.spine.max) out.spine.splice(Math.floor(out.spine.length / 2), 1);
+  while (out.spine.length < p.spine.min) out.spine.splice(1, 0, { ...out.spine[1]! });
+  out.spine.forEach((s, i) => {
+    const r = segmentRule(p, i, out.spine.length);
+    s.radius = r.locked ? r.radius[0] : clamp(s.radius, r.radius[0], r.radius[1]);
+    s.height = r.locked ? r.height[0] : clamp(s.height, r.height[0], r.height[1]);
+    s.lift = clamp(s.lift, SPINE_RANGE.lift[0], SPINE_RANGE.lift[1]);
+  });
+  if (JSON.stringify(out.spine) !== spineBefore) changes.push(`Body reshaped for a ${p.name}.`);
+
+  // 9. fresh ids for the additions that survived
+  let next = nextSerial;
+  for (const x of added) if (out.parts.includes(x)) x.uid = nextUid(next++);
+
+  // 10. validate
+  const found = problems(out, p, { unlocked: ctx.unlocked, diet: ctx.diet, anchorCheck: ctx.anchorCheck }).filter(q => q.code !== 'dna');
+  if (found.length) return { ok: false, reasons: found.map(q => q.message) };
+  return { ok: true, genome: out, changes, nextSerial: next };
+}
+
+export function starterFor(p: BodyPlan): Genome {
+  const a = adaptToPlan(starterGenome(), p, { unlocked: [] }, STARTER_NEXT_SERIAL);
+  if (!a.ok) throw new Error(`No starter for ${p.id}`);
+  return a.genome;
+}
