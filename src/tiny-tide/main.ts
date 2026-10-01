@@ -218,12 +218,16 @@ function installPose(pose: { position: Vec3; orientation: Orientation }, actor: 
 /** The start anchor for the actor at its exact growth (never cached across growth changes). */
 const anchorFor = (actor: Actor): RecoveryResult => startAnchor(actor, run.stage, legality(run.stage));
 const admitted = (actor: Actor) => legality(run.stage).queries.overlapHull(actor, physical, rt.orientation, { time, permit: rt.permit, bounds: legality(run.stage).bounds }).ok;
-/** Recovers to an admitted full pose. A failed pose is never installed. */
-function recover(actor: Actor, at: number): boolean {
-  const rec = recoverPlayer(actor, physical, rt.orientation, { ...legality(run.stage), time: at }, anchorFor(actor), 20 * actor.bodyLength);
+/** Recovers to an admitted full pose, searching from `from` (default: the installed pose). A failed pose is never installed. */
+function recover(actor: Actor, at: number, from: Vec3 = physical): boolean {
+  const rec = recoverPlayer(actor, from, rt.orientation, { ...legality(run.stage), time: at }, anchorFor(actor), 20 * actor.bodyLength);
   if (!rec.ok) return false;
   installPose(rec, actor); return true;
 }
+/** The start grace of a new run or load: `START_GRACE` seconds, or none (0) with `?qaStartGrace=0`. */
+function applyStartGrace() { rt.invulnerableUntil = START_GRACE > 0 ? time + START_GRACE : 0; }
+/** True while a run that began stuck still owes its start grace to the first successful install. */
+let startGracePending = false;
 function enterStuck() { mode = 'stuck'; clearInput(); stuckRetry = 1; toast('Stuck — finding you a safe spot…'); }
 /** After an edit, a growth change or a transformation: settle on the support, or recover when the body is not admitted. */
 function checkPose(actor: Actor) {
@@ -292,7 +296,8 @@ function begin(fresh = false) {
   refreshDerived(); run.health = Math.min(run.health, derived.maxHealth);
   world.build(run.stage, run); el('evolution-banner').hidden = true; el('faint').hidden = true; mode = 'playing'; clearInput(); cooldown = 0; sinceHit = 99; readyToasted = evolveReady(run); lastBiome = '';
   // A fresh runtime for every new run or load. The start grace lives in the runtime.
-  rt = newRuntime(); genomeRevision++; hintClock = 0; contactNow = false; lastContact = null;
+  rt = newRuntime(); genomeRevision++; hintClock = 0; contactNow = false; lastContact = null; startGracePending = false;
+  faintLog.length = 0; acceptedHits = 0; rejectedHits = 0;
   el('home').hidden = true; el('game-ui').hidden = false; el('pause').hidden = false; el('edit').hidden = false; el('corner-note').hidden = true; el('mode-label').textContent = 'NIBBLE. GROW. REPEAT.';
   document.body.classList.add('is-playing'); toast(STAGES[run.stage]!.description);
   const actor = playerActorCached(), t = legality(run.stage).queries.terrain;
@@ -303,8 +308,8 @@ function begin(fresh = false) {
     if (!tryRespawn()) { mode = 'fainted'; respawnClock = 1; respawnToasted = false; el('faint').hidden = false; }
   } else {
     const anchor = anchorFor(actor);
-    if (anchor.ok) { rt = newRuntime(anchor.orientation); installPose(anchor, actor, true); rt.invulnerableUntil = time + START_GRACE; }
-    else enterStuck();
+    if (anchor.ok) { rt = newRuntime(anchor.orientation); installPose(anchor, actor, true); applyStartGrace(); }
+    else { enterStuck(); startGracePending = true; }
   }
   syncUI(); save();
 }
@@ -491,8 +496,9 @@ canvas.addEventListener('pointermove', event => {
   lookX = event.clientX; lookY = event.clientY;
 });
 canvas.addEventListener('pointerup', event => {
-  if (event.pointerId !== lookPointer) return;
+  // Every pointer that ends normally is recorded, so its lostpointercapture is not read as a cancel.
   endedPointers.add(event.pointerId);
+  if (event.pointerId !== lookPointer) return;
   if (!looked && mode === 'playing' && capsOf().ground) {
     target = world.groundPoint(event.clientX, event.clientY);
     if (target) { target.x = T.MathUtils.clamp(target.x, -PLAYER_HALF, PLAYER_HALF); target.z = T.MathUtils.clamp(target.z, -PLAYER_HALF, PLAYER_HALF); world.targetRing.position.copy(target); world.targetRing.position.y = world.groundAt(target.x, target.z) + .08; world.targetRing.scale.setScalar(.45); world.targetRing.visible = true; }
@@ -580,15 +586,17 @@ function frame(now: number) {
       const v = world.moveVector(intent.move.x, intent.move.z, caps.pitch); wish = { x: v.x, y: v.y, z: v.z };
     }
     const legal = legality(stage);
+    const poseBefore = { yaw: rt.orientation.yaw, pitch: rt.orientation.pitch };
     const r = stepPlayer(physical, rt, intent, { plan, profile: movement(plan.movement), caps, actor, ...legal, size: SIZES[stage]!, topSpeedLocal: STAGES[stage]!.speed * derived.speedFactor,
       now: time, dt, wish, aim: null, actionLock: false });
-    physical = r.position; renderRoot();
+    // A result that needs recovery is never installed or rendered: recover from it, or keep the last legal pose while stuck.
+    if (!r.needsRecovery) { physical = r.position; renderRoot(); }
+    else if (!recover(actor, time + dt, r.position)) { rt.orientation = poseBefore; enterStuck(); }
     const contact = r.contacts[0];
     contactNow = !!contact;
     if (contact) { lastContact = contact.constraint; if (hintClock <= 0) { toast(blockHint(plan, contact)); hintClock = 6; } }
     if (r.breachStarted) { audio.breach(); world.burst(p.x, world.surface, p.z, '#d6fff1', 22); }
     if (r.arcEnded) world.burst(p.x, world.surface, p.z, '#d6fff1', 18);
-    if (r.needsRecovery && !recover(actor, time + dt)) enterStuck();
     if (mode === 'playing') stepGuideCache(actor);
     const v = rt.controlledVelocity; moving = Math.hypot(v.x, v.y, v.z) > .5 * SIZES[stage]!;
     if (mode === 'playing' && basicRequested(intent)) chomp();
@@ -598,13 +606,14 @@ function frame(now: number) {
   if (mode === 'stuck' && actor) {
     // The game clock is stopped; a separate countdown retries recovery once per second.
     stuckRetry -= dt;
-    if (stuckRetry <= 0) { stuckRetry = 1; if (recover(actor, time)) { mode = 'playing'; el('toast').classList.remove('show'); syncUI(); } }
+    if (stuckRetry <= 0) { stuckRetry = 1; if (recover(actor, time)) { if (startGracePending) { startGracePending = false; applyStartGrace(); } mode = 'playing'; el('toast').classList.remove('show'); syncUI(); } }
   }
   if ((mode === 'playing' || mode === 'evolving' || mode === 'fainted') && actor) {
     const events = world.eco.step({ stage, dt, now: time, player: physical, playerHull: worldHull(actor), perceivable: rt.perceivable && mode !== 'fainted', stealthFactor: derived.stealthFactor });
     const accepted = resolveHazards(events, { mode, pendingRespawn: run.pendingRespawn, rt, now: time, mass: massFor(plan, run.genome, actor.bodyLength), resistance: plan.physics.knockbackResistance });
-    acceptedHits += accepted.length; rejectedHits += events.length - accepted.length;
-    for (const event of accepted) { if (mode !== 'playing') break; takeHit(event); }
+    rejectedHits += events.length - accepted.length;
+    // A hit counts as accepted only when it is applied (not when skipped after a same-frame faint).
+    for (const event of accepted) { if (mode !== 'playing') break; acceptedHits++; takeHit(event); }
   }
   if (mode === 'fainted') tickFaint(dt);
   if (toastTimer > 0 && mode === 'playing') { toastTimer -= dt; if (toastTimer <= 0) el('toast').classList.remove('show'); }
@@ -642,7 +651,7 @@ if (QA) {
   Object.defineProperty(window, '__tinyTide', { get: () => ({ mode,
     plan: currentPlan(run).id, plans: [...run.plans], zone: zoneNow(), velocity: copy(rt.controlledVelocity), externalVelocity: copy(rt.externalVelocity),
     orientation: { ...rt.orientation }, permit: rt.permit ? { ...rt.permit } : null, arc: rt.arc ? { ...rt.arc } : null, breachReadyAt: rt.breachReadyAt, invulnerableUntil: rt.invulnerableUntil,
-    pendingRespawn: run.pendingRespawn, caps: capsOf(), contactNow, lastContact, hazardSources: hazardSources(), growth: growthOf(run), acceptedHits, rejectedHits,
+    pendingRespawn: run.pendingRespawn, caps: capsOf(), contactNow, lastContact: lastContact === null ? null : `${lastContact}`, hazardSources: hazardSources(), growth: growthOf(run), acceptedHits, rejectedHits,
     faintLog: faintLog.map(f => ({ ...f })), stage: run.stage, dna: dnaOf(run), stageDna: run.stageDna, goal: STAGES[run.stage]!.goal, health: run.health, maxHealth: derived.maxHealth, deaths: run.deaths, diet: dietOf(run.genome), genome: structuredClone(run.genome), name: run.name, unlocked: [...run.unlocked], evolveReady: evolveReady(run), bites: run.bites, totalDna: run.totalDna, elapsed: run.elapsed, completed: run.completed, eatenPlanets: [...run.eatenPlanets], player: { x: world.player.position.x, y: world.player.position.y, z: world.player.position.z }, foods: world.edibleFoods.map(f => ({ ...f.data, tag: f.entity.spec.tag, label: f.entity.spec.label, mode: f.entity.mode, hp: f.entity.hp, approachable: approachable(f.entity) })), threats: world.threats.map(f => ({ ...f.data, label: f.entity.spec.label, mode: f.entity.mode })), landmarks: world.foods.filter(f => f.model.visible && f.tier > run.stage).map(f => ({ tier: f.tier, kind: f.data.kind, x: f.data.x, y: f.data.y, z: f.data.z })), world: world.diagnostics, assets: assetDiagnostics(), time, render: { calls: world.renderer.info.render.calls, triangles: world.renderer.info.render.triangles, geometries: world.renderer.info.memory.geometries } }) });
 }
 requestAnimationFrame(frame);

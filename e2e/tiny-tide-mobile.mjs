@@ -27,7 +27,7 @@ try {
  await page.screenshot({path:`${out}/mobile-swimming.png`});
  const dive={...await center('#dive'),id:4};await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[dive]});await page.waitForTimeout(350);
  const diving=(await state()).velocity;await cdp.send('Input.dispatchTouchEvent',{type:'touchCancel',touchPoints:[]});const [atCancel,next]=await speedNextFrame();
- assert.ok(Math.hypot(diving.x,diving.y,diving.z)>.01,'Dive moves');assert.ok(next<Math.min(atCancel,Math.hypot(diving.x,diving.y,diving.z)),'Cancelled touch makes the next frame slower');
+ assert.ok(Math.hypot(diving.x,diving.y,diving.z)>.01,'Dive moves');assert.ok(next===0||next<Math.min(atCancel,Math.hypot(diving.x,diving.y,diving.z)),'Cancelled touch makes the next frame slower (or stops: braking can reach 0 in one frame)');
  const dived=await state();assert.ok(dived.player.y<looked.player.y-1,'Dive descends');await assertStops('Cancelled touch releases Dive');
  for(const viewport of [{width:320,height:568},{width:844,height:390}]) {await page.setViewportSize(viewport);await page.waitForTimeout(200);for(const sel of ['#joystick','#chomp','#special','#dive','#pause','#edit','#hearts']){const b=await page.locator(sel).boundingBox();assert.ok(b && b.x>=0 && b.y>=0 && b.x+b.width<=viewport.width+1 && b.y+b.height<=viewport.height+1,`${sel} fits ${viewport.width}x${viewport.height}`);}await page.screenshot({path:`${out}/mobile-${viewport.width}.png`});}
  assert.deepEqual(errors,[]);console.log('PASSED: genuine multitouch move + rise, swipe camera, stable hover, Dive, touch cancellation, 390/320 portrait and landscape control layout.');
