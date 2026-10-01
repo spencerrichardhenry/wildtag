@@ -168,8 +168,10 @@ function guideTraversal(): { key: string; traversal: Traversal } {
   if (capsOf().breach) return { key: 'hb', traversal: { kind: 'hypothetical-breach', now: time } };
   return { key: 'n', traversal: { kind: 'none' } };
 }
+/** Positions are rounded in stage-local units, so a moving food keeps its key at every stage. */
 function guideKey(e: Entity, planId: string, growth: number, traversalKey: string) {
-  return `${Math.round(e.x)}:${Math.round(e.y)}:${Math.round(e.z)}:${planId}:${genomeRevision}:${Math.round(growth * 20)}:${traversalKey}`;
+  const size = SIZES[run.stage]!;
+  return `${Math.round(e.x / size)}:${Math.round(e.y / size)}:${Math.round(e.z / size)}:${planId}:${genomeRevision}:${Math.round(growth * 20)}:${traversalKey}`;
 }
 /** Recomputes up to GUIDE_PER_FRAME missing or stale entries, continuing from where the last frame stopped. */
 function stepGuideCache(actor: Actor) {
@@ -597,7 +599,6 @@ function frame(now: number) {
     if (contact) { lastContact = contact.constraint; if (hintClock <= 0) { toast(blockHint(plan, contact)); hintClock = 6; } }
     if (r.breachStarted) { audio.breach(); world.burst(p.x, world.surface, p.z, '#d6fff1', 22); }
     if (r.arcEnded) world.burst(p.x, world.surface, p.z, '#d6fff1', 18);
-    if (mode === 'playing') stepGuideCache(actor);
     const v = rt.controlledVelocity; moving = Math.hypot(v.x, v.y, v.z) > .5 * SIZES[stage]!;
     if (mode === 'playing' && basicRequested(intent)) chomp();
     saveClock += dt; if (saveClock >= 5) { save(); saveClock = 0; }
@@ -614,6 +615,8 @@ function frame(now: number) {
     rejectedHits += events.length - accepted.length;
     // A hit counts as accepted only when it is applied (not when skipped after a same-frame faint).
     for (const event of accepted) { if (mode !== 'playing') break; acceptedHits++; takeHit(event); }
+    // After the ecosystem step, so fresh entries match the food positions that the guide and diagnostics read.
+    if (mode === 'playing') stepGuideCache(actor);
   }
   if (mode === 'fainted') tickFaint(dt);
   if (toastTimer > 0 && mode === 'playing') { toastTimer -= dt; if (toastTimer <= 0) el('toast').classList.remove('show'); }
