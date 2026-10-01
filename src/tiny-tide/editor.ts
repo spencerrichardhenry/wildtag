@@ -39,7 +39,16 @@ export interface EditorOptions {
 export interface EditorResult { genome: Genome; name: string; nextSerial: number }
 export type SubmitOutcome = { ok: true } | { ok: false; reason: string };
 type Tab = 'parts' | 'body' | 'paint';
-type Gesture = 'none' | 'turn' | 'part-drag' | 'handle-drag' | 'card-drag';
+/** The one owner of the current pointer gesture (spec §6). `consumed` means the gesture once had two pointers:
+ *  it never places, selects or drags until all its pointers end. */
+type Gesture = 'none' | 'turn' | 'pinch' | 'part-drag' | 'handle-drag' | 'card-drag' | 'place-tap' | 'consumed';
+/** A pointer that belongs to the current gesture. `travel` is the largest distance from where it went down. */
+interface TrackedPointer { id: number; x: number; y: number; x0: number; y0: number; travel: number }
+/** A tap moves less than this (px): a body tap places, an empty tap deselects, a part press starts moving after it. */
+const TAP_SLOP = 8;
+/** A card press becomes a card drag after this distance (px). */
+const CARD_DRAG_SLOP = 12;
+const centre = (a: TrackedPointer, b: TrackedPointer) => ({ cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2, distance: Math.hypot(a.x - b.x, a.y - b.y) });
 interface Snapshot { genome: Genome; changes: string[] }
 const SWATCHES = ['#ffad92', '#ffc769', '#ffe1b8', '#ef8a80', '#d4b1f5', '#bfc0ff', '#b4e7ed', '#7fd1b9', '#9fd36b', '#f6e27a', '#f59ac0', '#8fb3ff', '#6c7bd9', '#4d9c8e', '#3b5b6e', '#fff6e3'];
 const STAT_ROWS: [keyof Stats, string, number][] = [['speed', 'Speed', 6], ['bite', 'Bite', 6], ['reach', 'Reach', 3], ['armor', 'Armor', 6], ['health', 'Health', 6], ['sense', 'Sense', 8], ['stealth', 'Stealth', 4]];
@@ -103,10 +112,16 @@ class Editor {
   private vertebra = 1;
   private placing: string | null = null;
   private pairPrompt: PlacedPart | null = null;
-  private dragging: { uid: string } | null = null;
-  private handleDrag: { index: number; y: number; start: { radius: number; height: number } } | null = null;
-  private cardDrag: { id: string; x: number; y: number } | null = null;
-  private orbit: { x: number; y: number; id: number; moved: boolean } | null = null;
+  /** The gesture owner covers the canvas, the cards and the handles together. */
+  private owner: Gesture = 'none';
+  private readonly pointers = new Map<number, TrackedPointer>();
+  /** `snapshot` is the drag's pending history entry; a rollback takes it out of the history if it went in. */
+  private dragging: { uid: string; t: number; angle: number; snapshot: Snapshot | null } | null = null;
+  private handleDrag: { index: number; y: number; start: { radius: number; height: number }; snapshot: Snapshot | null } | null = null;
+  private cardDrag: { id: string; before: string | null } | null = null;
+  private pinch: { a: number; b: number; cx: number; cy: number; distance: number } | null = null;
+  /** Set when a card press did not end as a tap; the click that follows it does not arm. */
+  private suppressCardClick = false;
   private yaw = .75; private pitch = .32; private zoom = 1;
   private root: HTMLElement;
   private canvas: HTMLCanvasElement;
@@ -190,10 +205,14 @@ class Editor {
     this.root.querySelector<HTMLButtonElement>('.ed-confirm-yes')!.onclick = () => { const placed = this.pairPrompt; this.showPairPrompt(null); if (placed) this.addPart({ ...placed, mirror: false }); };
     this.root.querySelector<HTMLButtonElement>('.ed-confirm-no')!.onclick = () => this.showPairPrompt(null);
     this.root.querySelectorAll<HTMLButtonElement>('[data-tab]').forEach(button => button.onclick = () => { this.tab = button.dataset.tab as Tab; this.disarm(); this.selected = null; this.render(); });
-    this.canvas.addEventListener('pointerdown', e => this.pointerDown(e));
-    this.canvas.addEventListener('pointermove', e => this.pointerMove(e));
-    this.canvas.addEventListener('pointerup', e => this.pointerUp(e));
-    this.canvas.addEventListener('pointercancel', () => { this.orbit = null; this.dragging = null; this.handleDrag = null; this.pending = null; });
+    this.canvas.addEventListener('pointerdown', e => this.pointerDown(e, null));
+    this.canvas.addEventListener('contextmenu', e => e.preventDefault());
+    this.canvas.addEventListener('mousedown', e => { if (e.button === 1) e.preventDefault(); });   // no middle-button autoscroll
+    // Canvas, card and handle pointers all bubble here; these handlers check the owner first.
+    this.root.addEventListener('pointermove', e => this.pointerMove(e));
+    this.root.addEventListener('pointerup', e => this.pointerEnd(e, false));
+    this.root.addEventListener('pointercancel', e => this.pointerEnd(e, true));
+    this.root.addEventListener('lostpointercapture', e => this.pointerEnd(e, true));
     this.canvas.addEventListener('wheel', e => { e.preventDefault(); this.zoom = T.MathUtils.clamp(this.zoom * (1 + Math.sign(e.deltaY) * .08), .55, 2); }, { passive: false });
     addEventListener('resize', this.onResize); addEventListener('keydown', this.onKey);
     this.resize(); this.render();
@@ -321,7 +340,7 @@ class Editor {
       handle.visible = show; if (!show || !s) return;
       handle.position.set(0, s.lift + s.height + .28, l.z[i]!); handle.material = this.handleMaterials[this.badSegments.has(i) ? 2 : i === this.vertebra ? 1 : 0];
     });
-    const ringsOn = this.placing !== null || this.dragging !== null;
+    const ringsOn = this.placing !== null || this.owner === 'part-drag';
     this.rings.forEach((ring, i) => {
       ring.visible = ringsOn; if (!ringsOn) return;
       const z = zAt(l, i === 0 ? .25 : .75), p = profile(g, l, z);
@@ -340,7 +359,7 @@ class Editor {
   /** Read-only test data on `.ed-view`. Attributes are written only when they change. */
   private syncViewData() {
     const c = this.model.counters, sel = this.placedBy(this.selected);
-    const gesture: Gesture = this.handleDrag ? 'handle-drag' : this.dragging ? 'part-drag' : this.cardDrag ? 'card-drag' : this.orbit ? 'turn' : 'none';
+    const gesture: Gesture = this.owner;
     const data: Record<string, string> = {
       'data-created-geometries': String(c.createdGeometries), 'data-disposed-geometries': String(c.disposedGeometries),
       'data-created-materials': String(c.createdMaterials), 'data-disposed-materials': String(c.disposedMaterials), 'data-rebuilds': String(c.rebuilds),
@@ -373,62 +392,168 @@ class Editor {
     if (placed.mirror && badMirror(placed)) placed.mirror = false;
     return placed;
   }
-  private pointerDown(event: PointerEvent) {
-    this.canvas.setPointerCapture(event.pointerId);
+  // ----- gestures: one owner from the first pointerdown until every pointer of the gesture ends -----
+  /** A press on the canvas (`card` null) or on a part card (`card` = the part id). */
+  private pointerDown(event: PointerEvent, card: string | null) {
+    // A pointer that is still tracked lost its end event (for example a mouse released outside the window).
+    if (this.pointers.has(event.pointerId)) this.endPointer(event.pointerId, true, null);
+    const mouse = event.pointerType === 'mouse';
+    if (mouse && event.button !== 0 && (card !== null || (event.button !== 1 && event.button !== 2))) return;
+    if (event.button === 1) event.preventDefault();
+    const tracked: TrackedPointer = { id: event.pointerId, x: event.clientX, y: event.clientY, x0: event.clientX, y0: event.clientY, travel: 0 };
+    if (card === null) { try { this.canvas.setPointerCapture(event.pointerId); } catch { /* the pointer already ended */ } }
+    const second = this.pointers.size > 0;
+    this.pointers.set(event.pointerId, tracked);
+    if (second) { this.secondPointer(); return; }
+    if (card !== null) { this.suppressCardClick = false; this.owner = 'card-drag'; this.cardDrag = { id: card, before: this.placing }; return; }
+    // Desktop: a right or middle drag turns the model.
+    if (mouse && event.button !== 0) { this.owner = 'turn'; return; }
     const { handle, partUid } = this.pick(event);
-    if (handle !== undefined && this.tab === 'body') {
-      const s = this.draft.spine[handle]!;
-      this.vertebra = handle; this.beginGesture(); this.handleDrag = { index: handle, y: event.clientY, start: { radius: s.radius, height: s.height } };
+    const spine = handle === undefined ? undefined : this.draft.spine[handle];
+    if (handle !== undefined && spine && this.tab === 'body') {
+      this.vertebra = handle; this.beginGesture();
+      this.owner = 'handle-drag'; this.handleDrag = { index: handle, y: event.clientY, start: { radius: spine.radius, height: spine.height }, snapshot: this.pending };
       this.render(); return;
     }
-    if (!this.placing && partUid !== null && this.tab === 'parts') {
-      this.selected = partUid; this.beginGesture(); this.dragging = { uid: partUid }; this.render(); return;
+    if (this.placing) { this.owner = 'place-tap'; return; }
+    const current = this.placedBy(partUid);
+    if (current && this.tab === 'parts') {
+      this.selected = current.uid; this.beginGesture();
+      this.owner = 'part-drag'; this.dragging = { uid: current.uid, t: current.t, angle: current.angle, snapshot: this.pending };
+      this.render(); return;
     }
-    this.orbit = { x: event.clientX, y: event.clientY, id: event.pointerId, moved: false };
+    // A press on empty space has no owner: as a tap it deselects, as a drag it does nothing.
+  }
+  /** A second pointer turns the gesture into a pinch. Any part, handle or card drag is rolled back first. */
+  private secondPointer() {
+    this.suppressCardClick = true;
+    if (this.owner === 'pinch' || this.owner === 'consumed') return;
+    this.rollback();
+    const [a, b] = [...this.pointers.values()];
+    if (!a || !b) return;
+    this.owner = 'pinch'; this.pinch = { a: a.id, b: b.id, ...centre(a, b) };
+  }
+  /** A part or handle drag gets its pointerdown values back, outside the undo history; a card drag is canceled. */
+  private rollback() {
+    const drag = this.dragging, handle = this.handleDrag, card = this.cardDrag;
+    this.dragging = null; this.handleDrag = null; this.cardDrag = null;
+    if (drag) {
+      const current = this.placedBy(drag.uid);
+      if (current && (current.t !== drag.t || current.angle !== drag.angle)) { current.t = drag.t; current.angle = drag.angle; this.model.updatePart(current.uid); }
+      this.dropSnapshot(drag.snapshot); this.render();
+    }
+    if (handle) {
+      const s = this.draft.spine[handle.index];
+      if (s) { s.radius = handle.start.radius; s.height = handle.start.height; }
+      this.dropSnapshot(handle.snapshot); this.render();
+    }
+    if (card) { this.placing = card.before; this.model.setGhost(null); }
+  }
+  /** Removes a gesture's snapshot from the history if its first change put it there, so undo skips the rolled-back drag. */
+  private dropSnapshot(snapshot: Snapshot | null) {
+    if (snapshot && this.history.at(-1) === snapshot) this.history.pop();
+    if (this.pending === snapshot) this.pending = null;
   }
   private pointerMove(event: PointerEvent) {
-    if (this.handleDrag) {
-      // Drag a vertebra handle up or down to make the body fatter or thinner there.
-      const { index, start } = this.handleDrag, factor = 1 + (this.handleDrag.y - event.clientY) / 160, s = this.draft.spine[index]!;
-      const rule = segmentRule(this.options.plan, index, this.draft.spine.length);
-      const radius = T.MathUtils.clamp(start.radius * factor, ...rule.radius), height = T.MathUtils.clamp(start.height * factor, ...rule.height);
-      if (radius === s.radius && height === s.height) return;
-      this.touchGesture(); s.radius = radius; s.height = height;
-      this.renderStatsOnly(); this.syncBodySliders(); return;
-    }
-    if (this.dragging) {
-      const current = this.placedBy(this.dragging.uid); if (!current) return;
-      const { bodyPoint } = this.pick(event); if (!bodyPoint) return;
-      const next = this.placement(bodyPoint, current.id);
-      // A drag never changes the topology: a pair stays a pair, so it cannot move to a pole or a tip.
-      if (current.mirror && badMirror({ ...current, t: next.t, angle: next.angle })) return;
-      if (next.t === current.t && next.angle === current.angle) return;
-      this.touchGesture(); current.t = next.t; current.angle = next.angle;
-      this.model.updatePart(current.uid); this.renderStatsOnly(); return;
-    }
-    if (this.placing) {
-      const { bodyPoint } = this.pick(event);
-      this.model.setGhost(bodyPoint ? this.placement(bodyPoint, this.placing) : null); return;
-    }
-    if (this.orbit && event.pointerId === this.orbit.id) {
-      const dx = event.clientX - this.orbit.x, dy = event.clientY - this.orbit.y;
-      if (Math.hypot(dx, dy) > 3) this.orbit.moved = true;
-      this.yaw -= dx * .008; this.pitch = T.MathUtils.clamp(this.pitch + dy * .006, -.9, 1.3);
-      this.orbit.x = event.clientX; this.orbit.y = event.clientY;
-    }
-  }
-  private pointerUp(event: PointerEvent) {
-    if (this.handleDrag) { this.handleDrag = null; this.orbit = null; this.pending = null; this.render(); return; }
-    if (this.dragging) { this.dragging = null; this.pending = null; this.render(); return; }
-    // A card dragged onto the body is placed by the panel's pointerup handler.
-    if (this.cardDrag) return;
-    if (this.placing) {
-      const { bodyPoint } = this.pick(event);
-      if (bodyPoint) this.addPart(this.placement(bodyPoint, this.placing));
+    const p = this.pointers.get(event.pointerId);
+    if (!p) {
+      // Hover: a mouse or pen over the canvas moves the placement preview.
+      if (this.owner === 'none' && this.placing && event.target === this.canvas) this.showGhost(event);
       return;
     }
-    const tap = this.orbit && !this.orbit.moved; this.orbit = null;
-    if (tap && this.selected !== null) { this.selected = null; this.render(); }
+    const dx = event.clientX - p.x, dy = event.clientY - p.y;
+    p.x = event.clientX; p.y = event.clientY; p.travel = Math.max(p.travel, Math.hypot(p.x - p.x0, p.y - p.y0));
+    switch (this.owner) {
+      case 'turn': this.turn(dx, dy); return;
+      case 'pinch': this.pinchMove(); return;
+      case 'handle-drag': this.moveHandle(event); return;
+      case 'part-drag': if (p.travel >= TAP_SLOP) this.movePart(event); return;
+      case 'place-tap': this.showGhost(event); return;
+      case 'card-drag': if (p.travel >= CARD_DRAG_SLOP) this.dragCard(event); return;
+      default: return;   // an empty press and a consumed gesture do nothing
+    }
+  }
+  private pointerEnd(event: PointerEvent, canceled: boolean) {
+    // Only the canvas takes pointer capture; a card button losing its implicit touch capture is not a cancel.
+    if (event.type === 'lostpointercapture' && event.target !== this.canvas) return;
+    if (this.pointers.has(event.pointerId)) this.endPointer(event.pointerId, canceled, event);
+  }
+  private endPointer(id: number, canceled: boolean, event: PointerEvent | null) {
+    const p = this.pointers.get(id); if (!p) return;
+    this.pointers.delete(id);
+    const owner = this.owner, remaining = this.pointers.size > 0;
+    // A gesture that ever had two pointers stays consumed until all of them end.
+    if (owner === 'pinch' || owner === 'consumed') { this.pinch = null; this.owner = remaining ? 'consumed' : 'none'; return; }
+    if (canceled) {
+      if (owner === 'card-drag') this.suppressCardClick = true;
+      this.rollback(); this.owner = remaining ? 'consumed' : 'none'; return;
+    }
+    this.owner = 'none';
+    switch (owner) {
+      case 'part-drag': case 'handle-drag':
+        this.dragging = null; this.handleDrag = null; this.pending = null; this.render(); return;
+      case 'place-tap': {
+        if (p.travel >= TAP_SLOP || !this.placing || !event) return;
+        const { bodyPoint } = this.pick(event);
+        if (bodyPoint) this.addPart(this.placement(bodyPoint, this.placing));
+        return;
+      }
+      case 'card-drag': {
+        const card = this.cardDrag; this.cardDrag = null;
+        if (!card || p.travel < CARD_DRAG_SLOP) return;   // a tap: the card's click handler arms it
+        this.suppressCardClick = true;
+        const bodyPoint = event ? this.pick(event).bodyPoint : null;
+        if (bodyPoint) this.addPart(this.placement(bodyPoint, card.id)); else { this.disarm(); this.render(); }
+        return;
+      }
+      case 'none':
+        if (p.travel < TAP_SLOP && this.selected !== null) { this.selected = null; this.render(); }
+        return;
+      default: return;
+    }
+  }
+  private turn(dx: number, dy: number) {
+    this.yaw -= dx * .008; this.pitch = T.MathUtils.clamp(this.pitch + dy * .006, -.9, 1.3);
+  }
+  /** Two fingers: the midpoint turns the model, the spread zooms. */
+  private pinchMove() {
+    const pinch = this.pinch; if (!pinch) return;
+    const a = this.pointers.get(pinch.a), b = this.pointers.get(pinch.b); if (!a || !b) return;
+    const next = centre(a, b);
+    this.turn(next.cx - pinch.cx, next.cy - pinch.cy);
+    if (pinch.distance > 0 && next.distance > 0) this.zoom = T.MathUtils.clamp(this.zoom * pinch.distance / next.distance, .55, 2);
+    pinch.cx = next.cx; pinch.cy = next.cy; pinch.distance = next.distance;
+  }
+  private showGhost(event: PointerEvent) {
+    if (!this.placing) return;
+    const { bodyPoint } = this.pick(event);
+    this.model.setGhost(bodyPoint ? this.placement(bodyPoint, this.placing) : null);
+  }
+  private dragCard(event: PointerEvent) {
+    const card = this.cardDrag; if (!card) return;
+    if (part(card.id)?.kind === 'mouth' && this.mouth()) return;
+    this.placing = card.id; this.showGhost(event);
+  }
+  /** Drag a vertebra handle up or down to make the body fatter or thinner there. */
+  private moveHandle(event: PointerEvent) {
+    const drag = this.handleDrag; if (!drag) return;
+    const { index, start } = drag, factor = 1 + (drag.y - event.clientY) / 160, s = this.draft.spine[index]; if (!s) return;
+    const rule = segmentRule(this.options.plan, index, this.draft.spine.length);
+    const radius = T.MathUtils.clamp(start.radius * factor, ...rule.radius), height = T.MathUtils.clamp(start.height * factor, ...rule.height);
+    if (radius === s.radius && height === s.height) return;
+    this.touchGesture(); s.radius = radius; s.height = height;
+    this.renderStatsOnly(); this.syncBodySliders();
+  }
+  private movePart(event: PointerEvent) {
+    const drag = this.dragging; if (!drag) return;
+    const current = this.placedBy(drag.uid); if (!current) return;
+    const { bodyPoint } = this.pick(event); if (!bodyPoint) return;
+    const next = this.placement(bodyPoint, current.id);
+    // A drag never changes the topology: a pair stays a pair, so it cannot move to a pole or a tip.
+    if (current.mirror && badMirror({ ...current, t: next.t, angle: next.angle })) return;
+    if (next.t === current.t && next.angle === current.angle) return;
+    this.touchGesture(); current.t = next.t; current.angle = next.angle;
+    this.model.updatePart(current.uid); this.renderStatsOnly();
   }
 
   // ----- parts -----
@@ -478,7 +603,7 @@ class Editor {
     box.hidden = !placed;
     if (placed) { box.querySelector('p')!.textContent = `Only room for one ${part(placed.id)!.name}. Place one?`; box.querySelector<HTMLButtonElement>('.ed-confirm-yes')!.focus(); }
   }
-  /** Keyboard and quick taps: the part's usual spot, or the nearest region that takes it and has room. */
+  /** Keyboard Enter on a card: the part's usual spot, or the nearest region that takes it and has room. */
   private quickAdd(spec: PartSpec) {
     const used = this.regionUse(this.draft), home = regionOf(spec.t);
     const fits = (r: Region) => this.allowedIn(r, spec.kind) && used[r] < this.options.plan.regions[r].slots;
@@ -512,33 +637,24 @@ class Editor {
           <img src="${thumbnails.get(spec.id) ?? ''}" alt=""><strong>${esc(spec.name)}</strong><span class="ed-cost">${found ? `${spec.cost} DNA` : `🔒 ${STAGES[spec.stage]!.title}`}</span>
           <small>${reason && found ? `<span class="ed-reason">${esc(reason)}</span>` : `${statLine(spec.stats)}${spec.diet ? ` · ${spec.diet}` : ''}`}</small>${early ? '<em>FOUND!</em>' : ''}</button>`;
       }).join('')}</div>
-      <p class="ed-tip">${this.placing ? 'Tap your creature to place it. Tap the card again to stop.' : 'Choose a part, then tap your creature. Drag the empty space to turn around.'}</p>`;
+      <p class="ed-tip">${this.placing ? 'Tap your creature to place it. Tap the card again to stop.' : 'Choose a part, then tap your creature. Turn it with two fingers or a right-drag.'}</p>`;
     panel.querySelectorAll<HTMLButtonElement>('[data-kind]').forEach(button => button.onclick = () => { this.kind = button.dataset.kind as PartKind; this.disarm(); this.render(); });
     panel.querySelectorAll<HTMLButtonElement>('[data-part]').forEach(button => {
       button.onclick = click => {
         const id = button.dataset.part!, spec = part(id)!;
         if (button.disabled) return;
+        // A card press that became a drag, a pinch or a cancel does not arm. Keyboard clicks have detail 0.
+        if (click.detail !== 0 && this.suppressCardClick) { this.suppressCardClick = false; return; }
         if (spec.kind === 'mouth' && this.replaceMouth(id)) return;
         if (this.placing === id) { this.disarm(); this.render(); return; }
+        // A card tap arms placement on every device; a body tap places.
         this.placing = id; this.selected = null; this.model.setGhost(null); this.render();
-        // Keyboard and quick taps place the part at its usual spot right away.
-        if (matchMedia('(pointer: coarse)').matches || click.detail === 0) this.quickAdd(spec);
+        // Keyboard Enter is a separate quick-add at the part's usual spot.
+        if (click.detail === 0) this.quickAdd(spec);
       };
       // Drag a card onto the creature to place it.
-      button.addEventListener('pointerdown', e => { if (button.disabled) return; this.cardDrag = { id: button.dataset.part!, x: e.clientX, y: e.clientY }; });
+      button.addEventListener('pointerdown', e => { if (!button.disabled) this.pointerDown(e, button.dataset.part!); });
     });
-    this.root.onpointermove = e => {
-      if (!this.cardDrag || Math.hypot(e.clientX - this.cardDrag.x, e.clientY - this.cardDrag.y) < 12) return;
-      if (part(this.cardDrag.id)?.kind === 'mouth' && this.mouth()) return;
-      this.placing = this.cardDrag.id; const { bodyPoint } = this.pick(e);
-      this.model.setGhost(bodyPoint ? this.placement(bodyPoint, this.placing) : null);
-    };
-    this.root.onpointerup = e => {
-      const drag = this.cardDrag; this.cardDrag = null;
-      if (!drag || Math.hypot(e.clientX - drag.x, e.clientY - drag.y) < 12) return;
-      const { bodyPoint } = this.pick(e);
-      if (bodyPoint) this.addPart(this.placement(bodyPoint, drag.id)); else { this.disarm(); this.render(); }
-    };
   }
   private sizeCost(p: PlacedPart) { const slots = partSlots(p); return `${partCost(p)} DNA · ${slots} slot${slots === 1 ? '' : 's'}`; }
   private renderTool() {
