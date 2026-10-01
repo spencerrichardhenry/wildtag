@@ -2,7 +2,7 @@
 // Active tiers (|tier − stage| ≤ 1) move through the motion resolver, perceive, pursue (spec §10) and emit contact hazards.
 // Every entry path (construction, reset, respawn, becoming relevant) installs an entity on a legal pose.
 import { makeBiomes, populate, seabedHeight, SIZES, spawnPoint, WORLD_HALF, random, type Biome } from './biomes';
-import type { Actor, AdmissionContext, Capsule, ContactHazard, LegalityContext, MotionRequest, MovementMode, MutVec3, Orientation, Vec3, WorldQueries } from './combat-types';
+import type { Actor, AdmissionContext, Capsule, ContactHazard, LegalityContext, MotionRequest, MovementMode, MutVec3, Orientation, PursuitPolicy, Vec3, WorldQueries } from './combat-types';
 import { findRecoveryPose, resolveMotion } from './motion';
 import { speciesActor } from './mount';
 import { habitat, movement, pursuit } from './profiles';
@@ -125,6 +125,8 @@ export class Ecosystem {
   private readonly queries: WorldQueries[];
   private readonly bounds: { half: number }[];
   private readonly actors = new Map<Entity, Actor>();
+  /** Test seam: a pursuit policy per entity; undefined falls back to the registry. */
+  private readonly pursuitFor: ((e: Entity) => PursuitPolicy | undefined) | undefined;
   // Scratch objects reused on the hot path.
   private readonly from: MutVec3 = { x: 0, y: 0, z: 0 };
   private readonly disp: MutVec3 = { x: 0, y: 0, z: 0 };
@@ -133,7 +135,8 @@ export class Ecosystem {
   private readonly req: MotionRequest = { actorId: '', from: this.from, displacement: this.disp, orientation: O0, hull: [], habitatProfileId: '', cause: 'locomotion' };
   private readonly motion: LegalityContext & { actor: Actor; interval: { start: number; end: number } } = { queries: null!, actor: null!, interval: { start: 0, end: 0 } };
 
-  constructor(readonly seed: number, opts: { queries?: (tier: number) => WorldQueries } = {}) {
+  constructor(readonly seed: number, opts: { queries?: (tier: number) => WorldQueries; pursuitFor?: (e: Entity) => PursuitPolicy | undefined } = {}) {
+    this.pursuitFor = opts.pursuitFor;
     this.entities = makeEntities(seed);
     this.biomes = SIZES.map((_, tier) => makeBiomes(seed, tier));
     this.rand = random(seed ^ 0x51ed);
@@ -205,7 +208,7 @@ export class Ecosystem {
     if (e.mode === 'hunt' || e.mode === 'angry') {
       if (perceived) remember(e, p, now, ctx.playerHull);
       this.updateReachability(e, now);
-      const policy = pursuit(spec.pursuitId), L = this.actors.get(e)!.bodyLength;
+      const policy = this.pursuitFor?.(e) ?? pursuit(spec.pursuitId), L = this.actors.get(e)!.bodyLength;
       const giveUp = Math.hypot(e.x - e.hx, e.y - e.hy, e.z - e.hz) > policy.leashBodyLengths * L
         || distance > policy.giveUpBodyLengths * L
         || (!perceived && now - e.lastSeenAt > policy.memorySeconds)
