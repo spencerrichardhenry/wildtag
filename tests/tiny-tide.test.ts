@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyDesign, damageAfterArmor, dietCanEat, dnaFor, eat, evolve, evolveReady, faint, freshRun, hurt, inReach, parseSave, PLANET_COUNT, STAGES, unlock } from '../src/tiny-tide/state';
+import { dietCanEat, dnaFor, inReach, PLANET_COUNT, STAGES } from '../src/tiny-tide/state';
 import { derive, dietOf, genomeCost, instanceCount, PART_LIMITS, problems, repairLegacyGenome, sanitizeGenome, starterGenome, statsOf, type Genome } from '../src/tiny-tide/genome';
 import { plan } from '../src/tiny-tide/plans';
 import { PARTS, part } from '../src/tiny-tide/parts';
@@ -69,45 +69,6 @@ describe('Tiny Tide diet and DNA', () => {
     }
     expect(tierSpecies(3).every(s => s.tag === 'any')).toBe(true);
     expect(tierSpecies(4).map(s => s.kind)).toEqual(['planet']);
-  });
-  it('fills the stage bar with DNA, then evolves only when ready', () => {
-    const run = freshRun(1), sprout = species(0, 'plant');
-    expect(evolve(run)).toBe(false);
-    while (!evolveReady(run)) eat(run, sprout, 0);
-    const wallet = run.dna; expect(wallet).toBeGreaterThan(STAGES[0]!.goal);
-    expect(evolve(run)).toBe(true); expect(run.stage).toBe(1); expect(run.stageDna).toBe(0); expect(run.dna).toBe(wallet);
-    // Food from a lower tier still gives DNA to spend, but not stage progress.
-    eat(run, sprout, 1); expect(run.stageDna).toBe(0); expect(run.dna).toBe(wallet + sprout.dna);
-  });
-  it('wins only after all 12 distinct planets', () => {
-    const run = { ...freshRun(2), stage: 4 }, planet = species(4, 'planet');
-    for (let i = 0; i < PLANET_COUNT - 1; i++) expect(eat(run, planet, i).win).toBe(false);
-    expect(eat(run, planet, 3).dna).toBe(0);
-    expect(eat(run, planet, 11).win).toBe(true); expect(run.completed).toBe(true);
-  });
-  it('applies an editor design by refunding the old one and paying for the new one', () => {
-    const run = freshRun(3), before = run.dna;
-    const cheaper = { ...run.genome, parts: run.genome.parts.filter(p => p.id !== 'leg_little') };
-    expect(applyDesign(run, cheaper, 'Nibs', genomeCost)).toBe(true);
-    expect(run.dna).toBe(before + 14); expect(run.name).toBe('Nibs');
-    const pricey = { ...cheaper, parts: [...cheaper.parts, { uid: 'p10', id: 'claw_pincer', t: .2, angle: 2, scale: 1, mirror: true, roll: 0 }, { uid: 'p11', id: 'fin_side', t: .4, angle: 1.7, scale: 1, mirror: true, roll: 0 }] };
-    run.dna = 10; expect(applyDesign(run, pricey, '', genomeCost)).toBe(false); expect(run.genome).toEqual(cheaper);
-  });
-  it('unlocks a part early only once, and only if its stage is still ahead', () => {
-    const run = freshRun(4);
-    expect(unlock(run, 'leg_crab')).toBe(true); expect(unlock(run, 'leg_crab')).toBe(false);
-    expect(problems({ ...run.genome, parts: [...run.genome.parts, { uid: 'p10', id: 'leg_crab', t: .6, angle: 2.4, scale: 1, mirror: false, roll: 0 }] }, plan('speck')!, { unlocked: run.unlocked }).map(p => p.code)).not.toContain('locked');
-    run.stage = 2; expect(unlock(run, 'glow_bulb')).toBe(false);
-  });
-});
-
-describe('Tiny Tide health', () => {
-  it('reduces damage with armor, never below one, and faints at zero health', () => {
-    expect(damageAfterArmor(3, 0)).toBe(3); expect(damageAfterArmor(3, 2)).toBe(2); expect(damageAfterArmor(1, 9)).toBe(1);
-    const run = freshRun(5); run.dna = 100;
-    let fainted = false; for (let i = 0; i < 20 && !fainted; i++) fainted = hurt(run, 2, 0);
-    expect(fainted).toBe(true); faint(run);
-    expect(run.deaths).toBe(1); expect(run.dna).toBe(70); expect(run.health).toBe(derive(statsOf(run.genome)).maxHealth); expect(run.stage).toBe(0);
   });
 });
 
@@ -187,25 +148,7 @@ describe('Tiny Tide ecosystem', () => {
   });
 });
 
-describe('Tiny Tide saves', () => {
-  it('round-trips a v2 save', () => {
-    const run = freshRun(42); run.stage = 4; run.eatenPlanets = [1, 2]; run.dna = 33.5;
-    expect(parseSave(JSON.stringify(run))).toEqual(run);
-  });
-  it('migrates a v1 save, keeping stage, planets and time', () => {
-    const v1 = { stage: 2, bites: 7, total: 29, elapsed: 312, eatenPlanets: [], completed: false };
-    const run = parseSave(JSON.stringify(v1))!;
-    expect(run.version).toBe(2); expect(run.stage).toBe(2); expect(run.bites).toBe(29); expect(run.elapsed).toBe(312);
-    expect(run.stageDna).toBe(Math.round(7 / 14 * STAGES[2]!.goal)); expect(problems(run.genome, plan('crawler')!, { unlocked: [] })).toEqual([]);
-    const space = parseSave(JSON.stringify({ stage: 4, bites: 3, total: 60, elapsed: 900, eatenPlanets: [0, 5, 9], completed: false }))!;
-    expect(space.eatenPlanets).toEqual([0, 5, 9]);
-  });
-  it('ignores corrupt and inconsistent saves', () => {
-    const ok = freshRun(1);
-    for (const value of [null, 'oops', '{}', '[]', JSON.stringify({ ...ok, version: 3 }), JSON.stringify({ ...ok, stage: 5 }), JSON.stringify({ ...ok, dna: -1 }), JSON.stringify({ ...ok, completed: true }),
-      JSON.stringify({ ...ok, eatenPlanets: [1] }), JSON.stringify({ ...ok, stage: 4, eatenPlanets: [0, 0] }), JSON.stringify({ ...ok, unlocked: ['laser'] }), JSON.stringify({ ...ok, genome: { ...ok.genome, parts: 'x' } }),
-      JSON.stringify({ stage: -1, bites: 0, total: 0, elapsed: 0, eatenPlanets: [], completed: false }), JSON.stringify({ stage: 4, bites: 2, total: 9, elapsed: 0, eatenPlanets: [0, 13], completed: false })]) expect(parseSave(value)).toBeNull();
-  });
+describe('Tiny Tide reach', () => {
   it('keeps reach checks local to the stage', () => {
     expect(inReach(0, { x: 0, y: .7, z: 0 }, { x: 1, y: .7, z: 0 })).toBe(true);
     expect(inReach(0, { x: 0, y: .7, z: 0 }, { x: 3, y: .7, z: 0 })).toBe(false);

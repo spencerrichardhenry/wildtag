@@ -1,5 +1,7 @@
-import { cloneGenome, derive, dietOf, repairLegacyGenome, sanitizeGenome, starterGenome, statsOf, type Genome } from './genome';
-import { part, type Diet } from './parts';
+import { bankAll, commitDesign, earn, faintLegacy, legacyEconomy, validateLedger, walletTotal, type Economy } from './economy';
+import { cloneGenome, derive, dietOf, effectiveStats, problems, sanitizeGenome, starterGenome, STARTER_NEXT_SERIAL, uidSerial, type DesignContext, type Genome } from './genome';
+import { PARTS, part, type Diet, type PartSpec } from './parts';
+import { closedLinesOf, commitmentsOf, eligibleChildren, plan, ROOT_PLAN, violates, type BodyPlan } from './plans';
 import { PLANET_COUNT } from './biomes';
 import type { FoodTag, Species } from './species';
 
@@ -20,23 +22,42 @@ export const START_DNA = 20;
 export const DEATH_KEEP = .7;
 export const OMNIVORE_RATE = .7;
 
+export interface ArchivedDesign { genome: Genome; name: string; savedAt: string; reason: string }
 export interface Run {
-  version: 2; seed: number; name: string; stage: number;
-  /** DNA the player can spend in the editor. */
-  dna: number;
+  version: 4; seed: number; name: string; stage: number;
+  /** Body plan ids from the root to the current plan. */
+  plans: string[]; diet: Diet;
+  /** Banked and at-risk DNA, with the cost basis of each installed part. */
+  economy: Economy;
   /** DNA earned in the current stage. It fills the growth bar. */
   stageDna: number; totalDna: number; bites: number; elapsed: number; deaths: number; health: number;
-  genome: Genome; unlocked: string[]; eatenPlanets: number[]; completed: boolean;
+  genome: Genome; nextPartSerial: number; unlocked: string[]; eatenPlanets: number[]; completed: boolean;
+  loadout: { active: [unknown | null, unknown | null] }; pendingRespawn: boolean; mechanics: Record<string, unknown>; archive: ArchivedDesign[]; notices: string[];
 }
+export interface Build { coast: boolean; anchorCheck?: DesignContext['anchorCheck'] }
+export type Commit = { ok: true; clearedBindings: number[] } | { ok: false; reason: string; shortfall?: number };
+export interface Prepared { planId: string; genome: Genome; name: string; economy: Economy; diet: Diet; nextSerial: number }
 export const newSeed = () => Math.floor(Math.random() * 2 ** 31);
+export const dnaOf = (run: Run) => walletTotal(run.economy);
+export const currentPlan = (run: Run): BodyPlan => plan(run.plans.at(-1)!)!;
+export const maxHealthOf = (run: Run) => derive(effectiveStats(run.genome, currentPlan(run))).maxHealth;
 export function freshRun(seed = newSeed()): Run {
   const genome = starterGenome();
-  return { version: 2, seed, name: 'Little Tide', stage: 0, dna: START_DNA, stageDna: 0, totalDna: 0, bites: 0, elapsed: 0, deaths: 0, health: derive(statsOf(genome)).maxHealth, genome, unlocked: [], eatenPlanets: [], completed: false };
+  const run: Run = { version: 4, seed, name: 'Little Tide', stage: 0, plans: [ROOT_PLAN], diet: dietOf(genome), economy: legacyEconomy(START_DNA, genome), stageDna: 0, totalDna: 0,
+    bites: 0, elapsed: 0, deaths: 0, health: 0, genome, nextPartSerial: STARTER_NEXT_SERIAL, unlocked: [], eatenPlanets: [], completed: false,
+    loadout: { active: [null, null] }, pendingRespawn: false, mechanics: {}, archive: [], notices: [] };
+  run.health = maxHealthOf(run); return run;
 }
 export const dietCanEat = (diet: Diet, tag: FoodTag) => tag === 'any' || diet === 'omnivore' || (diet === 'herbivore' ? tag === 'plant' : tag === 'meat');
 export function dnaFor(diet: Diet, spec: Species) {
   if (!dietCanEat(diet, spec.tag)) return 0;
   return Math.round(spec.dna * (diet === 'omnivore' && spec.tag !== 'any' ? OMNIVORE_RATE : 1));
+}
+/** DNA for one meal on a plan: diet rate and the plan's foraging bonus for the food's habitat, rounded once. */
+export function mealDna(p: BodyPlan, diet: Diet, spec: Species): number {
+  if (!dietCanEat(diet, spec.tag)) return 0;
+  const forage = p.foraging.find(f => f.habitat === spec.habitatProfileId)?.dnaMultiplier ?? 1;
+  return Math.round(spec.dna * (diet === 'omnivore' && spec.tag !== 'any' ? OMNIVORE_RATE : 1) * forage);
 }
 export const evolveReady = (run: Run) => run.stage < 4 && run.stageDna >= STAGES[run.stage]!.goal;
 export const growthOf = (run: Run) => 1 + Math.min(1, run.stage === 4 ? run.eatenPlanets.length / PLANET_COUNT : run.stageDna / STAGES[run.stage]!.goal) * .38;
@@ -48,12 +69,16 @@ export function inReach(stage: number, player: Point, food: Point, growth = 1, e
   return Math.hypot(player.x - food.x, player.z - food.z) < spec.radius * growth + .5 + extraReach + foodRadius &&
     Math.abs(player.y - food.y) < (stage === 0 ? 2 : 2.2) + extraReach * .5 + foodRadius;
 }
+/** Adds earned DNA at risk. Only food of the current stage fills the growth bar. */
+export function reward(run: Run, dna: number, countsForStage: boolean) {
+  run.economy = earn(run.economy, dna); run.totalDna += dna;
+  if (countsForStage && run.stage < 4) run.stageDna += dna;
+}
 /** Records a meal. Returns the DNA earned and whether the run ended. */
 export function eat(run: Run, spec: Species, id: number): { dna: number; win: boolean } {
   if (run.completed || (spec.kind === 'planet' && run.eatenPlanets.includes(id))) return { dna: 0, win: false };
-  const dna = dnaFor(dietOf(run.genome), spec);
-  run.bites++; run.dna += dna; run.totalDna += dna;
-  if (spec.tier === run.stage && run.stage < 4) run.stageDna += dna;
+  const dna = mealDna(currentPlan(run), run.diet, spec);
+  run.bites++; reward(run, dna, spec.tier === run.stage);
   if (spec.kind === 'planet') run.eatenPlanets.push(id);
   if (run.stage === 4 && run.eatenPlanets.length >= PLANET_COUNT) { run.completed = true; return { dna, win: true }; }
   return { dna, win: false };
@@ -65,64 +90,146 @@ export function hurt(run: Run, damage: number, armor: number): boolean {
   run.health = Math.max(0, run.health - damageAfterArmor(damage, armor));
   return run.health <= 0;
 }
-/** The creature wakes at the stage start with most of its DNA. */
-export function faint(run: Run) {
-  run.deaths++; run.dna = Math.floor(run.dna * DEATH_KEEP); run.health = derive(statsOf(run.genome)).maxHealth;
-}
-export function evolve(run: Run) {
-  if (!evolveReady(run)) return false;
-  run.stage++; run.stageDna = 0; run.health = derive(statsOf(run.genome)).maxHealth; return true;
-}
 export function unlock(run: Run, id: string | undefined) {
   if (!id || !part(id) || run.unlocked.includes(id) || part(id)!.stage <= run.stage) return false;
   run.unlocked.push(id); return true;
 }
-/** Applies an editor result. The old design is refunded, the new one is paid. */
-export function applyDesign(run: Run, genome: Genome, name: string, cost: (g: Genome) => number) {
-  const budget = run.dna + cost(run.genome);
-  if (cost(genome) > budget) return false;
-  run.dna = budget - cost(genome); run.genome = cloneGenome(genome); run.name = name.trim().slice(0, 24) || run.name;
-  run.health = Math.min(run.health, derive(statsOf(genome)).maxHealth);
-  return true;
+const serialAfter = (g: Genome, ...floors: number[]) => Math.max(...floors, ...g.parts.map(p => uidSerial(p.uid) + 1));
+type Failure = { ok: false; reason: string; shortfall?: number };
+/** Clears bindings whose part is gone or whose catalog spec no longer has the grant (Plan B extends the binding type). */
+function clearMissing(run: Run, catalog: readonly PartSpec[]) {
+  const cleared: number[] = [];
+  run.loadout.active = run.loadout.active.map((b, i) => {
+    const binding = b as { partUid?: string; grantId?: string } | null; if (!binding) return b;
+    const placed = run.genome.parts.find(p => p.uid === binding.partUid), spec = placed && catalog.find(s => s.id === placed.id);
+    const hasGrant = !!spec && ((spec as { activeGrants?: { id: string }[] }).activeGrants ?? []).some(g => g.id === binding.grantId);
+    if (!placed || (binding.grantId !== undefined && !hasGrant)) { cleared.push(i); return null; } return b;
+  }) as Run['loadout']['active'];
+  return cleared;
+}
+/** Runs every check on a copy; returns the copy only when it is valid. Never mutates `run`. */
+function candidate(run: Run, change: (c: Run) => void, build: Build, catalog: readonly PartSpec[]): { run: Run; cleared: number[] } | Failure {
+  const c = structuredClone(run); change(c); const cleared = clearMissing(c, catalog);
+  const issues = validateRun(c, build, catalog); return issues.length ? { ok: false, reason: `Internal check failed: ${issues[0]}` } : { run: c, cleared };
+}
+const notEnough = (tx: { shortfall: number; invalid?: string[] }): Failure =>
+  tx.invalid ? { ok: false, reason: `Internal check failed: ${tx.invalid[0]}` } : { ok: false, reason: 'Not enough DNA.', shortfall: tx.shortfall };
+/** Applies an editor design on the current plan. The ledger pays for it. Nothing changes unless every check passes. */
+export function applyDesign(run: Run, g: Genome, name: string, build: Build, nextSerial: number, catalog: readonly PartSpec[] = PARTS): Commit {
+  const before = validateRun(run, build, catalog); if (before.length) return { ok: false, reason: `Internal check failed: ${before[0]}` };
+  const issue = problems(g, currentPlan(run), { unlocked: run.unlocked, diet: run.diet, anchorCheck: build.anchorCheck }, catalog).find(x => x.code !== 'dna');
+  if (issue) return { ok: false, reason: issue.message };
+  const tx = commitDesign(run.economy, run.genome, g);
+  if (!tx.ok) return notEnough(tx);
+  const next = candidate(run, c => { c.economy = tx.economy; c.genome = cloneGenome(g); c.name = name.trim().slice(0, 24) || c.name;
+    c.nextPartSerial = serialAfter(g, c.nextPartSerial, nextSerial); c.health = Math.min(c.health, maxHealthOf(c)); }, build, catalog);
+  if ('ok' in next) return next;
+  Object.assign(run, next.run); return { ok: true, clearedBindings: next.cleared };
+}
+/** Checks an evolution and prices it. It never changes `run`. */
+export function prepareEvolution(run: Run, planId: string, g: Genome, name: string, build: Build, nextSerial: number, catalog: readonly PartSpec[] = PARTS): Prepared | Failure {
+  const before = validateRun(run, build, catalog); if (before.length) return { ok: false, reason: `Internal check failed: ${before[0]}` };
+  if (!evolveReady(run)) return { ok: false, reason: 'Not ready to evolve.' };
+  const next = eligibleChildren(run.plans, build).find(p => p.id === planId); if (!next) return { ok: false, reason: 'That path is not open.' };
+  const diet = dietOf(g), issue = problems(g, next, { unlocked: run.unlocked, diet, anchorCheck: build.anchorCheck }, catalog).find(x => x.code !== 'dna');
+  if (issue) return { ok: false, reason: issue.message };
+  const tx = commitDesign(run.economy, run.genome, g);
+  if (!tx.ok) return notEnough(tx);
+  const prepared: Prepared = { planId, genome: cloneGenome(g), name: name.trim().slice(0, 24) || run.name, economy: tx.economy, diet, nextSerial: serialAfter(g, run.nextPartSerial, nextSerial) };
+  const check = candidate(run, c => applyEvolution(c, prepared), build, catalog);
+  return 'ok' in check ? check : prepared;
+}
+function applyEvolution(c: Run, p: Prepared) {
+  c.economy = bankAll(p.economy); c.genome = cloneGenome(p.genome); c.name = p.name; c.diet = p.diet; c.plans.push(p.planId);
+  c.stage++; c.stageDna = 0; c.nextPartSerial = Math.max(c.nextPartSerial, p.nextSerial); c.health = maxHealthOf(c);
+}
+/** Applies a validated Prepared atomically. Returns the cleared binding slots. */
+export function commitEvolution(run: Run, p: Prepared, catalog: readonly PartSpec[] = PARTS): number[] {
+  const c = structuredClone(run); applyEvolution(c, p); const cleared = clearMissing(c, catalog); Object.assign(run, c); return cleared;
+}
+/** Applies the legacy faint once. A second call while a respawn is pending changes nothing. */
+export function faint(run: Run): boolean {
+  if (run.pendingRespawn) return false;
+  run.deaths++; run.economy = faintLegacy(run.economy); run.pendingRespawn = true; return true;
 }
 
 const int = (v: unknown, min = 0) => Number.isInteger(v) && (v as number) >= min;
 const finite = (v: unknown, min = 0) => typeof v === 'number' && Number.isFinite(v) && v >= min;
+const safe = (v: unknown) => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0;
+const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 function validPlanets(v: unknown): v is number[] {
   return Array.isArray(v) && v.every(id => Number.isInteger(id) && id >= 0 && id < PLANET_COUNT) && new Set(v).size === v.length;
 }
-/** Reads a v2 save, or migrates a v1 save. Returns null for anything inconsistent. */
-export function parseSave(raw: string | null): Run | null {
-  if (!raw) return null;
-  try {
-    const v = JSON.parse(raw) as Record<string, unknown>;
-    if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
-    if (v.version === 2) return parseV2(v);
-    if (v.version === undefined) return migrateV1(v);
-    return null;
-  } catch { return null; }
+/** Every rule a run must keep. A candidate that passes here reloads unchanged. Returns the issues, empty when valid. */
+export function validateRun(run: Run, build: Build, catalog: readonly PartSpec[] = PARTS): string[] {
+  if (!isObject(run) || sanitizeGenome(run.genome) === null) return ['genome shape'];
+  const out: string[] = [];
+  if (!safe(run.seed) || typeof run.name !== 'string') out.push('identity');
+  if (!safe(run.stage) || run.stage > 4) out.push('stage');
+  for (const [key, v] of [['stageDna', run.stageDna], ['totalDna', run.totalDna], ['bites', run.bites], ['deaths', run.deaths]] as const) if (!safe(v)) out.push(`counter ${key}`);
+  if (!finite(run.elapsed)) out.push('counter elapsed');
+  if (typeof run.completed !== 'boolean' || !validPlanets(run.eatenPlanets)) out.push('progress');
+  else if ((run.stage !== 4 && run.eatenPlanets.length) || (run.completed && (run.stage !== 4 || run.eatenPlanets.length !== PLANET_COUNT))) out.push('progress');
+  if (!Array.isArray(run.unlocked) || !run.unlocked.every(id => typeof id === 'string' && part(id))) out.push('unlocked');
+  // Path: root, one plan per stage, parents, commitments and closed lines.
+  const path = run.plans, steps = Array.isArray(path) ? path.map(id => plan(id)) : [];
+  let pathOk = Array.isArray(path) && path.length > 0 && steps.every(Boolean);
+  if (!pathOk) out.push('path unknown');
+  else {
+    const before = out.length;
+    if (path[0] !== ROOT_PLAN) out.push('path root');
+    if (path.length !== run.stage + 1) out.push('path length');
+    steps.forEach((p, i) => {
+      if (p!.size !== i) out.push(`path size ${p!.id}`);
+      if (i === 0) return;
+      if (!p!.parents.includes(path[i - 1]!)) out.push(`path parent ${p!.id}`);
+      if (commitmentsOf(path.slice(0, i)).some(c => violates(p!, c))) out.push(`path commitment ${p!.id}`);
+      if (closedLinesOf(path.slice(0, i)).includes(p!.line)) out.push(`path closed ${p!.id}`);
+    });
+    if (steps.some(p => p!.needs === 'coast') && !build.coast) out.push('needs coast');
+    pathOk = out.length === before;
+  }
+  if (!safe(run.nextPartSerial) || run.genome.parts.some(p => run.nextPartSerial <= uidSerial(p.uid))) out.push('serial');
+  out.push(...validateLedger(run.economy, run.genome));
+  if (pathOk) {
+    if (run.diet !== dietOf(run.genome)) out.push('diet');
+    for (const x of problems(run.genome, currentPlan(run), { unlocked: run.unlocked, diet: run.diet }, catalog).filter(x => x.code !== 'dna' && x.code !== 'anchor')) out.push(`design ${x.code}: ${x.message}`);
+    if (!finite(run.health) || run.health > maxHealthOf(run)) out.push('health');
+  }
+  const active = run.loadout?.active;
+  if (!isObject(run.loadout) || !Array.isArray(active) || active.length !== 2 || !active.every(b => b === null || isObject(b))) out.push('loadout');
+  if (typeof run.pendingRespawn !== 'boolean') out.push('pendingRespawn');
+  if (!isObject(run.mechanics)) out.push('mechanics');
+  if (!Array.isArray(run.archive) || !run.archive.every(a => isObject(a) && sanitizeGenome(a.genome) !== null && typeof a.name === 'string' && typeof a.savedAt === 'string' && typeof a.reason === 'string')) out.push('archive');
+  if (!Array.isArray(run.notices) || !run.notices.every(n => typeof n === 'string')) out.push('notices');
+  return out;
 }
-function parseV2(v: Record<string, unknown>): Run | null {
-  const genome = sanitizeGenome(v.genome) ?? repairLegacyGenome(v.genome);
-  if (!genome || !int(v.seed) || typeof v.name !== 'string' || !int(v.stage) || (v.stage as number) > 4 || !finite(v.dna) || !finite(v.stageDna) || !finite(v.totalDna) ||
+
+/** What a v1 or v2 save keeps. A7 turns it into a v4 run. `genomeRaw` is the genome as saved, unchecked. */
+export interface LegacyRunV2 {
+  stage: number; dna: number; stageDna: number; totalDna: number; bites: number; elapsed: number; deaths: number; health: number; seed: number; name: string;
+  unlocked: string[]; eatenPlanets: number[]; completed: boolean; genomeRaw: unknown;
+}
+/** Reads saves. Until A7 adds the v4 reader and the migration, every save reads as null and a fresh run starts. */
+export function parseSave(_raw: string | null): Run | null { return null; }
+/** Reads a v2 save into the legacy shape. Returns null for anything inconsistent. */
+export function readLegacyV2(v: Record<string, unknown>): LegacyRunV2 | null {
+  if (v.version !== 2 || !isObject(v.genome) || !int(v.seed) || typeof v.name !== 'string' || !int(v.stage) || (v.stage as number) > 4 || !finite(v.dna) || !finite(v.stageDna) || !finite(v.totalDna) ||
       !int(v.bites) || !finite(v.elapsed) || !int(v.deaths) || !finite(v.health) || typeof v.completed !== 'boolean' || !validPlanets(v.eatenPlanets) ||
       !Array.isArray(v.unlocked) || !v.unlocked.every(id => typeof id === 'string' && part(id))) return null;
   const stage = v.stage as number, planets = v.eatenPlanets as number[];
   if ((stage !== 4 && planets.length) || (v.completed && (stage !== 4 || planets.length !== PLANET_COUNT))) return null;
-  const maxHealth = derive(statsOf(genome)).maxHealth;
-  return { version: 2, seed: v.seed as number, name: (v.name as string).slice(0, 24) || 'Little Tide', stage, dna: v.dna as number, stageDna: v.stageDna as number, totalDna: v.totalDna as number,
-    bites: v.bites as number, elapsed: v.elapsed as number, deaths: v.deaths as number, health: Math.min(maxHealth, Math.max(1, v.health as number)), genome, unlocked: [...v.unlocked as string[]], eatenPlanets: [...planets], completed: v.completed as boolean };
+  return { stage, dna: v.dna as number, stageDna: v.stageDna as number, totalDna: v.totalDna as number, bites: v.bites as number, elapsed: v.elapsed as number, deaths: v.deaths as number,
+    health: v.health as number, seed: v.seed as number, name: (v.name as string).slice(0, 24) || 'Little Tide', unlocked: [...v.unlocked as string[]], eatenPlanets: [...planets], completed: v.completed as boolean, genomeRaw: v.genome };
 }
 const V1_GOALS = [10, 12, 14, 16, 12];
 /** v1 saved a fixed form and a bite count. Keep the stage, the planets and the time. */
-function migrateV1(v: Record<string, unknown>): Run | null {
+export function readLegacyV1(v: Record<string, unknown>): LegacyRunV2 | null {
   if (!int(v.stage) || (v.stage as number) > 4 || !int(v.bites) || !int(v.total) || (v.total as number) < (v.bites as number) || !finite(v.elapsed) ||
       typeof v.completed !== 'boolean' || !validPlanets(v.eatenPlanets)) return null;
   const stage = v.stage as number, bites = v.bites as number, planets = v.eatenPlanets as number[];
   if (bites > V1_GOALS[stage]! || (stage === 4 && planets.length !== bites) || (stage !== 4 && planets.length) || (v.completed && (stage !== 4 || bites !== PLANET_COUNT))) return null;
-  const run = freshRun();
-  run.stage = stage; run.bites = v.total as number; run.elapsed = v.elapsed as number; run.eatenPlanets = [...planets]; run.completed = v.completed as boolean;
-  run.stageDna = stage === 4 ? 0 : Math.round(bites / V1_GOALS[stage]! * STAGES[stage]!.goal);
-  run.dna = START_DNA + stage * 30; run.totalDna = run.stageDna + stage * 120;
-  return run;
+  const stageDna = stage === 4 ? 0 : Math.round(bites / V1_GOALS[stage]! * STAGES[stage]!.goal), genome = starterGenome();
+  return { stage, dna: START_DNA + stage * 30, stageDna, totalDna: stageDna + stage * 120, bites: v.total as number, elapsed: v.elapsed as number, deaths: 0,
+    health: derive(effectiveStats(genome, plan(ROOT_PLAN)!)).maxHealth, seed: newSeed(), name: 'Little Tide', unlocked: [], eatenPlanets: [...planets], completed: v.completed as boolean, genomeRaw: genome };
 }

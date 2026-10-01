@@ -2,14 +2,14 @@ import { startAnalytics } from '../analytics';
 import * as T from 'three';
 import './style.css';
 import './hud.css';
-import { applyDesign, damageAfterArmor, DEATH_KEEP, dietCanEat, eat, evolve, evolveReady, faint, freshRun, growthOf, hurt, inReach, parseSave, PLANET_COUNT, STAGES, unlock, type Run } from './state';
-import { derive, dietOf, genomeCost, statsOf } from './genome';
+import { applyDesign, commitEvolution, currentPlan, damageAfterArmor, DEATH_KEEP, dietCanEat, dnaOf, eat, evolveReady, faint, freshRun, growthOf, hurt, inReach, maxHealthOf, parseSave, PLANET_COUNT, prepareEvolution, reward, STAGES, unlock, type Build, type Run } from './state';
+import { adaptToPlan, derive, dietOf, effectiveStats, genomeCost } from './genome';
 import { DROPS, part } from './parts';
 import { tierSpecies } from './species';
 import { PLAYER_HALF } from './biomes';
 import { entityRadius, provoke } from './ecosystem';
 import { openEditor } from './editor';
-import { plan } from './plans';
+import { COAST_READY, eligibleChildren } from './plans';
 import { TideAudio } from './audio';
 import { TideWorld, type FoodObject } from './world';
 import { loadAssets, assetDiagnostics } from './assets';
@@ -73,9 +73,10 @@ catch {
   app.innerHTML = '<div class="fallback"><h1>A little help?</h1><p>The reef couldn’t finish loading. Check your connection and make sure 3D graphics are enabled, then try again.</p><button onclick="location.reload()" class="primary">Try again</button></div>';
   throw new Error('Tiny Tide could not load its Blender assets or start WebGL.');
 }
-const SAVE_KEY = 'tiny-tide-adventure-v2', V1_SAVE_KEY = 'tiny-tide-adventure-v1';
+const SAVE_KEY = 'tiny-tide-adventure-v4';
+const BUILD: Build = { coast: COAST_READY };
 let saved: Run | null = null;
-try { saved = parseSave(localStorage.getItem(SAVE_KEY)) ?? parseSave(localStorage.getItem(V1_SAVE_KEY)); audio.muted = localStorage.getItem('tiny-tide-muted') === 'true'; } catch { /* Storage is optional. */ }
+try { saved = parseSave(localStorage.getItem(SAVE_KEY)); audio.muted = localStorage.getItem('tiny-tide-muted') === 'true'; } catch { /* Storage is optional. */ }
 let run = saved && !saved.completed ? structuredClone(saved) : freshRun();
 let mode: 'menu' | 'playing' | 'paused' | 'evolving' | 'editing' | 'fainted' | 'won' = 'menu';
 startAnalytics('tiny-tide', () => mode === 'playing' || mode === 'evolving');
@@ -89,8 +90,8 @@ let grace = 0, sinceHit = 99, regenClock = 0, wrongDietClock = 0, readyToasted =
 let dialogReturn: 'menu' | 'playing' | 'paused' = 'menu';
 const modal = el<HTMLDialogElement>('modal');
 world.setCreature(run.genome);
-let derived = derive(statsOf(run.genome));
-function refreshDerived() { derived = derive(statsOf(run.genome)); }
+let derived = derive(effectiveStats(run.genome, currentPlan(run)));
+function refreshDerived() { derived = derive(effectiveStats(run.genome, currentPlan(run))); }
 function save() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(run)); saved = structuredClone(run); } catch { /* Continue without saving in private contexts. */ } }
 function clearInput() { keys.clear(); holdingChomp = false; rising = false; diving = false; stickX = 0; stickZ = 0; stickPointer = null; target = null; el('stick').style.transform = ''; el('chomp').classList.remove('pressed'); el('special').classList.remove('pressed'); el('dive').classList.remove('pressed'); }
 function syncSound() { el('sound').innerHTML = audio.muted ? icons.mute : icons.sound; el('sound').setAttribute('aria-label', audio.muted ? 'Unmute sound' : 'Mute sound'); el('sound').setAttribute('aria-pressed', String(audio.muted)); }
@@ -120,7 +121,7 @@ function syncUI() {
   el('growth-fill').style.width = `${Math.min(100, (planets ? run.eatenPlanets.length / PLANET_COUNT : run.stageDna / stage.goal) * 100)}%`;
   el('growth-label').textContent = planets ? 'ONE UNIVERSE. NO LEFTOVERS.' : 'DNA FOR YOUR NEXT EVOLUTION';
   el('diet').textContent = diet.toUpperCase(); el('diet').dataset.diet = diet;
-  el('dna').textContent = String(Math.floor(run.dna));
+  el('dna').textContent = String(Math.floor(dnaOf(run)));
   el('vertical-controls').hidden = run.stage === 0; el('special').hidden = run.stage === 0; el('special-label').textContent = stage.action.toUpperCase(); el('special').setAttribute('aria-label', stage.action);
   const ready = evolveReady(run);
   el('evolve').hidden = !ready || mode !== 'playing'; el('objective').hidden = ready;
@@ -163,13 +164,19 @@ function help() {
 async function edit(kind: 'edit' | 'evolve') {
   if (mode !== 'playing' || (kind === 'evolve' && !evolveReady(run))) return;
   mode = 'editing'; clearInput(); save(); el('game-ui').classList.add('dimmed');
-  const stage = kind === 'evolve' ? run.stage + 1 : run.stage;
-  const result = await openEditor({ genome: run.genome, name: run.name, stage, plan: plan(['speck', 'swimmer', 'darter', 'sky_drifter', 'star_swimmer'][stage]!)!, unlocked: run.unlocked, budget: run.dna + genomeCost(run.genome), mode: kind });
+  const next = kind === 'evolve' ? eligibleChildren(run.plans, BUILD)[0] : undefined, target = next ?? currentPlan(run);
+  const result = await openEditor({ genome: run.genome, name: run.name, stage: target.size, plan: target, unlocked: run.unlocked, budget: dnaOf(run) + genomeCost(run.genome), mode: kind, nextSerial: run.nextPartSerial });
   el('game-ui').classList.remove('dimmed');
   if (!result) { mode = 'playing'; syncUI(); return; }
   const before = run.genome;
-  applyDesign(run, result.genome, result.name, genomeCost);
-  if (kind === 'evolve') { evolve(run); refreshDerived(); startTransformation(); return; }
+  if (kind === 'evolve') {
+    const adapted = next ? adaptToPlan(result.genome, next, { unlocked: run.unlocked }, run.nextPartSerial) : null;
+    const prepared = next && adapted?.ok ? prepareEvolution(run, next.id, adapted.genome, result.name, BUILD, Math.max(result.nextSerial, adapted.nextSerial)) : null;
+    if (prepared && 'planId' in prepared) { commitEvolution(run, prepared); refreshDerived(); startTransformation(); return; }
+    toast('That evolution is not possible yet.'); mode = 'playing'; syncUI(); return;
+  }
+  const applied = applyDesign(run, result.genome, result.name, BUILD, result.nextSerial);
+  if (!applied.ok) toast(applied.reason);
   refreshDerived(); if (JSON.stringify(before) !== JSON.stringify(run.genome)) { world.setCreature(run.genome); world.burst(world.player.position.x, world.player.position.y, world.player.position.z, '#f4e2b9', 30); audio.found(); }
   mode = 'playing'; save(); syncUI();
 }
@@ -226,7 +233,7 @@ function chomp() {
   if (drop && unlock(run, drop)) { toast(`New part found: ${part(drop)!.name}! Open the editor to use it.`); audio.found(); }
   let dna: number, won = false;
   if (hit.edible) { const result = eat(run, e.spec, e.spec.kind === 'planet' ? world.eco.planetIndex(e) : e.id); dna = result.dna; won = result.win; }
-  else { dna = Math.round(e.spec.dna * .5); run.dna += dna; run.totalDna += dna; if (food.tier === run.stage) run.stageDna += dna; }
+  else { dna = Math.round(e.spec.dna * .5); reward(run, dna, food.tier === run.stage); }
   world.eco.consume(e); world.removeFood(food); audio.bite(run.bites);
   if (typeof navigator.vibrate === 'function') navigator.vibrate(15);
   floater(dna > 0 ? `+${dna} DNA` : ['yum!', 'nom!', '♡'][run.bites % 3]!, pos.x, pos.y);
@@ -247,7 +254,7 @@ function takeHit(damage: number, label: string) {
   if (!fainted) { if (run.health <= 2) toast(`${label} is winning! Swim away to heal.`); return; }
   mode = 'fainted'; clearInput(); audio.faint(); el('faint').hidden = false; world.burst(world.player.position.x, world.player.position.y, world.player.position.z, '#ff8f7a', 40);
   setTimeout(() => {
-    faint(run); refreshDerived(); world.placePlayer(run.stage); el('faint').hidden = true;
+    faint(run); run.health = maxHealthOf(run); run.pendingRespawn = false; refreshDerived(); world.placePlayer(run.stage); el('faint').hidden = true;
     mode = 'playing'; grace = 3; sinceHit = 99; save(); syncUI(); toast(`You kept ${Math.round(DEATH_KEEP * 100)}% of your DNA. Stay safe out there.`);
   }, 1800);
 }
@@ -415,6 +422,6 @@ function frame(now: number) {
 }
 // Read-only diagnostics allow browser verification to steer with real controls.
 if (import.meta.env.DEV || new URLSearchParams(location.search).has('qa')) {
-  Object.defineProperty(window, '__tinyTide', { get: () => ({ mode, stage: run.stage, dna: run.dna, stageDna: run.stageDna, goal: STAGES[run.stage]!.goal, health: run.health, maxHealth: derived.maxHealth, deaths: run.deaths, diet: dietOf(run.genome), genome: structuredClone(run.genome), name: run.name, unlocked: [...run.unlocked], evolveReady: evolveReady(run), bites: run.bites, totalDna: run.totalDna, elapsed: run.elapsed, completed: run.completed, eatenPlanets: [...run.eatenPlanets], player: { x: world.player.position.x, y: world.player.position.y, z: world.player.position.z }, foods: world.edibleFoods.map(f => ({ ...f.data, tag: f.entity.spec.tag, label: f.entity.spec.label, mode: f.entity.mode, hp: f.entity.hp })), threats: world.threats.map(f => ({ ...f.data, label: f.entity.spec.label, mode: f.entity.mode })), landmarks: world.foods.filter(f => f.model.visible && f.tier > run.stage).map(f => ({ tier: f.tier, kind: f.data.kind, x: f.data.x, y: f.data.y, z: f.data.z })), world: world.diagnostics, assets: assetDiagnostics(), leap, time, render: { calls: world.renderer.info.render.calls, triangles: world.renderer.info.render.triangles, geometries: world.renderer.info.memory.geometries } }) });
+  Object.defineProperty(window, '__tinyTide', { get: () => ({ mode, stage: run.stage, dna: dnaOf(run), stageDna: run.stageDna, goal: STAGES[run.stage]!.goal, health: run.health, maxHealth: derived.maxHealth, deaths: run.deaths, diet: dietOf(run.genome), genome: structuredClone(run.genome), name: run.name, unlocked: [...run.unlocked], evolveReady: evolveReady(run), bites: run.bites, totalDna: run.totalDna, elapsed: run.elapsed, completed: run.completed, eatenPlanets: [...run.eatenPlanets], player: { x: world.player.position.x, y: world.player.position.y, z: world.player.position.z }, foods: world.edibleFoods.map(f => ({ ...f.data, tag: f.entity.spec.tag, label: f.entity.spec.label, mode: f.entity.mode, hp: f.entity.hp })), threats: world.threats.map(f => ({ ...f.data, label: f.entity.spec.label, mode: f.entity.mode })), landmarks: world.foods.filter(f => f.model.visible && f.tier > run.stage).map(f => ({ tier: f.tier, kind: f.data.kind, x: f.data.x, y: f.data.y, z: f.data.z })), world: world.diagnostics, assets: assetDiagnostics(), leap, time, render: { calls: world.renderer.info.render.calls, triangles: world.renderer.info.render.triangles, geometries: world.renderer.info.memory.geometries } }) });
 }
 requestAnimationFrame(frame);

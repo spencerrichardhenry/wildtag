@@ -14,9 +14,12 @@ export interface Species {
   stings: readonly number[];
   /** Fights back when bitten. */
   fights: boolean;
+  /** Habitat profile the food lives in. Plans reward foraging per profile. */
+  habitatProfileId: string;
 }
+const habitatOf = (behavior: Behavior) => behavior === 'flyer' ? 'sp-air' : behavior === 'still' || behavior === 'graze' ? 'sp-seabed' : 'sp-water';
 const s = (tier: number, kind: FoodKind, tag: FoodTag, label: string, behavior: Behavior, count: number, dna: number, extra: Partial<Species> = {}): Species =>
-  ({ key: `${tier}:${kind}`, kind, tier, tag, label, behavior, count, dna, hp: 1, damage: 0, speed: 0, hunts: [], stings: [], fights: false, ...extra });
+  ({ key: `${tier}:${kind}`, kind, tier, tag, label, behavior, count, dna, hp: 1, damage: 0, speed: 0, hunts: [], stings: [], fights: false, habitatProfileId: habitatOf(behavior), ...extra });
 export const SPECIES: readonly Species[] = [
   s(0, 'plant', 'plant', 'Sea sprout', 'still', 9, 8),
   s(0, 'kelp_snack', 'plant', 'Tender kelp', 'still', 8, 8),

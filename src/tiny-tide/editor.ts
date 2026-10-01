@@ -4,7 +4,7 @@ import * as T from 'three';
 import './editor.css';
 import { asset } from './assets';
 import { CreatureModel, locate } from './creature';
-import { cloneGenome, derive, dietOf, genomeCost, instanceCount, isUnlocked, nextUid, PART_LIMITS, PATTERNS, partSlots, problems, SCALE_RANGE, SPINE_LIMITS, SPINE_RANGE, STARTER_NEXT_SERIAL, statsOf, uidSerial, type Genome, type PlacedPart } from './genome';
+import { cloneGenome, derive, dietOf, genomeCost, instanceCount, isUnlocked, nextUid, PART_LIMITS, PATTERNS, partSlots, problems, SCALE_RANGE, SPINE_LIMITS, SPINE_RANGE, statsOf, uidSerial, type Genome, type PlacedPart } from './genome';
 import type { BodyPlan } from './plans';
 import { KIND_LABELS, PARTS, part, type PartKind, type Stats } from './parts';
 import { STAGES } from './state';
@@ -13,8 +13,10 @@ export interface EditorOptions {
   genome: Genome; name: string; stage: number; plan: BodyPlan; unlocked: readonly string[];
   /** Current DNA plus the refund value of the current design. */
   budget: number; mode: 'edit' | 'evolve';
+  /** First unused part serial. The editor only moves it forward. */
+  nextSerial: number;
 }
-export interface EditorResult { genome: Genome; name: string }
+export interface EditorResult { genome: Genome; name: string; nextSerial: number }
 type Tab = 'parts' | 'body' | 'paint';
 const SWATCHES = ['#ffad92', '#ffc769', '#ffe1b8', '#ef8a80', '#d4b1f5', '#bfc0ff', '#b4e7ed', '#7fd1b9', '#9fd36b', '#f6e27a', '#f59ac0', '#8fb3ff', '#6c7bd9', '#4d9c8e', '#3b5b6e', '#fff6e3'];
 const STAT_ROWS: [keyof Stats, string, number][] = [['speed', 'Speed', 6], ['bite', 'Bite', 6], ['reach', 'Reach', 3], ['armor', 'Armor', 6], ['health', 'Health', 6], ['sense', 'Sense', 8], ['stealth', 'Stealth', 4]];
@@ -73,7 +75,7 @@ class Editor {
 
   constructor(private options: EditorOptions, private done: (result: EditorResult | null) => void) {
     this.draft = cloneGenome(options.genome); this.name = options.name;
-    this.serial = Math.max(STARTER_NEXT_SERIAL, ...this.draft.parts.map(p => uidSerial(p.uid) + 1));
+    this.serial = Math.max(options.nextSerial, ...this.draft.parts.map(p => uidSerial(p.uid) + 1));
     renderThumbnails();
     this.root = document.createElement('section'); this.root.id = 'editor'; this.root.setAttribute('role', 'dialog'); this.root.setAttribute('aria-modal', 'true'); this.root.setAttribute('aria-label', 'Creature editor');
     const stage = STAGES[options.stage]!;
@@ -126,7 +128,7 @@ class Editor {
   private undo() { const prior = this.history.pop(); if (!prior) return; this.draft = prior; this.selected = null; this.rebuild(); this.render(); }
   private finish() {
     if (problems(this.draft, this.options.plan, { unlocked: this.options.unlocked, budget: this.budget }).length) { this.hint(problems(this.draft, this.options.plan, { unlocked: this.options.unlocked, budget: this.budget })[0]!.message); return; }
-    this.close({ genome: cloneGenome(this.draft), name: this.name.trim() || this.options.name });
+    this.close({ genome: cloneGenome(this.draft), name: this.name.trim() || this.options.name, nextSerial: this.serial });
   }
   private close(result: EditorResult | null) {
     if (this.closed) return;
