@@ -5,6 +5,7 @@ import { asset } from './assets';
 import { part, type PartSpec } from './parts';
 import type { Genome, PlacedPart } from './genome';
 import { layout, partFrame, PART_SCALE, SPACING, surface, type Layout } from './body-geometry';
+import { CHOMP_PITCH, createRigPose, rigPoseInto, type RigPose } from './rig';
 export * from './body-geometry';
 
 const RINGS = 44, SIDES = 28;
@@ -53,8 +54,8 @@ export function bodyGeometry(g: Genome, l = layout(g)) {
   return geometry;
 }
 
-interface Pivot { node: T.Object3D; kind: 'jaw' | 'seg' | 'flap' | 'swing'; index: number; rest: T.Euler }
-interface AttachedPart { placed: PlacedPart; spec: PartSpec; object: T.Group; pivots: Pivot[]; mirrored: boolean; phase: number }
+interface Pivot { node: T.Object3D; kind: 'jaw' | 'seg' | 'flap' | 'swing'; index: number; rest: T.Euler; key: string }
+interface AttachedPart { placed: PlacedPart; spec: PartSpec; object: T.Group; pivots: Pivot[]; mirrored: boolean; copy: 0 | 1 }
 export class CreatureModel {
   readonly group = new T.Group();
   readonly bones: T.Bone[] = [];
@@ -62,8 +63,10 @@ export class CreatureModel {
   readonly layout: Layout;
   readonly body: T.SkinnedMesh;
   private materials: T.Material[] = [];
+  private readonly pose: RigPose;
   constructor(readonly genome: Genome) {
     this.layout = layout(genome);
+    this.pose = createRigPose(genome);
     const l = this.layout, s = genome.spine;
     s.forEach((point, i) => {
       const bone = new T.Bone(); bone.name = `spine_${i}`;
@@ -105,25 +108,25 @@ export class CreatureModel {
         node.material = tints.get(key)!;
       }
       const kind = node.userData.tt_pivot as Pivot['kind'] | undefined;
-      if (kind) pivots.push({ node, kind, index: Number(node.userData.tt_index ?? 0), rest: node.rotation.clone() });
+      if (kind) {
+        const index = Number(node.userData.tt_index ?? 0);
+        pivots.push({ node, kind, index, rest: node.rotation.clone(), key: `${placed.uid}:${mirrored ? 1 : 0}:${kind}:${index}` });
+      }
     });
     object.userData.partId = placed.id; object.userData.mirrored = mirrored; object.userData.placedIndex = this.genome.parts.indexOf(placed);
     bone.add(object);
-    this.parts.push({ placed, spec, object, pivots, mirrored, phase: placed.t * 4 + (mirrored ? Math.PI : 0) });
+    this.parts.push({ placed, spec, object, pivots, mirrored, copy: mirrored ? 1 : 0 });
   }
   /** Procedural motion. `chomp` is 0–1, `swim` is 0 when idle and 1 when moving. */
   animate(time: number, swim: number, chomp: number) {
-    const n = this.bones.length, amp = .05 + swim * .17, speed = 2.2 + swim * 5.5;
-    for (let i = 1; i < n; i++) this.bones[i]!.rotation.y = amp * Math.sin(time * speed - i * .9) * (i / (n - 1));
-    this.bones[0]!.rotation.x = -chomp * .12;
+    const pose = rigPoseInto(this.pose, this.genome, time, swim, chomp), n = this.bones.length;
+    for (let i = 1; i < n; i++) this.bones[i]!.rotation.y = pose.boneYaw[i]!;
+    // Only the head nods: bone 1 undoes the pitch, so later bones keep a vertical yaw axis.
+    this.bones[0]!.rotation.x = -chomp * CHOMP_PITCH;
+    if (n > 1) this.bones[1]!.rotation.x = chomp * CHOMP_PITCH;
     for (const attached of this.parts) for (const pivot of attached.pivots) {
-      const r = pivot.rest, phase = attached.phase;
-      switch (pivot.kind) {
-        case 'jaw': pivot.node.rotation.set(r.x - chomp * .65, r.y, r.z); break;
-        case 'seg': pivot.node.rotation.set(r.x, r.y, r.z + Math.sin(time * speed * .9 - pivot.index * .8 + phase) * (.1 + swim * .22)); break;
-        case 'flap': pivot.node.rotation.set(r.x, r.y, r.z + Math.sin(time * (speed + 1) + phase) * (.08 + swim * .32)); break;
-        case 'swing': pivot.node.rotation.set(r.x + Math.sin(time * speed * 1.4 + phase) * (.06 + swim * .45), r.y, r.z); break;
-      }
+      const r = pivot.rest, o = pose.pivots.get(pivot.key);   // `${uid}:${copy}:${kind}:${index}`
+      if (o) pivot.node.rotation.set(r.x + o.x, r.y + o.y, r.z + o.z);
     }
   }
   /** The body length in creature units, for camera framing. */

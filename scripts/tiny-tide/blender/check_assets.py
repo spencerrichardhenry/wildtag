@@ -2,6 +2,7 @@
 import json
 import math
 import struct
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -20,6 +21,72 @@ CHAINS = {'tail_paddle', 'tail_fan', 'tail_fluke', 'tentacle', 'tentacle_long', 
 FLAPS = {'fin_side', 'fin_dorsal', 'fin_frill', 'wing_feather', 'nebula_fin'}
 SWINGS = {'leg_little', 'leg_crab', 'claw_pincer'}
 AUTHORING = {'Blender MCP', 'Blender (headless script)'}
+RIG_FILE = ROOT / 'src/tiny-tide/part-rig.json'
+WRITE_RIG = '--write-rig' in sys.argv[1:]
+rig = {}
+
+
+def mat_mul(a, b):
+    return [[sum(a[r][k] * b[k][c] for k in range(4)) for c in range(4)] for r in range(4)]
+
+
+def identity():
+    return [[1.0 if r == c else 0.0 for c in range(4)] for r in range(4)]
+
+
+def trs_matrix(t, q, s):
+    x, y, z, w = q
+    rot = [[1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+           [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+           [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)]]
+    return [[rot[r][0] * s[0], rot[r][1] * s[1], rot[r][2] * s[2], t[r]] for r in range(3)] + [[0.0, 0.0, 0.0, 1.0]]
+
+
+def node_trs(node):
+    return node.get('translation', [0, 0, 0]), node.get('rotation', [0, 0, 0, 1]), node.get('scale', [1, 1, 1])
+
+
+def local_matrix(node):
+    if 'matrix' in node:
+        m = node['matrix']  # glTF stores column-major
+        return [[m[c * 4 + r] for c in range(4)] for r in range(4)]
+    return trs_matrix(*node_trs(node))
+
+
+def num(v):
+    v = round(float(v), 6)
+    return 0.0 if v == 0 else v
+
+
+def column_major(m):
+    return [num(m[r][c]) for c in range(4) for r in range(4)]
+
+
+def part_rig(name, nodes, root):
+    """Pivot nodes keyed kind:index, with the chain data rig.ts composes and an independent rest matrix."""
+    out = {}
+
+    def walk(index, world, pivot_key, pre):
+        node = nodes[index]
+        local = local_matrix(node)
+        world = mat_mul(world, local)
+        extras = node.get('extras', {})
+        if 'tt_pivot' in extras:
+            assert 'matrix' not in node, f'{name}: pivot nodes need translation/rotation/scale'
+            key = f"{extras['tt_pivot']}:{extras.get('tt_index', 0)}"
+            assert key not in out, f'{name}: duplicate pivot key {key}'
+            t, q, s = node_trs(node)
+            out[key] = {'parent': pivot_key, 'pre': column_major(pre), 't': [num(v) for v in t], 'q': [num(v) for v in q],
+                        's': [num(v) for v in s], 'rest': column_major(world)}
+            pivot_key, pre = key, identity()
+        else:
+            pre = mat_mul(pre, local)
+        for child in node.get('children', []):
+            walk(child, world, pivot_key, pre)
+
+    walk(root, identity(), None, identity())
+    return out
+
 assert {p.stem for p in (PUBLIC / 'models').glob('*.glb')} == set(manifest)
 total = 0
 
@@ -98,6 +165,13 @@ for name, record in manifest.items():
             assert 'swing' in kinds, f'{name}: needs a swing pivot'
         expected = {'jaw'} if part.startswith('mouth_') else {'seg'} if part in CHAINS else {'flap'} if part in FLAPS else {'swing'} if part in SWINGS else set()
         assert kinds == expected, f'{name}: pivots {kinds} != {expected}'
+        rig[part] = part_rig(name, nodes, roots[0])
+        assert len(rig[part]) == len(pivots), f'{name}: every pivot must hang under the scene root'
 
 assert total < 8 * 1024 * 1024
+rig_text = json.dumps(rig, indent=1, sort_keys=True) + '\n'
+if WRITE_RIG:
+    RIG_FILE.write_text(rig_text)
+    print(f'Wrote {RIG_FILE.relative_to(ROOT)}: {sum(len(v) for v in rig.values())} pivots in {len(rig)} parts.')
+assert RIG_FILE.exists() and RIG_FILE.read_text() == rig_text, 'part-rig.json is stale; run check_assets.py --write-rig'
 print(f'PASS: {len(manifest)} self-contained Blender GLBs, {total / 1024 / 1024:.2f} MiB, painted colors, valid meshes, 15 moving hero clips, open terrain rings, 34 clip-free creature parts with tagged pivots.')
