@@ -178,7 +178,7 @@ async function edit(kind: 'edit' | 'evolve') {
   if (!result) { mode = 'playing'; syncUI(); return; }
   const before = run.genome;
   if (kind === 'evolve') {
-    const adapted = next ? adaptToPlan(result.genome, next, { unlocked: run.unlocked }, run.nextPartSerial) : null;
+    const adapted = next ? adaptToPlan(result.genome, next, { unlocked: run.unlocked }, Math.max(run.nextPartSerial, result.nextSerial)) : null;
     const prepared = next && adapted?.ok ? prepareEvolution(run, next.id, adapted.genome, result.name, BUILD, Math.max(result.nextSerial, adapted.nextSerial)) : null;
     if (prepared && 'planId' in prepared) { commitEvolution(run, prepared); refreshDerived(); startTransformation(); return; }
     toast('That evolution is not possible yet.'); mode = 'playing'; syncUI(); return;
