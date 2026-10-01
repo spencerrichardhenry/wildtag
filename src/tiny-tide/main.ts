@@ -9,6 +9,7 @@ import { tierSpecies } from './species';
 import { PLAYER_HALF } from './biomes';
 import { entityRadius, provoke } from './ecosystem';
 import { openEditor } from './editor';
+import { plan } from './plans';
 import { TideAudio } from './audio';
 import { TideWorld, type FoodObject } from './world';
 import { loadAssets, assetDiagnostics } from './assets';
@@ -163,7 +164,7 @@ async function edit(kind: 'edit' | 'evolve') {
   if (mode !== 'playing' || (kind === 'evolve' && !evolveReady(run))) return;
   mode = 'editing'; clearInput(); save(); el('game-ui').classList.add('dimmed');
   const stage = kind === 'evolve' ? run.stage + 1 : run.stage;
-  const result = await openEditor({ genome: run.genome, name: run.name, stage, unlocked: run.unlocked, budget: run.dna + genomeCost(run.genome), mode: kind });
+  const result = await openEditor({ genome: run.genome, name: run.name, stage, plan: plan(['speck', 'swimmer', 'darter', 'sky_drifter', 'star_swimmer'][stage]!)!, unlocked: run.unlocked, budget: run.dna + genomeCost(run.genome), mode: kind });
   el('game-ui').classList.remove('dimmed');
   if (!result) { mode = 'playing'; syncUI(); return; }
   const before = run.genome;

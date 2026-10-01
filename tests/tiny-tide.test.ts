@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { applyDesign, damageAfterArmor, dietCanEat, dnaFor, eat, evolve, evolveReady, faint, freshRun, hurt, inReach, parseSave, PLANET_COUNT, STAGES, unlock } from '../src/tiny-tide/state';
-import { derive, dietOf, genomeCost, instanceCount, PART_LIMITS, problems, sanitizeGenome, starterGenome, statsOf, type Genome } from '../src/tiny-tide/genome';
+import { derive, dietOf, genomeCost, instanceCount, PART_LIMITS, problems, repairLegacyGenome, sanitizeGenome, starterGenome, statsOf, type Genome } from '../src/tiny-tide/genome';
+import { plan } from '../src/tiny-tide/plans';
 import { PARTS, part } from '../src/tiny-tide/parts';
 import { SPECIES, species, tierSpecies } from '../src/tiny-tide/species';
 import { biomeAt, makeBiomes, populate, SIZES, WORLD_HALF } from '../src/tiny-tide/biomes';
@@ -16,26 +17,26 @@ describe('Tiny Tide genome and parts', () => {
   });
   it('starts with a valid, affordable herbivore', () => {
     const g = starterGenome();
-    expect(problems(g, 0, [])).toEqual([]); expect(dietOf(g)).toBe('herbivore');
+    expect(problems(g, plan('speck')!, { unlocked: [] })).toEqual([]); expect(dietOf(g)).toBe('herbivore');
     expect(instanceCount(g)).toBeLessThanOrEqual(PART_LIMITS[0]);
   });
   it('rejects designs without exactly one mouth, too many parts, locked parts and unaffordable designs', () => {
     const g = starterGenome();
-    expect(problems({ ...g, parts: g.parts.filter(p => p.id !== 'mouth_nibbler') }, 0, []).map(p => p.code)).toContain('mouth');
-    expect(problems({ ...g, parts: [...g.parts, { ...g.parts[0]! }] }, 0, []).map(p => p.code)).toContain('mouth');
-    const many = { ...g, parts: [...g.parts, ...Array.from({ length: 5 }, () => ({ id: 'spike', t: .5, angle: 0, scale: 1, mirror: false, roll: 0 }))] };
-    expect(problems(many, 0, []).map(p => p.code)).toContain('parts');
-    expect(problems(many, 1, []).map(p => p.code)).not.toContain('parts');
-    const winged = { ...g, parts: [...g.parts, { id: 'wing_feather', t: .4, angle: 1, scale: 1, mirror: true, roll: 0 }] };
-    expect(problems(winged, 0, []).map(p => p.code)).toContain('locked');
-    expect(problems(winged, 3, []).map(p => p.code)).not.toContain('locked');
-    expect(problems(g, 0, [], genomeCost(g) - 1).map(p => p.code)).toContain('dna');
+    expect(problems({ ...g, parts: g.parts.filter(p => p.id !== 'mouth_nibbler') }, plan('speck')!, { unlocked: [] }).map(p => p.code)).toContain('mouth');
+    expect(problems({ ...g, parts: [...g.parts, { ...g.parts[0]!, uid: 'p10' }] }, plan('speck')!, { unlocked: [] }).map(p => p.code)).toContain('mouth');
+    const many = { ...g, parts: [...g.parts, ...Array.from({ length: 5 }, (_, i) => ({ uid: `p${10 + i}`, id: 'spike', t: .5, angle: 0, scale: 1, mirror: false, roll: 0 }))] };
+    expect(problems(many, plan('speck')!, { unlocked: [] }).map(p => p.code)).toContain('parts');
+    expect(problems(many, plan('crawler')!, { unlocked: [] }).map(p => p.code)).not.toContain('parts');
+    const winged = { ...g, parts: [...g.parts, { uid: 'p10', id: 'wing_feather', t: .4, angle: 1, scale: 1, mirror: true, roll: 0 }] };
+    expect(problems(winged, plan('speck')!, { unlocked: [] }).map(p => p.code)).toContain('locked');
+    expect(problems(winged, plan('sky_drifter')!, { unlocked: [] }).map(p => p.code)).not.toContain('locked');
+    expect(problems(g, plan('speck')!, { unlocked: [], budget: genomeCost(g) - 1 }).map(p => p.code)).toContain('dna');
   });
   it('derives stats from parts, counting mirrored pairs twice', () => {
     const g = starterGenome(), base = statsOf(g);
-    const finned = { ...g, parts: [...g.parts, { id: 'fin_side', t: .45, angle: 1.8, scale: 1, mirror: true, roll: 0 }] };
+    const finned = { ...g, parts: [...g.parts, { uid: 'p10', id: 'fin_side', t: .45, angle: 1.8, scale: 1, mirror: true, roll: 0 }] };
     expect(statsOf(finned).speed).toBeCloseTo(base.speed + .8, 5);
-    const armored = derive(statsOf({ ...g, parts: [...g.parts, { id: 'spike', t: .5, angle: 0, scale: 1, mirror: false, roll: 0 }, { id: 'spike', t: .6, angle: 0, scale: 1, mirror: false, roll: 0 }] }));
+    const armored = derive(statsOf({ ...g, parts: [...g.parts, { uid: 'p10', id: 'spike', t: .5, angle: 0, scale: 1, mirror: false, roll: 0 }, { uid: 'p11', id: 'spike', t: .6, angle: 0, scale: 1, mirror: false, roll: 0 }] }));
     expect(armored.armor).toBe(2);
     expect(derive(statsOf(withMouth(g, 'mouth_snapper'))).bite).toBeGreaterThan(derive(base).bite);
   });
@@ -45,7 +46,8 @@ describe('Tiny Tide genome and parts', () => {
     expect(sanitizeGenome({ ...g, parts: [{ ...g.parts[0], id: 'laser' }] })).toBeNull();
     expect(sanitizeGenome({ ...g, paint: { ...g.paint, base: 'red' } })).toBeNull();
     expect(sanitizeGenome({ ...g, spine: g.spine.slice(0, 2) })).toBeNull();
-    expect(sanitizeGenome({ ...g, spine: [{ radius: 9, height: -1, lift: 0 }, ...g.spine.slice(1)] })!.spine[0]).toEqual({ radius: 1.2, height: .25, lift: 0 });
+    expect(repairLegacyGenome({ ...g, parts: g.parts.map(({ uid: _u, ...rest }) => rest), spine: [{ radius: 9, height: -1, lift: 0 }, ...g.spine.slice(1)] })!.spine[0]).toEqual({ radius: 1.2, height: .25, lift: 0 });
+    expect(sanitizeGenome({ ...g, spine: [{ radius: 9, height: -1, lift: 0 }, ...g.spine.slice(1)] })).toBeNull();
   });
 });
 
@@ -87,14 +89,14 @@ describe('Tiny Tide diet and DNA', () => {
     const run = freshRun(3), before = run.dna;
     const cheaper = { ...run.genome, parts: run.genome.parts.filter(p => p.id !== 'leg_little') };
     expect(applyDesign(run, cheaper, 'Nibs', genomeCost)).toBe(true);
-    expect(run.dna).toBe(before + 16); expect(run.name).toBe('Nibs');
-    const pricey = { ...cheaper, parts: [...cheaper.parts, { id: 'claw_pincer', t: .2, angle: 2, scale: 1, mirror: true, roll: 0 }, { id: 'fin_side', t: .4, angle: 1.7, scale: 1, mirror: true, roll: 0 }] };
+    expect(run.dna).toBe(before + 14); expect(run.name).toBe('Nibs');
+    const pricey = { ...cheaper, parts: [...cheaper.parts, { uid: 'p10', id: 'claw_pincer', t: .2, angle: 2, scale: 1, mirror: true, roll: 0 }, { uid: 'p11', id: 'fin_side', t: .4, angle: 1.7, scale: 1, mirror: true, roll: 0 }] };
     run.dna = 10; expect(applyDesign(run, pricey, '', genomeCost)).toBe(false); expect(run.genome).toEqual(cheaper);
   });
   it('unlocks a part early only once, and only if its stage is still ahead', () => {
     const run = freshRun(4);
     expect(unlock(run, 'leg_crab')).toBe(true); expect(unlock(run, 'leg_crab')).toBe(false);
-    expect(problems({ ...run.genome, parts: [...run.genome.parts, { id: 'leg_crab', t: .6, angle: 2.4, scale: 1, mirror: false, roll: 0 }] }, 0, run.unlocked).map(p => p.code)).not.toContain('locked');
+    expect(problems({ ...run.genome, parts: [...run.genome.parts, { uid: 'p10', id: 'leg_crab', t: .6, angle: 2.4, scale: 1, mirror: false, roll: 0 }] }, plan('speck')!, { unlocked: run.unlocked }).map(p => p.code)).not.toContain('locked');
     run.stage = 2; expect(unlock(run, 'glow_bulb')).toBe(false);
   });
 });
@@ -194,7 +196,7 @@ describe('Tiny Tide saves', () => {
     const v1 = { stage: 2, bites: 7, total: 29, elapsed: 312, eatenPlanets: [], completed: false };
     const run = parseSave(JSON.stringify(v1))!;
     expect(run.version).toBe(2); expect(run.stage).toBe(2); expect(run.bites).toBe(29); expect(run.elapsed).toBe(312);
-    expect(run.stageDna).toBe(Math.round(7 / 14 * STAGES[2]!.goal)); expect(problems(run.genome, 2, [])).toEqual([]);
+    expect(run.stageDna).toBe(Math.round(7 / 14 * STAGES[2]!.goal)); expect(problems(run.genome, plan('crawler')!, { unlocked: [] })).toEqual([]);
     const space = parseSave(JSON.stringify({ stage: 4, bites: 3, total: 60, elapsed: 900, eatenPlanets: [0, 5, 9], completed: false }))!;
     expect(space.eatenPlanets).toEqual([0, 5, 9]);
   });

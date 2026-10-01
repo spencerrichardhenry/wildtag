@@ -4,12 +4,13 @@ import * as T from 'three';
 import './editor.css';
 import { asset } from './assets';
 import { CreatureModel, locate } from './creature';
-import { cloneGenome, derive, dietOf, genomeCost, instanceCount, isUnlocked, PART_LIMITS, PATTERNS, problems, SCALE_RANGE, SPINE_LIMITS, SPINE_RANGE, statsOf, type Genome, type PlacedPart } from './genome';
+import { cloneGenome, derive, dietOf, genomeCost, instanceCount, isUnlocked, nextUid, PART_LIMITS, PATTERNS, partSlots, problems, SCALE_RANGE, SPINE_LIMITS, SPINE_RANGE, STARTER_NEXT_SERIAL, statsOf, uidSerial, type Genome, type PlacedPart } from './genome';
+import type { BodyPlan } from './plans';
 import { KIND_LABELS, PARTS, part, type PartKind, type Stats } from './parts';
 import { STAGES } from './state';
 
 export interface EditorOptions {
-  genome: Genome; name: string; stage: number; unlocked: readonly string[];
+  genome: Genome; name: string; stage: number; plan: BodyPlan; unlocked: readonly string[];
   /** Current DNA plus the refund value of the current design. */
   budget: number; mode: 'edit' | 'evolve';
 }
@@ -45,6 +46,7 @@ export function openEditor(options: EditorOptions): Promise<EditorResult | null>
 
 class Editor {
   private draft: Genome;
+  private serial: number;
   private name: string;
   private history: Genome[] = [];
   private tab: Tab = 'parts';
@@ -71,6 +73,7 @@ class Editor {
 
   constructor(private options: EditorOptions, private done: (result: EditorResult | null) => void) {
     this.draft = cloneGenome(options.genome); this.name = options.name;
+    this.serial = Math.max(STARTER_NEXT_SERIAL, ...this.draft.parts.map(p => uidSerial(p.uid) + 1));
     renderThumbnails();
     this.root = document.createElement('section'); this.root.id = 'editor'; this.root.setAttribute('role', 'dialog'); this.root.setAttribute('aria-modal', 'true'); this.root.setAttribute('aria-label', 'Creature editor');
     const stage = STAGES[options.stage]!;
@@ -122,7 +125,7 @@ class Editor {
   }
   private undo() { const prior = this.history.pop(); if (!prior) return; this.draft = prior; this.selected = null; this.rebuild(); this.render(); }
   private finish() {
-    if (problems(this.draft, this.options.stage, this.options.unlocked, this.budget).length) { this.hint(problems(this.draft, this.options.stage, this.options.unlocked, this.budget)[0]!.message); return; }
+    if (problems(this.draft, this.options.plan, { unlocked: this.options.unlocked, budget: this.budget }).length) { this.hint(problems(this.draft, this.options.plan, { unlocked: this.options.unlocked, budget: this.budget })[0]!.message); return; }
     this.close({ genome: cloneGenome(this.draft), name: this.name.trim() || this.options.name });
   }
   private close(result: EditorResult | null) {
@@ -190,7 +193,7 @@ class Editor {
     // A drop away from the head puts the mouth on the front tip; a tail goes on the rear tip.
     const snapped = spec.kind === 'mouth' ? (t > .15 ? { t: 0, angle: 0 } : { t, angle }) : spec.kind === 'tail' ? (t < .85 ? { t: 1, angle: 0 } : { t, angle }) : { t, angle };
     const side = Math.abs(Math.sin(snapped.angle)) > .3;
-    return { id, t: snapped.t, angle: snapped.angle, scale: 1, mirror: spec.mirror && side, roll: 0 };
+    return { uid: 'ghost', id, t: snapped.t, angle: snapped.angle, scale: 1, mirror: spec.mirror && side, roll: 0 };
   }
   private pointerDown(event: PointerEvent) {
     this.canvas.setPointerCapture(event.pointerId);
@@ -246,12 +249,12 @@ class Editor {
     const refund = replacingMouth >= 0 ? part(this.draft.parts[replacingMouth]!.id)!.cost : 0;
     if (placed.mirror && !this.canAfford(placed.id, true) && this.canAfford(placed.id, false)) placed.mirror = false;
     if (spec.cost * (placed.mirror ? 2 : 1) > this.remaining + refund) { this.hint('Not enough DNA for that part.'); return; }
-    const count = instanceCount(this.draft) + (placed.mirror ? 2 : 1) - (replacingMouth >= 0 ? 1 : 0);
+    const count = instanceCount(this.draft) + partSlots(placed) - (replacingMouth >= 0 ? 1 : 0);
     if (count > PART_LIMITS[this.options.stage]!) { this.hint(`Too complex. ${PART_LIMITS[this.options.stage]} parts at this size.`); return; }
     this.ghost = null; this.placing = null;
     this.commit(g => {
       if (replacingMouth >= 0) g.parts.splice(replacingMouth, 1);
-      g.parts.push(placed); this.selected = g.parts.length - 1;
+      placed.uid = nextUid(this.serial++); g.parts.push(placed); this.selected = g.parts.length - 1;
     });
     this.hint(`${spec.name} added. Drag it to move it.`);
   }
@@ -289,7 +292,7 @@ class Editor {
         // Keyboard and quick taps place the part at its usual spot right away.
         const spec = part(id)!;
         this.ghost = null;
-        if (matchMedia('(pointer: coarse)').matches || click.detail === 0) this.addPart({ id, t: spec.t, angle: spec.angle, scale: 1, mirror: spec.mirror, roll: 0 });
+        if (matchMedia('(pointer: coarse)').matches || click.detail === 0) this.addPart({ uid: 'ghost', id, t: spec.t, angle: spec.angle, scale: 1, mirror: spec.mirror, roll: 0 });
       };
       // Drag a card onto the creature to place it.
       button.addEventListener('pointerdown', e => { if (button.disabled) return; this.cardDrag = { id: button.dataset.part!, x: e.clientX, y: e.clientY }; });
@@ -365,7 +368,7 @@ class Editor {
     panel.querySelectorAll<HTMLButtonElement>('[data-pattern]').forEach(button => button.onclick = () => this.commit(g => { g.paint.pattern = button.dataset.pattern as Genome['paint']['pattern']; }));
   }
   private renderStatsOnly() {
-    const stats = statsOf(this.draft), derived = derive(stats), issues = problems(this.draft, this.options.stage, this.options.unlocked, this.budget);
+    const stats = statsOf(this.draft), derived = derive(stats), issues = problems(this.draft, this.options.plan, { unlocked: this.options.unlocked, budget: this.budget });
     const count = instanceCount(this.draft), limit = PART_LIMITS[this.options.stage]!;
     this.root.querySelector('.ed-dna-value')!.textContent = String(Math.floor(this.remaining));
     this.root.querySelector('.ed-dna')!.classList.toggle('low', this.remaining < 0);

@@ -1,4 +1,4 @@
-import { cloneGenome, derive, dietOf, sanitizeGenome, starterGenome, statsOf, type Genome } from './genome';
+import { cloneGenome, derive, dietOf, repairLegacyGenome, sanitizeGenome, starterGenome, statsOf, type Genome } from './genome';
 import { part, type Diet } from './parts';
 import { PLANET_COUNT } from './biomes';
 import type { FoodTag, Species } from './species';
@@ -103,7 +103,7 @@ export function parseSave(raw: string | null): Run | null {
   } catch { return null; }
 }
 function parseV2(v: Record<string, unknown>): Run | null {
-  const genome = sanitizeGenome(v.genome);
+  const genome = sanitizeGenome(v.genome) ?? repairLegacyGenome(v.genome);
   if (!genome || !int(v.seed) || typeof v.name !== 'string' || !int(v.stage) || (v.stage as number) > 4 || !finite(v.dna) || !finite(v.stageDna) || !finite(v.totalDna) ||
       !int(v.bites) || !finite(v.elapsed) || !int(v.deaths) || !finite(v.health) || typeof v.completed !== 'boolean' || !validPlanets(v.eatenPlanets) ||
       !Array.isArray(v.unlocked) || !v.unlocked.every(id => typeof id === 'string' && part(id))) return null;
