@@ -4,8 +4,9 @@ import * as T from 'three';
 import { asset } from './assets';
 import { part, type PartSpec } from './parts';
 import type { Genome, PlacedPart } from './genome';
-import { layout, partFrame, PART_SCALE, SPACING, surface, type Layout } from './body-geometry';
+import { layout, SPACING, surface, type Layout } from './body-geometry';
 import { CHOMP_PITCH, createRigPose, rigPoseInto, type RigPose } from './rig';
+import { resolveMount } from './mount';
 export * from './body-geometry';
 
 const RINGS = 44, SIDES = 28;
@@ -89,15 +90,10 @@ export class CreatureModel {
   }
   private attach(placed: PlacedPart, mirrored: boolean, tints: Map<string, T.MeshStandardMaterial>) {
     const spec = part(placed.id); if (!spec) return;
-    const l = this.layout, angle = mirrored ? -placed.angle : placed.angle;
-    const { position, normal } = surface(this.genome, l, placed.t, angle);
-    const object = asset(`part_${placed.id}`);
-    // The nearest bone carries the part, so it follows the swimming body.
-    const f = (l.z[0]! - position.z) / SPACING, boneIndex = Math.max(0, Math.min(this.bones.length - 1, Math.round(f)));
-    const bone = this.bones[boneIndex]!, bonePosition = new T.Vector3(0, this.genome.spine[boneIndex]!.lift, l.z[boneIndex]!);
-    object.position.copy(position).sub(bonePosition);
-    object.quaternion.copy(partFrame(normal, mirrored ? -placed.roll : placed.roll));
-    object.scale.setScalar(placed.scale * PART_SCALE); if (mirrored) object.scale.x *= -1;
+    const copy: 0 | 1 = mirrored ? 1 : 0, object = asset(`part_${placed.id}`);
+    // The nearest bone carries the part, so it follows the swimming body (the same mount gameplay uses).
+    const mount = resolveMount(this.genome, placed, copy, this.layout), bone = this.bones[mount.boneIndex]!;
+    mount.local.decompose(object.position, object.quaternion, object.scale);
     const pivots: Pivot[] = [];
     object.traverse(node => {
       if (node instanceof T.Mesh && !Array.isArray(node.material) && node.material.name === 'Tide_tint') {
@@ -110,12 +106,12 @@ export class CreatureModel {
       const kind = node.userData.tt_pivot as Pivot['kind'] | undefined;
       if (kind) {
         const index = Number(node.userData.tt_index ?? 0);
-        pivots.push({ node, kind, index, rest: node.rotation.clone(), key: `${placed.uid}:${mirrored ? 1 : 0}:${kind}:${index}` });
+        pivots.push({ node, kind, index, rest: node.rotation.clone(), key: `${placed.uid}:${copy}:${kind}:${index}` });
       }
     });
-    object.userData.partId = placed.id; object.userData.mirrored = mirrored; object.userData.placedIndex = this.genome.parts.indexOf(placed);
+    object.userData.partId = placed.id; object.userData.partUid = placed.uid; object.userData.copy = copy; object.userData.mirrored = mirrored; object.userData.placedIndex = this.genome.parts.indexOf(placed);
     bone.add(object);
-    this.parts.push({ placed, spec, object, pivots, mirrored, copy: mirrored ? 1 : 0 });
+    this.parts.push({ placed, spec, object, pivots, mirrored, copy });
   }
   /** Procedural motion. `chomp` is 0–1, `swim` is 0 when idle and 1 when moving. */
   animate(time: number, swim: number, chomp: number) {
