@@ -7,7 +7,8 @@ import { adaptToPlan, derive, dietOf, effectiveStats, genomeCost } from './genom
 import { DROPS, part } from './parts';
 import { tierSpecies } from './species';
 import { PLAYER_HALF, SIZES } from './biomes';
-import { entityRadius, provoke, type EcoEvent } from './ecosystem';
+import { entityRadius, provoke, type EcoEvent, type Entity } from './ecosystem';
+import { canApproachFood, type Traversal } from './food-access';
 import { openEditor } from './editor';
 import { COAST_READY, eligibleChildren } from './plans';
 import { newRuntime, type Actor, type Capsule, type CombatInput, type Constraint, type MutVec3, type Orientation, type RecoveryResult, type Vec3, type WorldQueries } from './combat-types';
@@ -156,6 +157,41 @@ function playerActorCached(): Actor {
   return c.actor;
 }
 const capsOf = () => movementCapabilities(currentPlan(run));
+/** Food guidance (spec §3, T-R3-17, T-R3-24): one cache entry per entity, recomputed by a fair round-robin queue
+ *  of at most GUIDE_PER_FRAME entries per frame. A missing or stale entry is unknown and is not shown. Bites never use it. */
+const GUIDE_PER_FRAME = 8;
+const guideCache = new Map<number, { key: string; value: boolean }>();
+let guideScope = '', guideCursor = 0;
+/** The traversal for approach: an active permit, else a hypothetical Breach when the plan can Breach, else none. */
+function guideTraversal(): { key: string; traversal: Traversal } {
+  if (rt.permit) return { key: `p${rt.permit.expiresAt}`, traversal: { kind: 'active', permit: rt.permit, now: time } };
+  if (capsOf().breach) return { key: 'hb', traversal: { kind: 'hypothetical-breach', now: time } };
+  return { key: 'n', traversal: { kind: 'none' } };
+}
+function guideKey(e: Entity, planId: string, growth: number, traversalKey: string) {
+  return `${Math.round(e.x)}:${Math.round(e.y)}:${Math.round(e.z)}:${planId}:${genomeRevision}:${Math.round(growth * 20)}:${traversalKey}`;
+}
+/** Recomputes up to GUIDE_PER_FRAME missing or stale entries, continuing from where the last frame stopped. */
+function stepGuideCache(actor: Actor) {
+  const plan = currentPlan(run), scope = `${plan.id}:${genomeRevision}:${run.stage}`;
+  if (scope !== guideScope) { guideCache.clear(); guideScope = scope; guideCursor = 0; }
+  const foods = world.edibleFoods; if (foods.length === 0) return;
+  const growth = growthOf(run), { key: traversalKey, traversal } = guideTraversal(), mode = movement(plan.movement).mode;
+  const bite = { stage: run.stage, growth, reach: derived.reach }, ctx = { ...legality(run.stage), traversal };
+  let recomputed = 0;
+  for (let n = 0, start = guideCursor % foods.length; n < foods.length && recomputed < GUIDE_PER_FRAME; n++) {
+    const i = (start + n) % foods.length, e = foods[i]!.entity, key = guideKey(e, plan.id, growth, traversalKey);
+    if (guideCache.get(e.id)?.key === key) continue;
+    // Own-tier food: radius 0, as the live bite uses.
+    guideCache.set(e.id, { key, value: canApproachFood(actor, mode, { x: e.x, y: e.y, z: e.z, radius: 0 }, bite, ctx) });
+    recomputed++; guideCursor = i + 1;
+  }
+}
+/** true or false from a fresh entry; null when the entry is missing or stale (unknown). */
+function approachable(e: Entity): boolean | null {
+  const entry = guideCache.get(e.id); if (!entry) return null;
+  return entry.key === guideKey(e, currentPlan(run).id, growthOf(run), guideTraversal().key) ? entry.value : null;
+}
 /** The player's hull in world space: oriented (envelope converted under pitch) and translated to the physical position. */
 function worldHull(actor: Actor): Capsule[] {
   const at = (v: Vec3): Vec3 => ({ x: v.x + physical.x, y: v.y + physical.y, z: v.z + physical.z });
@@ -242,8 +278,11 @@ function syncUI() {
   syncHearts();
 }
 function objective() {
-  const diet = dietOf(run.genome), foods = tierSpecies(run.stage).filter(s => dietCanEat(diet, s.tag)).map(s => s.label.toLowerCase());
   if (run.stage === 4) return 'Float freely. Eat every last planet.';
+  // Only species with an approachable instance (a known, fresh guide entry) are named.
+  const diet = dietOf(run.genome), reachable = new Set(world.edibleFoods.filter(f => approachable(f.entity) === true).map(f => f.entity.spec.key));
+  const foods = tierSpecies(run.stage).filter(s => dietCanEat(diet, s.tag) && reachable.has(s.key)).map(s => s.label.toLowerCase());
+  if (foods.length === 0) return 'Explore to find a snack you can reach.';
   const list = foods.length > 3 ? `${foods.slice(0, 3).join(', ')} & more` : foods.join(' & ');
   const caps = capsOf(), move = caps.breach ? 'Breach for gulls!' : caps.rise ? 'Rise / Dive to explore.' : 'Graze along the seabed.';
   return `Eat ${list}. ${run.stage === 0 ? 'Swipe the world to look around.' : run.stage === 3 ? 'Watch out for seaplanes.' : move}`;
@@ -480,7 +519,8 @@ window.addEventListener('resize', () => world.resize());
 function updateGuide() {
   if (mode !== 'playing') { el('food-pointer').hidden = true; el('snack-label').hidden = true; el('threats').innerHTML = ''; return; }
   const p = world.player.position, diet = dietOf(run.genome);
-  const nearest = world.edibleFoods.filter(f => dietCanEat(diet, f.entity.spec.tag)).sort((a, b) =>
+  el('objective-text').textContent = objective();
+  const nearest = world.edibleFoods.filter(f => dietCanEat(diet, f.entity.spec.tag) && approachable(f.entity) === true).sort((a, b) =>
     Math.hypot(a.data.x - p.x, a.data.z - p.z) + Math.abs(a.data.y - p.y) * .6 - Math.hypot(b.data.x - p.x, b.data.z - p.z) - Math.abs(b.data.y - p.y) * .6)[0];
   if (nearest) {
     const f = nearest.data;
@@ -549,6 +589,7 @@ function frame(now: number) {
     if (r.breachStarted) { audio.breach(); world.burst(p.x, world.surface, p.z, '#d6fff1', 22); }
     if (r.arcEnded) world.burst(p.x, world.surface, p.z, '#d6fff1', 18);
     if (r.needsRecovery && !recover(actor, time + dt)) enterStuck();
+    if (mode === 'playing') stepGuideCache(actor);
     const v = rt.controlledVelocity; moving = Math.hypot(v.x, v.y, v.z) > .5 * SIZES[stage]!;
     if (mode === 'playing' && basicRequested(intent)) chomp();
     saveClock += dt; if (saveClock >= 5) { save(); saveClock = 0; }
@@ -602,6 +643,6 @@ if (QA) {
     plan: currentPlan(run).id, plans: [...run.plans], zone: zoneNow(), velocity: copy(rt.controlledVelocity), externalVelocity: copy(rt.externalVelocity),
     orientation: { ...rt.orientation }, permit: rt.permit ? { ...rt.permit } : null, arc: rt.arc ? { ...rt.arc } : null, breachReadyAt: rt.breachReadyAt, invulnerableUntil: rt.invulnerableUntil,
     pendingRespawn: run.pendingRespawn, caps: capsOf(), contactNow, lastContact, hazardSources: hazardSources(), growth: growthOf(run), acceptedHits, rejectedHits,
-    faintLog: faintLog.map(f => ({ ...f })), stage: run.stage, dna: dnaOf(run), stageDna: run.stageDna, goal: STAGES[run.stage]!.goal, health: run.health, maxHealth: derived.maxHealth, deaths: run.deaths, diet: dietOf(run.genome), genome: structuredClone(run.genome), name: run.name, unlocked: [...run.unlocked], evolveReady: evolveReady(run), bites: run.bites, totalDna: run.totalDna, elapsed: run.elapsed, completed: run.completed, eatenPlanets: [...run.eatenPlanets], player: { x: world.player.position.x, y: world.player.position.y, z: world.player.position.z }, foods: world.edibleFoods.map(f => ({ ...f.data, tag: f.entity.spec.tag, label: f.entity.spec.label, mode: f.entity.mode, hp: f.entity.hp })), threats: world.threats.map(f => ({ ...f.data, label: f.entity.spec.label, mode: f.entity.mode })), landmarks: world.foods.filter(f => f.model.visible && f.tier > run.stage).map(f => ({ tier: f.tier, kind: f.data.kind, x: f.data.x, y: f.data.y, z: f.data.z })), world: world.diagnostics, assets: assetDiagnostics(), time, render: { calls: world.renderer.info.render.calls, triangles: world.renderer.info.render.triangles, geometries: world.renderer.info.memory.geometries } }) });
+    faintLog: faintLog.map(f => ({ ...f })), stage: run.stage, dna: dnaOf(run), stageDna: run.stageDna, goal: STAGES[run.stage]!.goal, health: run.health, maxHealth: derived.maxHealth, deaths: run.deaths, diet: dietOf(run.genome), genome: structuredClone(run.genome), name: run.name, unlocked: [...run.unlocked], evolveReady: evolveReady(run), bites: run.bites, totalDna: run.totalDna, elapsed: run.elapsed, completed: run.completed, eatenPlanets: [...run.eatenPlanets], player: { x: world.player.position.x, y: world.player.position.y, z: world.player.position.z }, foods: world.edibleFoods.map(f => ({ ...f.data, tag: f.entity.spec.tag, label: f.entity.spec.label, mode: f.entity.mode, hp: f.entity.hp, approachable: approachable(f.entity) })), threats: world.threats.map(f => ({ ...f.data, label: f.entity.spec.label, mode: f.entity.mode })), landmarks: world.foods.filter(f => f.model.visible && f.tier > run.stage).map(f => ({ tier: f.tier, kind: f.data.kind, x: f.data.x, y: f.data.y, z: f.data.z })), world: world.diagnostics, assets: assetDiagnostics(), time, render: { calls: world.renderer.info.render.calls, triangles: world.renderer.info.render.triangles, geometries: world.renderer.info.memory.geometries } }) });
 }
 requestAnimationFrame(frame);
