@@ -36,7 +36,7 @@ export const SPECIES: readonly Species[] = [
   s(1, 'snail', 'meat', 'Sea snail', 'graze', 8, 13, { speed: .5 }),
   s(2, 'kelp_snack', 'plant', 'Kelp frond', 'still', 10, 16),
   s(2, 'plant', 'plant', 'Sprout grove', 'still', 9, 16),
-  s(2, 'fish', 'meat', 'Silver tuna', 'school', 10, 20, { speed: 3 }),
+  s(2, 'fish', 'meat', 'Silver tuna', 'school', 13, 20, { speed: 3 }),
   s(2, 'squid', 'meat', 'Berry squid', 'skittish', 8, 30, { hp: 4, speed: 3.2, hunts: [1, 2], fights: true, contactHazardId: 'squid-grab', pursuitId: 'hunter' }),
   s(2, 'ray', 'meat', 'Little ray', 'graze', 8, 22, { hp: 2, stingsStages: [1, 2], contactHazardId: 'ray-sting', pursuitId: 'retaliate', speed: 1.4, fights: true }),
   s(2, 'bird', 'meat', 'Seagull', 'flyer', 8, 20, { speed: 2 }),
