@@ -31,6 +31,12 @@ describe('species installation', () => {
     for (const e of eco.entities) e.y -= 500; eco.reset([]);
     expect(eco.entities.map(e => [e.x, e.y, e.z])).toEqual(installed); expect(legalAll(eco)).toBe(true);
   });
+  it('keeps a planet that failed to install eaten after reset', () => {
+    const reject = (tier: number) => { const q = makeWorldQueries(makeTerrain(tier)); return tier === 4 ? { ...q, overlapHull: () => ({ ok: false, constraint: 'space' as const, point: null, normal: null }) } : q; };
+    const eco = new Ecosystem(7, { queries: reject }), planets = () => eco.entities.filter(e => e.spec.kind === 'planet');
+    expect(planets().every(e => e.eaten)).toBe(true); expect(eco.installFailures).toBe(12);
+    eco.reset([0]); expect(planets().every(e => e.eaten)).toBe(true);
+  });
   it('re-installs an entity when its tier becomes relevant', () => {
     const eco = new Ecosystem(7), squid = eco.entities.find(e => e.spec.key === '2:squid')!, far = { x: 0, y: 900, z: 0 };
     eco.step(ctx(far, 0, { stage: 4 })); squid.y = -400; eco.step(ctx(far, .1, { stage: 4 })); expect(squid.y).toBeLessThan(-300);   // inactive: unchecked
@@ -87,6 +93,16 @@ describe('pursuit', () => {
     eco.step(ctx(gap(2), 0)); expect(crab.reachable).toBe(true); expect(crab.blockedSince).toBeNull();   // within touch: 2 − offset ≤ 2.8 + .6
     let t = .1; for (; t <= 9.1; t = tick(t + .1)) { eco.step(ctx(gap(Math.round(t * 10) % 2 ? 5 : 2), t)); expect(crab.blockedSince).toBe(.1); }   // 5 is out of touch; 2 is in touch for only .1 s
     expect(crab.mode).toBe('hunt'); eco.step(ctx(gap(5), 9.2)); expect(crab.mode).toBe('return');   // 9.2 − .1 > 3 + 6
+  });
+  it('starts a new hunt with a fresh blocked timer', () => {
+    const eco = new Ecosystem(7), crab = crabOf(eco);
+    const above = () => ({ x: crab.x, y: makeTerrain(0).groundAt(crab.x, crab.z) + 9.5, z: crab.z });
+    eco.step(ctx(above(), 0)); expect(crab.reachable).toBe(false);
+    for (let t = .1; t <= 9.1; t = tick(t + .1)) eco.step(ctx(above(), t)); expect(crab.mode).toBe('return');   // first hunt ends while blocked
+    for (let t = 9.2; t <= 11.9; t = tick(t + .1)) eco.step(ctx(above(), t, { perceivable: false }));
+    eco.step(ctx(above(), 12)); expect(crab.mode).toBe('hunt'); expect(crab.blockedSince).toBe(12);
+    for (let t = 12.1; t <= 21; t = tick(t + .1)) { eco.step(ctx(above(), t)); expect(crab.mode).toBe('hunt'); }
+    eco.step(ctx(above(), 21.1)); expect(crab.mode).toBe('return');   // 21.1 − 12 > 3 + 6
   });
   it('clears the blocked timer after one second of reachability', () => {
     const eco = new Ecosystem(7), crab = crabOf(eco), g = makeTerrain(0).groundAt(crab.x, crab.z), gap = (h: number) => ({ x: crab.x, y: g + h, z: crab.z });

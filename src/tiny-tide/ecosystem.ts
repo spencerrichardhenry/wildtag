@@ -89,7 +89,7 @@ function remember(e: Entity, player: Vec3, now: number, hull: readonly Capsule[]
   const known = e.lastKnown as MutVec3 | null;
   if (known) { known.x = player.x; known.y = player.y; known.z = player.z; } else e.lastKnown = { x: player.x, y: player.y, z: player.z };
   e.lastSeenAt = now;
-  if (!hull) { e.lastKnownHull = null; return; }
+  if (!hull || hull.length === 0) { e.lastKnownHull = null; return; }   // no snapshot: a point capsule at lastKnown
   const buf = (e.lastKnownHull as MutCapsule[] | null) ?? [];
   for (let k = 0; k < hull.length; k++) {
     const src = hull[k]!, dst = buf[k] ?? (buf[k] = { start: { x: 0, y: 0, z: 0 }, end: { x: 0, y: 0, z: 0 }, radius: 0 });
@@ -100,10 +100,14 @@ function remember(e: Entity, player: Vec3, now: number, hull: readonly Capsule[]
   e.lastKnownHull = buf;
 }
 
+/** A new pursuit starts with no reachability history. */
+function clearBlocked(e: Entity) { e.reachable = false; e.reachableSince = null; e.blockedSince = null; }
+
 const owners = new WeakMap<Entity, Ecosystem>();
 /** The player provokes a fighter by biting it; `hull` is the biter's world hull at the bite. */
 export function provoke(e: Entity, player: Vec3, now: number, hull?: readonly Capsule[]) {
   if (!e.spec.fights || e.eaten) return;
+  if (e.mode !== 'hunt' && e.mode !== 'angry') clearBlocked(e);
   e.mode = 'angry'; e.modeTime = 0;
   remember(e, player, now, hull);
   owners.get(e)?.updateReachability(e, now);
@@ -142,9 +146,10 @@ export class Ecosystem {
   reset(eatenPlanets: readonly number[]) {
     const fresh = makeEntities(this.seed);
     this.entities.forEach((e, i) => Object.assign(e, fresh[i]!));
-    for (const e of this.entities) this.install(e);
+    // Eaten planets stay eaten and are not installed; a failed install also stays eaten.
     let planet = 0;
     for (const e of this.entities) if (e.spec.kind === 'planet') { e.eaten = eatenPlanets.includes(planet); planet++; }
+    for (const e of this.entities) if (!e.eaten) this.install(e);
   }
   /** The planet index (0–11) of a planet entity. */
   planetIndex(e: Entity) { return this.entities.filter(other => other.spec.kind === 'planet').indexOf(e); }
@@ -212,7 +217,7 @@ export class Ecosystem {
     if (e.mode === 'return' && (Math.hypot(e.x - e.hx, e.z - e.hz) <= this.actors.get(e)!.bodyLength || now >= e.returnUntil + 6)) this.setMode(e, 'calm');
     // Acquire, from calm or return, once the reacquire window has passed.
     if (now >= e.returnUntil && perceived && spec.hunts.includes(ctx.stage)) {
-      this.setMode(e, 'hunt'); remember(e, p, now, ctx.playerHull); this.updateReachability(e, now); return perceived;
+      this.setMode(e, 'hunt'); clearBlocked(e); remember(e, p, now, ctx.playerHull); this.updateReachability(e, now); return perceived;
     }
     if (e.mode !== 'calm' || !ctx.perceivable) return perceived;
     // Prey runs from a player that can eat it, but tires quickly so it can be caught.
@@ -227,7 +232,7 @@ export class Ecosystem {
     if (!known) return;
     const actor = this.actors.get(e)!, q = this.queries[e.spec.tier]!, t = q.terrain, mode = movement(e.spec.movementProfileId).mode, pose = this.pose;
     pose.x = known.x; pose.y = known.y; pose.z = known.z;
-    if ((mode === 'ground' || mode === 'burrow') && !t.space) pose.y = supportHeight(actor, known.x, known.z, O0, t) + .01 * actor.bodyLength;
+    if ((mode === 'ground' || mode === 'burrow' || e.spec.behavior === 'still') && !t.space) pose.y = supportHeight(actor, known.x, known.z, O0, t) + .01 * actor.bodyLength;
     else if (mode === 'surface') pose.y = e.hy;
     const actx = this.actx; actx.time = now; actx.bounds = this.bounds[e.spec.tier];
     const R = entityRadius(e), hull = e.lastKnownHull;
