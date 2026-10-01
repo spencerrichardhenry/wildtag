@@ -52,7 +52,6 @@ export function partStats(g: Genome): Stats {
   for (const key of Object.keys(stats) as (keyof Stats)[]) stats[key] = Math.round(stats[key] * 10) / 10;
   return stats;
 }
-export const statsOf = partStats;
 export function effectiveStats(g: Genome, p: BodyPlan): Stats {
   const s = partStats(g);
   for (const [k, v] of Object.entries(p.bonuses) as [keyof Stats, number][]) s[k] = Math.round((s[k] + v) * 10) / 10;

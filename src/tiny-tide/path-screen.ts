@@ -15,7 +15,9 @@ export interface PathChoice {
 export interface PathScreenOptions { current: BodyPlan; choices: PathChoice[]; /** The current design, previewed when the proposal fails. */ genome: Genome }
 
 const esc = (s: string) => s.replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
-const list = (cls: string, items: string[], empty: string) => `<ul class="path-list ${cls}">${(items.length ? items : [empty]).map(x => `<li>${esc(x)}</li>`).join('')}</ul>`;
+/** Markers are in the item text (hidden from screen readers): WebKit ignores `::marker` content. */
+const MARKS: Record<string, string> = { gains: '+', losses: '−', changes: '•' };
+const list = (cls: string, items: string[], empty: string) => `<ul class="path-list ${cls}">${(items.length ? items : [empty]).map(x => `<li><span class="path-mark" aria-hidden="true">${MARKS[cls] ?? '•'}</span>${esc(x)}</li>`).join('')}</ul>`;
 
 function banner({ adaptation: a, quote }: PathChoice): string {
   if (!a.ok) return `<p class="path-banner">Needs changes you choose: ${esc(a.reasons[0] ?? 'the automatic changes did not work')}</p>`;

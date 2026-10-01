@@ -3,7 +3,7 @@ import * as T from 'three';
 import './style.css';
 import './hud.css';
 import { applyDesign, commitEvolution, currentPlan, damageAfterArmor, DEATH_KEEP, dietCanEat, dnaOf, eat, evolveReady, freshRun, growthOf, hurt, inReach, parseSaveWithNotes, PLANET_COUNT, prepareEvolution, reward, STAGES, unlock, type Build, type Run } from './state';
-import { adaptToPlan, derive, dietOf, effectiveStats, genomeCost } from './genome';
+import { adaptToPlan, derive, dietOf, effectiveStats } from './genome';
 import { DROPS, part } from './parts';
 import { tierSpecies } from './species';
 import { PLAYER_HALF, SIZES } from './biomes';
@@ -345,7 +345,6 @@ async function edit(kind: 'edit' | 'evolve') {
   if (mode === 'editing') { mode = 'playing'; save(); }
   syncUI();
 }
-const budgetOf = () => dnaOf(run) + genomeCost(run.genome);
 /** The path screen, then the evolve editor. Cancel in the editor returns to the path screen; "Not yet" returns to play. */
 async function chooseEvolution() {
   const current = currentPlan(run);
@@ -358,8 +357,10 @@ async function chooseEvolution() {
     const chosen = id === null ? undefined : choices.find(c => c.plan.id === id);
     if (!chosen) return;
     const a = chosen.adaptation;
-    const result = await openEditor({ genome: a.ok ? a.genome : run.genome, name: run.name, stage: chosen.plan.size, plan: chosen.plan, unlocked: run.unlocked, budget: budgetOf(), mode: 'evolve',
-      nextSerial: Math.max(run.nextPartSerial, a.ok ? a.nextSerial : 0), onSubmit: async r => submitEvolution(chosen.plan, r) });
+    // The diet is free while evolving; the ledger prices the draft against the committed design.
+    const result = await openEditor({ genome: a.ok ? a.genome : run.genome, original: run.genome, changes: a.ok ? a.changes : [], name: run.name, plan: chosen.plan, unlocked: run.unlocked,
+      economy: run.economy, mode: 'evolve', nextSerial: Math.max(run.nextPartSerial, a.ok ? a.nextSerial : 0), build: BUILD, loadout: run.loadout,
+      onSubmit: async r => submitEvolution(chosen.plan, r) });
     if (result) return;
   }
 }
@@ -377,7 +378,8 @@ function submitEvolution(next: BodyPlan, r: EditorResult): SubmitOutcome {
 /** The edit editor. A failed commit keeps the editor open with the reason. */
 async function editDesign() {
   let committed = false;
-  await openEditor({ genome: run.genome, name: run.name, stage: run.stage, plan: currentPlan(run), unlocked: run.unlocked, budget: budgetOf(), mode: 'edit', nextSerial: run.nextPartSerial,
+  await openEditor({ genome: run.genome, original: run.genome, changes: [], name: run.name, plan: currentPlan(run), unlocked: run.unlocked, economy: run.economy, mode: 'edit',
+    diet: run.diet, nextSerial: run.nextPartSerial, build: BUILD, loadout: run.loadout,
     onSubmit: async r => {
       const before = run.genome, oldLoadout = structuredClone(run.loadout);
       const applied = applyDesign(run, r.genome, r.name, BUILD, r.nextSerial);

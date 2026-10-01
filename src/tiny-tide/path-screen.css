@@ -18,12 +18,9 @@
 .path-details summary:focus-visible{outline:3px solid #fff2b3;outline-offset:3px;border-radius:6px}
 .path-preview{display:block;width:160px;height:160px;margin:4px auto}
 .path-details h4{margin:8px 0 2px;font-size:10px;letter-spacing:1.6px;text-transform:uppercase;opacity:.7}
-.path-list{margin:0;padding-left:18px;font-size:13px;line-height:1.45}
-.path-list.gains li::marker{content:'+ '}.path-list.losses li::marker{content:'− '}.path-list.changes li::marker{content:'• '}
+.path-list{margin:0;padding-left:4px;list-style:none;font-size:13px;line-height:1.45}
+.path-mark{display:inline-block;width:1.1em;font-weight:800}
 .path-dna{margin:8px 0 0;font-weight:700;color:#c9f5a8}
 .path-choose{margin-top:auto;align-self:stretch;min-height:46px;font-size:15px}
 .path-later{margin:18px auto 0}
-.ed-submit-error{position:absolute;top:150px;left:50%;transform:translateX(-50%);width:max-content;max-width:min(420px,calc(100vw - 48px));margin:0;padding:10px 14px;border-radius:14px;background:#5a1f1fe6;border:1px solid #ff9d8a;color:#ffe3dc;font-size:13px;font-weight:700;z-index:5}
-.ed-submit-error::before{content:'! '}
-@media(max-width:900px){.ed-submit-error{top:calc(max(18px,env(safe-area-inset-top)) + 186px);left:14px;right:14px;transform:none;width:auto;max-width:none}}
 @media(max-width:650px){.path-inner h2{font-size:32px}.path-cards{grid-template-columns:1fr}}

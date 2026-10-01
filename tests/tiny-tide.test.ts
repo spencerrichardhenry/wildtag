@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { dietCanEat, dnaFor, inReach, PLANET_COUNT, STAGES } from '../src/tiny-tide/state';
-import { derive, dietOf, genomeCost, instanceCount, PART_LIMITS, problems, repairLegacyGenome, sanitizeGenome, starterGenome, statsOf, type Genome } from '../src/tiny-tide/genome';
+import { derive, dietOf, genomeCost, instanceCount, PART_LIMITS, problems, repairLegacyGenome, sanitizeGenome, starterGenome, partStats, type Genome } from '../src/tiny-tide/genome';
 import { plan } from '../src/tiny-tide/plans';
 import { PARTS, part } from '../src/tiny-tide/parts';
 import { SPECIES, species, tierSpecies } from '../src/tiny-tide/species';
@@ -33,12 +33,12 @@ describe('Tiny Tide genome and parts', () => {
     expect(problems(g, plan('speck')!, { unlocked: [], budget: genomeCost(g) - 1 }).map(p => p.code)).toContain('dna');
   });
   it('derives stats from parts, counting mirrored pairs twice', () => {
-    const g = starterGenome(), base = statsOf(g);
+    const g = starterGenome(), base = partStats(g);
     const finned = { ...g, parts: [...g.parts, { uid: 'p10', id: 'fin_side', t: .45, angle: 1.8, scale: 1, mirror: true, roll: 0 }] };
-    expect(statsOf(finned).speed).toBeCloseTo(base.speed + .8, 5);
-    const armored = derive(statsOf({ ...g, parts: [...g.parts, { uid: 'p10', id: 'spike', t: .5, angle: 0, scale: 1, mirror: false, roll: 0 }, { uid: 'p11', id: 'spike', t: .6, angle: 0, scale: 1, mirror: false, roll: 0 }] }));
+    expect(partStats(finned).speed).toBeCloseTo(base.speed + .8, 5);
+    const armored = derive(partStats({ ...g, parts: [...g.parts, { uid: 'p10', id: 'spike', t: .5, angle: 0, scale: 1, mirror: false, roll: 0 }, { uid: 'p11', id: 'spike', t: .6, angle: 0, scale: 1, mirror: false, roll: 0 }] }));
     expect(armored.armor).toBe(2);
-    expect(derive(statsOf(withMouth(g, 'mouth_snapper'))).bite).toBeGreaterThan(derive(base).bite);
+    expect(derive(partStats(withMouth(g, 'mouth_snapper'))).bite).toBeGreaterThan(derive(base).bite);
   });
   it('sanitizes saved genomes and rejects unknown parts and colors', () => {
     const g = starterGenome();

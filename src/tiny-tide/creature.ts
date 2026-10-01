@@ -2,7 +2,7 @@
 // bone for each spine point, and Blender parts attached to the bones.
 import * as T from 'three';
 import { asset } from './assets';
-import { part, type PartSpec } from './parts';
+import { part, type PartSpec, type TintSlot } from './parts';
 import type { Genome, PlacedPart } from './genome';
 import { layout, SPACING, surface, type Layout } from './body-geometry';
 import { CHOMP_PITCH, createRigPose, rigPoseInto, type RigPose } from './rig';
@@ -57,61 +57,197 @@ export function bodyGeometry(g: Genome, l = layout(g)) {
 
 interface Pivot { node: T.Object3D; kind: 'jaw' | 'seg' | 'flap' | 'swing'; index: number; rest: T.Euler; key: string }
 interface AttachedPart { placed: PlacedPart; spec: PartSpec; object: T.Group; pivots: Pivot[]; mirrored: boolean; copy: 0 | 1 }
+/** Cumulative counts (never decremented) of the geometries and materials this model created and disposed, and of body rebuilds. */
+export interface CreatureCounters { createdGeometries: number; disposedGeometries: number; createdMaterials: number; disposedMaterials: number; rebuilds: number }
+/** Highlight styles. `selected` wins over `problem`; `ghost` is the placement preview. */
+export type HighlightStyle = 'selected' | 'problem' | 'ghost';
+const HIGHLIGHT_ORDER: readonly HighlightStyle[] = ['selected', 'problem'];
+const bodyKey = (g: Genome) => JSON.stringify(g.spine) + JSON.stringify(g.paint);
+
+/**
+ * A creature model that can follow edits without being rebuilt. Topology changes (parts added or removed, pair
+ * toggles, segment count) go through `setGenome`, outside the animation loop; numeric changes go through
+ * `updatePart` and `rebuildBody`. Part geometries are shared with the asset library and never disposed here.
+ */
 export class CreatureModel {
   readonly group = new T.Group();
-  readonly bones: T.Bone[] = [];
+  bones: T.Bone[] = [];
   readonly parts: AttachedPart[] = [];
-  readonly layout: Layout;
+  layout: Layout;
   readonly body: T.SkinnedMesh;
-  private materials: T.Material[] = [];
-  private readonly pose: RigPose;
-  constructor(readonly genome: Genome) {
+  readonly counters: CreatureCounters = { createdGeometries: 0, disposedGeometries: 0, createdMaterials: 0, disposedMaterials: 0, rebuilds: 0 };
+  private readonly bodyMaterial: T.MeshStandardMaterial;
+  private readonly tints = new Map<TintSlot, T.MeshStandardMaterial>();
+  /** Highlight materials keyed `${style}:${sourceMaterialId}`. */
+  private readonly styled = new Map<string, T.MeshStandardMaterial>();
+  private readonly highlights = new Map<HighlightStyle, ReadonlySet<string>>();
+  /** One preview object per part id and copy, reused for every hover. */
+  private readonly ghostPool = new Map<string, T.Group[]>();
+  private ghost: { placed: PlacedPart; objects: T.Group[] } | null = null;
+  private pose: RigPose;
+  /** Cumulative count of animated pivots with no key in the rig pose (a stale genome binding). Stays 0. */
+  missingPivots = 0;
+  private builtKey: string;
+  constructor(public genome: Genome) {
     this.layout = layout(genome);
     this.pose = createRigPose(genome);
-    const l = this.layout, s = genome.spine;
-    s.forEach((point, i) => {
-      const bone = new T.Bone(); bone.name = `spine_${i}`;
-      if (i === 0) bone.position.set(0, point.lift, l.z[0]!); else bone.position.set(0, point.lift - s[i - 1]!.lift, -SPACING);
-      if (i > 0) this.bones[i - 1]!.add(bone);
-      this.bones.push(bone);
-    });
-    const bodyMaterial = new T.MeshStandardMaterial({ vertexColors: true, roughness: .43, envMapIntensity: .65 });
-    this.materials.push(bodyMaterial);
-    this.body = new T.SkinnedMesh(bodyGeometry(genome, l), bodyMaterial);
-    this.body.castShadow = true; this.body.receiveShadow = true; this.body.userData.ownedGeometry = true; this.body.name = 'Creature body';
+    this.makeBones();
+    this.bodyMaterial = this.countMaterial(new T.MeshStandardMaterial({ vertexColors: true, roughness: .43, envMapIntensity: .65 }));
+    this.body = new T.SkinnedMesh(this.countGeometry(bodyGeometry(genome, this.layout)), this.bodyMaterial);
+    this.body.castShadow = true; this.body.receiveShadow = true; this.body.name = 'Creature body';
     this.body.add(this.bones[0]!); this.body.bind(new T.Skeleton(this.bones));
     this.body.frustumCulled = false;
     this.group.add(this.body);
-    const tints = new Map<string, T.MeshStandardMaterial>();
+    this.builtKey = bodyKey(genome);
     for (const placed of genome.parts) {
-      this.attach(placed, false, tints);
-      if (placed.mirror) this.attach(placed, true, tints);
+      this.attach(placed, 0);
+      if (placed.mirror) this.attach(placed, 1);
     }
   }
-  private attach(placed: PlacedPart, mirrored: boolean, tints: Map<string, T.MeshStandardMaterial>) {
-    const spec = part(placed.id); if (!spec) return;
-    const copy: 0 | 1 = mirrored ? 1 : 0, object = asset(`part_${placed.id}`);
+  private countGeometry<G extends T.BufferGeometry>(g: G): G { this.counters.createdGeometries++; return g; }
+  private countMaterial<M extends T.Material>(m: M): M { this.counters.createdMaterials++; return m; }
+  private makeBones() {
+    const l = this.layout, s = this.genome.spine;
+    this.bones = s.map((_, i) => { const bone = new T.Bone(); bone.name = `spine_${i}`; return bone; });
+    this.bones.forEach((bone, i) => { if (i > 0) this.bones[i - 1]!.add(bone); });
+    this.restBones(l);
+  }
+  private restBones(l: Layout) {
+    const s = this.genome.spine;
+    this.bones.forEach((bone, i) => {
+      if (i === 0) bone.position.set(0, s[0]!.lift, l.z[0]!); else bone.position.set(0, s[i]!.lift - s[i - 1]!.lift, -SPACING);
+      bone.rotation.set(0, 0, 0);
+    });
+  }
+  private tint(slot: TintSlot, source: T.MeshStandardMaterial) {
+    let m = this.tints.get(slot);
+    if (!m) { m = this.countMaterial(source.clone()); m.color.set(this.genome.paint[slot]); this.tints.set(slot, m); }
+    return m;
+  }
+  /** Clones `object`'s tint meshes onto the model's tint materials and records each mesh's base material. */
+  private prepare(object: T.Group, spec: PartSpec) {
+    object.traverse(node => {
+      if (!(node instanceof T.Mesh) || Array.isArray(node.material)) return;
+      if (node.material.name === 'Tide_tint') node.material = this.tint(spec.tint, node.material as T.MeshStandardMaterial);
+      node.userData.baseMaterial = node.material;
+    });
+  }
+  private mount(object: T.Object3D, placed: PlacedPart, copy: 0 | 1) {
     // The nearest bone carries the part, so it follows the swimming body (the same mount gameplay uses).
-    const mount = resolveMount(this.genome, placed, copy, this.layout), bone = this.bones[mount.boneIndex]!;
+    const mount = resolveMount(this.genome, placed, copy, this.layout);
+    this.bones[mount.boneIndex]!.add(object);
     mount.local.decompose(object.position, object.quaternion, object.scale);
+  }
+  private attach(placed: PlacedPart, copy: 0 | 1) {
+    const spec = part(placed.id); if (!spec) return;
+    const object = asset(`part_${placed.id}`);
+    this.prepare(object, spec);
     const pivots: Pivot[] = [];
     object.traverse(node => {
-      if (node instanceof T.Mesh && !Array.isArray(node.material) && node.material.name === 'Tide_tint') {
-        const slot = spec.tint, key = slot;
-        if (!tints.has(key)) {
-          const m = (node.material as T.MeshStandardMaterial).clone(); m.color.set(this.genome.paint[slot]); tints.set(key, m); this.materials.push(m);
-        }
-        node.material = tints.get(key)!;
-      }
       const kind = node.userData.tt_pivot as Pivot['kind'] | undefined;
       if (kind) {
         const index = Number(node.userData.tt_index ?? 0);
         pivots.push({ node, kind, index, rest: node.rotation.clone(), key: `${placed.uid}:${copy}:${kind}:${index}` });
       }
     });
-    object.userData.partId = placed.id; object.userData.partUid = placed.uid; object.userData.copy = copy; object.userData.mirrored = mirrored; object.userData.placedIndex = this.genome.parts.indexOf(placed);
-    bone.add(object);
-    this.parts.push({ placed, spec, object, pivots, mirrored, copy });
+    object.userData.partId = placed.id; object.userData.partUid = placed.uid; object.userData.copy = copy; object.userData.mirrored = copy === 1;
+    this.mount(object, placed, copy);
+    const attached: AttachedPart = { placed, spec, object, pivots, mirrored: copy === 1, copy };
+    this.parts.push(attached); this.style(attached);
+  }
+  /**
+   * Binds the model to `g` after a topology change: parts added or removed, pair toggles, a changed part id or a
+   * changed segment count. Keeps every attached object whose uid, copy and id survive; refreshes the rig key map and
+   * bone buffers. Call it outside the animation loop.
+   */
+  setGenome(g: Genome) {
+    this.genome = g;
+    if (g.spine.length !== this.bones.length) this.rebuildBody();
+    else this.layout = layout(g);
+    const wanted = new Map<string, PlacedPart>();
+    for (const placed of g.parts) for (const copy of placed.mirror ? [0, 1] : [0]) wanted.set(`${placed.uid}:${copy}`, placed);
+    for (let i = this.parts.length - 1; i >= 0; i--) {
+      const a = this.parts[i]!, placed = wanted.get(`${a.placed.uid}:${a.copy}`);
+      if (placed && placed.id === a.placed.id) { a.placed = placed; wanted.delete(`${placed.uid}:${a.copy}`); this.mount(a.object, placed, a.copy); continue; }
+      a.object.removeFromParent(); this.parts.splice(i, 1);
+    }
+    for (const [key, placed] of wanted) this.attach(placed, key.endsWith(':1') ? 1 : 0);
+    // Keep the genome's part order, so callers can rely on it.
+    const order = new Map(g.parts.map((p, i) => [p.uid, i]));
+    this.parts.sort((a, b) => order.get(a.placed.uid)! - order.get(b.placed.uid)! || a.copy - b.copy);
+    this.pose = createRigPose(g);
+    if (this.ghost) this.setGhost(this.ghost.placed);
+  }
+  /** Moves the attached copies of `uid` to `placed` (or to the genome's part). Numbers only: no new objects. */
+  updatePart(uid: string, placed?: PlacedPart) {
+    for (const a of this.parts) if (a.placed.uid === uid) { if (placed) a.placed = placed; this.mount(a.object, a.placed, a.copy); }
+  }
+  /** True when the spine or the paint changed since the body was last built. */
+  get bodyStale() { return bodyKey(this.genome) !== this.builtKey; }
+  /** Rebuilds the body mesh for the current spine and paint, disposes the old geometry and re-mounts every part. */
+  rebuildBody() {
+    const g = this.genome;
+    this.layout = layout(g);
+    if (g.spine.length !== this.bones.length) {
+      this.bones[0]?.removeFromParent();
+      const old = this.body.skeleton;
+      this.makeBones(); this.body.add(this.bones[0]!);
+      this.body.bind(new T.Skeleton(this.bones)); old.dispose();
+    } else { this.restBones(this.layout); this.body.bind(this.body.skeleton); }
+    const previous = this.body.geometry;
+    this.body.geometry = this.countGeometry(bodyGeometry(g, this.layout));
+    previous.dispose(); this.counters.disposedGeometries++;
+    for (const [slot, m] of this.tints) m.color.set(g.paint[slot]);
+    for (const a of this.parts) this.mount(a.object, a.placed, a.copy);
+    if (this.ghost) this.setGhost(this.ghost.placed);
+    this.builtKey = bodyKey(g); this.counters.rebuilds++;
+  }
+  /** Shows a translucent preview of `placed` (not part of the genome), or hides it. Objects come from a pool per part id. */
+  setGhost(placed: PlacedPart | null) {
+    if (this.ghost) for (const o of this.ghost.objects) o.visible = false;
+    this.ghost = null;
+    if (!placed) return;
+    const spec = part(placed.id); if (!spec) return;
+    let pool = this.ghostPool.get(placed.id);
+    if (!pool) { pool = []; this.ghostPool.set(placed.id, pool); }
+    const copies = placed.mirror ? 2 : 1;
+    while (pool.length < copies) {
+      const object = asset(`part_${placed.id}`);
+      this.prepare(object, spec);
+      object.userData.ghost = true;
+      object.traverse(node => { if (node instanceof T.Mesh && !Array.isArray(node.material)) node.material = this.styledMaterial('ghost', node.userData.baseMaterial as T.Material); });
+      pool.push(object);
+    }
+    const objects = pool.slice(0, copies);
+    objects.forEach((o, copy) => { this.mount(o, placed, copy as 0 | 1); o.visible = true; });
+    this.ghost = { placed, objects };
+  }
+  /** Sets the parts drawn in `style` (replacing that style's previous set). Materials come from a cache. */
+  setHighlight(uids: Iterable<string>, style: Exclude<HighlightStyle, 'ghost'>) {
+    this.highlights.set(style, new Set(uids));
+    for (const a of this.parts) this.style(a);
+  }
+  private style(a: AttachedPart) {
+    const style = HIGHLIGHT_ORDER.find(s => this.highlights.get(s)?.has(a.placed.uid)) ?? null;
+    a.object.traverse(node => {
+      if (!(node instanceof T.Mesh) || !node.userData.baseMaterial) return;
+      const base = node.userData.baseMaterial as T.Material;
+      node.material = style ? this.styledMaterial(style, base) : base;
+    });
+  }
+  private styledMaterial(style: HighlightStyle, source: T.Material): T.Material {
+    if (!(source instanceof T.MeshStandardMaterial)) return source;
+    const key = `${style}:${source.uuid}`;
+    let m = this.styled.get(key);
+    if (!m) {
+      m = this.countMaterial(source.clone());
+      if (style === 'selected') { m.emissive.set('#fff2b3'); m.emissiveIntensity = .35; }
+      else if (style === 'problem') { m.emissive.set('#ff6b57'); m.emissiveIntensity = .45; }
+      else { m.transparent = true; m.opacity = .55; m.depthWrite = false; m.emissive.set('#bff7ec'); m.emissiveIntensity = .25; }
+      this.styled.set(key, m);
+    }
+    m.color.copy(source.color);   // tints follow paint changes
+    return m;
   }
   /** Procedural motion. `chomp` is 0–1, `swim` is 0 when idle and 1 when moving. */
   animate(time: number, swim: number, chomp: number) {
@@ -122,15 +258,16 @@ export class CreatureModel {
     if (n > 1) this.bones[1]!.rotation.x = chomp * CHOMP_PITCH;
     for (const attached of this.parts) for (const pivot of attached.pivots) {
       const r = pivot.rest, o = pose.pivots.get(pivot.key);   // `${uid}:${copy}:${kind}:${index}`
-      if (o) pivot.node.rotation.set(r.x + o.x, r.y + o.y, r.z + o.z);
+      if (!o) { this.missingPivots++; continue; }
+      pivot.node.rotation.set(r.x + o.x, r.y + o.y, r.z + o.z);
     }
   }
   /** The body length in creature units, for camera framing. */
   get length() { return this.layout.front - this.layout.rear; }
   dispose() {
-    this.body.geometry.dispose(); this.body.skeleton.dispose();
-    this.group.traverse(node => { if (node instanceof T.Mesh && node.userData.ownedMaterial) (node.material as T.Material).dispose(); });
-    for (const m of this.materials) m.dispose();
+    this.body.geometry.dispose(); this.counters.disposedGeometries++; this.body.skeleton.dispose();
+    for (const m of [this.bodyMaterial, ...this.tints.values(), ...this.styled.values()]) { m.dispose(); this.counters.disposedMaterials++; }
+    this.tints.clear(); this.styled.clear();
     this.group.removeFromParent();
   }
 }
