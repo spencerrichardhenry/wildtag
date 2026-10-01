@@ -9,12 +9,14 @@ import { tierSpecies } from './species';
 import { PLAYER_HALF, SIZES } from './biomes';
 import { entityRadius, provoke, type EcoEvent, type Entity } from './ecosystem';
 import { canApproachFood, type Traversal } from './food-access';
-import { openEditor } from './editor';
-import { COAST_READY, eligibleChildren } from './plans';
+import { openEditor, type EditorResult, type SubmitOutcome } from './editor';
+import { openPathScreen, type PathChoice } from './path-screen';
+import { cardSummary, COAST_READY, eligibleChildren, leadsTo, type BodyPlan } from './plans';
+import { quoteDesign } from './economy';
 import { newRuntime, type Actor, type Capsule, type CombatInput, type Constraint, type MutVec3, type Orientation, type RecoveryResult, type Vec3, type WorldQueries } from './combat-types';
 import { basicRequested, readIntent, RELEASED } from './input';
 import { blockHint, stepPlayer } from './player-motion';
-import { beginRespawn, evolutionDestination, reconcileAfterCommit, recoverPlayer, resetRuntime, resolveHazards, resolveRespawn } from './lifecycle';
+import { beginRespawn, canChooseNextPlan, evolutionDestination, reconcileAfterCommit, recoverPlayer, resetRuntime, resolveHazards, resolveRespawn } from './lifecycle';
 import { habitat, movement, movementCapabilities } from './profiles';
 import { makeTerrain, makeWorldQueries, supportHeight, zoneLabel } from './world-queries';
 import { orientHull } from './orientation';
@@ -276,8 +278,8 @@ function syncUI() {
   const caps = capsOf(), action = caps.breach ? 'Breach' : 'Rise';
   el('vertical-controls').hidden = !caps.rise && !caps.breach; el('special').hidden = !caps.rise && !caps.breach; el('dive').hidden = !caps.dive;
   el('special-label').textContent = action.toUpperCase(); el('special').setAttribute('aria-label', action);
-  const ready = evolveReady(run);
-  el('evolve').hidden = !ready || mode !== 'playing'; el('objective').hidden = ready;
+  const canEvolve = canChooseNextPlan(run, BUILD);
+  el('evolve').hidden = !canEvolve || mode !== 'playing'; el('objective').hidden = canEvolve;
   el('objective-text').textContent = objective();
   document.querySelectorAll<HTMLElement>('[data-stage]').forEach(node => { const n = Number(node.dataset.stage); node.classList.toggle('active', n === run.stage); node.classList.toggle('done', n < run.stage); });
   document.documentElement.style.setProperty('--stage-color', stage.color);
@@ -285,6 +287,7 @@ function syncUI() {
 }
 function objective() {
   if (run.stage === 4) return 'Float freely. Eat every last planet.';
+  if (evolveReady(run) && !canChooseNextPlan(run, BUILD)) return 'Your path ends here for now. Keep eating to grow strong.';
   // Only species with an approachable instance (a known, fresh guide entry) are named.
   const diet = dietOf(run.genome), reachable = new Set(world.edibleFoods.filter(f => approachable(f.entity) === true).map(f => f.entity.spec.key));
   const foods = tierSpecies(run.stage).filter(s => dietCanEat(diet, s.tag) && reachable.has(s.key)).map(s => s.label.toLowerCase());
@@ -334,36 +337,58 @@ function help() {
   el('got-it').onclick = closeDialog;
 }
 async function edit(kind: 'edit' | 'evolve') {
-  if (mode !== 'playing' || (kind === 'evolve' && !evolveReady(run))) return;
+  if (mode !== 'playing' || (kind === 'evolve' && !canChooseNextPlan(run, BUILD))) return;
   mode = 'editing'; clearInput(); save(); el('game-ui').classList.add('dimmed');
-  const next = kind === 'evolve' ? eligibleChildren(run.plans, BUILD)[0] : undefined, target = next ?? currentPlan(run);
-  const result = await openEditor({ genome: run.genome, name: run.name, stage: target.size, plan: target, unlocked: run.unlocked, budget: dnaOf(run) + genomeCost(run.genome), mode: kind, nextSerial: run.nextPartSerial });
+  if (kind === 'evolve') await chooseEvolution(); else await editDesign();
   el('game-ui').classList.remove('dimmed');
-  if (!result) { mode = 'playing'; syncUI(); return; }
-  const before = run.genome, oldLoadout = structuredClone(run.loadout);
-  if (kind === 'evolve') {
-    // Temporary flow (Task C7 replaces it): prepare, find the destination, then commit at once (no awaits in between).
-    const adapted = next ? adaptToPlan(result.genome, next, { unlocked: run.unlocked }, Math.max(run.nextPartSerial, result.nextSerial)) : null;
-    const prepared = next && adapted?.ok ? prepareEvolution(run, next.id, adapted.genome, result.name, BUILD, Math.max(result.nextSerial, adapted.nextSerial)) : null;
-    if (next && prepared && 'planId' in prepared) {
-      const nextActor = playerActor(next, prepared.genome, next.size, 1), nextLegality = legality(next.size), anchor = startAnchor(nextActor, next.size, nextLegality);
-      const destination = evolutionDestination(nextActor, physical, { ...nextLegality, orientation: { yaw: rt.orientation.yaw, pitch: 0 }, time }, anchor.ok ? anchor.position : physical);
-      if (!destination.ok) { toast("This body can't fit anywhere here."); mode = 'playing'; syncUI(); return; }
-      commitEvolution(run, prepared); resetRuntime(rt, destination.orientation); genomeRevision++; refreshDerived();
-      physical = { ...destination.position }; startTransformation(destination.position); return;
-    }
-    toast(prepared && !('planId' in prepared) ? prepared.reason : 'That evolution is not possible yet.'); mode = 'playing'; syncUI(); return;
+  // A committed evolution is already transforming (mode 'evolving').
+  if (mode === 'editing') { mode = 'playing'; save(); }
+  syncUI();
+}
+const budgetOf = () => dnaOf(run) + genomeCost(run.genome);
+/** The path screen, then the evolve editor. Cancel in the editor returns to the path screen; "Not yet" returns to play. */
+async function chooseEvolution() {
+  const current = currentPlan(run);
+  const choices: PathChoice[] = eligibleChildren(run.plans, BUILD).map(plan => {
+    const adaptation = adaptToPlan(run.genome, plan, { unlocked: run.unlocked, anchorCheck: BUILD.anchorCheck }, run.nextPartSerial);
+    return { plan, adaptation, quote: adaptation.ok ? quoteDesign(run.economy, run.genome, adaptation.genome) : null, leadsTo: leadsTo(plan, run.plans, BUILD), summary: cardSummary(current, plan, run.plans) };
+  });
+  for (;;) {
+    const id = await openPathScreen({ current, choices, genome: run.genome });
+    const chosen = id === null ? undefined : choices.find(c => c.plan.id === id);
+    if (!chosen) return;
+    const a = chosen.adaptation;
+    const result = await openEditor({ genome: a.ok ? a.genome : run.genome, name: run.name, stage: chosen.plan.size, plan: chosen.plan, unlocked: run.unlocked, budget: budgetOf(), mode: 'evolve',
+      nextSerial: Math.max(run.nextPartSerial, a.ok ? a.nextSerial : 0), onSubmit: async r => submitEvolution(chosen.plan, r) });
+    if (result) return;
   }
-  const applied = applyDesign(run, result.genome, result.name, BUILD, result.nextSerial);
-  if (!applied.ok) toast(applied.reason);
-  else {
-    // The simulation clock is stopped while editing, so `time` is the commit time.
-    reconcileAfterCommit(rt, designDelta(before, run.genome, oldLoadout), run.genome, 'player', time); genomeRevision++;
-  }
-  refreshDerived(); if (JSON.stringify(before) !== JSON.stringify(run.genome)) { world.setCreature(run.genome); world.burst(world.player.position.x, world.player.position.y, world.player.position.z, '#f4e2b9', 30); audio.found(); }
-  mode = 'playing';
-  if (applied.ok) checkPose(playerActorCached());
-  save(); syncUI();
+}
+/** Prepares, places and commits an evolution with no await in between (Prepared's economy is trusted at commit). */
+function submitEvolution(next: BodyPlan, r: EditorResult): SubmitOutcome {
+  const prepared = prepareEvolution(run, next.id, r.genome, r.name, BUILD, r.nextSerial);
+  if (!('planId' in prepared)) return { ok: false, reason: prepared.reason };
+  const nextActor = playerActor(next, prepared.genome, next.size, 1), nextLegality = legality(next.size), anchor = startAnchor(nextActor, next.size, nextLegality);
+  const destination = evolutionDestination(nextActor, physical, { ...nextLegality, orientation: { yaw: rt.orientation.yaw, pitch: 0 }, time }, anchor.ok ? anchor.position : physical);
+  if (!destination.ok) return { ok: false, reason: "This body can't fit anywhere here." };
+  commitEvolution(run, prepared); resetRuntime(rt, destination.orientation); genomeRevision++; refreshDerived();
+  physical = { ...destination.position }; startTransformation(destination.position);
+  return { ok: true };
+}
+/** The edit editor. A failed commit keeps the editor open with the reason. */
+async function editDesign() {
+  let committed = false;
+  await openEditor({ genome: run.genome, name: run.name, stage: run.stage, plan: currentPlan(run), unlocked: run.unlocked, budget: budgetOf(), mode: 'edit', nextSerial: run.nextPartSerial,
+    onSubmit: async r => {
+      const before = run.genome, oldLoadout = structuredClone(run.loadout);
+      const applied = applyDesign(run, r.genome, r.name, BUILD, r.nextSerial);
+      if (!applied.ok) return { ok: false, reason: applied.reason };
+      // The simulation clock is stopped while editing, so `time` is the commit time.
+      reconcileAfterCommit(rt, designDelta(before, run.genome, oldLoadout), run.genome, 'player', time); genomeRevision++; refreshDerived(); committed = true;
+      if (JSON.stringify(before) !== JSON.stringify(run.genome)) { world.setCreature(run.genome); world.burst(world.player.position.x, world.player.position.y, world.player.position.z, '#f4e2b9', 30); audio.found(); }
+      return { ok: true };
+    } });
+  if (!committed) return;
+  mode = 'playing'; save(); checkPose(playerActorCached());
 }
 function startTransformation(destination: Vec3) {
   mode = 'evolving'; clearInput(); audio.evolve(); save();
@@ -638,7 +663,8 @@ function frame(now: number) {
     if (mode === 'playing') {
       const biome = world.biome.name;
       if (biome !== lastBiome) { el('biome').textContent = `${STAGES[run.stage]!.biome} · ${biome.toUpperCase()}`; lastBiome = biome; }
-      el('evolve').hidden = !evolveReady(run);
+      const canEvolve = canChooseNextPlan(run, BUILD);
+      el('evolve').hidden = !canEvolve; el('objective').hidden = canEvolve;
     }
   }
 }

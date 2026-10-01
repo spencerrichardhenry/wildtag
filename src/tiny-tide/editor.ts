@@ -15,8 +15,12 @@ export interface EditorOptions {
   budget: number; mode: 'edit' | 'evolve';
   /** First unused part serial. The editor only moves it forward. */
   nextSerial: number;
+  /** Done calls this. On `{ ok: false }` the editor stays open with its draft, undo history and
+   *  gesture state, and shows the reason in `.ed-submit-error`. It closes only after `{ ok: true }` or Cancel. */
+  onSubmit(result: EditorResult): Promise<SubmitOutcome>;
 }
 export interface EditorResult { genome: Genome; name: string; nextSerial: number }
+export type SubmitOutcome = { ok: true } | { ok: false; reason: string };
 type Tab = 'parts' | 'body' | 'paint';
 const SWATCHES = ['#ffad92', '#ffc769', '#ffe1b8', '#ef8a80', '#d4b1f5', '#bfc0ff', '#b4e7ed', '#7fd1b9', '#9fd36b', '#f6e27a', '#f59ac0', '#8fb3ff', '#6c7bd9', '#4d9c8e', '#3b5b6e', '#fff6e3'];
 const STAT_ROWS: [keyof Stats, string, number][] = [['speed', 'Speed', 6], ['bite', 'Bite', 6], ['reach', 'Reach', 3], ['armor', 'Armor', 6], ['health', 'Health', 6], ['sense', 'Sense', 8], ['stealth', 'Stealth', 4]];
@@ -70,6 +74,8 @@ class Editor {
   private raycaster = new T.Raycaster();
   private frame = 0;
   private closed = false;
+  /** True while `onSubmit` runs. Done, Cancel and Escape wait for it. */
+  private submitting = false;
   private readonly onResize = () => this.resize();
   private readonly onKey = (event: KeyboardEvent) => this.key(event);
 
@@ -91,7 +97,8 @@ class Editor {
       <div class="ed-panel"></div>
       <aside class="ed-stats"></aside>
       <div class="ed-tool" hidden></div>
-      <div class="ed-hint" aria-live="polite"></div>`;
+      <div class="ed-hint" aria-live="polite"></div>
+      <p class="ed-submit-error" role="alert" hidden></p>`;
     document.querySelector('#app')!.append(this.root);
     this.canvas = this.root.querySelector('.ed-view')!;
     this.renderer = new T.WebGLRenderer({ canvas: this.canvas, alpha: true, antialias: true });
@@ -104,8 +111,8 @@ class Editor {
     const nameInput = this.root.querySelector<HTMLInputElement>('.ed-name')!; nameInput.value = this.name;
     nameInput.addEventListener('input', () => { this.name = nameInput.value; });
     this.root.querySelector<HTMLButtonElement>('.ed-undo')!.onclick = () => this.undo();
-    this.root.querySelector<HTMLButtonElement>('.ed-cancel')!.onclick = () => this.close(null);
-    this.root.querySelector<HTMLButtonElement>('.ed-done')!.onclick = () => this.finish();
+    this.root.querySelector<HTMLButtonElement>('.ed-cancel')!.onclick = () => { if (!this.submitting) this.close(null); };
+    this.root.querySelector<HTMLButtonElement>('.ed-done')!.onclick = () => void this.finish();
     this.root.querySelectorAll<HTMLButtonElement>('[data-tab]').forEach(button => button.onclick = () => { this.tab = button.dataset.tab as Tab; this.placing = null; this.ghost = null; this.selected = null; this.rebuild(); this.render(); });
     this.canvas.addEventListener('pointerdown', e => this.pointerDown(e));
     this.canvas.addEventListener('pointermove', e => this.pointerMove(e));
@@ -126,9 +133,23 @@ class Editor {
     change(this.draft); this.rebuild(); this.render();
   }
   private undo() { const prior = this.history.pop(); if (!prior) return; this.draft = prior; this.selected = null; this.rebuild(); this.render(); }
-  private finish() {
-    if (problems(this.draft, this.options.plan, { unlocked: this.options.unlocked, budget: this.budget }).length) { this.hint(problems(this.draft, this.options.plan, { unlocked: this.options.unlocked, budget: this.budget })[0]!.message); return; }
-    this.close({ genome: cloneGenome(this.draft), name: this.name.trim() || this.options.name, nextSerial: this.serial });
+  private async finish() {
+    if (this.submitting || this.closed) return;
+    const issue = problems(this.draft, this.options.plan, { unlocked: this.options.unlocked, budget: this.budget })[0];
+    if (issue) { this.hint(issue.message); return; }
+    const result: EditorResult = { genome: cloneGenome(this.draft), name: this.name.trim() || this.options.name, nextSerial: this.serial };
+    this.submitting = true; this.showSubmitError(null); this.renderStatsOnly();
+    let outcome: SubmitOutcome;
+    try { outcome = await this.options.onSubmit(result); }
+    catch (error) { outcome = { ok: false, reason: error instanceof Error ? error.message : 'Something went wrong. Try again.' }; }
+    this.submitting = false;
+    if (outcome.ok) { this.close(result); return; }
+    // The draft, the undo history and the gesture state stay as they are.
+    this.showSubmitError(outcome.reason); this.renderStatsOnly();
+  }
+  private showSubmitError(reason: string | null) {
+    const el = this.root.querySelector<HTMLElement>('.ed-submit-error')!;
+    el.hidden = reason === null; el.textContent = reason ?? '';
   }
   private close(result: EditorResult | null) {
     if (this.closed) return;
@@ -139,7 +160,7 @@ class Editor {
   }
   private key(event: KeyboardEvent) {
     if (event.target instanceof HTMLInputElement) return;
-    if (event.key === 'Escape') { event.preventDefault(); if (this.placing || this.selected !== null) { this.placing = null; this.ghost = null; this.selected = null; this.rebuild(); this.render(); } else this.close(null); }
+    if (event.key === 'Escape') { event.preventDefault(); if (this.submitting) return; if (this.placing || this.selected !== null) { this.placing = null; this.ghost = null; this.selected = null; this.rebuild(); this.render(); } else this.close(null); }
     if ((event.key === 'Delete' || event.key === 'Backspace') && this.selected !== null) this.removeSelected();
     if (event.key === 'z' && (event.metaKey || event.ctrlKey)) { event.preventDefault(); this.undo(); }
   }
@@ -379,7 +400,8 @@ class Editor {
       <div class="ed-stat"><span>Hearts</span><em>${derived.maxHealth}</em></div>
       <div class="ed-complexity"><span>COMPLEXITY</span><i><b style="width:${count / limit * 100}%"></b></i><em>${count} / ${limit}</em></div>
       ${issues.length ? `<p class="ed-problem">${issues[0]!.message}</p>` : ''}`;
-    this.root.querySelector<HTMLButtonElement>('.ed-done')!.disabled = issues.length > 0;
+    this.root.querySelector<HTMLButtonElement>('.ed-done')!.disabled = issues.length > 0 || this.submitting;
+    this.root.querySelector<HTMLButtonElement>('.ed-cancel')!.disabled = this.submitting;
     this.root.querySelector<HTMLButtonElement>('.ed-undo')!.disabled = !this.history.length;
   }
 }
