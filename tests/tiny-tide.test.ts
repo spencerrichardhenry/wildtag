@@ -97,14 +97,14 @@ describe('Tiny Tide world generation', () => {
 });
 
 describe('Tiny Tide ecosystem', () => {
-  const ctx = (_eco: Ecosystem, stage: number, player: { x: number; y: number; z: number }, extra = {}) => ({ stage, dt: .1, time: 0, player, playerRadius: .6 * SIZES[stage]!, stealthFactor: 1, vulnerable: true, ...extra });
+  const ctx = (_eco: Ecosystem, stage: number, player: { x: number; y: number; z: number }, extra = {}) => ({ stage, dt: .1, now: 0, player, playerHull: [{ start: player, end: player, radius: .6 * SIZES[stage]! }], stealthFactor: 1, perceivable: true, ...extra });
   it('lets a crab notice, hunt and bite a nearby tiny creature, and stealth hides it', () => {
     const eco = new Ecosystem(7), crab = eco.entities.find(e => e.spec.key === '1:crab')!;
     const player = { x: crab.x + 6, y: crab.y, z: crab.z };
     eco.step(ctx(eco, 0, player)); expect(crab.mode).toBe('hunt');
     let events: ReturnType<Ecosystem['step']> = [];
     for (let i = 0; i < 40 && !events.length; i++) events = eco.step(ctx(eco, 0, player)).filter(e => e.entity === crab);
-    expect(events[0]?.type).toBe('attack'); expect(events[0]!.damage).toBe(3);
+    expect(events[0]?.type).toBe('hazard'); expect(events[0]!.damage).toBe(3);
     const quiet = new Ecosystem(7), crab2 = quiet.entities.find(e => e.spec.key === '1:crab')!;
     quiet.step(ctx(quiet, 0, { x: crab2.x + 6, y: crab2.y, z: crab2.z }, { stealthFactor: .35 })); expect(crab2.mode).toBe('calm');
   });
@@ -112,16 +112,18 @@ describe('Tiny Tide ecosystem', () => {
     const eco = new Ecosystem(7), crab = eco.entities.find(e => e.spec.key === '1:crab')!;
     const player = { x: crab.x + 4, y: crab.y, z: crab.z };
     eco.step(ctx(eco, 1, player)); expect(crab.mode).toBe('calm');
-    provoke(crab); expect(crab.mode).toBe('angry');
-    let attacked = false; for (let i = 0; i < 60 && !attacked; i++) attacked = eco.step(ctx(eco, 1, player)).some(e => e.entity === crab && e.type === 'attack');
+    provoke(crab, player, 0); expect(crab.mode).toBe('angry');
+    let attacked = false; for (let i = 0; i < 60 && !attacked; i++) attacked = eco.step(ctx(eco, 1, player)).some(e => e.entity === crab && e.type === 'hazard');
     expect(attacked).toBe(true);
   });
-  it('gives up a hunt when the player escapes, and never hurts an invulnerable player', () => {
+  it('gives up a hunt when the player escapes, and perceives independently of damage', () => {
     const eco = new Ecosystem(9), crab = eco.entities.find(e => e.spec.key === '1:crab')!;
     eco.step(ctx(eco, 0, { x: crab.x + 5, y: crab.y, z: crab.z })); expect(crab.mode).toBe('hunt');
     eco.step(ctx(eco, 0, { x: crab.x + 500, y: crab.y, z: crab.z })); expect(crab.mode).toBe('return');
     const safe = new Ecosystem(9), crab2 = safe.entities.find(e => e.spec.key === '1:crab')!;
-    for (let i = 0; i < 50; i++) expect(safe.step(ctx(safe, 0, { x: crab2.x, y: crab2.y, z: crab2.z }, { vulnerable: false }))).toEqual([]);
+    // The ecosystem has no damage flag: only the perceivable flag decides whether the player is noticed.
+    safe.step(ctx(safe, 0, { x: crab2.x, y: crab2.y, z: crab2.z }, { perceivable: false })); expect(crab2.mode).toBe('calm');
+    safe.step(ctx(safe, 0, { x: crab2.x, y: crab2.y, z: crab2.z })); expect(crab2.mode).toBe('hunt');
   });
   it('makes prey flee from a player that can eat it', () => {
     const eco = new Ecosystem(3), pod = eco.entities.find(e => e.spec.key === '0:copepod')!;

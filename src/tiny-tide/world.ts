@@ -352,7 +352,7 @@ export class TideWorld {
       lod.group.traverse(object => { if (object instanceof T.Mesh) object.castShadow = shadow; });
     }
     // The menu keeps the ecosystem moving in the background with its ambient motion.
-    if (menu && dt > 0) this.eco.step({ stage: this.stage, dt, time, player: { x: 1e7, y: 0, z: 1e7 }, playerRadius: 0, stealthFactor: 1, vulnerable: false });
+    if (menu && dt > 0) this.eco.step({ stage: this.stage, dt, now: time, player: { x: 1e7, y: 0, z: 1e7 }, playerHull: [], perceivable: false, stealthFactor: 1 });
     this.syncFoods();
     for (const f of this.foods) {
       const e = f.entity;

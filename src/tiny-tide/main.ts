@@ -234,7 +234,7 @@ function chomp() {
   const { food } = hit, e = food.entity, pos = world.screenPoint(new T.Vector3(food.data.x, food.data.y + 1, food.data.z));
   const bigger = food.tier > run.stage, damage = bigger ? Math.max(1, Math.floor(derived.bite / 2)) : derived.bite;
   if (e.spec.hp > 1 || bigger) {
-    e.hp -= damage; provoke(e); audio.bite(run.bites); world.burst(food.data.x, food.data.y, food.data.z, '#ffd9a8', 8);
+    e.hp -= damage; provoke(e, world.physical(), time); audio.bite(run.bites); world.burst(food.data.x, food.data.y, food.data.z, '#ffd9a8', 8);
     if (e.hp > 0) { floater(`-${damage}`, pos.x, pos.y, 'hit'); return; }
   }
   const drop = DROPS[e.spec.kind];
@@ -409,7 +409,9 @@ function frame(now: number) {
     el('special').classList.toggle('cooldown', run.stage === 2 && leapCooldown > 0);
   }
   if (mode === 'playing' || mode === 'evolving' || mode === 'fainted') {
-    const events = world.eco.step({ stage: run.stage, dt, time, player: world.physical(), playerRadius: .9 * growth * world.scale, stealthFactor: derived.stealthFactor, vulnerable: mode === 'playing' && grace <= 0 });
+    // A world-space sphere stands in for the player hull until the combat runtime passes the real one.
+    const player = world.physical(), playerHull = [{ start: player, end: player, radius: .9 * growth * world.scale }];
+    const events = world.eco.step({ stage: run.stage, dt, now: time, player, playerHull, perceivable: mode === 'playing', stealthFactor: derived.stealthFactor });
     for (const event of events) takeHit(event.damage, event.entity.spec.label);
   }
   world.update(active ? dt : 0, time, mode === 'menu', moving, chompPulse, growth);
