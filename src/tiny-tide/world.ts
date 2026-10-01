@@ -3,6 +3,7 @@ import { batch, coral, foodModel, kelp, material, sceneryAsset } from './models'
 import { biomeAt, random, seabedHeight, SIZES, WATER_LEVEL, type Biome } from './biomes';
 import { CreatureModel } from './creature';
 import { Ecosystem, type Entity } from './ecosystem';
+import type { Vec3 } from './combat-types';
 import type { Genome } from './genome';
 import type { FoodKind } from './species';
 
@@ -43,6 +44,8 @@ export class TideWorld {
   transitioning = false;
   transitionProgress = 0;
   private fromScale = 1;
+  private fromPhysical = new T.Vector3();
+  private toPhysical = new T.Vector3();
   private toScale = 1;
   private previousCreature: CreatureModel | null = null;
   private reef = new T.Group();
@@ -237,17 +240,16 @@ export class TideWorld {
     this.stage = stage; this.scale = SIZES[stage]!; this.toScale = this.scale; this.fromScale = this.scale; this.transitioning = false; this.transitionProgress = 0;
     if (run.genome) this.setCreature(run.genome);
     this.spaceMix = stage === 4 ? 1 : 0;
-    this.placePlayer(stage);
+    this.placePlayerAt(new T.Vector3());
     this.yaw = .1; this.pitch = .22; this.targetRing.visible = false;
     this.particles.forEach(p => this.effects.remove(p.mesh)); this.particles = [];
     // Gameplay can chomp before the next render update. Reset collision
     // coordinates together with scale so replay never uses the space scale.
     this.syncFoods();
   }
-  /** The stage start point, used for new runs and after fainting. */
-  placePlayer(stage: number) {
-    const y = stage === 0 ? .65 : stage === 1 ? 2 : stage === 2 ? this.surface - 3 : stage === 3 ? this.surface + 2 : 3;
-    this.player.position.set(0, y, 0); this.player.rotation.set(0, 0, 0); this.player.scale.setScalar(1);
+  /** Puts the player root at a local point (the simulation chose it) and snaps the camera there. */
+  placePlayerAt(local: T.Vector3) {
+    this.player.position.copy(local); this.player.rotation.set(0, 0, 0); this.player.scale.setScalar(1);
     this.universe.scale.setScalar(1 / this.scale); this.focus.copy(this.player.position).add(new T.Vector3(0, .7, 0)); this.cameraPosition.copy(this.focus).add(new T.Vector3(0, 6, 12));
     this.avatar.rotation.set(0, 0, 0);
   }
@@ -257,7 +259,9 @@ export class TideWorld {
     this.creature = new CreatureModel(genome); this.avatar.add(this.creature.group);
     if (!this.avatar.parent) this.player.add(this.avatar);
   }
-  transform(stage: number, genome: Genome) {
+  /** Presentation only: eases the world scale and moves the body from where it is to `targetPhysical` (already admitted by the simulation). */
+  transform(stage: number, genome: Genome, targetPhysical: Vec3) {
+    this.physical(this.fromPhysical); this.toPhysical.set(targetPhysical.x, targetPhysical.y, targetPhysical.z);
     this.stage = stage; this.fromScale = this.scale; this.toScale = SIZES[stage]!; this.transitionProgress = 0; this.transitioning = true;
     this.previousCreature?.dispose();
     this.previousCreature = this.creature; this.creature = new CreatureModel(genome); this.creature.group.scale.setScalar(.001); this.avatar.add(this.creature.group);
@@ -289,14 +293,11 @@ export class TideWorld {
     if (this.transitioning && dt > 0) {
       this.transitionProgress = Math.min(1, this.transitionProgress + dt / 3.4);
       const t = this.transitionProgress, ease = t * t * (3 - 2 * t), previous = this.scale;
-      this.scale = this.fromScale * (this.toScale / this.fromScale) ** ease;
-      p.multiplyScalar(previous / this.scale); this.focus.multiplyScalar(previous / this.scale); this.cameraPosition.multiplyScalar(previous / this.scale);
+      this.scale = t >= 1 ? this.toScale : this.fromScale * (this.toScale / this.fromScale) ** ease;
+      p.lerpVectors(this.fromPhysical, this.toPhysical, ease).divideScalar(this.scale); this.focus.multiplyScalar(previous / this.scale); this.cameraPosition.multiplyScalar(previous / this.scale);
       this.universe.scale.setScalar(1 / this.scale);
       this.creature?.group.scale.setScalar(Math.max(.001, T.MathUtils.smoothstep(t, .15, .8)));
       this.previousCreature?.group.scale.setScalar(Math.max(.001, 1 - T.MathUtils.smoothstep(t, .2, .65)));
-      const clearance = this.stage === 3 ? 1.5 : .85;
-      p.y = Math.max(p.y, this.stage < 4 ? this.groundAt(p.x, p.z) + clearance : -.6);
-      if (this.stage === 3) p.y = Math.max(p.y, this.surface + 1.6 * T.MathUtils.smoothstep(t, .4, 1));
       if (Math.random() < .45) this.burst(p.x, p.y + .2, p.z, '#fff1bf', 2);
       if (t >= 1) { this.transitioning = false; this.previousCreature?.dispose(); this.previousCreature = null; this.creature?.group.scale.setScalar(1); }
     }
@@ -306,7 +307,8 @@ export class TideWorld {
       const focus = new T.Vector3(mobile ? 0 : .4, mobile ? 0 : .4, mobile ? 0 : -.7); this.focus.copy(focus);
       this.camera.fov = 39; this.camera.position.copy(focus).add(new T.Vector3(0, mobile ? 27 : 23, mobile ? 32 : 28)); this.camera.lookAt(focus); this.camera.updateProjectionMatrix();
     } else {
-      this.player.scale.lerp(new T.Vector3(growth, growth, growth), 1 - Math.exp(-dt * 4));
+      // The simulation owns the root: exact growth, no easing (the hull is admitted at this scale).
+      this.player.scale.setScalar(growth);
       const distance = this.width / this.height < .8 ? 10.5 : 9;
       const targetFocus = p.clone().add(new T.Vector3(0, .8 * growth, 0));
       this.focus.lerp(targetFocus, 1 - Math.exp(-dt * 6));
@@ -315,7 +317,6 @@ export class TideWorld {
       this.cameraPosition.lerp(targetCam, 1 - Math.exp(-dt * 8)); this.camera.position.copy(this.cameraPosition);
       if (this.shake > 0) { this.shake = Math.max(0, this.shake - dt * 3); this.camera.position.add(new T.Vector3(Math.random() - .5, Math.random() - .5, Math.random() - .5).multiplyScalar(this.shake * .35)); } this.camera.fov = T.MathUtils.damp(this.camera.fov, this.width / this.height < .8 ? 64 : 59, 3, dt); this.camera.updateProjectionMatrix(); this.camera.lookAt(this.focus);
     }
-    this.avatar.position.y = Math.sin(time * (moving ? 8 : 2.2)) * (this.stage === 0 ? .045 : .12);
     this.swim = T.MathUtils.damp(this.swim, moving ? 1 : 0, 6, dt);
     this.creature?.animate(time, this.swim, chomping); this.previousCreature?.animate(time, this.swim, chomping);
     this.sun.position.copy(p).add(new T.Vector3(-14, 27, 13)); this.sun.target.position.copy(p);

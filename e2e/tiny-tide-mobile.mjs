@@ -8,6 +8,11 @@ await context.addInitScript(()=>{localStorage.setItem('tiny-tide-adventure-v1',J
 const page=await context.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
 page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
 const state=()=>page.evaluate(()=>window.__tinyTide);
+const moved=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y,a.z-b.z);
+/** Braking-aware stop check: wait until the controlled velocity is zero, then the body must stay put for 200 ms. */
+async function assertStops(label){await page.waitForFunction(()=>{const v=window.__tinyTide.velocity;return Math.hypot(v.x,v.y,v.z)<.01;},{},{timeout:2000});const at=(await state()).player;await page.waitForTimeout(200);assert.ok(moved((await state()).player,at)<.01,`${label}: stays put after braking`);}
+/** The controlled speed now and after the next frame. */
+const speedNextFrame=()=>page.evaluate(()=>new Promise(r=>{const v=()=>{const s=window.__tinyTide.velocity;return Math.hypot(s.x,s.y,s.z);};const a=v();requestAnimationFrame(()=>requestAnimationFrame(()=>r([a,v()])));}));
 try {
  await page.goto(process.env.VERIFY_URL||'http://localhost:5199/tiny-tide.html?qa');await page.waitForFunction(()=>window.__tinyTide?.time>.4);await page.locator('#start').click();await page.waitForTimeout(600);
  const cdp=await context.newCDPSession(page);
@@ -17,10 +22,13 @@ try {
  j.x+=27;await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[j]});
  await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[j,rise]});await page.waitForTimeout(550);
  const during=await state();assert.ok(during.player.x>before.player.x+1.2,'Joystick moves during Rise');assert.ok(during.player.y>before.player.y+1.2,'Two-finger Rise changes depth');
- await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await page.waitForTimeout(100);const release=await state();await page.waitForTimeout(250);const hover=await state();assert.ok(Math.abs(hover.player.x-release.player.x)<.05);assert.ok(Math.abs(hover.player.y-release.player.y)<.05,'Releasing vertical controls hovers');
+ await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await assertStops('Releasing vertical controls hovers');const hover=await state();
  const look={id:3,x:285,y:365,radiusX:4,radiusY:4,force:1};await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[look]});look.x+=40;look.y-=70;await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[look]});await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});const looked=await state();assert.ok(looked.world.pitch<hover.world.pitch-.25,'Touch swipe looks up');assert.ok(looked.world.yaw<hover.world.yaw-.15,'Touch swipe turns camera');
  await page.screenshot({path:`${out}/mobile-swimming.png`});
- const dive={...await center('#dive'),id:4};await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[dive]});await page.waitForTimeout(350);await cdp.send('Input.dispatchTouchEvent',{type:'touchCancel',touchPoints:[]});const dived=await state();assert.ok(dived.player.y<looked.player.y-1,'Dive descends');await page.waitForTimeout(150);assert.ok(Math.abs((await state()).player.y-dived.player.y)<.05,'Cancelled touch releases Dive');
+ const dive={...await center('#dive'),id:4};await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[dive]});await page.waitForTimeout(350);
+ const diving=(await state()).velocity;await cdp.send('Input.dispatchTouchEvent',{type:'touchCancel',touchPoints:[]});const [atCancel,next]=await speedNextFrame();
+ assert.ok(Math.hypot(diving.x,diving.y,diving.z)>.01,'Dive moves');assert.ok(next<Math.min(atCancel,Math.hypot(diving.x,diving.y,diving.z)),'Cancelled touch makes the next frame slower');
+ const dived=await state();assert.ok(dived.player.y<looked.player.y-1,'Dive descends');await assertStops('Cancelled touch releases Dive');
  for(const viewport of [{width:320,height:568},{width:844,height:390}]) {await page.setViewportSize(viewport);await page.waitForTimeout(200);for(const sel of ['#joystick','#chomp','#special','#dive','#pause','#edit','#hearts']){const b=await page.locator(sel).boundingBox();assert.ok(b && b.x>=0 && b.y>=0 && b.x+b.width<=viewport.width+1 && b.y+b.height<=viewport.height+1,`${sel} fits ${viewport.width}x${viewport.height}`);}await page.screenshot({path:`${out}/mobile-${viewport.width}.png`});}
  assert.deepEqual(errors,[]);console.log('PASSED: genuine multitouch move + rise, swipe camera, stable hover, Dive, touch cancellation, 390/320 portrait and landscape control layout.');
 } finally {await browser.close();}

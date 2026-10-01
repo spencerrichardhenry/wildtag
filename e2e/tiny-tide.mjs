@@ -10,6 +10,12 @@ let modelRequests = 0; page.on('request', r => { if (new URL(r.url()).pathname.e
 const state = () => page.evaluate(() => window.__tinyTide);
 const shot = name => page.screenshot({ path: `${out}/${name}.png` });
 const url = process.env.VERIFY_URL || 'http://localhost:5199/tiny-tide.html?qa';
+/** Braking-aware stop check: wait until the controlled velocity is zero, then the body must stay put for 200 ms. */
+async function assertStops(label) {
+  await page.waitForFunction(() => { const v = window.__tinyTide.velocity; return Math.hypot(v.x, v.y, v.z) < .01; }, {}, { timeout: 2000 });
+  const at = (await state()).player; await page.waitForTimeout(200); const later = (await state()).player;
+  assert.ok(Math.hypot(later.x - at.x, later.y - at.y, later.z - at.z) < .01, `${label}: stays put after braking`);
+}
 /** Click the editor viewport where the creature is. */
 async function tapCreature() {
   const box = await page.locator('#editor .ed-view').boundingBox();
@@ -30,7 +36,7 @@ try {
   assert.equal(boot.assets.loaded, boot.assets.expected, 'All Blender models preload before play');
   const preloadRequests = modelRequests;
   await page.getByRole('button', { name: 'How to play' }).click(); await page.getByRole('dialog').waitFor(); await page.getByRole('button', { name: /Got it/ }).click();
-  await page.getByRole('button', { name: /Let’s eat/ }).click(); await page.waitForTimeout(700); await shot('02-play');
+  await page.locator('#start').click(); await page.waitForTimeout(700); await shot('02-play');
   let s = await state(); assert.equal(s.diet, 'herbivore'); assert.ok(s.health === s.maxHealth && s.maxHealth >= 6);
   await page.setViewportSize({ width: 390, height: 844 }); await page.waitForTimeout(300); await shot('03-mobile-play');
   for (const selector of ['#chomp', '#joystick', '#pause', '#growth-fill', '#edit', '#hearts']) { const b = await page.locator(selector).boundingBox(); assert.ok(b && b.x >= 0 && b.y >= 0 && b.x + b.width <= 391 && b.y + b.height <= 845, `${selector} fits mobile`); }
@@ -44,7 +50,7 @@ try {
   const before = await state(); const j = await page.locator('#joystick').boundingBox();
   await page.mouse.move(j.x + j.width / 2, j.y + j.height / 2); await page.mouse.down(); await page.mouse.move(j.x + j.width - 10, j.y + j.height / 2); await page.waitForTimeout(450); await page.mouse.up();
   assert.ok((await state()).player.x > before.player.x + 1);
-  const released = (await state()).player.x; await page.waitForTimeout(200); assert.ok(Math.abs((await state()).player.x - released) < .05);
+  await assertStops('Joystick release');
   await page.getByRole('button', { name: 'Pause game' }).click(); const paused = await state(); await page.waitForTimeout(200); assert.equal((await state()).elapsed, paused.elapsed);
   await page.getByRole('button', { name: /Keep munching/ }).click();
   await page.getByRole('button', { name: 'Mute sound' }).click(); assert.equal(await page.locator('#sound').getAttribute('aria-pressed'), 'true');
@@ -123,10 +129,10 @@ try {
       if (!f) { await control([]); await page.waitForTimeout(200); continue; }
       const dx = f.x - s.player.x, dz = f.z - s.player.z, distance = Math.hypot(dx, dz);
       const desired = ['Space']; if (distance > 1.05) { const yaw = s.world.yaw, lx = Math.cos(yaw) * dx - Math.sin(yaw) * dz, lz = Math.sin(yaw) * dx + Math.cos(yaw) * dz; if (lx > .55) desired.push('KeyD'); if (lx < -.55) desired.push('KeyA'); if (lz > .55) desired.push('KeyS'); if (lz < -.55) desired.push('KeyW'); }
-      if (s.stage === 2 && f.kind === 'bird' && distance < 2.5 && s.leap < 0) await page.keyboard.press('KeyE');
+      if (s.stage === 2 && f.kind === 'bird' && distance < 2.5 && s.arc === null) await page.keyboard.press('KeyE');
       if (s.stage !== 2 && s.stage > 0 && f.y - s.player.y > .8) desired.push('KeyE');
-      if (s.stage > 0 && s.leap < 0 && s.player.y - f.y > .8) desired.push('KeyQ');
-      if (s.stage === 2 && f.kind !== 'bird' && s.leap < 0 && f.y - s.player.y > 1.6 && distance < 3) await page.keyboard.press('KeyE');
+      if (s.stage > 0 && s.arc === null && s.player.y - f.y > .8) desired.push('KeyQ');
+      if (s.stage === 2 && f.kind !== 'bird' && s.arc === null && f.y - s.player.y > 1.6 && distance < 3) await page.keyboard.press('KeyE');
       await control(desired); await page.waitForTimeout(130);
       const after = await state(); for (const food of s.foods) if (!after.foods.find(o => o.id === food.id) && after.stage === s.stage) eatenKinds.add(`${food.tier}:${food.kind}`);
       if (loops % 150 === 0) console.log('Progress', s.mode, s.stage, s.stageDna, '/', s.goal, 'player', s.player, 'target', f.kind, [f.x, f.y, f.z]);
