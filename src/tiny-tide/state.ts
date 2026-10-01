@@ -1,5 +1,5 @@
 import { bankAll, commitDesign, earn, faintLegacy, legacyEconomy, validateLedger, walletTotal, type Economy } from './economy';
-import { cloneGenome, derive, dietOf, effectiveStats, problems, sanitizeGenome, starterGenome, STARTER_NEXT_SERIAL, uidSerial, type DesignContext, type Genome } from './genome';
+import { adaptToPlan, cloneGenome, derive, dietOf, effectiveStats, partCost, problems, repairLegacyGenome, sanitizeGenome, starterFor, starterGenome, STARTER_NEXT_SERIAL, uidSerial, type DesignContext, type Genome } from './genome';
 import { PARTS, part, type Diet, type PartSpec } from './parts';
 import { closedLinesOf, commitmentsOf, eligibleChildren, plan, ROOT_PLAN, violates, type BodyPlan } from './plans';
 import { PLANET_COUNT } from './biomes';
@@ -210,8 +210,6 @@ export interface LegacyRunV2 {
   stage: number; dna: number; stageDna: number; totalDna: number; bites: number; elapsed: number; deaths: number; health: number; seed: number; name: string;
   unlocked: string[]; eatenPlanets: number[]; completed: boolean; genomeRaw: unknown;
 }
-/** Reads saves. Until A7 adds the v4 reader and the migration, every save reads as null and a fresh run starts. */
-export function parseSave(_raw: string | null): Run | null { return null; }
 /** Reads a v2 save into the legacy shape. Returns null for anything inconsistent. */
 export function readLegacyV2(v: Record<string, unknown>): LegacyRunV2 | null {
   if (v.version !== 2 || !isObject(v.genome) || !int(v.seed) || typeof v.name !== 'string' || !int(v.stage) || (v.stage as number) > 4 || !finite(v.dna) || !finite(v.stageDna) || !finite(v.totalDna) ||
@@ -231,5 +229,96 @@ export function readLegacyV1(v: Record<string, unknown>): LegacyRunV2 | null {
   if (bites > V1_GOALS[stage]! || (stage === 4 && planets.length !== bites) || (stage !== 4 && planets.length) || (v.completed && (stage !== 4 || bites !== PLANET_COUNT))) return null;
   const stageDna = stage === 4 ? 0 : Math.round(bites / V1_GOALS[stage]! * STAGES[stage]!.goal), genome = starterGenome();
   return { stage, dna: START_DNA + stage * 30, stageDna, totalDna: stageDna + stage * 120, bites: v.total as number, elapsed: v.elapsed as number, deaths: 0,
-    health: derive(effectiveStats(genome, plan(ROOT_PLAN)!)).maxHealth, seed: newSeed(), name: 'Little Tide', unlocked: [], eatenPlanets: [...planets], completed: v.completed as boolean, genomeRaw: genome };
+    health: derive(effectiveStats(genome, plan(ROOT_PLAN)!)).maxHealth, seed: newSeed(), name: 'Little Tide', unlocked: [], eatenPlanets: [...planets], completed: v.completed as boolean,
+    genomeRaw: { ...genome, parts: genome.parts.map(({ uid: _uid, ...legacy }) => legacy) } };
+}
+
+// ---- Saves: the strict v4 reader and the v1/v2 migration (spec section 11) ----
+export type Loaded = { status: 'ok'; run: Run; notes: string[] } | { status: 'kept'; message: string };
+const COAST_KEPT = 'This creature lives on the coast. The coast is not in this version yet; your save is kept.';
+const DIETS: readonly string[] = ['herbivore', 'carnivore', 'omnivore'];
+const strings = (v: unknown): v is string[] => Array.isArray(v) && v.every(x => typeof x === 'string');
+const isCredit = (c: unknown) => isObject(c) && typeof c.banked === 'number' && typeof c.atRisk === 'number';
+/** Reads a v4 save. Every field is type-checked. Health above the current maximum is clamped. Returns null for anything malformed. */
+function readV4(v: Record<string, unknown>): Run | null {
+  if (v.version !== 4 || !strings(v.plans) || !DIETS.includes(v.diet as string) || !isObject(v.economy) || !isCredit(v.economy.wallet) || !isObject(v.economy.parts) ||
+      !Object.values(v.economy.parts).every(l => isObject(l) && typeof l.basis === 'number' && isCredit(l.credit)) || !Number.isInteger(v.nextPartSerial) ||
+      !isObject(v.loadout) || !Array.isArray(v.loadout.active) || typeof v.pendingRespawn !== 'boolean' || !isObject(v.mechanics) || !Array.isArray(v.archive) || !strings(v.notices) ||
+      !strings(v.unlocked) || !Array.isArray(v.eatenPlanets) || typeof v.name !== 'string' || typeof v.health !== 'number') return null;
+  const genome = sanitizeGenome(v.genome); if (!genome) return null;
+  const archive: ArchivedDesign[] = [];
+  for (const a of v.archive) {
+    if (!isObject(a) || typeof a.name !== 'string' || typeof a.savedAt !== 'string' || typeof a.reason !== 'string') return null;
+    const g = sanitizeGenome(a.genome); if (!g) return null;
+    archive.push({ genome: g, name: a.name, savedAt: a.savedAt, reason: a.reason });
+  }
+  const run = { ...v, genome, archive } as unknown as Run;
+  if (run.plans.length && run.plans.every(id => plan(id)) && Number.isFinite(run.health)) run.health = Math.min(run.health, maxHealthOf(run));
+  return run;
+}
+const count = (v: number) => Math.min(Number.MAX_SAFE_INTEGER, Math.max(0, Math.floor(v)));
+type Candidate = { path: string[]; genome: Genome; changes: string[]; nextSerial: number };
+function pathsOf(length: number, line: string): string[][] {
+  let paths: string[][] = [[ROOT_PLAN, line]];
+  while (paths[0]!.length < length) paths = paths.flatMap(path => eligibleChildren(path, { coast: false }).map(p => [...path, p.id]));
+  return paths;
+}
+/** The lowest score wins. Order: kept value, diet, exact fit, segment count, segment shape, moved parts, path order. */
+function scoreOf(original: Genome, c: Candidate, index: number): number[] {
+  const kept = new Map(c.genome.parts.map(p => [p.uid, p]));
+  const keptCost = original.parts.reduce((n, p) => n + (kept.has(p.uid) ? partCost(p) : 0), 0);
+  let shape = 0; for (let i = 0; i < Math.min(original.spine.length, c.genome.spine.length); i++) {
+    const a = original.spine[i]!, b = c.genome.spine[i]!; shape += Math.abs(a.radius - b.radius) + Math.abs(a.height - b.height) + Math.abs(a.lift - b.lift);
+  }
+  const moved = original.parts.filter(p => { const q = kept.get(p.uid); return q && (q.t !== p.t || q.angle !== p.angle || q.scale !== p.scale); }).length;
+  return [-keptCost, dietOf(c.genome) === dietOf(original) ? 0 : 1, JSON.stringify(c.genome) === JSON.stringify(original) ? 0 : 1, Math.abs(c.genome.spine.length - original.spine.length), shape, moved, index];
+}
+const before = (a: number[], b: number[]) => { for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i]! < b[i]!; return false; };
+/** Turns a v1/v2 save into a v4 run. The original design goes to the archive. Throws when the legacy genome cannot be repaired. */
+export function migrateV2(old: LegacyRunV2, _build: Build): Run { return migrate(old).run; }
+function migrate(old: LegacyRunV2): { run: Run; notes: string[] } {
+  const original = repairLegacyGenome(old.genomeRaw); if (!original) throw new Error('Legacy genome cannot be repaired.');
+  const kindOf = (id: string) => part(id)?.kind, legs = original.parts.some(p => kindOf(p.id) === 'leg'), tail = original.parts.some(p => kindOf(p.id) === 'tail');
+  const line = legs && !tail ? 'crawler' : 'swimmer', diet = dietOf(original), maxSerial = Math.max(0, ...original.parts.map(p => uidSerial(p.uid)));
+  const paths = old.stage === 0 ? [[ROOT_PLAN]] : pathsOf(old.stage + 1, line);
+  let best: { c: Candidate; score: number[] } | null = null;
+  paths.forEach((path, index) => {
+    const r = adaptToPlan(original, plan(path.at(-1)!)!, { unlocked: old.unlocked, diet }, maxSerial + 1); if (!r.ok) return;
+    const c: Candidate = { path, genome: r.genome, changes: r.changes, nextSerial: r.nextSerial }, score = scoreOf(original, c, index);
+    if (!best || before(score, best.score)) best = { c, score };
+  });
+  const chosen = best as { c: Candidate } | null, path = chosen?.c.path ?? paths[0] ?? [ROOT_PLAN], finalPlan = plan(path.at(-1)!)!;
+  const adapted = chosen?.c.genome ?? starterFor(finalPlan), notes = [`${old.name} became a ${finalPlan.name}.`];
+  if (chosen) notes.push(...chosen.c.changes); else notes.push(`Your old design could not fit a ${finalPlan.name}; it is saved in your archive.`);
+  let economy = legacyEconomy(count(old.dna), original), tx = commitDesign(economy, original, adapted);
+  if (!tx.ok && !tx.invalid) {
+    economy = { ...economy, wallet: { ...economy.wallet, banked: economy.wallet.banked + tx.shortfall } }; notes.push(`We covered ${tx.shortfall} DNA for required parts.`);
+    tx = commitDesign(economy, original, adapted);
+  }
+  if (!tx.ok) throw new Error('Legacy ledger cannot be built.');
+  const used = Math.max(maxSerial, ...adapted.parts.map(p => uidSerial(p.uid)), (chosen?.c.nextSerial ?? 1) - 1);
+  const run: Run = { version: 4, seed: old.seed, name: old.name, stage: old.stage, plans: path, diet: dietOf(adapted), economy: tx.economy, stageDna: count(old.stageDna), totalDna: count(old.totalDna),
+    bites: count(old.bites), elapsed: Math.max(0, old.elapsed), deaths: count(old.deaths), health: 0, genome: adapted, nextPartSerial: used + 1, unlocked: [...old.unlocked], eatenPlanets: [...old.eatenPlanets],
+    completed: old.completed, loadout: { active: [null, null] }, pendingRespawn: false, mechanics: {},
+    archive: [{ genome: original, name: old.name, savedAt: new Date().toISOString(), reason: 'Saved before the body-plan update.' }], notices: notes };
+  const max = maxHealthOf(run); run.health = old.health <= 0 ? max : Math.max(1, Math.min(old.health, max));
+  return { run, notes };
+}
+/** Reads any save. Null means no save or unreadable data. */
+export function parseSaveWithNotes(raw: string | null, build: Build): Loaded | null {
+  if (!raw) return null;
+  let v: unknown; try { v = JSON.parse(raw); } catch { return null; }
+  if (!isObject(v)) return null;
+  if (v.version === 4) {
+    const run = readV4(v); if (!run) return null;
+    const issues = validateRun(run, build);
+    if (issues.length === 1 && issues[0] === 'needs coast') return { status: 'kept', message: COAST_KEPT };
+    return issues.length ? null : { status: 'ok', run, notes: run.notices };
+  }
+  const old = v.version === 2 ? readLegacyV2(v) : v.version === undefined ? readLegacyV1(v) : null; if (!old) return null;
+  try { const { run, notes } = migrate(old); return validateRun(run, build).length ? null : { status: 'ok', run, notes }; } catch { return null; }
+}
+/** The run from a save, or null (tests). */
+export function parseSave(raw: string | null, build: Build = { coast: false }): Run | null {
+  const loaded = parseSaveWithNotes(raw, build); return loaded?.status === 'ok' ? loaded.run : null;
 }

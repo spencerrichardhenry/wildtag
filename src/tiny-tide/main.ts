@@ -2,7 +2,7 @@ import { startAnalytics } from '../analytics';
 import * as T from 'three';
 import './style.css';
 import './hud.css';
-import { applyDesign, commitEvolution, currentPlan, damageAfterArmor, DEATH_KEEP, dietCanEat, dnaOf, eat, evolveReady, faint, freshRun, growthOf, hurt, inReach, maxHealthOf, parseSave, PLANET_COUNT, prepareEvolution, reward, STAGES, unlock, type Build, type Run } from './state';
+import { applyDesign, commitEvolution, currentPlan, damageAfterArmor, DEATH_KEEP, dietCanEat, dnaOf, eat, evolveReady, faint, freshRun, growthOf, hurt, inReach, maxHealthOf, parseSaveWithNotes, PLANET_COUNT, prepareEvolution, reward, STAGES, unlock, type Build, type Run } from './state';
 import { adaptToPlan, derive, dietOf, effectiveStats, genomeCost } from './genome';
 import { DROPS, part } from './parts';
 import { tierSpecies } from './species';
@@ -75,8 +75,16 @@ catch {
 }
 const SAVE_KEY = 'tiny-tide-adventure-v4';
 const BUILD: Build = { coast: COAST_READY };
+/** Older keys are read for migration only. They are never written. */
+const LEGACY_KEYS = ['tiny-tide-adventure-v2', 'tiny-tide-adventure-v1'];
 let saved: Run | null = null;
-try { saved = parseSave(localStorage.getItem(SAVE_KEY)); audio.muted = localStorage.getItem('tiny-tide-muted') === 'true'; } catch { /* Storage is optional. */ }
+try {
+  for (const key of [SAVE_KEY, ...LEGACY_KEYS]) {
+    const raw = localStorage.getItem(key); if (raw === null) continue;
+    const loaded = parseSaveWithNotes(raw, BUILD); if (loaded?.status === 'ok') { saved = loaded.run; break; }
+    if (loaded?.status === 'kept') break;   // Plan C shows the kept-save message.
+  }
+  audio.muted = localStorage.getItem('tiny-tide-muted') === 'true'; } catch { /* Storage is optional. */ }
 let run = saved && !saved.completed ? structuredClone(saved) : freshRun();
 let mode: 'menu' | 'playing' | 'paused' | 'evolving' | 'editing' | 'fainted' | 'won' = 'menu';
 startAnalytics('tiny-tide', () => mode === 'playing' || mode === 'evolving');

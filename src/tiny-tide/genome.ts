@@ -119,8 +119,9 @@ export const availableParts = (stage: number, unlocked: readonly string[]) => PA
 const exactKeys = (o: object, keys: readonly string[]) => { const k = Object.keys(o); return k.length === keys.length && keys.every(key => k.includes(key)); };
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const inRange = (v: number, r: readonly [number, number] | readonly number[]) => v >= r[0]! && v <= r[1]!;
-function readPaint(raw: unknown): Paint | null {
-  if (!raw || typeof raw !== 'object' || !exactKeys(raw, ['base', 'belly', 'accent', 'pattern'])) return null;
+/** Strict for v4. With `lenient` (legacy input only) extra keys are ignored. */
+function readPaint(raw: unknown, lenient = false): Paint | null {
+  if (!raw || typeof raw !== 'object' || (!lenient && !exactKeys(raw, ['base', 'belly', 'accent', 'pattern']))) return null;
   const paint = raw as Paint;
   if (![paint.base, paint.belly, paint.accent].every(c => typeof c === 'string' && HEX.test(c)) || !PATTERNS.includes(paint.pattern)) return null;
   return { base: paint.base, belly: paint.belly, accent: paint.accent, pattern: paint.pattern };
@@ -156,7 +157,7 @@ export function sanitizeGenome(raw: unknown): Genome | null {
 /** Reads a v1/v2 genome that has no part ids. It assigns p1..pn, clamps values into range and unpairs parts that cannot mirror. */
 export function repairLegacyGenome(raw: unknown): Genome | null {
   if (!raw || typeof raw !== 'object') return null;
-  const value = raw as Record<string, unknown>, paint = readPaint(value.paint);
+  const value = raw as Record<string, unknown>, paint = readPaint(value.paint, true);
   if (!Array.isArray(value.spine) || !Array.isArray(value.parts) || !paint || value.spine.length < SPINE_LIMITS.min || value.spine.length > 8 || value.parts.length > 24) return null;
   const spine: SpinePoint[] = [];
   for (const s of value.spine as SpinePoint[]) {
