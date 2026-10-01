@@ -348,5 +348,257 @@
     "bytes": 480128,
     "authoring": "Blender MCP",
     "animated": false
+  },
+  "part_mouth_nibbler": {
+    "file": "part_mouth_nibbler.glb",
+    "triangles": 2520,
+    "bytes": 65388,
+    "authoring": "Blender (headless script)",
+    "animated": false
+  },
+  "part_mouth_snapper": {
+    "file": "part_mouth_snapper.glb",
+    "triangles": 1920,
+    "bytes": 51644,
+    "authoring": "Blender (headless script)",
+    "animated": false
+  },
+  "part_mouth_beak": {
+    "file": "part_mouth_beak.glb",
+    "triangles": 1732,
+    "bytes": 46240,
+    "authoring": "Blender (headless script)",
+    "animated": false
+  },
+  "part_mouth_filter": {
+    "file": "part_mouth_filter.glb",
+    "triangles": 2526,
+    "bytes": 66384,
+    "authoring": "Blender (headless script)",
+    "animated": false
+  },
+  "part_mouth_fangs": {
+    "file": "part_mouth_fangs.glb",
+    "triangles": 2020,
+    "bytes": 53236,
+    "authoring": "Blender (headless script)",
+    "animated": false
+  },
+  "part_mouth_maw": {
+    "file": "part_mouth_maw.glb",
+    "triangles": 2704,
+    "bytes": 70016,
+    "authoring": "Blender (headless script)",
+    "animated": false
+  },
+  "part_eye_bead": {
+    "file": "part_eye_bead.glb",
+    "triangles": 968,
+    "bytes": 27756,
+    "authoring": "Blender (headless script)",
+    "animated": false
+  },
+  "part_eye_stalk": {
+    "file": "part_eye_stalk.glb",
+    "triangles": 1308,
+    "bytes": 36208,
+    "authoring": "Blender (headless script)",
+    "animated": false
+  },
+  "part_eye_big": {
+    "file": "part_eye_big.glb",
+    "triangles": 1734,
+    "bytes": 46420,
+    "authoring": "Blender (headless script)",
+    "animated": false
+  },
+  "part_eye_compound": {
+    "file": "part_eye_compound.glb",
+    "triangles": 1096,
+    "bytes": 38212,
+    "authoring": "Blender (headless script)",
+    "animated": false
+  },
+  "part_eye_cosmic": {
+    "file": "part_eye_cosmic.glb",
+    "triangles": 1668,
+    "bytes": 44412,
+    "authoring": "Blender (headless script)",
+    "animated": false
+  },
+  "part_fin_side": {
+    "file": "part_fin_side.glb",
+    "triangles": 798,
+    "bytes": 21288,
+    "authoring": "Blender (headless script)",
+    "animated": false
+  },
+  "part_fin_dorsal": {
+    "file": "part_fin_dorsal.glb",
+    "triangles": 940,
+    "bytes": 24780,
+    "authoring": "Blender (headless script)",
+    "animated": false
+  },
+  "part_fin_frill": {
+    "file": "part_fin_frill.glb",
+    "triangles": 1482,
+    "bytes": 38144,
+    "authoring": "Blender (headless script)",
+    "animated": false
+  },
+  "part_tail_paddle": {
+    "file": "part_tail_paddle.glb",
+    "triangles": 1448,
+    "bytes": 40428,
+    "authoring": "Blender (headless script)",
+    "animated": false
+  },
+  "part_tail_fan": {
+    "file": "part_tail_fan.glb",
+    "triangles": 1502,
+    "bytes": 40860,
+    "authoring": "Blender (headless script)",
+    "animated": false
+  },
+  "part_tail_fluke": {
+    "file": "part_tail_fluke.glb",
+    "triangles": 1564,
+    "bytes": 43384,
+    "authoring": "Blender (headless script)",
+    "animated": false
+  },
+  "part_leg_little": {
+    "file": "part_leg_little.glb",
+    "triangles": 1448,
+    "bytes": 37964,
+    "authoring": "Blender (headless script)",
+    "animated": false
+  },
+  "part_leg_crab": {
+    "file": "part_leg_crab.glb",
+    "triangles": 1104,
+    "bytes": 29484,
+    "authoring": "Blender (headless script)",
+    "animated": false
+  },
+  "part_wing_feather": {
+    "file": "part_wing_feather.glb",
+    "triangles": 2512,
+    "bytes": 63528,
+    "authoring": "Blender (headless script)",
+    "animated": false
+  },
+  "part_jet_vent": {
+    "file": "part_jet_vent.glb",
+    "triangles": 1356,
+    "bytes": 36696,
+    "authoring": "Blender (headless script)",
+    "animated": false
+  },
+  "part_claw_pincer": {
+    "file": "part_claw_pincer.glb",
+    "triangles": 1548,
+    "bytes": 40140,
+    "authoring": "Blender (headless script)",
+    "animated": false
+  },
+  "part_tentacle": {
+    "file": "part_tentacle.glb",
+    "triangles": 1452,
+    "bytes": 42184,
+    "authoring": "Blender (headless script)",
+    "animated": false
+  },
+  "part_tentacle_long": {
+    "file": "part_tentacle_long.glb",
+    "triangles": 1876,
+    "bytes": 52880,
+    "authoring": "Blender (headless script)",
+    "animated": false
+  },
+  "part_spike": {
+    "file": "part_spike.glb",
+    "triangles": 848,
+    "bytes": 21996,
+    "authoring": "Blender (headless script)",
+    "animated": false
+  },
+  "part_shell_plate": {
+    "file": "part_shell_plate.glb",
+    "triangles": 2726,
+    "bytes": 67956,
+    "authoring": "Blender (headless script)",
+    "animated": false
+  },
+  "part_horn": {
+    "file": "part_horn.glb",
+    "triangles": 1188,
+    "bytes": 30152,
+    "authoring": "Blender (headless script)",
+    "animated": false
+  },
+  "part_tower": {
+    "file": "part_tower.glb",
+    "triangles": 1572,
+    "bytes": 42884,
+    "authoring": "Blender (headless script)",
+    "animated": false
+  },
+  "part_antenna": {
+    "file": "part_antenna.glb",
+    "triangles": 764,
+    "bytes": 21980,
+    "authoring": "Blender (headless script)",
+    "animated": false
+  },
+  "part_glow_bulb": {
+    "file": "part_glow_bulb.glb",
+    "triangles": 1052,
+    "bytes": 28264,
+    "authoring": "Blender (headless script)",
+    "animated": false
+  },
+  "part_cloak_fronds": {
+    "file": "part_cloak_fronds.glb",
+    "triangles": 2132,
+    "bytes": 60544,
+    "authoring": "Blender (headless script)",
+    "animated": false
+  },
+  "part_halo": {
+    "file": "part_halo.glb",
+    "triangles": 1260,
+    "bytes": 33164,
+    "authoring": "Blender (headless script)",
+    "animated": false
+  },
+  "part_star_crown": {
+    "file": "part_star_crown.glb",
+    "triangles": 1596,
+    "bytes": 42908,
+    "authoring": "Blender (headless script)",
+    "animated": false
+  },
+  "part_nebula_fin": {
+    "file": "part_nebula_fin.glb",
+    "triangles": 1656,
+    "bytes": 44256,
+    "authoring": "Blender (headless script)",
+    "animated": false
+  },
+  "copepod": {
+    "file": "copepod.glb",
+    "triangles": 2544,
+    "bytes": 66500,
+    "authoring": "Blender (headless script)",
+    "animated": false
+  },
+  "worm": {
+    "file": "worm.glb",
+    "triangles": 3442,
+    "bytes": 92716,
+    "authoring": "Blender (headless script)",
+    "animated": false
   }
 }

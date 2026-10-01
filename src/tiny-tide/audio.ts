@@ -16,5 +16,8 @@ export class TideAudio {
   }
   bite(combo: number) { this.tone(420 + combo % 7 * 60, 0, .11); this.tone(760 + combo % 7 * 70, .04, .12); }
   evolve() { [0, 4, 7, 12, 16].forEach((note, i) => this.tone(330 * 2 ** (note / 12), i * .12, .4, 'triangle')); }
+  hurt() { this.tone(150, 0, .2, 'sawtooth'); this.tone(110, .06, .24, 'triangle'); }
+  faint() { [12, 7, 3, 0].forEach((note, i) => this.tone(220 * 2 ** (note / 12), i * .14, .35, 'triangle')); }
+  found() { [0, 7, 12, 19].forEach((note, i) => this.tone(520 * 2 ** (note / 12), i * .07, .18)); }
   breach() { this.tone(190, 0, .22, 'triangle'); this.tone(570, .12, .25); }
 }

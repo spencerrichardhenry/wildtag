@@ -1,0 +1,58 @@
+// Creature parts for the editor. Each part is a Blender GLB named `part_<id>`.
+// See docs/TINY-TIDE-EVOLUTION.md for the attach conventions.
+export type PartKind = 'mouth' | 'eye' | 'fin' | 'tail' | 'leg' | 'wing' | 'jet' | 'arm' | 'armor' | 'sense' | 'cosmic';
+export type Diet = 'herbivore' | 'carnivore' | 'omnivore';
+export type TintSlot = 'base' | 'belly' | 'accent';
+export interface Stats { speed: number; bite: number; reach: number; armor: number; health: number; sense: number; stealth: number }
+export interface PartSpec {
+  id: string; name: string; kind: PartKind; stage: number; cost: number; stats: Partial<Stats>;
+  tint: TintSlot; mirror: boolean; diet?: Diet; blurb: string;
+  /** Where the editor puts a new part: t along the body, angle around it. */
+  t: number; angle: number;
+}
+const p = (id: string, name: string, kind: PartKind, stage: number, cost: number, stats: Partial<Stats>, tint: TintSlot, mirror: boolean, t: number, angle: number, blurb: string, diet?: Diet): PartSpec =>
+  ({ id, name, kind, stage, cost, stats, tint, mirror, t, angle, blurb, diet });
+const HALF = Math.PI / 2;
+export const PARTS: readonly PartSpec[] = [
+  p('mouth_nibbler', 'Nibbler', 'mouth', 0, 0, { reach: .2 }, 'belly', false, 0, 0, 'Soft lips for plants.', 'herbivore'),
+  p('mouth_snapper', 'Snapper', 'mouth', 0, 0, { bite: 1 }, 'belly', false, 0, 0, 'A toothy snap for meat.', 'carnivore'),
+  p('mouth_beak', 'Beak', 'mouth', 1, 20, { bite: 1 }, 'accent', false, 0, 0, 'Cracks anything. Eats everything.', 'omnivore'),
+  p('mouth_filter', 'Filter grin', 'mouth', 2, 30, { reach: .6 }, 'belly', false, 0, 0, 'A wide grin that sieves greens.', 'herbivore'),
+  p('mouth_fangs', 'Fangs', 'mouth', 2, 35, { bite: 3 }, 'belly', false, 0, 0, 'Big smile. Bigger fangs.', 'carnivore'),
+  p('mouth_maw', 'Maw', 'mouth', 3, 50, { bite: 3, reach: .4 }, 'belly', false, 0, 0, 'Eats the world, one bite at a time.', 'omnivore'),
+  p('eye_bead', 'Bead eye', 'eye', 0, 5, { sense: 1 }, 'base', true, .16, .55, 'A bright little eye.'),
+  p('eye_stalk', 'Stalk eye', 'eye', 0, 10, { sense: 2 }, 'base', true, .18, .45, 'See over the sand.'),
+  p('eye_big', 'Big eye', 'eye', 1, 15, { sense: 2, stealth: 1 }, 'base', true, .17, .6, 'Spot danger early.'),
+  p('eye_compound', 'Compound eye', 'eye', 2, 20, { sense: 3 }, 'accent', true, .17, .6, 'A thousand tiny views.'),
+  p('eye_cosmic', 'Cosmic eye', 'eye', 4, 30, { sense: 4 }, 'accent', true, .17, .6, 'Sees across galaxies.'),
+  p('fin_side', 'Side fin', 'fin', 0, 10, { speed: .4 }, 'accent', true, .45, HALF + .2, 'A quick little paddle.'),
+  p('fin_dorsal', 'Dorsal fin', 'fin', 1, 12, { speed: .2, health: 1 }, 'accent', false, .45, 0, 'Steady and strong.'),
+  p('fin_frill', 'Frill fin', 'fin', 1, 18, { speed: .4, stealth: 1 }, 'accent', true, .55, HALF, 'Ruffles that blend in.'),
+  p('tail_paddle', 'Paddle tail', 'tail', 0, 10, { speed: .6 }, 'accent', false, 1, 0, 'Push, push, push.'),
+  p('tail_fan', 'Fan tail', 'tail', 1, 18, { speed: .9 }, 'accent', false, 1, 0, 'A showy, speedy fan.'),
+  p('tail_fluke', 'Fluke', 'tail', 2, 25, { speed: 1.2 }, 'accent', false, 1, 0, 'Whale power.'),
+  p('leg_little', 'Little leg', 'leg', 0, 8, { speed: .4 }, 'base', true, .45, HALF + .9, 'Scuttle scuttle.'),
+  p('leg_crab', 'Crab leg', 'leg', 1, 14, { speed: .3, armor: 1 }, 'base', true, .5, HALF + .8, 'Pointy, armored and fast.'),
+  p('wing_feather', 'Feather wing', 'wing', 3, 30, { speed: 1 }, 'accent', true, .4, HALF - .4, 'Fly, little calamity.'),
+  p('jet_vent', 'Jet vent', 'jet', 3, 35, { speed: 1.5 }, 'base', true, .85, HALF + .5, 'Whoosh.'),
+  p('claw_pincer', 'Pincer', 'arm', 0, 12, { bite: 1 }, 'accent', true, .2, HALF + .5, 'Pinch first, ask later.'),
+  p('tentacle', 'Tentacle', 'arm', 1, 15, { reach: .5 }, 'base', true, .3, HALF + .8, 'Grab the snacks.'),
+  p('tentacle_long', 'Long tentacle', 'arm', 3, 30, { reach: 1 }, 'base', true, .35, HALF + .9, 'Reach across the bay.'),
+  p('spike', 'Spike', 'armor', 0, 6, { armor: 1 }, 'accent', false, .5, 0, 'Pointy. Nobody bites this.'),
+  p('shell_plate', 'Shell plate', 'armor', 1, 14, { armor: 2, speed: -.2 }, 'belly', false, .55, 0, 'A cozy suit of armor.'),
+  p('horn', 'Horn', 'armor', 2, 18, { bite: 2 }, 'belly', false, .12, .2, 'A head start in any fight.'),
+  p('tower', 'Tower', 'armor', 3, 30, { armor: 3, health: 2 }, 'belly', false, .5, 0, 'A tiny castle. A big defense.'),
+  p('antenna', 'Antenna', 'sense', 0, 6, { sense: 1 }, 'accent', true, .1, .35, 'Feel the water move.'),
+  p('glow_bulb', 'Glow lure', 'sense', 2, 15, { sense: 1, reach: .3 }, 'accent', false, .08, 0, 'Snacks come to the light.'),
+  p('cloak_fronds', 'Cloak fronds', 'sense', 1, 16, { stealth: 2 }, 'accent', false, .5, 0, 'Look like kelp. Be safe.'),
+  p('halo', 'Halo', 'cosmic', 4, 40, { health: 3 }, 'accent', false, .2, 0, 'Cosmically wholesome.'),
+  p('star_crown', 'Star crown', 'cosmic', 4, 35, { sense: 2, bite: 2 }, 'accent', false, .15, 0, 'Ruler of the snack universe.'),
+  p('nebula_fin', 'Nebula fin', 'cosmic', 4, 40, { speed: 2 }, 'accent', true, .5, HALF - .3, 'Swim through the stars.'),
+];
+export type PartId = typeof PARTS[number]['id'];
+const byId = new Map(PARTS.map(part => [part.id, part]));
+export const part = (id: string): PartSpec | undefined => byId.get(id);
+export const PART_ASSETS = PARTS.map(part => `part_${part.id}`);
+/** Defeating a species that fights unlocks one part before its stage. */
+export const DROPS: Partial<Record<string, string>> = { crab: 'leg_crab', jellyfish: 'glow_bulb', squid: 'tentacle_long', plane: 'jet_vent' };
+export const KIND_LABELS: Record<PartKind, string> = { mouth: 'Mouths', eye: 'Eyes', fin: 'Fins', tail: 'Tails', leg: 'Legs', wing: 'Wings', jet: 'Jets', arm: 'Arms', armor: 'Armor', sense: 'Senses', cosmic: 'Cosmic' };

@@ -1,7 +1,7 @@
 import * as T from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { asset, animations, HERO_ASSETS } from './assets';
-import type { FoodKind } from './state';
+import { asset } from './assets';
+import type { FoodKind } from './species';
 
 const effectMaterials = new Map<string, T.MeshStandardMaterial>();
 /** Small runtime particles use an effect material; all game models are GLBs. */
@@ -37,24 +37,6 @@ export function batch(group: T.Group): T.Group {
     for (const geometry of geoms) geometry.dispose();
   }
   return result;
-}
-interface Motion { mixer: T.AnimationMixer; idle?: T.AnimationAction; swim?: T.AnimationAction; chomp?: T.AnimationAction; lastTime: number; lastBite: number }
-const motions = new WeakMap<T.Group, Motion>();
-export function creature(stage: number): T.Group {
-  const name = HERO_ASSETS[stage]!, group = asset(name), mixer = new T.AnimationMixer(group);
-  const clips = animations(name), idleClip = clips.find(c => c.name === 'Idle'), swimClip = clips.find(c => c.name === 'Swim'), chompClip = clips.find(c => c.name === 'Chomp');
-  const idle = idleClip ? mixer.clipAction(idleClip).play() : undefined, swim = swimClip ? mixer.clipAction(swimClip).play() : undefined;
-  if (swim) swim.setEffectiveWeight(0);
-  const chomp = chompClip ? mixer.clipAction(chompClip).setLoop(T.LoopOnce, 1) : undefined;
-  motions.set(group, { mixer, idle, swim, chomp, lastTime: -1, lastBite: 0 }); return group;
-}
-export function animateCreature(group: T.Group, time: number, moving: boolean, chomping: number, _stage: number) {
-  const motion = motions.get(group); if (!motion) return;
-  const dt = motion.lastTime < 0 ? 0 : Math.min(.05, Math.max(0, time - motion.lastTime)); motion.lastTime = time;
-  if (motion.idle) motion.idle.setEffectiveWeight(T.MathUtils.damp(motion.idle.getEffectiveWeight(), moving ? 0 : 1, 6, dt));
-  if (motion.swim) motion.swim.setEffectiveWeight(T.MathUtils.damp(motion.swim.getEffectiveWeight(), moving ? 1 : 0, 6, dt));
-  if (chomping > motion.lastBite + .2 && motion.chomp) motion.chomp.reset().play();
-  motion.lastBite = chomping; motion.mixer.update(dt);
 }
 export function foodModel(kind: FoodKind, id = 0): T.Group { return asset(kind === 'planet' ? `planet_${String(id).padStart(2, '0')}` : kind); }
 export function coral(seed: number) { return asset(`reef_coral_${seed % 4}`); }

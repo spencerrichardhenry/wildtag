@@ -1,9 +1,16 @@
 import { startAnalytics } from '../analytics';
 import * as T from 'three';
 import './style.css';
-import { canEat, eat, freshRun, parseSave, STAGES, FOOD_LABELS, type Run } from './state';
+import './hud.css';
+import { applyDesign, damageAfterArmor, DEATH_KEEP, dietCanEat, eat, evolve, evolveReady, faint, freshRun, growthOf, hurt, inReach, parseSave, PLANET_COUNT, STAGES, unlock, type Run } from './state';
+import { derive, dietOf, genomeCost, statsOf } from './genome';
+import { DROPS, part } from './parts';
+import { tierSpecies } from './species';
+import { PLAYER_HALF } from './biomes';
+import { entityRadius, provoke } from './ecosystem';
+import { openEditor } from './editor';
 import { TideAudio } from './audio';
-import { TideWorld } from './world';
+import { TideWorld, type FoodObject } from './world';
 import { loadAssets, assetDiagnostics } from './assets';
 
 const svg = (body: string, cls = '') => `<svg class="${cls}" viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
@@ -15,6 +22,8 @@ const species = [
   svg('<circle cx="20" cy="20" r="10"/><ellipse cx="20" cy="20" rx="19" ry="6" transform="rotate(-28 20 20)"/><path d="m29 5 2-3 1 4 4 1-4 1-1 4-2-4-3-1 3-2"/><circle cx="17" cy="18" r="1" fill="currentColor"/><circle cx="24" cy="18" r="1" fill="currentColor"/><path d="M18 23q3 3 5-1"/>'),
 ];
 const icons = {
+  edit: svg('<path d="M8 32l2-8L26 8l6 6-16 16-8 2Zm16-22 6 6"/><circle cx="11" cy="11" r="3"/><circle cx="31" cy="30" r="2"/>'),
+  dna: svg('<path d="M12 4c0 10 16 10 16 20s-16 10-16 12M28 4c0 10-16 10-16 20s16 10 16 12M14 10h12m-14 9h16m-16 11h14"/>'),
   sound: svg('<path d="m9 16 7-6v20l-7-6H4v-8h5Zm14-2q7 6 0 12m5-17q12 11 0 22"/>'),
   mute: svg('<path d="m9 16 7-6v20l-7-6H4v-8h5Zm15 0 10 10m0-10L24 26"/>'),
   help: svg('<circle cx="20" cy="20" r="14"/><path d="M16 15c0-6 12-6 9 1-1 3-5 2-5 7m0 5v.1"/>'),
@@ -25,24 +34,27 @@ const icons = {
   leaf: svg('<path d="M10 29C2 11 20 6 31 8c2 13-3 29-19 23L26 14M9 35l8-12"/>'),
   play: svg('<path d="m15 10 16 10-16 10V10Z" fill="currentColor" stroke="none"/>'),
 };
+const heart = '<svg viewBox="0 0 20 18" aria-hidden="true"><path d="M10 17 2.4 9.6a4.6 4.6 0 0 1 6.5-6.5L10 4.2l1.1-1.1a4.6 4.6 0 0 1 6.5 6.5Z"/></svg>';
 const app = document.querySelector<HTMLDivElement>('#app')!;
 app.innerHTML = `
   <div class="vignette"></div><div class="grain"></div>
-  <header class="topbar"><a class="brand" href="#" aria-label="Tiny Tide home"><span class="brand-mark">${species[0]}</span><span>tiny tide<span class="brand-dot">.</span></span></a><div class="top-actions"><span id="mode-label">A SMALL GAME ABOUT GETTING BIG</span><button class="icon-button" id="sound" aria-label="Mute sound" aria-pressed="false">${icons.sound}</button><button class="icon-button" id="help" aria-label="How to play">${icons.help}</button><button class="icon-button" id="pause" aria-label="Pause game" hidden>${icons.pause}</button></div></header>
+  <header class="topbar"><a class="brand" href="#" aria-label="Tiny Tide home"><span class="brand-mark">${species[0]}</span><span>tiny tide<span class="brand-dot">.</span></span></a><div class="top-actions"><span id="mode-label">A SMALL GAME ABOUT GETTING BIG</span><button class="icon-button" id="edit" aria-label="Edit your creature" hidden>${icons.edit}</button><button class="icon-button" id="sound" aria-label="Mute sound" aria-pressed="false">${icons.sound}</button><button class="icon-button" id="help" aria-label="How to play">${icons.help}</button><button class="icon-button" id="pause" aria-label="Pause game" hidden>${icons.pause}</button></div></header>
   <main id="home">
-    <div class="home-copy"><div class="eyebrow"><span class="tiny-star">✳</span> A LITTLE CREATURE. A VERY BIG UNIVERSE.</div><h1>Small fry.<br><em>Big appetite.</em></h1><p>Start with a nibble. <br>End with the whole universe.</p><div class="start-row"><button id="start" class="primary">Let’s eat ${icons.arrow}</button><span class="play-note">ZERO PRESSURE.<br>INFINITE APPETITE.</span></div><button id="fresh" class="text-button" hidden>Start a fresh adventure</button><div class="home-hint"><span class="hint-line"></span> A cozy 3D eat-and-evolve adventure</div></div>
-    <div class="creature-caption"><span class="caption-line"></span><span>little shrimp<br><small>big things start small.</small></span><span class="caption-spark">✧</span></div>
-    <div class="journey"><div class="journey-heading"><span>YOUR NEXT BIG THING</span><span>5 FORMS · ONE HUNGRY LITTLE SOUL</span></div><div class="journey-track">${STAGES.map((s, i) => `<div class="journey-step ${i === 0 ? 'current' : ''}"><span class="step-icon">${species[i]}</span><div><span class="step-number">0${i + 1}</span><span class="step-name">${['Little shrimp', 'Happy fish', 'Pocket orca', 'Cuddlethulhu', 'Cosmic cutie'][i]}</span><small>${['Nibble', 'Swim', 'Breach', 'Take flight', 'Devour the stars'][i]}</small></div>${i < 4 ? '<span class="step-dots">···</span>' : ''}<span class="sr-only">${s.size}</span></div>`).join('')}</div></div>
+    <div class="home-copy"><div class="eyebrow"><span class="tiny-star">✳</span> DESIGN IT. FEED IT. EVOLVE IT.</div><h1>Small fry.<br><em>Big appetite.</em></h1><p>Build your own little creature. <br>Grow it until it eats the universe.</p><div class="start-row"><button id="start" class="primary">Let’s eat ${icons.arrow}</button><span class="play-note">YOUR CREATURE.<br>YOUR RULES.</span></div><button id="fresh" class="text-button" hidden>Start a fresh adventure</button><div class="home-hint"><span class="hint-line"></span> A cozy 3D eat-and-evolve adventure</div></div>
+    <div class="creature-caption"><span class="caption-line"></span><span id="home-name">little tide<br><small>big things start small.</small></span><span class="caption-spark">✧</span></div>
+    <div class="journey"><div class="journey-heading"><span>YOUR NEXT BIG THING</span><span>5 SIZES · ONE HUNGRY LITTLE SOUL</span></div><div class="journey-track">${STAGES.map((s, i) => `<div class="journey-step ${i === 0 ? 'current' : ''}"><span class="step-icon">${species[i]}</span><div><span class="step-number">0${i + 1}</span><span class="step-name">${s.title}</span><small>${['Nibble', 'Swim', 'Breach', 'Take flight', 'Devour the stars'][i]}</small></div>${i < 4 ? '<span class="step-dots">···</span>' : ''}<span class="sr-only">${s.size}</span></div>`).join('')}</div></div>
   </main>
   <section id="game-ui" hidden aria-label="Game controls">
-    <div class="stage-card"><div id="stage-icon"></div><div><span class="eyebrow" id="biome"></span><h2 id="creature-name"></h2><span id="size"></span></div></div>
-    <div class="growth-card"><div class="growth-meta"><span id="growth-label">A LITTLE BIGGER WITH EVERY BITE</span><strong id="growth-count"></strong></div><div class="growth-track"><div id="growth-fill"></div></div><div class="growth-next"><span id="diet"></span><span id="next-form"></span></div></div>
+    <div class="stage-card"><div id="stage-icon"></div><div><span class="eyebrow" id="biome"></span><h2 id="creature-name"></h2><span id="size"></span><div id="hearts" role="img"></div></div></div>
+    <div class="growth-card"><div class="growth-meta"><span id="growth-label">DNA FOR YOUR NEXT EVOLUTION</span><strong id="growth-count"></strong></div><div class="growth-track"><div id="growth-fill"></div></div><div class="growth-next"><span id="diet"></span><span id="wallet">${icons.dna}<b id="dna"></b> DNA</span></div></div>
     <div id="objective"><span class="objective-dot"></span><span id="objective-text"></span></div>
-    <div class="stage-dots" aria-label="Evolution progress">${STAGES.map((s, i) => `<span data-stage="${i}" title="${s.name}">${species[i]}</span>`).join('<i></i>')}</div>
+    <button id="evolve" class="primary evolve-button" hidden>${icons.up}<span>Evolve!</span></button>
+    <div class="stage-dots" aria-label="Evolution progress">${STAGES.map((s, i) => `<span data-stage="${i}" title="${s.title}">${species[i]}</span>`).join('<i></i>')}</div>
     <div id="joystick" aria-label="Drag to move" role="group"><div class="stick-cross"></div><span id="stick"></span></div><div class="movement-hint"><span class="desktop-hint"><kbd>W</kbd><br><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><span>TO MOVE · DRAG TO LOOK</span></span><span class="touch-hint">DRAG TO MOVE</span></div>
     <div class="look-hint" id="look-hint"><span>↔</span> SWIPE TO LOOK AROUND</div><div class="depth-gauge"><span id="depth-label">SEAFLOOR</span><div><i id="depth-dot"></i></div><small id="depth-hint">LOOK UP. THERE’S A WHOLE WORLD.</small></div><div id="evolution-banner" hidden><span id="evolution-icon"></span><div><small>LOOK AT YOU GROW!</small><strong id="evolution-name"></strong><span id="evolution-detail">Same little soul. A bigger world to eat.</span></div></div><div class="actions"><div class="vertical-controls" id="vertical-controls" hidden><button id="special" class="special-button" aria-label="Rise" hidden>${icons.up}<span id="special-label">RISE</span><kbd>E</kbd></button><button id="dive" class="special-button dive-button" aria-label="Dive">${icons.up}<span>DIVE</span><kbd>Q</kbd></button></div><button id="chomp" class="chomp-button" aria-label="Chomp (hold to keep eating)">${icons.chomp}<strong>CHOMP</strong><span>HOLD <kbd>SPACE</kbd></span></button></div>
     <div id="food-pointer" hidden><span id="pointer-arrow">↑</span><span id="pointer-label">SEA SPROUT</span></div>
-    <div id="snack-label" hidden></div><div id="toast" role="status" aria-live="polite"></div>
+    <div id="snack-label" hidden></div><div id="threats" aria-hidden="true"></div><div id="toast" role="status" aria-live="polite"></div>
+    <div id="faint" hidden><strong>Gobbled!</strong><span>Your little one carries on.</span></div>
   </section>
   <div id="floaters" aria-hidden="true"></div>
   <dialog id="modal" aria-labelledby="modal-title"><button id="close-modal" class="close-button" aria-label="Close dialog">×</button><div id="modal-content"></div></dialog>
@@ -60,11 +72,11 @@ catch {
   app.innerHTML = '<div class="fallback"><h1>A little help?</h1><p>The reef couldn’t finish loading. Check your connection and make sure 3D graphics are enabled, then try again.</p><button onclick="location.reload()" class="primary">Try again</button></div>';
   throw new Error('Tiny Tide could not load its Blender assets or start WebGL.');
 }
-const SAVE_KEY = 'tiny-tide-adventure-v1';
+const SAVE_KEY = 'tiny-tide-adventure-v2', V1_SAVE_KEY = 'tiny-tide-adventure-v1';
 let saved: Run | null = null;
-try { saved = parseSave(localStorage.getItem(SAVE_KEY)); audio.muted = localStorage.getItem('tiny-tide-muted') === 'true'; } catch { /* Storage is optional. */ }
-let run = freshRun();
-let mode: 'menu' | 'playing' | 'paused' | 'evolving' | 'won' = 'menu';
+try { saved = parseSave(localStorage.getItem(SAVE_KEY)) ?? parseSave(localStorage.getItem(V1_SAVE_KEY)); audio.muted = localStorage.getItem('tiny-tide-muted') === 'true'; } catch { /* Storage is optional. */ }
+let run = saved && !saved.completed ? structuredClone(saved) : freshRun();
+let mode: 'menu' | 'playing' | 'paused' | 'evolving' | 'editing' | 'fainted' | 'won' = 'menu';
 startAnalytics('tiny-tide', () => mode === 'playing' || mode === 'evolving');
 let keys = new Set<string>();
 let stickX = 0, stickZ = 0, stickPointer: number | null = null;
@@ -72,38 +84,65 @@ let holdingChomp = false, rising = false, diving = false;
 let target: T.Vector3 | null = null;
 let time = 0, last = performance.now(), cooldown = 0, chompPulse = 0, leap = -1, leapCooldown = 0;
 let toastTimer = 0, uiClock = 0, saveClock = 0, leapStart = 0;
+let grace = 0, sinceHit = 99, regenClock = 0, wrongDietClock = 0, readyToasted = false, lastBiome = '';
 let dialogReturn: 'menu' | 'playing' | 'paused' = 'menu';
 const modal = el<HTMLDialogElement>('modal');
+world.setCreature(run.genome);
+let derived = derive(statsOf(run.genome));
+function refreshDerived() { derived = derive(statsOf(run.genome)); }
 function save() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(run)); saved = structuredClone(run); } catch { /* Continue without saving in private contexts. */ } }
 function clearInput() { keys.clear(); holdingChomp = false; rising = false; diving = false; stickX = 0; stickZ = 0; stickPointer = null; target = null; el('stick').style.transform = ''; el('chomp').classList.remove('pressed'); el('special').classList.remove('pressed'); el('dive').classList.remove('pressed'); }
 function syncSound() { el('sound').innerHTML = audio.muted ? icons.mute : icons.sound; el('sound').setAttribute('aria-label', audio.muted ? 'Unmute sound' : 'Mute sound'); el('sound').setAttribute('aria-pressed', String(audio.muted)); }
 syncSound();
-if (saved && !saved.completed) { el('start').innerHTML = `Keep munching ${icons.arrow}`; el('fresh').hidden = false; }
+function syncHome() {
+  const resume = saved && !saved.completed;
+  el('start').innerHTML = resume ? `Keep munching ${icons.arrow}` : `Let’s eat ${icons.arrow}`; el('fresh').hidden = !resume;
+  el('home-name').innerHTML = `${escapeHtml(run.name.toLowerCase())}<br><small>${resume ? `${STAGES[run.stage]!.title.toLowerCase()} and still hungry.` : 'big things start small.'}</small>`;
+}
+function escapeHtml(text: string) { return text.replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`); }
+syncHome();
 function toast(message: string) { el('toast').textContent = message; el('toast').classList.add('show'); toastTimer = 4.5; }
+function floater(text: string, x: number, y: number, kind = '') {
+  const label = document.createElement('span'); label.className = `bite-floater ${kind}`; label.textContent = text; label.style.left = `${x}px`; label.style.top = `${y}px`; el('floaters').append(label); setTimeout(() => label.remove(), 950);
+}
+function syncHearts() {
+  const max = derived.maxHealth, health = Math.ceil(run.health);
+  el('hearts').innerHTML = Array.from({ length: max }, (_, i) => `<i class="${i < health ? 'full' : ''}">${heart}</i>`).join('');
+  el('hearts').setAttribute('aria-label', `${health} of ${max} hearts`);
+}
 function syncUI() {
-  const stage = STAGES[run.stage]!;
-  el('stage-icon').innerHTML = species[run.stage]!; el('biome').textContent = stage.biome;
-  el('creature-name').textContent = stage.name; el('size').textContent = `${stage.size} OF PURE POTENTIAL`;
-  el('growth-count').textContent = `${run.bites} / ${stage.goal}`;
-  el('growth-fill').style.width = `${Math.min(100, run.bites / stage.goal * 100)}%`;
-  el('diet').textContent = stage.diet;
-  el('next-form').textContent = run.stage === 4 ? `${12 - run.bites} planets left` : `Next: ${STAGES[run.stage + 1]!.name} ↗`;
-  el('growth-label').textContent = run.stage === 4 ? 'ONE UNIVERSE. NO LEFTOVERS.' : 'A LITTLE BIGGER WITH EVERY BITE';
+  const stage = STAGES[run.stage]!, diet = dietOf(run.genome);
+  el('stage-icon').innerHTML = species[run.stage]!; el('creature-name').textContent = run.name;
+  el('size').textContent = `${stage.title.toUpperCase()} · ${stage.size}`;
+  const planets = run.stage === 4;
+  el('growth-count').textContent = planets ? `${run.eatenPlanets.length} / ${PLANET_COUNT}` : `${Math.floor(Math.min(run.stageDna, stage.goal))} / ${stage.goal}`;
+  el('growth-fill').style.width = `${Math.min(100, (planets ? run.eatenPlanets.length / PLANET_COUNT : run.stageDna / stage.goal) * 100)}%`;
+  el('growth-label').textContent = planets ? 'ONE UNIVERSE. NO LEFTOVERS.' : 'DNA FOR YOUR NEXT EVOLUTION';
+  el('diet').textContent = diet.toUpperCase(); el('diet').dataset.diet = diet;
+  el('dna').textContent = String(Math.floor(run.dna));
   el('vertical-controls').hidden = run.stage === 0; el('special').hidden = run.stage === 0; el('special-label').textContent = stage.action.toUpperCase(); el('special').setAttribute('aria-label', stage.action);
-  el('objective-text').textContent = ['Find tasty plants. Swipe the world to look around.', 'Shrimp, crabs, jellies & snails. Rise / Dive to explore.', 'Tuna, squid & rays below. Breach for gulls!', 'Palms, sailboats, seaplanes, balloons & lighthouses!', 'Float freely. Eat every last planet.'][run.stage]!;
+  const ready = evolveReady(run);
+  el('evolve').hidden = !ready || mode !== 'playing'; el('objective').hidden = ready;
+  el('objective-text').textContent = objective();
   document.querySelectorAll<HTMLElement>('[data-stage]').forEach(node => { const n = Number(node.dataset.stage); node.classList.toggle('active', n === run.stage); node.classList.toggle('done', n < run.stage); });
   document.documentElement.style.setProperty('--stage-color', stage.color);
+  syncHearts();
+}
+function objective() {
+  const diet = dietOf(run.genome), foods = tierSpecies(run.stage).filter(s => dietCanEat(diet, s.tag)).map(s => s.label.toLowerCase());
+  if (run.stage === 4) return 'Float freely. Eat every last planet.';
+  const list = foods.length > 3 ? `${foods.slice(0, 3).join(', ')} & more` : foods.join(' & ');
+  return `Eat ${list}. ${['Swipe the world to look around.', 'Rise / Dive to explore.', 'Breach for gulls!', 'Watch out for seaplanes.'][run.stage]}`;
 }
 function begin(fresh = false) {
   audio.init(); run = !fresh && saved && !saved.completed ? structuredClone(saved) : freshRun();
-  // A save taken on an evolution boundary resumes in the newly unlocked form.
-  if (run.bites >= STAGES[run.stage]!.goal && run.stage < 4) { run.stage++; run.bites = 0; }
-  world.build(run.stage, run.eatenPlanets); el('evolution-banner').hidden = true; mode = 'playing'; clearInput(); cooldown = 0; leap = -1; leapCooldown = 0;
-  el('home').hidden = true; el('game-ui').hidden = false; el('pause').hidden = false; el('corner-note').hidden = true; el('mode-label').textContent = 'NIBBLE. GROW. REPEAT.';
-  document.body.classList.add('is-playing'); syncUI(); save(); toast(STAGES[run.stage]!.nickname);
+  refreshDerived(); run.health = Math.min(run.health, derived.maxHealth);
+  world.build(run.stage, run); el('evolution-banner').hidden = true; mode = 'playing'; clearInput(); cooldown = 0; leap = -1; leapCooldown = 0; grace = 2; sinceHit = 99; readyToasted = evolveReady(run); lastBiome = '';
+  el('home').hidden = true; el('game-ui').hidden = false; el('pause').hidden = false; el('edit').hidden = false; el('corner-note').hidden = true; el('mode-label').textContent = 'NIBBLE. GROW. REPEAT.';
+  document.body.classList.add('is-playing'); syncUI(); save(); toast(STAGES[run.stage]!.description);
 }
 function showDialog(content: string, closable = true) { clearInput(); el('modal-content').innerHTML = content; el('close-modal').hidden = !closable; if (!modal.open) modal.showModal(); }
-function closeDialog() { modal.close(); if (mode === 'paused') mode = dialogReturn === 'playing' ? 'playing' : 'menu'; clearInput(); }
+function closeDialog() { modal.close(); if (mode === 'paused') mode = dialogReturn === 'playing' ? 'playing' : 'menu'; clearInput(); syncUI(); }
 function pause() {
   if (mode !== 'playing') return;
   mode = 'paused'; dialogReturn = 'playing'; save();
@@ -111,53 +150,108 @@ function pause() {
   el('resume').onclick = closeDialog; el('restart').onclick = confirmRestart;
 }
 function confirmRestart() {
-  showDialog(`<span class="modal-art">${species[0]}</span><div class="eyebrow">BACK TO THE SHALLOWS</div><h2 id="modal-title">A fresh little start?</h2><p>This replaces your saved adventure.<br>You'll be a tiny shrimp again.</p><button id="confirm-restart" class="primary">Start fresh ${icons.arrow}</button><button id="cancel-restart" class="text-button">Keep my adventure</button>`);
+  showDialog(`<span class="modal-art">${species[0]}</span><div class="eyebrow">BACK TO THE SHALLOWS</div><h2 id="modal-title">A fresh little start?</h2><p>This replaces your saved adventure.<br>You get a new world and a tiny new creature.</p><button id="confirm-restart" class="primary">Start fresh ${icons.arrow}</button><button id="cancel-restart" class="text-button">Keep my adventure</button>`);
   el('confirm-restart').onclick = () => { modal.close(); begin(true); }; el('cancel-restart').onclick = closeDialog;
 }
 function help() {
-  if (mode === 'evolving' || mode === 'won') return;
+  if (mode === 'evolving' || mode === 'won' || mode === 'editing' || mode === 'fainted') return;
   dialogReturn = mode === 'playing' || mode === 'paused' ? 'playing' : 'menu'; if (mode === 'playing') mode = 'paused';
-  showDialog(`<div class="eyebrow">A RECIPE FOR BIG THINGS</div><h2 id="modal-title">Follow your tummy.</h2><p>Wander, chomp, grow. There are no enemies, timers, or wrong turns.</p><div class="help-rows"><div><span>01</span><div><strong>A little wander</strong><p>Drag the left joystick or use WASD / arrow keys. Swipe the world to turn the camera. While swimming or flying, push forward to travel in the direction you’re looking.</p></div></div><div><span>02</span><div><strong>A little nibble</strong><p>Get close to food and hold Chomp or Space. Follow the snack arrow to your next bite.</p></div></div><div><span>03</span><div><strong>A whole new you</strong><p>Fill your growth bar and transform right where you are. Hold Rise / E to go up, Dive / Q to go down, and release to hover. As an orca, tap Breach / E and hold Chomp for birds.</p></div></div><div><span>04</span><div><strong>An enormous ending</strong><p>The same world shrinks around you as you grow through all five forms. Eat every planet to finish. Progress saves on this browser automatically.</p></div></div></div><button id="got-it" class="primary">Got it. Let’s snack. ${icons.arrow}</button>`);
+  showDialog(`<div class="eyebrow">A RECIPE FOR BIG THINGS</div><h2 id="modal-title">Follow your tummy.</h2><p>Eat to earn DNA. Spend DNA on new parts. Grow from a speck to a cosmic giant.</p><div class="help-rows"><div><span>01</span><div><strong>A little wander</strong><p>Drag the left joystick or use WASD / arrow keys. Swipe the world to turn the camera. While swimming or flying, push forward to travel in the direction you’re looking.</p></div></div><div><span>02</span><div><strong>A little nibble</strong><p>Get close to food and hold Chomp or Space. Your mouth sets your diet: herbivores eat plants, carnivores eat meat, omnivores eat both for less DNA.</p></div></div><div><span>03</span><div><strong>A little danger</strong><p>Red <b>!</b> marks a hunter. Chomp back, swim away, or hide with stealth parts. If you lose every heart, you wake up at the start with most of your DNA.</p></div></div><div><span>04</span><div><strong>A whole new you</strong><p>Tap the pencil to edit your creature at any time. When the DNA bar is full, tap Evolve, pick new parts, and grow right where you are. Eat every planet to finish.</p></div></div></div><button id="got-it" class="primary">Got it. Let’s snack. ${icons.arrow}</button>`);
   el('got-it').onclick = closeDialog;
 }
-function evolve() {
-  mode = 'evolving'; clearInput(); audio.evolve(); run.stage++; run.bites = 0; save();
-  const stage = STAGES[run.stage]!;
-  world.transform(run.stage); syncUI();
-  el('evolution-icon').innerHTML = species[run.stage]!;
-  el('evolution-name').textContent = stage.name;
-  el('evolution-detail').textContent = stage.nickname;
-  el('evolution-banner').hidden = false;
-  leap = -1; leapCooldown = 0;
+async function edit(kind: 'edit' | 'evolve') {
+  if (mode !== 'playing' || (kind === 'evolve' && !evolveReady(run))) return;
+  mode = 'editing'; clearInput(); save(); el('game-ui').classList.add('dimmed');
+  const stage = kind === 'evolve' ? run.stage + 1 : run.stage;
+  const result = await openEditor({ genome: run.genome, name: run.name, stage, unlocked: run.unlocked, budget: run.dna + genomeCost(run.genome), mode: kind });
+  el('game-ui').classList.remove('dimmed');
+  if (!result) { mode = 'playing'; syncUI(); return; }
+  const before = run.genome;
+  applyDesign(run, result.genome, result.name, genomeCost);
+  if (kind === 'evolve') { evolve(run); refreshDerived(); startTransformation(); return; }
+  refreshDerived(); if (JSON.stringify(before) !== JSON.stringify(run.genome)) { world.setCreature(run.genome); world.burst(world.player.position.x, world.player.position.y, world.player.position.z, '#f4e2b9', 30); audio.found(); }
+  mode = 'playing'; save(); syncUI();
 }
-
+function startTransformation() {
+  mode = 'evolving'; clearInput(); audio.evolve(); save();
+  const stage = STAGES[run.stage]!;
+  world.transform(run.stage, run.genome); syncUI();
+  el('evolution-icon').innerHTML = species[run.stage]!;
+  el('evolution-name').textContent = `${run.name}, ${stage.title.toLowerCase()}`;
+  el('evolution-detail').textContent = 'Same little soul. A bigger world to eat.';
+  el('evolution-banner').hidden = false;
+  leap = -1; leapCooldown = 0; readyToasted = false;
+}
 function win() {
   mode = 'won'; clearInput(); save(); audio.evolve();
   const minutes = Math.floor(run.elapsed / 60), seconds = Math.floor(run.elapsed % 60).toString().padStart(2, '0');
-  showDialog(`<span class="modal-art cosmic">${species[4]}</span><div class="eyebrow">THE UNIVERSE WAS DELICIOUS</div><h2 id="modal-title">All full.<br>All yours.</h2><p>From a tiny shrimp to a cosmic cutie.<br>You ate every planet. Now, a well-earned nap.</p><div class="win-stats"><div><strong>${run.total}</strong><span>HAPPY BITES</span></div><div><strong>12 / 12</strong><span>PLANETS EATEN</span></div><div><strong>${minutes}:${seconds}</strong><span>YOUR ADVENTURE</span></div></div><button id="play-again" class="primary">One more little adventure ${icons.arrow}</button>`, false);
+  showDialog(`<span class="modal-art cosmic">${species[4]}</span><div class="eyebrow">THE UNIVERSE WAS DELICIOUS</div><h2 id="modal-title">All full.<br>All yours.</h2><p>${escapeHtml(run.name)} grew from a speck to a cosmic giant.<br>Every planet is eaten. Now, a well-earned nap.</p><div class="win-stats"><div><strong>${Math.floor(run.totalDna)}</strong><span>DNA EARNED</span></div><div><strong>${run.bites}</strong><span>HAPPY BITES</span></div><div><strong>${minutes}:${seconds}</strong><span>YOUR ADVENTURE</span></div></div><button id="play-again" class="primary">One more little adventure ${icons.arrow}</button>`, false);
   el('play-again').onclick = () => { modal.close(); begin(true); };
+}
+/** A food or creature in bite range: own-tier food, or a bigger creature that is attacking. */
+function biteTargets() {
+  const p = world.player.position, growth = growthOf(run), diet = dietOf(run.genome);
+  const out: { food: FoodObject; edible: boolean; distance: number }[] = []; let wrongDiet: string | null = null;
+  for (const food of world.foods) {
+    const e = food.entity; if (e.eaten) continue;
+    const attacking = e.mode === 'hunt' || e.mode === 'angry';
+    if (food.tier !== run.stage && !(attacking && food.tier === run.stage + 1)) continue;
+    const radius = food.tier > run.stage ? entityRadius(e) / world.scale : 0;
+    if (!inReach(run.stage, p, food.data, growth, derived.reach, radius)) continue;
+    const edible = food.tier === run.stage && dietCanEat(diet, e.spec.tag);
+    // A mouth that can not eat it can still bite back at something that fights.
+    if (!edible && !attacking && !e.spec.fights) { wrongDiet = e.spec.label; continue; }
+    out.push({ food, edible, distance: Math.hypot(food.data.x - p.x, food.data.y - p.y, food.data.z - p.z) });
+  }
+  return { targets: out.sort((a, b) => a.distance - b.distance), wrongDiet };
 }
 function chomp() {
   if (mode !== 'playing' || cooldown > 0) return;
   cooldown = .24; chompPulse = 1;
-  let hadBite = false;
-  for (const f of world.edibleFoods) {
-    if (!canEat(run.stage, world.player.position, f.data, 1 + run.bites / STAGES[run.stage]!.goal * .38)) continue;
-    hadBite = true; const result = eat(run, f.data); world.removeFood(f); audio.bite(run.bites);
-    if (typeof navigator.vibrate === 'function') navigator.vibrate(15);
-    const pos = world.screenPoint(new T.Vector3(f.data.x, f.data.y + 1, f.data.z));
-    const label = document.createElement('span'); label.className = 'bite-floater'; label.textContent = ['yum!', 'nom!', 'delish!', '♡', 'one more!'][run.total % 5]!; label.style.left = `${pos.x}px`; label.style.top = `${pos.y}px`; el('floaters').append(label); setTimeout(() => label.remove(), 950);
-    syncUI(); save();
-    if (result === 'evolve') { evolve(); break; }
-    if (result === 'win') { win(); break; }
+  const { targets, wrongDiet } = biteTargets();
+  const hit = targets[0];
+  if (!hit) {
+    audio.tone(170, 0, .065);
+    if (wrongDiet && wrongDietClock <= 0) { toast(`A ${dietOf(run.genome)} can’t eat ${wrongDiet.toLowerCase()}. Try another mouth in the editor.`); wrongDietClock = 6; }
+    return;
   }
-  if (!hadBite) audio.tone(170, 0, .065);
+  const { food } = hit, e = food.entity, pos = world.screenPoint(new T.Vector3(food.data.x, food.data.y + 1, food.data.z));
+  const bigger = food.tier > run.stage, damage = bigger ? Math.max(1, Math.floor(derived.bite / 2)) : derived.bite;
+  if (e.spec.hp > 1 || bigger) {
+    e.hp -= damage; provoke(e); audio.bite(run.bites); world.burst(food.data.x, food.data.y, food.data.z, '#ffd9a8', 8);
+    if (e.hp > 0) { floater(`-${damage}`, pos.x, pos.y, 'hit'); return; }
+  }
+  const drop = DROPS[e.spec.kind];
+  if (drop && unlock(run, drop)) { toast(`New part found: ${part(drop)!.name}! Open the editor to use it.`); audio.found(); }
+  let dna: number, won = false;
+  if (hit.edible) { const result = eat(run, e.spec, e.spec.kind === 'planet' ? world.eco.planetIndex(e) : e.id); dna = result.dna; won = result.win; }
+  else { dna = Math.round(e.spec.dna * .5); run.dna += dna; run.totalDna += dna; if (food.tier === run.stage) run.stageDna += dna; }
+  world.eco.consume(e); world.removeFood(food); audio.bite(run.bites);
+  if (typeof navigator.vibrate === 'function') navigator.vibrate(15);
+  floater(dna > 0 ? `+${dna} DNA` : ['yum!', 'nom!', '♡'][run.bites % 3]!, pos.x, pos.y);
+  syncUI(); save();
+  if (won) { win(); return; }
+  if (evolveReady(run) && !readyToasted) { readyToasted = true; toast('Ready to evolve! Tap Evolve when you want to grow.'); audio.found(); }
 }
 function special() {
   if (mode !== 'playing' || run.stage !== 2 || leap >= 0 || leapCooldown > 0) return;
   leap = 0; leapStart = world.player.position.y; leapCooldown = 2.3; audio.breach(); world.burst(world.player.position.x, world.surface, world.player.position.z, '#d6fff1', 22);
 }
+function takeHit(damage: number, label: string) {
+  if (mode !== 'playing' || grace > 0) return;
+  sinceHit = 0; world.hurt(); audio.hurt(); if (typeof navigator.vibrate === 'function') navigator.vibrate([30, 40, 30]);
+  const pos = world.screenPoint(world.player.position.clone().add(new T.Vector3(0, 1.4, 0)));
+  floater(`-${damageAfterArmor(damage, derived.armor)} ♥`, pos.x, pos.y, 'hurt');
+  const fainted = hurt(run, damage, derived.armor); syncHearts(); el('hearts').classList.remove('hit'); void el('hearts').offsetWidth; el('hearts').classList.add('hit');
+  if (!fainted) { if (run.health <= 2) toast(`${label} is winning! Swim away to heal.`); return; }
+  mode = 'fainted'; clearInput(); audio.faint(); el('faint').hidden = false; world.burst(world.player.position.x, world.player.position.y, world.player.position.z, '#ff8f7a', 40);
+  setTimeout(() => {
+    faint(run); refreshDerived(); world.placePlayer(run.stage); el('faint').hidden = true;
+    mode = 'playing'; grace = 3; sinceHit = 99; save(); syncUI(); toast(`You kept ${Math.round(DEATH_KEEP * 100)}% of your DNA. Stay safe out there.`);
+  }, 1800);
+}
 el('start').onclick = () => begin(); el('fresh').onclick = () => { dialogReturn = 'menu'; confirmRestart(); };
+el('evolve').onclick = () => void edit('evolve'); el('edit').onclick = () => void edit('edit');
 el('sound').onclick = () => { audio.init(); audio.toggle(); syncSound(); try { localStorage.setItem('tiny-tide-muted', String(audio.muted)); } catch { /* Optional preference. */ } };
 el('help').onclick = help; el('pause').onclick = pause; el('close-modal').onclick = closeDialog;
 modal.addEventListener('cancel', event => { event.preventDefault(); if (mode !== 'evolving' && mode !== 'won') closeDialog(); });
@@ -202,7 +296,7 @@ canvas.addEventListener('pointerup', event => {
   if (event.pointerId !== lookPointer) return;
   if (!looked && mode === 'playing' && run.stage === 0) {
     target = world.groundPoint(event.clientX, event.clientY);
-    if (target) { target.x = T.MathUtils.clamp(target.x, -34, 34); target.z = T.MathUtils.clamp(target.z, -34, 34); world.targetRing.position.copy(target); world.targetRing.position.y = world.groundAt(target.x, target.z) + .08; world.targetRing.scale.setScalar(.45); world.targetRing.visible = true; }
+    if (target) { target.x = T.MathUtils.clamp(target.x, -PLAYER_HALF, PLAYER_HALF); target.z = T.MathUtils.clamp(target.z, -PLAYER_HALF, PLAYER_HALF); world.targetRing.position.copy(target); world.targetRing.position.y = world.groundAt(target.x, target.z) + .08; world.targetRing.scale.setScalar(.45); world.targetRing.visible = true; }
   }
   lookPointer = null;
 });
@@ -223,35 +317,46 @@ document.addEventListener('visibilitychange', () => { if (document.hidden && mod
 window.addEventListener('pagehide', () => { if (mode !== 'menu') save(); });
 window.addEventListener('resize', () => world.resize());
 function updateGuide() {
-  if (mode !== 'playing') { el('food-pointer').hidden = true; el('snack-label').hidden = true; return; }
-  let nearest = world.edibleFoods.filter(f => !f.data.eaten).sort((a, b) => {
-    const p = world.player.position;
-    return Math.hypot(a.data.x - p.x, a.data.z - p.z) + Math.abs(a.data.y - p.y) * .6 - Math.hypot(b.data.x - p.x, b.data.z - p.z) - Math.abs(b.data.y - p.y) * .6;
-  })[0];
-  if (!nearest) return;
-  const f = nearest.data, p = world.player.position;
-  const point = world.screenPoint(new T.Vector3(f.x, f.y + 1.4, f.z));
-  const near = Math.hypot(f.x - p.x, f.z - p.z) < STAGES[run.stage]!.radius + 1;
-  const names = FOOD_LABELS;
-  const heightHint = f.y - p.y > 2.1 ? run.stage === 2 ? 'BREACH TO REACH!' : 'HOLD RISE TO REACH' : p.y - f.y > 2.1 ? 'HOLD DIVE TO REACH' : 'HOLD CHOMP';
-  const onscreen = point.visible && point.x > 65 && point.x < innerWidth - 65 && point.y > 200 && point.y < innerHeight - 200;
-  el('snack-label').hidden = !onscreen; el('food-pointer').hidden = onscreen;
-  if (onscreen) { el('snack-label').style.left = `${point.x}px`; el('snack-label').style.top = `${point.y}px`; el('snack-label').textContent = near ? heightHint : names[f.kind].toUpperCase(); }
-  else {
-    const pp = world.screenPoint(p); const dx = (point.x - pp.x) * (point.visible ? 1 : -1), dy = (point.y - pp.y) * (point.visible ? 1 : -1);
-    const angle = Math.atan2(dy, dx); const r = Math.min(innerWidth * .31, innerHeight * .27);
-    el('food-pointer').style.left = `${innerWidth / 2 + Math.cos(angle) * r}px`; el('food-pointer').style.top = `${innerHeight / 2 + Math.sin(angle) * r}px`;
-    el('pointer-arrow').style.transform = `rotate(${angle + Math.PI / 2}rad)`; el('pointer-label').textContent = near ? heightHint : names[f.kind].toUpperCase();
-  }
+  if (mode !== 'playing') { el('food-pointer').hidden = true; el('snack-label').hidden = true; el('threats').innerHTML = ''; return; }
+  const p = world.player.position, diet = dietOf(run.genome);
+  const nearest = world.edibleFoods.filter(f => dietCanEat(diet, f.entity.spec.tag)).sort((a, b) =>
+    Math.hypot(a.data.x - p.x, a.data.z - p.z) + Math.abs(a.data.y - p.y) * .6 - Math.hypot(b.data.x - p.x, b.data.z - p.z) - Math.abs(b.data.y - p.y) * .6)[0];
+  if (nearest) {
+    const f = nearest.data;
+    const point = world.screenPoint(new T.Vector3(f.x, f.y + 1.4, f.z));
+    const near = Math.hypot(f.x - p.x, f.z - p.z) < STAGES[run.stage]!.radius + 1 + derived.reach;
+    const heightHint = f.y - p.y > 2.1 ? run.stage === 2 ? 'BREACH TO REACH!' : 'HOLD RISE TO REACH' : p.y - f.y > 2.1 ? 'HOLD DIVE TO REACH' : 'HOLD CHOMP';
+    const label = near ? heightHint : nearest.entity.spec.label.toUpperCase();
+    const onscreen = point.visible && point.x > 65 && point.x < innerWidth - 65 && point.y > 200 && point.y < innerHeight - 200;
+    el('snack-label').hidden = !onscreen; el('food-pointer').hidden = onscreen;
+    if (onscreen) { el('snack-label').style.left = `${point.x}px`; el('snack-label').style.top = `${point.y}px`; el('snack-label').textContent = label; }
+    else {
+      const pp = world.screenPoint(p); const dx = (point.x - pp.x) * (point.visible ? 1 : -1), dy = (point.y - pp.y) * (point.visible ? 1 : -1);
+      const angle = Math.atan2(dy, dx); const r = Math.min(innerWidth * .31, innerHeight * .27);
+      el('food-pointer').style.left = `${innerWidth / 2 + Math.cos(angle) * r}px`; el('food-pointer').style.top = `${innerHeight / 2 + Math.sin(angle) * r}px`;
+      el('pointer-arrow').style.transform = `rotate(${angle + Math.PI / 2}rad)`; el('pointer-label').textContent = label;
+    }
+  } else { el('food-pointer').hidden = true; el('snack-label').hidden = true; }
+  // Sense parts let the creature notice hunters from farther away.
+  const markers = world.threats.filter(f => Math.hypot(f.data.x - p.x, f.data.y - p.y, f.data.z - p.z) < derived.senseRange).slice(0, 4);
+  el('threats').innerHTML = markers.map(f => {
+    const point = world.screenPoint(new T.Vector3(f.data.x, f.data.y + (f.tier > run.stage ? 4 : 1.6), f.data.z));
+    const x = T.MathUtils.clamp(point.visible ? point.x : innerWidth - point.x, 30, innerWidth - 30), y = T.MathUtils.clamp(point.visible ? point.y : innerHeight - 60, 90, innerHeight - 60);
+    return `<span class="threat ${point.visible ? '' : 'edge'}" style="left:${x}px;top:${y}px">!<small>${f.entity.spec.label.toUpperCase()}</small></span>`;
+  }).join('');
 }
 function frame(now: number) {
   requestAnimationFrame(frame);
   const dt = Math.min((now - last) / 1000, .05); last = now;
-  const active = mode === 'playing' || mode === 'menu' || mode === 'evolving'; if (active) time += dt;
+  const active = mode === 'playing' || mode === 'menu' || mode === 'evolving' || mode === 'fainted'; if (active) time += dt;
   let moving = false;
+  const growth = growthOf(run);
   if (mode === 'playing') {
     run.elapsed += dt; cooldown = Math.max(0, cooldown - dt); leapCooldown = Math.max(0, leapCooldown - dt); chompPulse = Math.max(0, chompPulse - dt * 5);
-    const s = STAGES[run.stage]!, p = world.player.position;
+    grace = Math.max(0, grace - dt); wrongDietClock = Math.max(0, wrongDietClock - dt); sinceHit += dt;
+    // Hearts come back slowly once the creature is out of danger.
+    if (sinceHit > 5 && run.health < derived.maxHealth) { regenClock += dt; if (regenClock > 2.5) { regenClock = 0; run.health = Math.min(derived.maxHealth, run.health + 1); syncHearts(); } } else regenClock = 0;
+    const s = STAGES[run.stage]!, p = world.player.position, speed = s.speed * derived.speedFactor;
     let dx = stickX + Number(keys.has('KeyD') || keys.has('ArrowRight')) - Number(keys.has('KeyA') || keys.has('ArrowLeft'));
     let dz = stickZ + Number(keys.has('KeyS') || keys.has('ArrowDown')) - Number(keys.has('KeyW') || keys.has('ArrowUp'));
     if (Math.abs(dx) + Math.abs(dz) > .05) { target = null; world.targetRing.visible = false; }
@@ -260,8 +365,8 @@ function frame(now: number) {
     if (moving) {
       const normalized = Math.min(1, length) / Math.max(length, .001);
       const direction = target ? new T.Vector3(dx * normalized, 0, dz * normalized) : world.moveVector(dx * normalized, dz * normalized, run.stage > 0);
-      p.addScaledVector(direction, dt * s.speed);
-      p.x = T.MathUtils.clamp(p.x, -38, 38); p.z = T.MathUtils.clamp(p.z, -38, 38);
+      p.addScaledVector(direction, dt * speed);
+      p.x = T.MathUtils.clamp(p.x, -PLAYER_HALF, PLAYER_HALF); p.z = T.MathUtils.clamp(p.z, -PLAYER_HALF, PLAYER_HALF);
       const angle = Math.atan2(direction.x, direction.z), diff = Math.atan2(Math.sin(angle - world.player.rotation.y), Math.cos(angle - world.player.rotation.y)); world.player.rotation.y += diff * (1 - Math.exp(-dt * 10));
       if (run.stage > 0 && leap < 0) world.avatar.rotation.x = T.MathUtils.damp(world.avatar.rotation.x, -direction.y * .5, 5, dt);
     }
@@ -275,7 +380,7 @@ function frame(now: number) {
         if (u >= 1) { leap = -1; world.avatar.rotation.x = 0; world.burst(p.x, world.surface, p.z, '#d6fff1', 18); }
       } else {
         const vertical = Number(rising || keys.has('KeyE')) - Number(diving || keys.has('KeyQ'));
-        p.y += vertical * dt * s.speed * .7;
+        p.y += vertical * dt * speed * .7;
         const minY = run.stage === 4 ? -18 : floor + (run.stage === 3 ? 1.5 : .9);
         const maxY = run.stage <= 2 ? world.surface - .6 : 30;
         p.y = T.MathUtils.clamp(p.y, minY, maxY);
@@ -287,16 +392,28 @@ function frame(now: number) {
     saveClock += dt; if (saveClock >= 5) { save(); saveClock = 0; }
     el('special').classList.toggle('cooldown', run.stage === 2 && leapCooldown > 0);
   }
-  world.update(active ? dt : 0, time, mode === 'menu', moving, chompPulse, 1 + run.bites / STAGES[run.stage]!.goal * .38);
-  if (mode === 'evolving' && !world.transitioning) { mode = 'playing'; el('evolution-banner').hidden = true; toast(STAGES[run.stage]!.nickname); }
+  if (mode === 'playing' || mode === 'evolving' || mode === 'fainted') {
+    const events = world.eco.step({ stage: run.stage, dt, time, player: world.physical(), playerRadius: .9 * growth * world.scale, stealthFactor: derived.stealthFactor, vulnerable: mode === 'playing' && grace <= 0 });
+    for (const event of events) takeHit(event.damage, event.entity.spec.label);
+  }
+  world.update(active ? dt : 0, time, mode === 'menu', moving, chompPulse, growth);
+  if (mode === 'evolving' && !world.transitioning) { mode = 'playing'; el('evolution-banner').hidden = true; toast(STAGES[run.stage]!.description); syncUI(); }
   const depth = world.player.position.y / world.surface;
   el('depth-label').textContent = run.stage === 4 ? 'DEEP SPACE' : depth > 1.15 ? 'OPEN SKY' : depth > .88 ? 'THE SURFACE' : depth > .25 ? 'MIDWATER' : 'THE SEAFLOOR';
   el('depth-dot').style.bottom = `${T.MathUtils.clamp(depth * 72, 3, 96)}%`;
   el('depth-hint').textContent = run.stage === 0 ? 'LOOK UP ↑' : run.stage === 4 ? 'A WHOLE UNIVERSE' : 'SURFACE ↑';
-  uiClock += dt; if (uiClock > .1) { updateGuide(); uiClock = 0; }
+  uiClock += dt;
+  if (uiClock > .1) {
+    updateGuide(); uiClock = 0;
+    if (mode === 'playing') {
+      const biome = world.biome.name;
+      if (biome !== lastBiome) { el('biome').textContent = `${STAGES[run.stage]!.biome} · ${biome.toUpperCase()}`; lastBiome = biome; }
+      el('evolve').hidden = !evolveReady(run);
+    }
+  }
 }
 // Read-only diagnostics allow browser verification to steer with real controls.
 if (import.meta.env.DEV || new URLSearchParams(location.search).has('qa')) {
-  Object.defineProperty(window, '__tinyTide', { get: () => ({ mode, stage: run.stage, bites: run.bites, total: run.total, elapsed: run.elapsed, completed: run.completed, eatenPlanets: [...run.eatenPlanets], player: { x: world.player.position.x, y: world.player.position.y, z: world.player.position.z }, foods: world.edibleFoods.map(f => ({ ...f.data })), landmarks: world.foods.filter(f => f.model.visible && f.tier > run.stage).map(f => ({ tier: f.tier, kind: f.data.kind, x: f.data.x, y: f.data.y, z: f.data.z })), world: world.diagnostics, assets: assetDiagnostics(), leap, time, render: { calls: world.renderer.info.render.calls, triangles: world.renderer.info.render.triangles, geometries: world.renderer.info.memory.geometries } }) });
+  Object.defineProperty(window, '__tinyTide', { get: () => ({ mode, stage: run.stage, dna: run.dna, stageDna: run.stageDna, goal: STAGES[run.stage]!.goal, health: run.health, maxHealth: derived.maxHealth, deaths: run.deaths, diet: dietOf(run.genome), genome: structuredClone(run.genome), name: run.name, unlocked: [...run.unlocked], evolveReady: evolveReady(run), bites: run.bites, totalDna: run.totalDna, elapsed: run.elapsed, completed: run.completed, eatenPlanets: [...run.eatenPlanets], player: { x: world.player.position.x, y: world.player.position.y, z: world.player.position.z }, foods: world.edibleFoods.map(f => ({ ...f.data, tag: f.entity.spec.tag, label: f.entity.spec.label, mode: f.entity.mode, hp: f.entity.hp })), threats: world.threats.map(f => ({ ...f.data, label: f.entity.spec.label, mode: f.entity.mode })), landmarks: world.foods.filter(f => f.model.visible && f.tier > run.stage).map(f => ({ tier: f.tier, kind: f.data.kind, x: f.data.x, y: f.data.y, z: f.data.z })), world: world.diagnostics, assets: assetDiagnostics(), leap, time, render: { calls: world.renderer.info.render.calls, triangles: world.renderer.info.render.triangles, geometries: world.renderer.info.memory.geometries } }) });
 }
 requestAnimationFrame(frame);

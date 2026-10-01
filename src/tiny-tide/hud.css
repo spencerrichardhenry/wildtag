@@ -1,0 +1,25 @@
+#hearts{display:flex;flex-wrap:wrap;gap:3px;margin-top:7px;max-width:190px}
+#hearts i{width:15px;height:14px;display:block}
+#hearts svg{width:15px;height:14px;fill:#ffffff26;stroke:#fff6e360;stroke-width:1.2}
+#hearts i.full svg{fill:#ff8f7a;stroke:#ffd1c4}
+#hearts.hit{animation:hearts-hit .45s}
+@keyframes hearts-hit{0%,100%{transform:none}25%{transform:translateX(-4px)}50%{transform:translateX(4px)}75%{transform:translateX(-2px)}}
+.growth-next #diet{padding:2px 9px;border-radius:99px;background:var(--stage-color);color:var(--ink);font-weight:800;letter-spacing:1px;font-size:9px}
+#wallet{display:flex;align-items:center;gap:4px;font-weight:700;color:#c9f5a8}
+#wallet svg{width:15px;height:15px;stroke-width:2.4}
+.evolve-button{position:absolute;top:204px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:8px;padding:13px 26px 13px 18px;font-size:17px;animation:evolve-pulse 1.6s ease-in-out infinite;pointer-events:auto}
+.evolve-button svg{width:26px;height:26px}
+@keyframes evolve-pulse{0%,100%{box-shadow:0 0 0 0 #fff2b380}50%{box-shadow:0 0 0 14px #fff2b300}}
+#threats{position:absolute;inset:0;pointer-events:none}
+.threat{position:absolute;transform:translate(-50%,-100%);display:flex;flex-direction:column;align-items:center;font-size:26px;font-weight:900;color:#ff7a66;text-shadow:0 2px 0 #5a1b1b,0 0 14px #ff7a6688;animation:threat-bob .7s ease-in-out infinite alternate}
+.threat small{font-size:8px;letter-spacing:1.4px;color:#ffd1c4;text-shadow:0 1px 3px #000a}
+.threat.edge{opacity:.85}
+@keyframes threat-bob{to{transform:translate(-50%,calc(-100% - 6px))}}
+#faint{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;background:radial-gradient(circle,#7a2a2a55,#2a0d1acc);animation:faint-in .5s ease-out;pointer-events:auto}
+#faint strong{font-family:ui-rounded,'Arial Rounded MT Bold',Tide,sans-serif;font-size:56px;letter-spacing:-2px}
+#faint span{font-size:15px;opacity:.85}
+@keyframes faint-in{from{opacity:0}to{opacity:1}}
+#game-ui.dimmed{opacity:0;transition:opacity .2s}
+.bite-floater.hit{color:#fff2b3}
+.bite-floater.hurt{color:#ff8f7a}
+@media(max-width:650px){#hearts{margin-top:4px;max-width:150px}#hearts i,#hearts svg{width:12px;height:11px}.evolve-button{top:262px;font-size:15px;padding:11px 22px 11px 15px}#faint strong{font-size:40px}}

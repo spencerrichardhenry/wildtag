@@ -1,8 +1,15 @@
 import * as T from 'three';
-import { animateCreature, batch, coral, creature, foodModel, kelp, material, sceneryAsset } from './models';
-import { makeFood, random, SIZES, WATER_LEVEL, type Food } from './state';
+import { batch, coral, foodModel, kelp, material, sceneryAsset } from './models';
+import { biomeAt, random, seabedHeight, SIZES, WATER_LEVEL, type Biome } from './biomes';
+import { CreatureModel } from './creature';
+import { Ecosystem, type Entity } from './ecosystem';
+import type { Genome } from './genome';
+import type { FoodKind } from './species';
 
-export interface FoodObject { data: Food; model: T.Group; tier: number; global: T.Vector3; base: T.Vector3 }
+export { seabedHeight };
+/** Gameplay view of an entity, in the current stage's local units. */
+export interface Food { id: number; kind: FoodKind; tier: number; x: number; y: number; z: number; eaten: boolean; phase: number }
+export interface FoodObject { data: Food; entity: Entity; model: T.Group; tier: number }
 interface Particle { mesh: T.Mesh; life: number; velocity: T.Vector3 }
 const particleGeometry = new T.SphereGeometry(.09, 6, 4);
 const circleGeometry = new T.CircleGeometry(1, 40);
@@ -10,17 +17,6 @@ const ringGeometry = new T.RingGeometry(1, 1.025, 56);
 const shadowMaterial = new T.MeshBasicMaterial({ color: '#103e4f', transparent: true, opacity: .2, depthWrite: false });
 const ringMaterial = new T.MeshBasicMaterial({ color: '#e0f6ad', transparent: true, opacity: .75, side: T.DoubleSide, depthWrite: false });
 const UP = new T.Vector3(0, 1, 0);
-export function seabedHeight(x: number, z: number) {
-  return Math.sin(x * .075) * Math.cos(z * .055) * 2.4 + Math.sin((x + z) * .018) * 4.5 + Math.sin(x * .006) * Math.sin(z * .009) * 13;
-}
-function disposeGroup(group: T.Group) {
-  group.traverse(obj => {
-    if (!(obj instanceof T.Mesh || obj instanceof T.Points)) return;
-    if (obj.userData.ownedGeometry || ['TubeGeometry', 'TorusGeometry'].includes(obj.geometry.type)) obj.geometry.dispose();
-    if (obj.userData.ownedMaterial) (obj.material as T.Material).dispose();
-  });
-  group.clear();
-}
 function ownMesh(geometry: T.BufferGeometry, mat: T.Material, ownsMaterial = false) {
   const mesh = new T.Mesh(geometry, mat); mesh.userData.ownedGeometry = true; mesh.userData.ownedMaterial = ownsMaterial; return mesh;
 }
@@ -36,8 +32,10 @@ export class TideWorld {
   readonly shadow = new T.Mesh(circleGeometry, shadowMaterial);
   readonly biteRing = new T.Mesh(ringGeometry, ringMaterial);
   readonly targetRing = new T.Mesh(ringGeometry, ringMaterial);
-  avatar = creature(0);
+  creature: CreatureModel | null = null;
+  avatar = new T.Group();
   foods: FoodObject[] = [];
+  eco: Ecosystem;
   stage = 0;
   scale = 1;
   yaw = .1;
@@ -46,7 +44,13 @@ export class TideWorld {
   transitionProgress = 0;
   private fromScale = 1;
   private toScale = 1;
-  private previousAvatar: T.Group | null = null;
+  private previousCreature: CreatureModel | null = null;
+  private reef = new T.Group();
+  private islands = new T.Group();
+  private sceneryMaterialMap = new Map<T.Material, T.Material>();
+  private shake = 0;
+  private swim = 0;
+  private tint = new T.Color('#267a89');
   private particles: Particle[] = [];
   private sun: T.DirectionalLight;
   private focus = new T.Vector3();
@@ -67,6 +71,7 @@ export class TideWorld {
   private homePlanetMaterials: T.Material[] = [];
   private instances: { mesh: T.InstancedMesh; foods: FoodObject[]; local: T.Matrix4 }[] = [];
   private instanceMatrix = new T.Matrix4();
+  private homePlanet: FoodObject | null = null;
 
   constructor(canvas: HTMLCanvasElement) {
     this.renderer = new T.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
@@ -91,31 +96,7 @@ export class TideWorld {
       ground.traverse(obj => { if (obj instanceof T.Mesh) { obj.castShadow = false; obj.receiveShadow = true; } });
       this.scenery.add(ground);
     }
-    // Reef details at several physical sizes are present together, before any evolution.
-    for (const size of [1, 5, 20]) {
-      const raw = new T.Group();
-      for (let i = 0; i < 58; i++) {
-        const a = rand() * Math.PI * 2, r = (7 + rand() * 47) * size, x = Math.cos(a) * r, z = Math.sin(a) * r, y = seabedHeight(x, z);
-        const decoration = i % 3 === 0 ? coral(i) : kelp(i); decoration.scale.setScalar(size * (.8 + rand())); decoration.position.set(x, y, z); raw.add(decoration);
-        const rock = sceneryAsset(`reef_rock_${i % 2}`); rock.position.set(x, y - .2 * size, z); rock.scale.set(size * (.8 + rand()), size * (.7 + rand() * .4), size * (1 + rand())); rock.rotation.y = a; raw.add(rock);
-        if (i % 7 === 0) {
-          const arch = sceneryAsset('reef_arch'); arch.position.set(x + size, y, z); arch.scale.setScalar(size * .7); arch.rotation.y = a; raw.add(arch);
-        }
-      }
-      if (size === 1) for (let i = 0; i < 42; i++) {
-        const x = (rand() - .5) * 85, z = (rand() - .5) * 85, y = seabedHeight(x, z);
-        const decoration = sceneryAsset(i % 3 === 0 ? 'reef_starfish' : 'reef_shell'); decoration.position.set(x, y + .03, z); decoration.rotation.y = rand() * Math.PI * 2; raw.add(decoration);
-      }
-      // Small spatial batches let the camera discard reef sections behind it.
-      // One enormous batch would draw the whole ocean for a phone-sized view.
-      const chunks = new Map<string, T.Group>();
-      for (const object of [...raw.children]) {
-        const key = `${Math.floor(object.position.x / (24 * size))}:${Math.floor(object.position.z / (24 * size))}`;
-        const chunk = chunks.get(key) || new T.Group(); chunk.add(object); chunks.set(key, chunk);
-      }
-      const g = new T.Group(); for (const chunk of chunks.values()) g.add(batch(chunk));
-      this.scenery.add(g); this.lods.push({ group: g, size });
-    }
+    this.scenery.add(this.reef, this.islands);
     this.caustics = new T.ShaderMaterial({ uniforms: { time: { value: 0 }, fade: { value: 1 } }, transparent: true, depthWrite: false,
       vertexShader: 'varying vec2 p; void main(){p=position.xz;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',
       fragmentShader: 'varying vec2 p;uniform float time;uniform float fade;void main(){vec2 q=p*.9;float a=sin(q.x+sin(q.y*1.4+time*.2)*1.8+time*.15);float b=sin(q.y+sin(q.x*1.2-time*.12)*1.7);float c=pow(1.-abs(a*b),22.);float edge=1.-smoothstep(45.,65.,length(p));gl_FragColor=vec4(.83,1.,.83,c*.15*edge*fade);}' });
@@ -145,47 +126,71 @@ export class TideWorld {
     for (let i = 0; i < 1700; i++) { const a = rand() * Math.PI * 2, b = Math.acos(2 * rand() - 1), r = 180; starsPos.push(Math.sin(b) * Math.cos(a) * r, Math.cos(b) * r, Math.sin(b) * Math.sin(a) * r); }
     const sg = new T.BufferGeometry(); sg.setAttribute('position', new T.Float32BufferAttribute(starsPos, 3));
     this.stars = new T.Points(sg, new T.PointsMaterial({ color: '#e4deff', size: .28, transparent: true, opacity: 0, fog: false, depthWrite: false })); this.scene.add(this.stars);
+    this.eco = new Ecosystem(71829);
     this.createUniverse();
-    const sceneryMaterials = new Map<T.Material, T.Material>();
-    this.scenery.traverse(obj => {
-      if (!(obj instanceof T.Mesh) || Array.isArray(obj.material) || obj.material instanceof T.ShaderMaterial) return;
-      if (!sceneryMaterials.has(obj.material)) {
-        const clone = obj.material.clone(); clone.userData.initialOpacity = clone.opacity;
-        clone.userData.initialTransparent = clone.transparent; clone.userData.initialDepthWrite = clone.depthWrite;
-        clone.forceSinglePass = true; sceneryMaterials.set(obj.material, clone);
+    this.buildReef(rand);
+    this.scenery.traverse(obj => this.fadeable(obj));
+    this.build(0, { seed: 71829, eatenPlanets: [] }); this.resize();
+  }
+  /** Scenery materials fade out together as the creature reaches space. */
+  private fadeable(obj: T.Object3D) {
+    if (!(obj instanceof T.Mesh) || Array.isArray(obj.material) || obj.material instanceof T.ShaderMaterial) return;
+    if (!this.sceneryMaterialMap.has(obj.material)) {
+      const clone = obj.material.clone(); clone.userData.initialOpacity = clone.opacity;
+      clone.userData.initialTransparent = clone.transparent; clone.userData.initialDepthWrite = clone.depthWrite;
+      clone.forceSinglePass = true; this.sceneryMaterialMap.set(obj.material, clone); this.sceneryMaterialMap.set(clone, clone);
+      this.sceneryMaterials.push(clone);
+    }
+    obj.material = this.sceneryMaterialMap.get(obj.material)!;
+  }
+  /** Reef details follow the run's biomes: kelp forests, coral gardens, rocky flats and open sand. */
+  private buildReef(rand: () => number) {
+    for (const lod of this.lods) { lod.group.traverse(o => { if (o instanceof T.Mesh) o.geometry.dispose(); }); }
+    this.reef.clear(); this.lods = [];
+    // Reef details at several physical sizes are present together, before any evolution.
+    [1, 5, 20].forEach((size, tier) => {
+      const raw = new T.Group(), biomes = this.eco.biomes[tier]!, tierSize = SIZES[tier]!;
+      for (let i = 0; i < 70; i++) {
+        const a = rand() * Math.PI * 2, r = (7 + rand() * 47) * size, x = Math.cos(a) * r, z = Math.sin(a) * r, y = seabedHeight(x, z);
+        const decor = biomeAt(biomes, x / tierSize, z / tierSize).decor;
+        if (decor === 'sand' && rand() < .65) continue;
+        const decoration = decor === 'coral' || (decor !== 'kelp' && i % 3 === 0) ? coral(i) : kelp(i); decoration.scale.setScalar(size * (.8 + rand())); decoration.position.set(x, y, z); raw.add(decoration);
+        const rock = sceneryAsset(`reef_rock_${i % 2}`), heavy = decor === 'rock' ? 1.7 : 1; rock.position.set(x, y - .2 * size, z); rock.scale.set(size * (.8 + rand()) * heavy, size * (.7 + rand() * .4) * heavy, size * (1 + rand()) * heavy); rock.rotation.y = a; raw.add(rock);
+        if (i % 7 === 0 || (decor === 'rock' && i % 3 === 0)) {
+          const arch = sceneryAsset('reef_arch'); arch.position.set(x + size, y, z); arch.scale.setScalar(size * .7); arch.rotation.y = a; raw.add(arch);
+        }
       }
-      obj.material = sceneryMaterials.get(obj.material)!;
+      if (size === 1) for (let i = 0; i < 42; i++) {
+        const x = (rand() - .5) * 85, z = (rand() - .5) * 85, y = seabedHeight(x, z);
+        const decoration = sceneryAsset(i % 3 === 0 ? 'reef_starfish' : 'reef_shell'); decoration.position.set(x, y + .03, z); decoration.rotation.y = rand() * Math.PI * 2; raw.add(decoration);
+      }
+      // Small spatial batches let the camera discard reef sections behind it.
+      // One enormous batch would draw the whole ocean for a phone-sized view.
+      const chunks = new Map<string, T.Group>();
+      for (const object of [...raw.children]) {
+        const key = `${Math.floor(object.position.x / (24 * size))}:${Math.floor(object.position.z / (24 * size))}`;
+        const chunk = chunks.get(key) || new T.Group(); chunk.add(object); chunks.set(key, chunk);
+      }
+      const g = new T.Group(); for (const chunk of chunks.values()) g.add(batch(chunk));
+      g.traverse(obj => this.fadeable(obj));
+      this.reef.add(g); this.lods.push({ group: g, size });
     });
-    this.sceneryMaterials = [...sceneryMaterials.values()];
-    this.build(0); this.resize();
+  }
+  private disposeUniverse() {
+    for (const set of this.instances) { this.actors.remove(set.mesh); set.mesh.dispose(); }
+    this.instances = [];
+    for (const f of this.foods) if (f.model.parent) f.model.removeFromParent();
+    this.foods = [];
+    this.islands.traverse(o => { if (o instanceof T.Mesh) o.geometry.dispose(); }); this.islands.clear();
   }
   private createUniverse() {
-    const islands = new T.Group();
-    const prefabs = new Map<string, T.Group>();
-    for (let tier = 0; tier < 5; tier++) for (const data of makeFood(tier)) {
-      const size = SIZES[tier]!;
-      const position = new T.Vector3(data.x * size, data.y * size, data.z * size);
-      if (tier === 0) position.y = seabedHeight(position.x, position.z) + .15;
-      if (data.kind === 'shrimp') position.y = Math.max(seabedHeight(position.x, position.z) + 3, 5 + data.id % 6 * 2.5);
-      if (data.kind === 'crab' || data.kind === 'snail') position.y = seabedHeight(position.x, position.z) + 1;
-      if (data.kind === 'jellyfish') position.y = 12 + data.id % 4 * 8;
-      if (data.kind === 'ray') position.y = seabedHeight(position.x, position.z) + 6;
-      if (data.kind === 'fish' || data.kind === 'squid') position.y = 22 + data.id % 6 * 8;
-      if (data.kind === 'bird') position.y = WATER_LEVEL + 20 + data.id % 3 * 8;
-      if (data.kind === 'boat') position.y = WATER_LEVEL + 4;
-      if (data.kind === 'tree' || data.kind === 'lighthouse') position.y = WATER_LEVEL + 8;
-      if (data.kind === 'plane') position.y = WATER_LEVEL + 170 + data.id % 3 * 38;
-      if (data.kind === 'balloon') position.y = WATER_LEVEL + 220 + data.id % 3 * 40;
-      if (data.kind === 'planet') position.y = 650 + data.id % 4 * 230;
-      // These familiar landmarks are visible from the opening reef, long before they are edible.
-      if (tier === 2 && data.id === 0) position.set(12, 19, -21);
-      if (tier === 2 && data.id === 2) position.set(-35, 34, -27);
-      if (tier === 3 && data.id === 1) position.set(63, WATER_LEVEL + 4, -50);
-      if (tier === 3 && data.id === 0) position.set(-175, WATER_LEVEL + 8, -235);
-      if (tier === 4 && data.id === 0) position.set(0, -345, 0);
-      if (data.kind !== 'planet' && !prefabs.has(data.kind)) prefabs.set(data.kind, foodModel(data.kind));
-      const model = data.kind === 'planet' ? foodModel(data.kind, data.id) : prefabs.get(data.kind)!.clone(true); model.scale.multiplyScalar(size * (tier === 4 && data.id === 0 ? 1.35 : 1)); model.position.copy(position); model.rotation.y = data.phase;
-      if (tier === 4 && data.id === 0) {
+    const prefabs = new Map<string, T.Group>(), islands = new T.Group();
+    for (const entity of this.eco.entities) {
+      const spec = entity.spec, size = SIZES[spec.tier]!, kind = spec.kind, home = kind === 'planet' && this.eco.planetIndex(entity) === 0;
+      if (kind !== 'planet' && !prefabs.has(kind)) prefabs.set(kind, foodModel(kind));
+      const model = kind === 'planet' ? foodModel(kind, this.eco.planetIndex(entity)) : prefabs.get(kind)!.clone(true);
+      model.scale.multiplyScalar(size * (home ? 1.35 : 1)); model.position.set(entity.x, entity.y, entity.z); model.rotation.y = entity.phase;
+      if (home) {
         const materials = new Map<T.Material, T.Material>();
         model.traverse(object => {
           if (!(object instanceof T.Mesh) || Array.isArray(object.material)) return;
@@ -194,12 +199,14 @@ export class TideWorld {
         });
         this.homePlanetMaterials = [...materials.values()];
       }
-      if (data.kind === 'planet') this.actors.add(model); this.foods.push({ data, tier, model, global: position.clone(), base: position.clone() });
-      if (data.kind === 'tree' || data.kind === 'lighthouse') {
-        const island = sceneryAsset('island'); island.position.set(position.x, WATER_LEVEL - 1, position.z); island.scale.setScalar(64); islands.add(island);
+      if (kind === 'planet') this.actors.add(model);
+      const food: FoodObject = { entity, model, tier: spec.tier, data: { id: entity.id, kind, tier: spec.tier, x: 0, y: 0, z: 0, eaten: false, phase: entity.phase } };
+      this.foods.push(food); if (home) this.homePlanet = food;
+      if (kind === 'tree' || kind === 'lighthouse') {
+        const island = sceneryAsset('island'); island.position.set(entity.hx, WATER_LEVEL - 1, entity.hz); island.scale.setScalar(64); islands.add(island);
       }
     }
-    this.scenery.add(batch(islands));
+    const merged = batch(islands); merged.traverse(obj => this.fadeable(obj)); this.islands.add(merged);
     for (const [kind, prefab] of prefabs) {
       const foods = this.foods.filter(f => f.data.kind === kind);
       prefab.updateMatrixWorld(true);
@@ -214,29 +221,54 @@ export class TideWorld {
   resize() { this.width = innerWidth; this.height = innerHeight; this.renderer.setSize(this.width, this.height); this.camera.aspect = this.width / this.height; this.camera.updateProjectionMatrix(); }
   get surface() { return WATER_LEVEL / this.scale; }
   groundAt(x: number, z: number) { return seabedHeight(x * this.scale, z * this.scale) / this.scale; }
-  get edibleFoods() { return this.foods.filter(f => f.tier === this.stage); }
-  build(stage: number, eatenPlanets: number[] = []) {
-    // Only a new/resumed run resets actors. Evolution never rebuilds this world.
+  /** Live food and creatures of the player's own tier. */
+  get edibleFoods() { return this.foods.filter(f => f.tier === this.stage && !f.entity.eaten); }
+  /** Creatures that are hunting or attacking the player. */
+  get threats() { return this.foods.filter(f => !f.entity.eaten && (f.entity.mode === 'hunt' || f.entity.mode === 'angry') && Math.abs(f.tier - this.stage) <= 1); }
+  get biome(): Biome { const tier = this.stage, size = SIZES[tier]!, p = this.player.position; return biomeAt(this.eco.biomes[tier]!, p.x * this.scale / size, p.z * this.scale / size); }
+  /** Player position in physical units. */
+  physical(target = new T.Vector3()) { return target.copy(this.player.position).multiplyScalar(this.scale); }
+  /** Rebuilds the world for a run. A new seed makes a new layout; evolution never rebuilds it. */
+  build(stage: number, run: { seed: number; eatenPlanets: readonly number[]; genome?: Genome }) {
+    if (run.seed !== this.eco.seed) {
+      this.disposeUniverse(); this.eco = new Ecosystem(run.seed); this.createUniverse(); this.buildReef(random(run.seed ^ 0x2f6b));
+    }
+    this.eco.reset(run.eatenPlanets);
     this.stage = stage; this.scale = SIZES[stage]!; this.toScale = this.scale; this.fromScale = this.scale; this.transitioning = false; this.transitionProgress = 0;
-    disposeGroup(this.player); this.previousAvatar = null; this.avatar = creature(stage); this.player.add(this.avatar);
-    this.foods.forEach(f => {
-      f.data.eaten = f.tier === 4 && eatenPlanets.includes(f.data.id); f.model.visible = !f.data.eaten;
-      f.global.copy(f.base); f.model.position.copy(f.global);
-      // Gameplay can chomp before the next render update. Reset collision
-      // coordinates together with scale so replay never uses the space scale.
-      f.data.x = f.global.x / this.scale; f.data.y = f.global.y / this.scale; f.data.z = f.global.z / this.scale;
-    });
+    if (run.genome) this.setCreature(run.genome);
     this.spaceMix = stage === 4 ? 1 : 0;
+    this.placePlayer(stage);
+    this.yaw = .1; this.pitch = .22; this.targetRing.visible = false;
+    this.particles.forEach(p => this.effects.remove(p.mesh)); this.particles = [];
+    // Gameplay can chomp before the next render update. Reset collision
+    // coordinates together with scale so replay never uses the space scale.
+    this.syncFoods();
+  }
+  /** The stage start point, used for new runs and after fainting. */
+  placePlayer(stage: number) {
     const y = stage === 0 ? .65 : stage === 1 ? 2 : stage === 2 ? this.surface - 3 : stage === 3 ? this.surface + 2 : 3;
     this.player.position.set(0, y, 0); this.player.rotation.set(0, 0, 0); this.player.scale.setScalar(1);
     this.universe.scale.setScalar(1 / this.scale); this.focus.copy(this.player.position).add(new T.Vector3(0, .7, 0)); this.cameraPosition.copy(this.focus).add(new T.Vector3(0, 6, 12));
-    this.yaw = .1; this.pitch = .22; this.targetRing.visible = false;
-    this.particles.forEach(p => this.effects.remove(p.mesh)); this.particles = [];
+    this.avatar.rotation.set(0, 0, 0);
   }
-  transform(stage: number) {
+  /** Replaces the creature model right away (new run or editor change). */
+  setCreature(genome: Genome) {
+    this.creature?.dispose(); this.previousCreature?.dispose(); this.previousCreature = null;
+    this.creature = new CreatureModel(genome); this.avatar.add(this.creature.group);
+    if (!this.avatar.parent) this.player.add(this.avatar);
+  }
+  transform(stage: number, genome: Genome) {
     this.stage = stage; this.fromScale = this.scale; this.toScale = SIZES[stage]!; this.transitionProgress = 0; this.transitioning = true;
-    this.previousAvatar = this.avatar; this.avatar = creature(stage); this.avatar.scale.setScalar(.001); this.player.add(this.avatar);
+    this.previousCreature?.dispose();
+    this.previousCreature = this.creature; this.creature = new CreatureModel(genome); this.creature.group.scale.setScalar(.001); this.avatar.add(this.creature.group);
     this.burst(this.player.position.x, this.player.position.y, this.player.position.z, '#f4e2b9', 50);
+  }
+  /** A hit: red sparks and a short camera shake. */
+  hurt() { const p = this.player.position; this.burst(p.x, p.y + .3, p.z, '#ff8f7a', 14); this.shake = 1; }
+  private syncFoods() {
+    for (const f of this.foods) {
+      const e = f.entity; f.data.eaten = e.eaten; f.data.x = e.x / this.scale; f.data.y = e.y / this.scale; f.data.z = e.z / this.scale;
+    }
   }
   look(dx: number, dy: number) { this.yaw -= dx * .006; this.pitch = T.MathUtils.clamp(this.pitch + dy * .005, -.8, 1.05); }
   moveVector(x: number, z: number, swim: boolean) {
@@ -260,13 +292,13 @@ export class TideWorld {
       this.scale = this.fromScale * (this.toScale / this.fromScale) ** ease;
       p.multiplyScalar(previous / this.scale); this.focus.multiplyScalar(previous / this.scale); this.cameraPosition.multiplyScalar(previous / this.scale);
       this.universe.scale.setScalar(1 / this.scale);
-      this.avatar.scale.setScalar(Math.max(.001, T.MathUtils.smoothstep(t, .15, .8)));
-      if (this.previousAvatar) this.previousAvatar.scale.setScalar(Math.max(.001, 1 - T.MathUtils.smoothstep(t, .2, .65)));
+      this.creature?.group.scale.setScalar(Math.max(.001, T.MathUtils.smoothstep(t, .15, .8)));
+      this.previousCreature?.group.scale.setScalar(Math.max(.001, 1 - T.MathUtils.smoothstep(t, .2, .65)));
       const clearance = this.stage === 3 ? 1.5 : .85;
       p.y = Math.max(p.y, this.stage < 4 ? this.groundAt(p.x, p.z) + clearance : -.6);
       if (this.stage === 3) p.y = Math.max(p.y, this.surface + 1.6 * T.MathUtils.smoothstep(t, .4, 1));
       if (Math.random() < .45) this.burst(p.x, p.y + .2, p.z, '#fff1bf', 2);
-      if (t >= 1) { this.transitioning = false; if (this.previousAvatar) { this.player.remove(this.previousAvatar); disposeGroup(this.previousAvatar); this.previousAvatar = null; } this.avatar.scale.setScalar(1); }
+      if (t >= 1) { this.transitioning = false; this.previousCreature?.dispose(); this.previousCreature = null; this.creature?.group.scale.setScalar(1); }
     }
     if (menu) {
       const mobile = this.width / this.height < .8;
@@ -280,10 +312,12 @@ export class TideWorld {
       this.focus.lerp(targetFocus, 1 - Math.exp(-dt * 6));
       const targetCam = this.focus.clone().add(new T.Vector3(Math.sin(this.yaw) * Math.cos(this.pitch) * distance, Math.sin(this.pitch) * distance, Math.cos(this.yaw) * Math.cos(this.pitch) * distance));
       if (this.stage < 4) targetCam.y = Math.max(targetCam.y, this.groundAt(targetCam.x, targetCam.z) + .6);
-      this.cameraPosition.lerp(targetCam, 1 - Math.exp(-dt * 8)); this.camera.position.copy(this.cameraPosition); this.camera.fov = T.MathUtils.damp(this.camera.fov, this.width / this.height < .8 ? 64 : 59, 3, dt); this.camera.updateProjectionMatrix(); this.camera.lookAt(this.focus);
+      this.cameraPosition.lerp(targetCam, 1 - Math.exp(-dt * 8)); this.camera.position.copy(this.cameraPosition);
+      if (this.shake > 0) { this.shake = Math.max(0, this.shake - dt * 3); this.camera.position.add(new T.Vector3(Math.random() - .5, Math.random() - .5, Math.random() - .5).multiplyScalar(this.shake * .35)); } this.camera.fov = T.MathUtils.damp(this.camera.fov, this.width / this.height < .8 ? 64 : 59, 3, dt); this.camera.updateProjectionMatrix(); this.camera.lookAt(this.focus);
     }
     this.avatar.position.y = Math.sin(time * (moving ? 8 : 2.2)) * (this.stage === 0 ? .045 : .12);
-    animateCreature(this.avatar, time, moving, chomping, this.stage);
+    this.swim = T.MathUtils.damp(this.swim, moving ? 1 : 0, 6, dt);
+    this.creature?.animate(time, this.swim, chomping); this.previousCreature?.animate(time, this.swim, chomping);
     this.sun.position.copy(p).add(new T.Vector3(-14, 27, 13)); this.sun.target.position.copy(p);
     const groundY = this.groundAt(p.x, p.z); this.shadow.visible = this.stage < 4 && p.y - groundY < 9;
     this.shadow.position.set(p.x, groundY + .06, p.z); this.shadow.scale.setScalar(menu ? 3.2 : 1.2 * growth + (p.y - groundY) * .04);
@@ -292,7 +326,9 @@ export class TideWorld {
     const spaceTarget = T.MathUtils.smoothstep(this.scale, 90, 240);
     this.spaceMix = T.MathUtils.damp(this.spaceMix, spaceTarget, 2, dt);
     const above = T.MathUtils.smoothstep(p.y, this.surface - .4, this.surface + .6);
-    const color = new T.Color('#267a89').lerp(new T.Color('#88bbcb'), above).lerp(new T.Color('#141a36'), this.spaceMix);
+    // Each biome tints the water a little, so the habitat changes as you explore.
+    if (this.stage <= 2 && !menu) this.tint.lerp(new T.Color(this.biome.tint), 1 - Math.exp(-dt * 1.5)); else this.tint.lerp(new T.Color('#267a89'), 1 - Math.exp(-dt * 1.5));
+    const color = this.tint.clone().lerp(new T.Color('#88bbcb'), above).lerp(new T.Color('#141a36'), this.spaceMix);
     this.scene.background = color; const fog = this.scene.fog as T.FogExp2; fog.color.copy(color); fog.density = T.MathUtils.lerp(above > .5 ? .005 : .014, .002, this.spaceMix);
     this.caustics.uniforms.fade!.value = 1 - this.spaceMix;
     // The coarse home globe replaces the detailed habitat as we reach space.
@@ -315,18 +351,21 @@ export class TideWorld {
       const shadow = this.scale / lod.size > .45;
       lod.group.traverse(object => { if (object instanceof T.Mesh) object.castShadow = shadow; });
     }
+    // The menu keeps the ecosystem moving in the background with its ambient motion.
+    if (menu && dt > 0) this.eco.step({ stage: this.stage, dt, time, player: { x: 1e7, y: 0, z: 1e7 }, playerRadius: 0, stealthFactor: 1, vulnerable: false });
+    this.syncFoods();
     for (const f of this.foods) {
-      if (f.data.eaten) { f.model.visible = false; continue; }
+      const e = f.entity;
+      if (e.eaten) { f.model.visible = false; continue; }
       const size = SIZES[f.tier]!, kind = f.data.kind;
-      if (['shrimp', 'jellyfish', 'fish', 'squid', 'ray', 'bird', 'plane', 'balloon'].includes(kind)) {
-        const rate = kind === 'plane' ? .18 : .22, t = time * rate + f.data.phase;
-        f.global.set(f.base.x + Math.sin(t) * size * .75, f.base.y + Math.sin(time * .6 + f.data.phase) * size * .12, f.base.z + Math.cos(t) * size * .55);
-        f.model.rotation.y = Math.atan2(Math.cos(t), -Math.sin(t) * .73);
-      }
-      f.model.position.copy(f.global); f.data.x = f.global.x / this.scale; f.data.y = f.global.y / this.scale; f.data.z = f.global.z / this.scale;
+      f.model.position.set(e.x, e.y, e.z);
+      if (kind !== 'planet' && e.spec.behavior !== 'still') f.model.rotation.y = T.MathUtils.lerp(f.model.rotation.y, f.model.rotation.y + Math.atan2(Math.sin(e.heading - f.model.rotation.y), Math.cos(e.heading - f.model.rotation.y)), 1 - Math.exp(-dt * 6));
+      // Angry creatures puff up a little so the player can see the danger.
+      const angry = e.mode === 'hunt' || e.mode === 'angry';
+      f.model.scale.setScalar(size * (f === this.homePlanet ? 1.35 : 1) * (angry ? 1.12 + Math.sin(time * 9) * .04 : 1));
       const distance = p.distanceTo(new T.Vector3(f.data.x, f.data.y, f.data.z));
       f.model.visible = size / this.scale > .07 && distance < 230 + size / this.scale * 2 && !(f.tier < 4 && this.spaceMix > .99);
-      if (f.tier === 4 && f.data.id === 0) f.model.visible = f.model.visible && this.spaceMix > .001;
+      if (f === this.homePlanet) f.model.visible = f.model.visible && this.spaceMix > .001;
       if (f.tier === 0) f.model.rotation.z = Math.sin(time * 1.7 + f.data.phase) * .1;
       else if (kind === 'planet') f.model.rotation.y += dt * .07;
       else if (kind === 'boat') f.model.rotation.z = Math.sin(time * 1.1 + f.data.phase) * .04;
@@ -347,5 +386,5 @@ export class TideWorld {
     for (let i = this.particles.length - 1; i >= 0; i--) { const particle = this.particles[i]!; particle.life -= dt; particle.mesh.position.addScaledVector(particle.velocity, dt); particle.velocity.y -= dt * 2; particle.mesh.scale.multiplyScalar(Math.exp(-dt * 1.8)); if (particle.life <= 0) { this.effects.remove(particle.mesh); this.particles.splice(i, 1); } }
     this.renderer.render(this.scene, this.camera);
   }
-  get diagnostics() { return { worldId: this.universe.uuid, consumedByTier: SIZES.map((_, i) => this.foods.filter(f => f.tier === i && f.data.eaten).length), scale: this.scale, surface: this.surface, yaw: this.yaw, pitch: this.pitch, menu: this.isMenu, transitioning: this.transitioning, physicalPosition: { x: this.player.position.x * this.scale, y: this.player.position.y * this.scale, z: this.player.position.z * this.scale } }; }
+  get diagnostics() { return { worldId: this.universe.uuid, seed: this.eco.seed, biome: this.biome.name, consumedByTier: SIZES.map((_, i) => this.foods.filter(f => f.tier === i && f.data.eaten).length), scale: this.scale, surface: this.surface, yaw: this.yaw, pitch: this.pitch, menu: this.isMenu, transitioning: this.transitioning, physicalPosition: { x: this.player.position.x * this.scale, y: this.player.position.y * this.scale, z: this.player.position.z * this.scale } }; }
 }

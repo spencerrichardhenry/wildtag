@@ -12,7 +12,11 @@ try{
   if(lx>.6)keys.push('KeyD');if(lx<-.6)keys.push('KeyA');if(lz>.6)keys.push('KeyS');if(lz<-.6)keys.push('KeyW');if(f.y-s.player.y>.8)keys.push('KeyE');if(s.player.y-f.y>.8)keys.push('KeyQ');await control(keys);await page.waitForTimeout(120);
  }
  await control([]);assert.ok((await state()).completed);await page.locator('#play-again').click();
- assert.equal((await state()).foods[0].x,4,'Food collision coordinates reset immediately with world scale');
- await page.keyboard.down('Space');await page.keyboard.down('KeyD');await page.waitForTimeout(1200);await page.keyboard.up('KeyD');await page.keyboard.up('Space');
- const replay=await state();await page.screenshot({path:'.codex-drafts/tiny-tide-qa/replay.png'});assert.equal(replay.mode,'playing');assert.equal(replay.stage,0,'The first chomp must not instantly skip shrimp');assert.ok(replay.bites>0);assert.deepEqual(errors,[]);console.log('PASS: final planet, ending, immediate collision reset and playable fresh adventure.');
+ const fresh=await state();assert.ok(fresh.foods.length>0 && fresh.foods.every(f=>Math.abs(f.x)<60 && Math.abs(f.z)<60),'Food collision coordinates reset immediately with world scale');
+ for(let i=0;i<120 && (await state()).bites===0;i++){
+  const s=await state(),f=s.foods.filter(f=>f.tag==='plant').sort((a,b)=>Math.hypot(a.x-s.player.x,a.z-s.player.z)-Math.hypot(b.x-s.player.x,b.z-s.player.z))[0],dx=f.x-s.player.x,dz=f.z-s.player.z,y=s.world.yaw,lx=Math.cos(y)*dx-Math.sin(y)*dz,lz=Math.sin(y)*dx+Math.cos(y)*dz,keys=['Space'];
+  if(lx>.55)keys.push('KeyD');if(lx<-.55)keys.push('KeyA');if(lz>.55)keys.push('KeyS');if(lz<-.55)keys.push('KeyW');await control(keys);await page.waitForTimeout(120);
+ }
+ await control([]);
+ const replay=await state();await page.screenshot({path:'.codex-drafts/tiny-tide-qa/replay.png'});assert.equal(replay.mode,'playing');assert.equal(replay.stage,0,'The first chomp must not instantly evolve');assert.ok(replay.bites>0);assert.deepEqual(errors,[]);console.log('PASS: v1 save migration, final planet, ending, immediate collision reset and playable fresh adventure.');
 }finally{await browser.close();}

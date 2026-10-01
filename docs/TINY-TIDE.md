@@ -1,8 +1,10 @@
 # Tiny Tide
 
-A mobile-first 3D eat-and-grow adventure at `/tiny-tide.html`. Start as a tiny shrimp grazing
-on a rolling seabed, become a fish, an orca, a flying tentacled fortress, and
-finally a cosmic creature that eats all 12 planets.
+A mobile-first 3D eat-and-evolve adventure at `/tiny-tide.html`. Design a tiny
+creature on the seabed. Eat to earn DNA, spend DNA on new parts, and grow
+through five sizes until your creature eats all 12 planets.
+
+The design of this update is in [TINY-TIDE-EVOLUTION.md](TINY-TIDE-EVOLUTION.md).
 
 ## Play
 
@@ -11,46 +13,73 @@ Run `npm run dev` and open `http://localhost:5199/tiny-tide.html`.
 - **Move:** drag the left joystick, or use WASD / arrow keys.
 - **Look:** swipe or drag the world. Swimming/flying forward follows the camera,
   including its pitch, so the habitat can be explored in three dimensions.
-- **Eat:** hold Chomp / Space near food.
+- **Eat or bite back:** hold Chomp / Space near food or near a creature that attacks you.
 - **Change depth:** hold Rise / E or Dive / Q. Releasing the controls hovers.
-- **Orca breach:** tap Breach / E and hold Chomp to catch seabirds above the water.
+- **Orca-size breach:** at the Big size, tap Breach / E and hold Chomp to catch seabirds.
+- **Edit your creature:** the pencil button. **Evolve:** the Evolve button when the DNA bar is full.
 - **Pause:** the pause button, Escape, or P. Backgrounding the game pauses it.
 
-The five diets are:
+## Your creature
 
-| Form | Foods |
-| --- | --- |
-| Little shrimp | Sea sprouts, tender kelp, sea grapes, sea lettuce |
-| Happy fish | Shrimp, peach crabs, moon jellies, sea snails |
-| Pocket orca | Silver tuna, berry squid, rays, seagulls |
-| Cuddlethulhu | Palm trees, sailboats, seaplanes, balloons, lighthouses |
-| Cosmic cutie | All 12 distinct planets |
+The creature editor has three tabs:
 
-Evolution happens in place over 3.4 seconds, with a creature
-transformation, particles and a continuous change of scale. There are no form
-selection dialogs or level loading screens. Larger food and landmarks exist
-before they are edible: look up from the reef to see the busier ocean above.
+- **Parts:** 34 Blender parts in 11 groups (mouths, eyes, fins, tails, legs,
+  arms, armor, senses, wings, jets and cosmic parts). Choose a card, then tap
+  the creature, or drag the card onto it. Drag a placed part to move it. The
+  toolbar changes size and turn, makes a mirrored pair, or removes the part.
+- **Body:** add or remove spine segments, and change the width, height and
+  arch of each segment. Drag a glowing dot to shape the body directly.
+- **Paint:** body, belly and accent colors, and four patterns. Paint is free.
 
-The universe is constructed once per page. Every food tier shares physical
-coordinates. During evolution, the world scales smoothly around the character's
-physical location; small reef details are culled as they become insignificant.
-The camera remains near the player, and the visible world changes from seafloor
-to open water, surface, sky and space.
+Parts cost DNA. Removing a part refunds its full cost. Each size has a
+complexity limit and a body-length limit. The creature must have one mouth.
 
-All 50 creature, food, scenery and planet models are original Blender assets,
-authored and exported through Blender MCP. Five heroes have Idle, Swim and
-Chomp clips. Painted color gradients and shared PBR materials keep the complete
-GLB kit near 6 MB without external textures. The models preload once before
-play; changing forms makes no network requests. Static scenery is merged by
-material, repeated food uses instancing, and small details disappear with scale.
-Water, caustics, light shafts, particles and sound remain runtime effects.
+The mouth sets the diet. Herbivores eat plants, carnivores eat meat, and
+omnivores eat both for 70% of the DNA. Everyone eats the Huge-size landmarks
+and the planets. Parts also give stats: speed, bite, reach, armor, health
+(hearts), sense (how far away you notice hunters) and stealth (how close a
+hunter must be to notice you).
+
+## The living ocean
+
+| Size | Plants | Meat | Danger |
+| --- | --- | --- | --- |
+| Tiny (2 cm) | sprouts, kelp, grapes, lettuce | copepods, bristle worms | crabs hunt you, jellies sting |
+| Small (30 cm) | grape clusters, lettuce beds | shrimp, crabs, jellies, snails | squid hunt you, crabs pinch back, rays sting |
+| Big (8 m) | kelp fronds, sprout groves | tuna, squid, rays, gulls | squid hunt you, rays sting |
+| Huge (120 m) | palms, sailboats, seaplanes, balloons, lighthouses (any diet) | | seaplanes chase you |
+| Cosmic | 12 planets | | — |
+
+Prey runs away from a creature that can eat it, but it tires quickly. Food
+regrows out of sight. Hunters show a red **!** marker. Chomp a creature that
+attacks you to bite back. Defeating a crab, jelly, squid or seaplane can unlock
+a part before its size. When you lose every heart, you wake up at the size's
+start point with 70% of your DNA. Your stage and your design stay.
+
+Every new adventure has a seed. The seed places biomes such as kelp forests,
+coral gardens, crab flats and squid deeps. Biomes change the food and the
+danger, the reef scenery and the water tint.
+
+## World
+
+The universe is constructed once per adventure. Every tier shares physical
+coordinates. During evolution, the world scales smoothly around the
+character's physical location; small reef details are culled as they become
+insignificant. The camera remains near the player, and the visible world
+changes from seafloor to open water, surface, sky and space.
+
+The creature body is generated at runtime from its genome as a skinned mesh
+with one bone for each spine segment. All parts, food, scenery and planets
+are original Blender GLBs. Parts and the body move with procedural animation.
+The models preload once before play; editing and evolving make no network
+requests. Water, caustics, light shafts, particles and sound remain runtime effects.
 
 The editable source is `art/tiny-tide/tiny-tide-art.blend`. See
 [the authoring notes](TINY-TIDE-ART.md) for rebuilding, asset inventory and checks.
 
-Progress and sound preferences save locally when browser storage is available.
-A fresh adventure replaces that save. There is no combat, countdown or loss
-condition. The ending occurs only after every planet has been consumed.
+Progress saves locally when browser storage is available. Saves use version 2;
+a version 1 save from the fixed-form game migrates and keeps its size, planets
+and time. A fresh adventure replaces the save and makes a new world.
 
 ## Verification
 
@@ -63,13 +92,15 @@ node e2e/tiny-tide-mobile.mjs
 node e2e/tiny-tide-replay.mjs
 ```
 
-The full browser test steers using real controls and checks all five forms,
-every food type, uninterrupted transformations at the same physical position,
-breaching, the ending, replay, saves, pause and mobile layout. The mobile control
-test uses a fish-stage save fixture and actual Chromium touch events to check
-simultaneous movement and ascent, camera swiping, hovering, descent, touch
-cancellation and small portrait/landscape viewports. Read-only diagnostics are
-available in development or with `?qa`.
+The unit tests cover parts, genomes, stats, diets, DNA, evolution, health,
+seeded worlds, creature behavior (hunting, fleeing, provoking, stealth,
+regrowth) and v1/v2 saves. The full browser test uses real controls. It edits
+the creature (place, undo, paint, body, name), changes the diet at two
+evolutions, plays all five sizes, checks in-place transformations, the ending,
+a new seeded world, save and resume, and the mobile layout. The mobile test
+uses a v1 save fixture and actual Chromium touch events. The replay test
+uses a v1 save in space. Read-only diagnostics are available in development
+or with `?qa`.
 
 The other games remain at `/mineral-wage.html`, `/royal-yeet.html`, and
 `/wildtag.html`. Production builds use the existing `/wildtag/` deployment base.
