@@ -32,6 +32,10 @@ describe('v4 saves', () => {
     const run = parseSave(JSON.stringify({ ...r, health: max + 5 }), build)!;
     expect(run.health).toBe(max); expect(validateRun(run, build)).toEqual([]);
   });
+  it('loads a v4 save with zero or negative health at the maximum', () => {
+    const r = freshRun(1), max = maxHealthOf(r);
+    for (const health of [0, -3]) { const run = parseSave(JSON.stringify({ ...r, health }), build); expect(run?.health).toBe(max); }
+  });
 });
 describe('v2 migration', () => {
   it('sends a starter with legs and a tail to the Swimmer line, archives it, and keeps its value (30 + 14 = 44)', () => {

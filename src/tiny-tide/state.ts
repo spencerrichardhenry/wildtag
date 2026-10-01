@@ -253,7 +253,7 @@ function readV4(v: Record<string, unknown>): Run | null {
     archive.push({ genome: g, name: a.name, savedAt: a.savedAt, reason: a.reason });
   }
   const run = { ...v, genome, archive } as unknown as Run;
-  if (run.plans.length && run.plans.every(id => plan(id)) && Number.isFinite(run.health)) run.health = Math.min(run.health, maxHealthOf(run));
+  if (run.plans.length && run.plans.every(id => plan(id)) && Number.isFinite(run.health)) { const max = maxHealthOf(run); run.health = run.health <= 0 ? max : Math.max(1, Math.min(run.health, max)); }
   return run;
 }
 const count = (v: number) => Math.min(Number.MAX_SAFE_INTEGER, Math.max(0, Math.floor(v)));
