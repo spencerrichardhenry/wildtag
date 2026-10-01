@@ -54,13 +54,16 @@
 .ed-stat em,.ed-complexity em{font-style:normal;text-align:right;font-variant-numeric:tabular-nums;opacity:.85}
 .ed-stat:not(:has(i)){grid-template-columns:62px 1fr}
 .ed-complexity{margin-top:12px;grid-template-columns:76px 1fr 40px}
-.ed-problem{margin:10px 0 0;padding:8px 10px;border-radius:12px;background:#ff9d8a26;color:#ffd2c8;font-weight:600}
+.ed-problems{list-style:none;margin:10px 0 0;padding:0;display:flex;flex-direction:column;gap:5px}
+.ed-problem{margin:0;padding:8px 10px;border-radius:12px;background:#ff9d8a26;color:#ffd2c8;font-weight:600}
 .ed-tool{position:absolute;left:50%;bottom:28px;transform:translateX(-50%);display:flex;align-items:center;gap:14px;padding:10px 14px 10px 18px;border-radius:99px;background:#0c2f35e0;backdrop-filter:blur(14px);z-index:3;font-size:12px;font-weight:600;white-space:nowrap}
 .ed-tool label{display:flex;align-items:center;gap:6px}
 .ed-tool input{width:92px}
 .ed-tool .ghost-button{padding:7px 12px}
 .ed-hint{position:absolute;left:50%;top:96px;transform:translate(-50%,-6px);padding:8px 16px;border-radius:99px;background:var(--cream);color:var(--ink);font-size:13px;font-weight:700;opacity:0;transition:opacity .2s,transform .2s;pointer-events:none;z-index:4}
 .ed-hint.show{opacity:1;transform:translate(-50%,0)}
+.ed-vertebrae button.problem{background:#ff9d8a40;color:#ffd2c8;box-shadow:0 0 0 1px #ff9d8a inset}
+.ed-vertebrae button.problem[aria-pressed=true]{background:#ff7a66;color:var(--ink)}
 .ed-kind-note{margin:-4px 2px 10px;font-size:12px;opacity:.75}
 .ed-card .ed-reason{color:#ffd2c8;opacity:1}
 .ed-stats-body{display:contents}
@@ -100,7 +103,7 @@
   .ed-cards{grid-template-columns:repeat(auto-fill,minmax(104px,1fr))}
   .ed-card img{width:56px;height:56px}
   .ed-stats{top:calc(max(18px,env(safe-area-inset-top)) + 140px);left:14px;right:auto;width:auto;padding:7px 12px;display:flex;align-items:center;gap:10px;border-radius:99px}
-  .ed-stats .ed-stat,.ed-stats .ed-problem{display:none}
+  .ed-stats .ed-stat,.ed-stats .ed-problems{display:none}
   .ed-complexity{margin:0;grid-template-columns:auto 52px auto;gap:6px}
   .ed-diet{margin:0;gap:6px}
   .ed-stats .ed-evolve{margin:0;padding:0;border:0;display:flex;align-items:center;gap:6px;position:relative}

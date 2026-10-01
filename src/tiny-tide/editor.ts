@@ -75,10 +75,15 @@ export function openEditor(options: EditorOptions): Promise<EditorResult | null>
   return new Promise(resolve => new Editor(options, resolve));
 }
 
-/** Slots used per region: the sum of `partSlots` of the parts whose `t` lies in it. */
-function regionUse(g: Genome): Record<Region, number> {
+/** Slots used per region: the sum of `partSlots` of the parts whose `t` lies in it. Like `problems()`, it skips
+ *  unknown parts, banned kinds and kinds the region does not allow. */
+function regionUse(g: Genome, plan: BodyPlan, catalog: readonly PartSpec[]): Record<Region, number> {
   const used: Record<Region, number> = { head: 0, middle: 0, tail: 0 };
-  for (const p of g.parts) used[regionOf(p.t)] += partSlots(p);
+  for (const p of g.parts) {
+    const spec = catalog.find(s => s.id === p.id), region = regionOf(p.t);
+    if (!spec || plan.bans.includes(spec.kind) || !plan.regions[region].kinds.includes(spec.kind)) continue;
+    used[region] += partSlots(p);
+  }
   return used;
 }
 
@@ -110,7 +115,7 @@ class Editor {
   private camera = new T.PerspectiveCamera(36, 1, .05, 80);
   private model: CreatureModel;
   private readonly handleGeometry = new T.SphereGeometry(.09, 16, 10);
-  private readonly handleMaterials = [new T.MeshBasicMaterial({ color: '#7fe3d1', depthTest: false, transparent: true }), new T.MeshBasicMaterial({ color: '#fff2b3', depthTest: false, transparent: true })] as const;
+  private readonly handleMaterials = [new T.MeshBasicMaterial({ color: '#7fe3d1', depthTest: false, transparent: true }), new T.MeshBasicMaterial({ color: '#fff2b3', depthTest: false, transparent: true }), new T.MeshBasicMaterial({ color: '#ff7a66', depthTest: false, transparent: true })] as const;
   private readonly handles: T.Mesh[] = [];
   private readonly ringGeometry: T.BufferGeometry;
   private readonly ringMaterial = new T.LineBasicMaterial({ color: '#fff2b3', transparent: true, opacity: .7, depthTest: false });
@@ -123,6 +128,8 @@ class Editor {
   /** True while `onSubmit` runs. Done, Cancel and Escape wait for it. */
   private submitting = false;
   private viewData = new Map<string, string>();
+  /** Segment indexes with a 'segment' problem; their chips and handles are drawn red. */
+  private badSegments = new Set<number>();
   private readonly catalog: readonly PartSpec[];
   private readonly onResize = () => this.resize();
   private readonly onKey = (event: KeyboardEvent) => this.key(event);
@@ -210,12 +217,13 @@ class Editor {
   private refusal(candidate: Genome): string | null {
     const now = this.quote(), next = this.quote(candidate);
     if (next.shortfall > now.shortfall) return `Not enough DNA. Short by ${next.shortfall} DNA.`;
-    const before = regionUse(this.draft), after = regionUse(candidate), plan = this.options.plan;
+    const before = this.regionUse(this.draft), after = this.regionUse(candidate), plan = this.options.plan;
     for (const r of REGIONS) if (after[r] > plan.regions[r].slots && after[r] > before[r]) return `The ${r} is full: ${plan.regions[r].slots} slots.`;
     const count = instanceCount(candidate);
     if (count > this.limit && count > instanceCount(this.draft)) return `Too complex. ${this.limit} slots at this size.`;
     return null;
   }
+  private regionUse(g: Genome) { return regionUse(g, this.options.plan, this.catalog); }
   private with(change: (g: Genome) => void): Genome { const g = cloneGenome(this.draft); change(g); return g; }
   private placedBy(uid: string | null) { return uid === null ? undefined : this.draft.parts.find(p => p.uid === uid); }
 
@@ -311,7 +319,7 @@ class Editor {
     this.handles.forEach((handle, i) => {
       const s = g.spine[i], show = this.tab === 'body' && !!s && !segmentRule(this.options.plan, i, n).locked;
       handle.visible = show; if (!show || !s) return;
-      handle.position.set(0, s.lift + s.height + .28, l.z[i]!); handle.material = this.handleMaterials[i === this.vertebra ? 1 : 0];
+      handle.position.set(0, s.lift + s.height + .28, l.z[i]!); handle.material = this.handleMaterials[this.badSegments.has(i) ? 2 : i === this.vertebra ? 1 : 0];
     });
     const ringsOn = this.placing !== null || this.dragging !== null;
     this.rings.forEach((ring, i) => {
@@ -430,7 +438,7 @@ class Editor {
     if (!isUnlocked(spec.id, this.options.plan.size, this.options.unlocked)) return `Not found yet. Reach ${STAGES[spec.stage]?.title ?? 'a bigger'} size or explore.`;
     if (spec.kind === 'mouth' && this.options.diet && spec.diet !== this.options.diet) return DIET_LOCK;
     if (spec.kind === 'mouth' && this.mouth()) return null;   // a mouth swap needs no room
-    const used = regionUse(this.draft);
+    const used = this.regionUse(this.draft);
     if (!REGIONS.some(r => this.allowedIn(r, spec.kind) && used[r] < this.options.plan.regions[r].slots)) return `No room for a ${spec.name.toLowerCase()}: every region it fits is full.`;
     return null;
   }
@@ -472,7 +480,7 @@ class Editor {
   }
   /** Keyboard and quick taps: the part's usual spot, or the nearest region that takes it and has room. */
   private quickAdd(spec: PartSpec) {
-    const used = regionUse(this.draft), home = regionOf(spec.t);
+    const used = this.regionUse(this.draft), home = regionOf(spec.t);
     const fits = (r: Region) => this.allowedIn(r, spec.kind) && used[r] < this.options.plan.regions[r].slots;
     const target = fits(home) ? null : REGIONS.filter(fits).sort((a, b) => Math.abs(REGION_T[a] - REGION_T[home]) - Math.abs(REGION_T[b] - REGION_T[home]))[0];
     this.addPart({ uid: 'ghost', id: spec.id, t: target ? REGION_T[target] : spec.t, angle: spec.angle, scale: 1, mirror: spec.mirror, roll: 0 });
@@ -634,11 +642,13 @@ class Editor {
       ${STAT_ROWS.map(([key, label, max]) => `<div class="ed-stat"><span>${label}</span><i><b style="width:${Math.max(0, Math.min(100, stats[key] / max * 100))}%"></b></i><em>${stats[key]}</em></div>`).join('')}
       <div class="ed-stat"><span>Hearts</span><em>${derived.maxHealth}</em></div>
       <div class="ed-complexity"><span>COMPLEXITY</span><i><b style="width:${Math.min(100, count / this.limit * 100)}%"></b></i><em>${count} / ${this.limit}</em></div>
-      ${issues.length ? `<p class="ed-problem">${esc(issues[0]!.message)}</p>` : ''}`;
+      ${issues.length ? `<ul class="ed-problems" aria-label="Problems">${issues.map(i => `<li class="ed-problem">${esc(i.message)}</li>`).join('')}</ul>` : ''}`;
+    this.badSegments = new Set(issues.flatMap(i => i.code === 'segment' && i.segment !== undefined ? [i.segment] : []));
+    this.root.querySelectorAll<HTMLElement>('.ed-panel [data-v]').forEach(chip => chip.classList.toggle('problem', this.badSegments.has(Number(chip.dataset.v))));
     const line = this.root.querySelector<HTMLElement>('.ed-problem-line')!;
     line.hidden = !issues.length; line.textContent = issues[0]?.message ?? '';
     // Region chips: Σ partSlots per region.
-    const used = regionUse(this.draft);
+    const used = this.regionUse(this.draft);
     this.root.querySelectorAll<HTMLElement>('.ed-region').forEach(chip => {
       const r = chip.dataset.region as Region, slots = plan.regions[r].slots;
       chip.textContent = `${REGION_LABEL[r]} ${used[r]} / ${slots}`; chip.classList.toggle('over', used[r] >= slots);
@@ -646,7 +656,7 @@ class Editor {
     // Abilities whose binding this design would clear.
     const cleared = designDelta(this.original, this.draft, this.options.loadout, this.catalog).clearedBindings, lost = this.root.querySelector<HTMLElement>('.ed-lost-abilities')!;
     lost.hidden = !cleared.length;
-    lost.innerHTML = cleared.length ? `<strong>You lose these abilities:</strong><ul>${cleared.map(c => `<li>Slot ${c.slot + 1}: ${esc(this.grantName(c.binding.grantId, c.binding.partUid))} (${c.reason})</li>`).join('')}</ul>` : '';
+    lost.innerHTML = cleared.length ? `<strong>You lose these abilities:</strong><ul>${cleared.map(c => `<li>${esc(this.partName(c.binding.partUid))}: ${c.reason === 'part removed' ? 'its ability will be removed' : 'the new part no longer has that ability'} (slot ${c.slot + 1})</li>`).join('')}</ul>` : '';
     const changes = this.root.querySelector<HTMLElement>('.ed-changes');
     if (changes) {
       changes.innerHTML = (this.changes.length ? this.changes : ['No changes from your design.']).map(c => `<li><span aria-hidden="true">• </span>${esc(c)}</li>`).join('');
@@ -661,9 +671,10 @@ class Editor {
     this.root.querySelector<HTMLButtonElement>('.ed-cancel')!.disabled = this.submitting;
     this.root.querySelector<HTMLButtonElement>('.ed-undo')!.disabled = !this.history.length || this.submitting;
   }
-  private grantName(grantId: string, partUid: string) {
+  /** The name of the part that held a binding in the committed design. */
+  private partName(partUid: string) {
     const placed = this.original.parts.find(p => p.uid === partUid), spec = placed && this.catalog.find(s => s.id === placed.id);
-    return spec ? `${spec.name} ${grantId}` : grantId;
+    return spec?.name ?? 'A part';
   }
 }
 function statLine(stats: Partial<Stats>) {
