@@ -17,7 +17,7 @@ import { cardSummary, COAST_READY, eligibleChildren, leadsTo, type BodyPlan } fr
 import { quoteDesign } from './economy';
 import { newRuntime, type Actor, type Capsule, type CombatInput, type Constraint, type MutVec3, type Orientation, type RecoveryResult, type Vec3, type WorldQueries } from './combat-types';
 import { basicRequested, readIntent, RELEASED } from './input';
-import { blockHint, blockHintDue, newBlockHintGate, newStepSnapshot, newTapWatch, restoreStep, snapshotStep, stepPlayer, tapTargetStalled } from './player-motion';
+import { blockHint, blockHintDue, newBlockHintGate, type PlayerStepResult, newStepSnapshot, newTapWatch, restoreStep, snapshotStep, stepPlayer, tapTargetStalled } from './player-motion';
 import { beginRespawn, canChooseNextPlan, evolutionDestination, growthPose, newTrapWatch, reconcileAfterCommit, recoverPlayer, resetRuntime, resolveHazards, resolveRespawn, TRAP_MOVE, trapDue, UNSTICK_BUDGET, UnstickSearch, wedged } from './lifecycle';
 import { habitat, movement, movementCapabilities } from './profiles';
 import { admissionClock, makeWorldQueries, resetAdmissionClock, stageBounds, stageWorldQueries, supportHeight, zoneLabel } from './world-queries';
@@ -196,7 +196,7 @@ let physical: Vec3 = { x: 0, y: 0, z: 0 };
 let genomeRevision = 0, acceptedHits = 0, rejectedHits = 0, contactNow = false, lastContact: Constraint | null = null, lastContactSolid: string | null = null, edgeNow = false, edgeHinted = false;
 const faintLog: { time: number; hadPermit: boolean; hadArc: boolean }[] = [];
 const blockGate = newBlockHintGate(), beforeStep = newStepSnapshot(), tapWatch = newTapWatch(), trapWatch = newTrapWatch();
-let trapRescues = 0, unstick: UnstickSearch | null = null;
+let trapRescues = 0, unstick: UnstickSearch | null = null, glide: { path: { position: Vec3; orientation: Orientation }[]; index: number } | null = null;
 let dialogReturn: 'menu' | 'playing' | 'paused' = 'menu';
 const modal = el<HTMLDialogElement>('modal');
 world.setCreature(run.genome);
@@ -291,7 +291,9 @@ function renderRoot() {
   world.player.rotation.y = rt.orientation.yaw; world.avatar.rotation.x = -rt.orientation.pitch;
 }
 /** Installs an admitted full pose: position and orientation together, no permit or arc, zero velocities. `snap` moves the camera too (start, respawn). */
-function installPose(pose: { position: Vec3; orientation: Orientation }, actor: Actor, snap = false) {
+function installPose(pose: { position: Vec3; orientation: Orientation }, actor: Actor, snap = false, rescue = false) {
+  // Any install but a rescue glide step ends a pending rescue (re-review m3): respawn, evolution, recovery, an edit.
+  if (!rescue) { unstick = null; glide = null; trapWatch.armed = false; }
   physical = { x: pose.position.x, y: pose.position.y, z: pose.position.z }; rt.orientation = { yaw: pose.orientation.yaw, pitch: pose.orientation.pitch };
   rt.permit = null; rt.arc = null; rt.controlledVelocity = { x: 0, y: 0, z: 0 }; rt.externalVelocity = { x: 0, y: 0, z: 0 };
   settleOffset(actor);
@@ -748,20 +750,28 @@ function frame(now: number) {
     }
     const legal = legality(stage);
     snapshotStep(rt, beforeStep);
-    const r = stepPlayer(physical, rt, intent, { plan, profile: movement(plan.movement), caps, actor, ...legal, size: SIZES[stage]!, topSpeedLocal: STAGES[stage]!.speed * derived.speedFactor,
+    // A rescue glides the body along its admitted path, one pose a frame, re-admitted for the current body (fix round 2: no snap).
+    let r: PlayerStepResult;
+    if (glide) {
+      const pose = glide.path[glide.index++];
+      if (pose && legal.queries.overlapHull(actor, pose.position, pose.orientation, { time: time + dt, bounds: legal.bounds }).ok) installPose(pose, actor, false, true);
+      else glide = null;
+      if (glide && glide.index >= glide.path.length) glide = null;
+      r = { position: physical, status: 'moved', contacts: [], progress: 1, needsRecovery: false, breachStarted: false, arcEnded: false, permitEnded: false, turnRefused: false };
+    } else r = stepPlayer(physical, rt, intent, { plan, profile: movement(plan.movement), caps, actor, ...legal, size: SIZES[stage]!, topSpeedLocal: STAGES[stage]!.speed * derived.speedFactor,
       now: time, dt, wish, aim: null, actionLock: false });
     // A result that needs recovery is never installed or rendered: recover from it, or keep the last legal pose while stuck, with
     // the orientation, permit and arc it was admitted with (final review M10).
     if (!r.needsRecovery) { physical = r.position; renderRoot(); }
     else if (!recover(actor, time + dt, r.position)) { restoreStep(rt, beforeStep); enterStuck(); }
-    // A trapped body (pushed, wedged, no progress for TRAP_SECONDS) moves to the nearest admitted pose that faces the push. The
-    // search runs UNSTICK_BUDGET candidates a frame; it is dropped when the body moves away on its own.
-    if (!r.needsRecovery && !unstick && trapDue(trapWatch, physical, wish, actor.bodyLength, wedged(r.contacts, rt.orientation.yaw, wish), dt))
+    // A trapped body (pushed, really wedged on most frames, no progress for TRAP_SECONDS) glides to the nearest admitted pose that
+    // faces the push, along a path the whole hull is admitted on. The search runs UNSTICK_BUDGET candidates a frame; it is dropped
+    // when the body moves away on its own.
+    if (!glide && !r.needsRecovery && !unstick && trapDue(trapWatch, physical, wish, actor.bodyLength, wedged(r.contacts, wish, r.turnRefused, rt.orientation.yaw), dt))
       unstick = new UnstickSearch(actor, { ...physical }, Math.atan2(wish.x, wish.z), { ...rt.orientation }, { ...legal, time: time + dt, ground: caps.ground && !legal.queries.terrain.space });
     if (unstick) {
       const u = Math.hypot(physical.x - unstick.at.x, physical.z - unstick.at.z) > TRAP_MOVE * actor.bodyLength ? { ok: false as const, reason: 'moved' } : unstick.step(UNSTICK_BUDGET);
-      // The pose is admitted again for the current body before it is installed (the body may have grown since the search began).
-      if (u) { unstick = null; if (u.ok && legal.queries.overlapHull(actor, u.position, u.orientation, { time: time + dt, bounds: legal.bounds }).ok) { installPose(u, actor); trapRescues++; } }
+      if (u) { unstick = null; if (u.ok) { glide = { path: u.path, index: 0 }; trapRescues++; } }
     }
     const contact = r.contacts[0];
     contactNow = !!contact; frameContacts += r.contacts.length;

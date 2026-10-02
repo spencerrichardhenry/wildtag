@@ -56,6 +56,7 @@ export function makeWorldQueries(t: Terrain, extras: WorldExtras = {}): WorldQue
     refugeOverlap: world => extras.refugeOverlap ? extras.refugeOverlap(world) : null,
     refugeAccess: (actor, id) => extras.refugeAccess ? extras.refugeAccess(actor, id) : true,
     overlapHull: (actor, at, o, ctx) => admissionClock.on ? timedAdmit(actor, at, o, ctx, t, extras) : admit(actor, at, o, ctx, t, extras),
+    solidTop: id => extras.solids?.byId(id)?.maxY,
   };
 }
 
@@ -361,6 +362,39 @@ export function hullExtents(actor: Actor, o: Orientation): { top: number; bottom
     top = Math.max(top, y + ext); bottom = Math.max(bottom, ext - y);
   }
   return { top, bottom };
+}
+
+/** Ground plans step over a rock whose top stands at most STEP_HEIGHT body lengths above the seabed under the body (owner decision,
+ *  fix round 2); a taller rock and every arch stay walls. A step lifts the body by at most STEP_LIFT_MAX body lengths (the hull's own
+ *  margins under the belly can need more than the rock's height). */
+export const STEP_HEIGHT = .15, STEP_LIFT_MAX = .5;
+const stepAt: MutVec3 = { x: 0, y: 0, z: 0 };
+/** The lift over the seabed support (`base`, from supportHeight) that a ground body needs at (x, z) to stand on a low rock: 0 when no
+ *  rock refuses it there, or when the refusing solid is an arch or a rock whose top is more than STEP_HEIGHT × L above the seabed at
+ *  (x, z) (a wall). The smallest lift admitted against the solids, found in 8 steps and 6 halvings (a lift refused only by another
+ *  rule counts as clear: motion admits every pose anyway). */
+export function stepLift(actor: Actor, x: number, z: number, o: Orientation, q: WorldQueries, base: number, ctx: AdmissionContext): number {
+  if (q.terrain.space || !q.solidTop) return 0;
+  const L = actor.bodyLength, eps = .01 * L, max = STEP_LIFT_MAX * L, ground = q.terrain.groundAt(x, z);
+  stepAt.x = x; stepAt.z = z;
+  const solidAt = (lift: number): number => {   // 1: a low rock refuses it, 2: a wall refuses it, 0: clear
+    stepAt.y = base + eps + lift;
+    const a = q.overlapHull(actor, stepAt, o, ctx);
+    if (a.constraint !== 'solid') return 0;
+    const top = a.solidId === undefined || a.solidId.startsWith('arch') ? Infinity : q.solidTop!(a.solidId) ?? Infinity;
+    return top - ground <= STEP_HEIGHT * L ? 1 : 2;
+  };
+  if (solidAt(0) !== 1) return 0;
+  let lo = 0, hi = -1;
+  for (let k = 1; k <= 8; k++) {
+    const lift = max * k / 8, s = solidAt(lift);
+    if (s === 2) return 0;
+    if (s === 0) { hi = lift; break; }
+    lo = lift;
+  }
+  if (hi < 0) return 0;
+  for (let i = 0; i < 6; i++) { const mid = (lo + hi) / 2; if (solidAt(mid) === 0) hi = mid; else lo = mid; }
+  return hi;
 }
 
 /** The lowest origin height at which the ground rule (step 3) passes, plus 1e-9. −Infinity in space. */

@@ -201,6 +201,39 @@ describe('the mesh colliders (final review I2)', () => {
     }
     expect(REEF_MESHES.reef_rock_0.length).toBe(6); expect(REEF_MESHES.reef_rock_1.length).toBe(6); expect(REEF_MESHES.reef_arch.length).toBe(9);   // stone + 5 / 8 moss patches
   });
+  it('every collider piece is closed, consistently wound and outward (positive volume) (re-review m4)', () => {
+    for (const [name, pieces] of Object.entries(REEF_MESHES)) pieces.forEach((m, i) => {
+      const key = (t: number, k: number) => `${m.tri[9 * t + 3 * k]!.toFixed(6)},${m.tri[9 * t + 3 * k + 1]!.toFixed(6)},${m.tri[9 * t + 3 * k + 2]!.toFixed(6)}`;
+      const directed = new Map<string, number>();
+      let volume = 0;
+      for (let t = 0; t < m.count; t++) {
+        for (let k = 0; k < 3; k++) { const e = `${key(t, k)}>${key(t, (k + 1) % 3)}`; directed.set(e, (directed.get(e) ?? 0) + 1); }
+        const T = (k: number, a: number) => m.tri[9 * t + 3 * k + a]!;
+        volume += (T(0, 0) * (T(1, 1) * T(2, 2) - T(1, 2) * T(2, 1)) - T(0, 1) * (T(1, 0) * T(2, 2) - T(1, 2) * T(2, 0)) + T(0, 2) * (T(1, 0) * T(2, 1) - T(1, 1) * T(2, 0))) / 6;
+      }
+      for (const [e, n] of directed) {
+        const [a, b] = e.split('>');
+        expect(n, `${name} piece ${i}: edge ${e} used once in its direction`).toBe(1);
+        expect(directed.get(`${b}>${a}`), `${name} piece ${i}: edge ${e} has its twin`).toBe(1);
+      }
+      expect(volume, `${name} piece ${i} volume`).toBeGreaterThan(0);
+    });
+  });
+  it('a sphere test against a placed moss piece gives the exact depth (brute force)', () => {
+    const rand = random(23), m = REEF_MESHES.reef_rock_0[1]!, tris: [V3, V3, V3][] = [];
+    for (let t = 0; t < m.count; t++) tris.push([0, 1, 2].map(k => [m.tri[9 * t + 3 * k]!, m.tri[9 * t + 3 * k + 1]!, m.tri[9 * t + 3 * k + 2]!] as V3) as [V3, V3, V3]);
+    for (let n = 0; n < 60; n++) {
+      const sx = .5 + rand() * 9, sy = .5 + rand() * 6, sz = .5 + rand() * 9, yaw = rand() * 7, x = rand() * 10, y = rand() * 3, z = rand() * 10;
+      const shape = meshShape(m, x, y, z, sx, sy, sz, yaw), world = placed(tris, x, y, z, sx, sy, sz, yaw), cx = (m.lo[0] + m.hi[0]) / 2, cy = (m.lo[1] + m.hi[1]) / 2, cz = (m.lo[2] + m.hi[2]) / 2;
+      const c0 = placed([[[cx, cy, cz], [cx, cy, cz], [cx, cy, cz]]], x, y, z, sx, sy, sz, yaw)[0]![0], p: V3 = [c0[0] + (rand() - .5) * .8 * sx, c0[1] + (rand() - .5) * .3 * sy, c0[2] + (rand() - .5) * .8 * sz], r = .02 + rand() * .3;
+      const d = meshDistance(p, world), inside = insideMesh(p, world), c = newContact(); c.depth = 0;
+      const hit = sphereShape(shape, p[0], p[1], p[2], r, c);
+      if (!inside && d >= r) { expect(hit).toBe(false); continue; }
+      expect(hit).toBe(true);
+      if (inside && d >= r) { expect(c.depth).toBeGreaterThanOrEqual(2 * r - 1e-9); continue; }
+      expect(c.depth).toBeCloseTo(inside ? r + d : r - d, 4);
+    }
+  });
   it('a sphere test against a placed mesh gives the exact depth, point and outward normal', () => {
     const rand = random(17);
     for (const name of ['reef_rock_0', 'reef_rock_1', 'reef_arch'] as const) {

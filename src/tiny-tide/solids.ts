@@ -336,12 +336,16 @@ export class SolidIndex {
   /** Per solid: the query stamp that last listed it (each solid is listed once per query). */
   private readonly stamps: Int32Array;
   private stamp = 0;
+  private readonly ids = new Map<string, Solid>();
+  /** The solid with this id, or undefined. */
+  byId(id: string): Solid | undefined { return this.ids.get(id); }
   /** Candidate solid indices of the last `gather`. */
   readonly found: Int32Array;
   count = 0;
   constructor(readonly solids: readonly Solid[], readonly cell: number) {
     this.stamps = new Int32Array(solids.length); this.found = new Int32Array(solids.length);
     solids.forEach((s, i) => {
+      this.ids.set(s.id, s);
       for (let cx = Math.floor(s.minX / cell); cx <= Math.floor(s.maxX / cell); cx++) for (let cz = Math.floor(s.minZ / cell); cz <= Math.floor(s.maxZ / cell); cz++) {
         const key = SolidIndex.key(cx, cz), list = this.cells.get(key);
         if (list) list.push(i); else this.cells.set(key, [i]);

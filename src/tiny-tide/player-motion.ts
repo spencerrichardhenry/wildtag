@@ -6,8 +6,10 @@ import { EDGE_HINT, edgeCurrent } from './edge';
 import { resolveMotion, projectVelocity } from './motion';
 import type { BodyPlan } from './plans';
 import { BREACH_RISE, breachPermit, type MovementCapabilities } from './profiles';
-import { hullExtents, supportHeight } from './world-queries';
+import { hullExtents, stepLift, supportHeight } from './world-queries';
 
+/** The fastest a ground body rides up onto a low rock, in body lengths per second (no snap). */
+export const STEP_CLIMB = 1.2;
 export const BREACH_SECONDS = 1.8, BREACH_COOLDOWN = 2.3, BREACH_END_DEPTH = 1.3, EXTERNAL_DECAY = 6, GROUND_SETTLE = 6;
 /** A Rise tap is a Breach only when the body's origin is within this many body lengths under the surface; deeper, a tap (and a
  *  hold) is a normal Rise (owner ruling M9: a tap on the seabed must not throw the body into a 1.8 s arc). */
@@ -36,7 +38,9 @@ export interface PlayerStepContext {
   wish: Vec3; aim: Vec3 | null; actionLock: boolean;
 }
 /** `progress`: the applied displacement over the asked one (1 when nothing was asked). */
-export interface PlayerStepResult { position: Vec3; status: MotionResult['status']; contacts: readonly Contact[]; progress: number; needsRecovery: boolean; breachStarted: boolean; arcEnded: boolean; permitEnded: boolean }
+export interface PlayerStepResult { position: Vec3; status: MotionResult['status']; contacts: readonly Contact[]; progress: number; needsRecovery: boolean; breachStarted: boolean; arcEnded: boolean; permitEnded: boolean;
+  /** The resolver stopped the requested turn short (a solid or another rule refused the rest). */
+  turnRefused: boolean }
 
 /** The signed shortest arc from a to b, in (−π, π]. */
 function shortestArc(a: number, b: number): number {
@@ -109,8 +113,18 @@ export function stepPlayer(position: Vec3, rt: CombatRuntime, intent: CombatInpu
     d.y = arcY(uEnd) - arcY(u(now)) + ev.y * dt;
     arcDone = uEnd >= 1;
   } else if (grounded) {
-    const offset = Math.max(0, rt.groundOffset * Math.exp(-GROUND_SETTLE * dt) + ev.y * dt);
-    d.y = supportHeight(actor, position.x + d.x, position.z + d.z, o, t) + .01 * L + offset - position.y;
+    // The height over the seabed support (groundOffset) settles down, and is lifted onto a low rock (stepLift, owner decision fix
+    // round 2). The lift rises at most STEP_CLIMB L/s: a steeper step holds the horizontal move back to what that rise allows.
+    const offset = Math.max(0, rt.groundOffset * Math.exp(-GROUND_SETTLE * dt) + ev.y * dt), actx = { time: now, permit: rt.permit, bounds: ctx.bounds };
+    const liftAt = (s: number) => stepLift(actor, position.x + d.x * s, position.z + d.z * s, o, queries, supportHeight(actor, position.x + d.x * s, position.z + d.z * s, o, t), actx);
+    let lift = liftAt(1);
+    const room = rt.groundOffset + STEP_CLIMB * L * dt;
+    if (lift > room) {
+      let lo = 0, hi = 1;
+      for (let i = 0; i < 4; i++) { const mid = (lo + hi) / 2; if (liftAt(mid) <= room) lo = mid; else hi = mid; }
+      d.x *= lo; d.z *= lo; lift = Math.min(room, liftAt(lo));
+    }
+    d.y = supportHeight(actor, position.x + d.x, position.z + d.z, o, t) + .01 * L + Math.max(offset, lift) - position.y;
   }
 
   // 6. Motion.
@@ -139,7 +153,8 @@ export function stepPlayer(position: Vec3, rt: CombatRuntime, intent: CombatInpu
   // each frame asks for little, but the player still pushes).
   const asked = Math.max(Math.hypot(d.x, d.y, d.z), Math.hypot(w.x, w.y, w.z) * k * dt), p = result.position;
   const progress = asked > 1e-12 ? Math.hypot(p.x - position.x, p.y - position.y, p.z - position.z) / asked : 1;
-  return { position: result.position, status: result.status, contacts: result.contacts, progress, needsRecovery, breachStarted, arcEnded, permitEnded };
+  const turnRefused = Math.abs(shortestArc(result.orientation.yaw, desired.yaw)) > 1e-6 || Math.abs(result.orientation.pitch - desired.pitch) > 1e-6;
+  return { position: result.position, status: result.status, contacts: result.contacts, progress, needsRecovery, breachStarted, arcEnded, permitEnded, turnRefused };
 }
 
 /** A block hint is for a real block only (final review I1): the move is `blocked` and less than BLOCK_HINT_PROGRESS of it was

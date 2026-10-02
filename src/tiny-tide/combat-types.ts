@@ -59,6 +59,8 @@ export interface WorldQueries {
   refugeOverlap(world: readonly Capsule[]): { id: string; normal: Vec3 } | null;    // extent-aware: the first refuge the posed hull touches
   refugeAccess(actor: Actor, refugeId: string): boolean;
   overlapHull(actor: Actor, at: Vec3, o: Orientation, ctx: AdmissionContext): Admission;
+  /** The top (largest y) of a decoration solid by id, when these queries have solids (the ground step-over, fix round 2). */
+  solidTop?(id: string): number | undefined;
 }
 export interface LegalityContext { queries: WorldQueries; bounds?: { half: number; maxY?: number } }
 export interface MotionRequest { actorId: ActorId; from: Vec3; displacement: Vec3; orientation: Orientation; turn?: Orientation; hull: readonly Capsule[]; habitatProfileId: string;

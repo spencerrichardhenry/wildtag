@@ -80,23 +80,28 @@ export function growthPose(actor: Actor, position: Vec3, rt: Pick<CombatRuntime,
   return two !== null && !('constraint' in two) ? two : null;
 }
 
-/** A trap (continuation of the final review: a long Crawler wedged between small rocks, whose turn and every slide the solids
- *  refuse): the player pushes in one direction, but for TRAP_SECONDS the body gains less than TRAP_MOVE body lengths along it, and on
- *  some frame of that time it is wedged: two contacts whose normals differ by more than WEDGE_ANGLE, or a facing more than WEDGE_ANGLE
- *  off the push (its turn is refused). A push into one flat wall, facing it, is not a trap. The body then moves to the nearest admitted
- *  pose that lets it go on (`unstickPose`). */
-export const TRAP_SECONDS = .75, TRAP_MOVE = .05, TRAP_REACH = 1.5, WEDGE_ANGLE = Math.PI / 6;
-export interface TrapWatch { x: number; y: number; z: number; dx: number; dz: number; time: number; wedged: boolean; armed: boolean }
-export const newTrapWatch = (): TrapWatch => ({ x: 0, y: 0, z: 0, dx: 0, dz: 0, time: 0, wedged: false, armed: false });
-/** Is this step wedged? (see TrapWatch) */
-export function wedged(contacts: readonly { normal: Vec3 }[], yaw: number, push: Vec3): boolean {
-  const c = Math.cos(WEDGE_ANGLE);
-  for (let i = 0; i < contacts.length; i++) for (let j = i + 1; j < contacts.length; j++) {
-    const a = contacts[i]!.normal, b = contacts[j]!.normal;
-    if (a.x * b.x + a.y * b.y + a.z * b.z < c) return true;
-  }
+/** A trap (continuation of the final review; made rare in fix round 2): the player pushes in one direction, the body gains less than
+ *  TRAP_MOVE body lengths along it for TRAP_SECONDS, and on at least WEDGED_SHARE of those frames it is really wedged (`wedged`). A
+ *  push into one rock is not a trap, whatever the mesh's normals do. The body then glides to the nearest pose that lets it go on
+ *  (`UnstickSearch`, its path swept by the hull). */
+export const TRAP_SECONDS = .75, TRAP_MOVE = .05, TRAP_REACH = 1.5, WEDGE_ANGLE = Math.PI / 6, WEDGED_SHARE = .6;
+export interface TrapWatch { x: number; y: number; z: number; dx: number; dz: number; time: number; frames: number; wedgedFrames: number; armed: boolean }
+export const newTrapWatch = (): TrapWatch => ({ x: 0, y: 0, z: 0, dx: 0, dz: 0, time: 0, frames: 0, wedgedFrames: 0, armed: false });
+/** A real wedge on this step: two solid contacts whose horizontal normals both oppose the push and lie on opposite sides of it (the body
+ *  is pinched between them), or a turn toward the push that the solids refused while the facing is more than WEDGE_ANGLE off it. */
+export function wedged(contacts: readonly { normal: Vec3; constraint: string }[], push: Vec3, turnRefused: boolean, yaw: number): boolean {
   const pl = Math.hypot(push.x, push.z);
-  return contacts.length > 0 && pl > 1e-9 && (Math.sin(yaw) * push.x + Math.cos(yaw) * push.z) / pl < c;
+  if (pl < 1e-9) return false;
+  const px = push.x / pl, pz = push.z / pl;
+  let left = false, right = false;
+  for (const c of contacts) {
+    if (c.constraint !== 'solid') continue;
+    const n = c.normal, nl = Math.hypot(n.x, n.z);
+    if (nl < 1e-9 || (n.x * px + n.z * pz) / nl >= -.05) continue;   // does not oppose the push
+    if (px * n.z - pz * n.x > 0) left = true; else right = true;
+  }
+  if (left && right) return true;
+  return turnRefused && (Math.sin(yaw) * px + Math.cos(yaw) * pz) < Math.cos(WEDGE_ANGLE);
 }
 /** Call once per played frame with the body's position, the horizontal push (zero when the player asks for nothing) and whether the
  *  step was wedged. True on the frame the body counts as trapped (the watch then restarts). */
@@ -105,28 +110,30 @@ export function trapDue(w: TrapWatch, at: Vec3, push: Vec3, L: number, isWedged:
   if (pl < .05) { w.armed = false; return false; }
   const dx = push.x / pl, dz = push.z / pl;
   if (!w.armed || dx * w.dx + dz * w.dz < .9 || (at.x - w.x) * dx + (at.z - w.z) * dz > TRAP_MOVE * L) {
-    w.armed = true; w.x = at.x; w.y = at.y; w.z = at.z; w.dx = dx; w.dz = dz; w.time = 0; w.wedged = false;
+    w.armed = true; w.x = at.x; w.y = at.y; w.z = at.z; w.dx = dx; w.dz = dz; w.time = 0; w.frames = 0; w.wedgedFrames = 0;
   }
-  w.time += dt; w.wedged ||= isWedged;
-  if (w.time < TRAP_SECONDS || !w.wedged) return false;
+  w.time += dt; w.frames++; if (isWedged) w.wedgedFrames++;
+  if (w.time < TRAP_SECONDS || w.wedgedFrames < WEDGED_SHARE * w.frames) return false;
   w.armed = false;
   return true;
 }
+/** A rescue: the destination pose and the glide to it (every pose admitted when found). */
+export type Rescue = { ok: true; position: Vec3; orientation: Orientation; path: { position: Vec3; orientation: Orientation }[] } | { ok: false; reason: string };
 /** The search for the nearest admitted pose within TRAP_REACH body lengths, level, facing the push or (when that fits nowhere) 45° or
- *  90° off it or its own yaw: in place first (a turn the sweep refused), then on rings of UNSTICK_RING L nearest the push direction first, at the body's
- *  height and (ground plans) at the support height there. The body's own pose (in place, its own yaw) is not a result. A pose whose
- *  centre line from the body's centre passes through a solid is skipped, so the body never jumps through a rock or an arch leg.
+ *  90° off it or its own yaw: in place first (a turn the sweep refused), then on rings of UNSTICK_RING L nearest the push direction
+ *  first, at the body's height and (ground plans) at the support height there. The body's own pose is not a result. A candidate is
+ *  used only when the whole hull is admitted along the straight path to it, position and yaw together, in steps of at most
+ *  RESCUE_STEP L and RESCUE_TURN radians: so the body never passes through a solid, and it glides along that path (main.ts).
  *  The search runs in slices (`step(budget)` tests at most `budget` candidates), so a frame never pays for all of it. */
 export class UnstickSearch {
   private ring = 0; private angle = 0; private yawIndex = 0; private done = false;
-  private readonly yaws: number[]; private readonly probe: Actor;
+  private readonly yaws: number[];
   constructor(private readonly actor: Actor, readonly at: Vec3, private readonly yaw: number, private readonly current: Orientation,
     private readonly ctx: LegalityContext & { time: number; ground: boolean }) {
     this.yaws = [yaw, yaw + Math.PI / 4, yaw - Math.PI / 4, yaw + Math.PI / 2, yaw - Math.PI / 2, current.yaw];
-    this.probe = { id: actor.id, hull: [{ start: { x: 0, y: 0, z: 0 }, end: { x: 0, y: 0, z: 0 }, radius: 1e-3 * actor.bodyLength }], habitat: actor.habitat, bodyLength: actor.bodyLength };
   }
-  /** A pose, null while the search goes on, or a failure when every candidate is refused. */
-  step(budget: number): RecoveryResult | null {
+  /** A rescue, null while the search goes on, or a failure when every candidate is refused. */
+  step(budget: number): Rescue | null {
     const rings = Math.floor(TRAP_REACH / UNSTICK_RING + 1e-9);
     for (let n = 0; n < budget && !this.done; n++) {
       const r = this.ring * UNSTICK_RING * this.actor.bodyLength, a = this.yaw + (this.angle % 2 === 0 ? 1 : -1) * Math.ceil(this.angle / 2) * Math.PI / 8;
@@ -141,30 +148,37 @@ export class UnstickSearch {
     }
     return this.done ? { ok: false, reason: 'no free pose near the trap' } : null;
   }
-  private test(x: number, z: number, y0: number, inPlace: boolean): RecoveryResult | null {
-    const q = this.ctx.queries, L = this.actor.bodyLength, o: Orientation = { yaw: y0, pitch: 0 }, at = this.at;
-    if (inPlace && Math.abs(Math.sin((y0 - this.current.yaw) / 2)) < 1e-6) return null;
+  private test(x: number, z: number, y0: number, inPlace: boolean): Rescue | null {
+    const q = this.ctx.queries, L = this.actor.bodyLength, at = this.at, c = this.current;
+    if (inPlace && Math.abs(Math.sin((y0 - c.yaw) / 2)) < 1e-6) return null;
+    const o: Orientation = { yaw: y0, pitch: 0 }, actx = { time: this.ctx.time, permit: null, bounds: this.ctx.bounds };
     const ys = [at.y];
     if (this.ctx.ground && !q.terrain.space) ys.unshift(supportHeight(this.actor, x, z, o, q.terrain) + .01 * L);
     for (const y of ys) {
       const p = { x, y, z };
-      if (!q.overlapHull(this.actor, p, o, { time: this.ctx.time, permit: null, bounds: this.ctx.bounds }).ok) continue;
+      if (!q.overlapHull(this.actor, p, o, actx).ok) continue;
+      // The path: position and yaw (shortest arc) and pitch together, every step admitted.
+      const turn = Math.atan2(Math.sin(y0 - c.yaw), Math.cos(y0 - c.yaw)), dist = Math.hypot(x - at.x, y - at.y, z - at.z);
+      const n = Math.max(RESCUE_FRAMES, Math.ceil(dist / (RESCUE_STEP * L)), Math.ceil(Math.max(Math.abs(turn), Math.abs(c.pitch)) / RESCUE_TURN));
+      const path: { position: Vec3; orientation: Orientation }[] = [];
       let clear = true;
-      for (let k = 1; k <= 8 && clear; k++) {
-        const c = { x: at.x + (x - at.x) * k / 8, y: at.y + (y - at.y) * k / 8, z: at.z + (z - at.z) * k / 8 };
-        if (q.overlapHull(this.probe, c, this.current, { time: this.ctx.time }).constraint === 'solid') clear = false;
+      for (let k = 1; k <= n && clear; k++) {
+        const f = k / n, pose = { position: { x: at.x + (x - at.x) * f, y: at.y + (y - at.y) * f, z: at.z + (z - at.z) * f }, orientation: { yaw: k === n ? y0 : c.yaw + turn * f, pitch: c.pitch * (1 - f) } };
+        if (!q.overlapHull(this.actor, pose.position, pose.orientation, actx).ok) clear = false; else path.push(pose);
       }
-      if (clear) return { ok: true, position: p, orientation: o };
+      if (clear) return { ok: true, position: p, orientation: o, path };
     }
     return null;
   }
 }
 /** The whole search at once (tests). */
-export const unstickPose = (actor: Actor, at: Vec3, yaw: number, current: Orientation, ctx: LegalityContext & { time: number; ground: boolean }): RecoveryResult =>
+export const unstickPose = (actor: Actor, at: Vec3, yaw: number, current: Orientation, ctx: LegalityContext & { time: number; ground: boolean }): Rescue =>
   new UnstickSearch(actor, at, yaw, current, ctx).step(Infinity)!;
-/** Candidates a frame may test (each costs a support height, one or two admissions, and up to 8 point tests when admitted: about
- *  .4 ms for a long Crawler near small rocks), and the ring spacing in body lengths. */
-export const UNSTICK_BUDGET = 3, UNSTICK_RING = .25;
+/** Candidates a frame may test, and the ring spacing in body lengths. A candidate costs a support height and one or two admissions;
+ *  an admitted one adds its path (at least RESCUE_FRAMES admissions). */
+export const UNSTICK_BUDGET = 6, UNSTICK_RING = .25;
+/** The glide: at least RESCUE_FRAMES frames (about .15 s at 60 Hz), at most RESCUE_STEP L and RESCUE_TURN radians a step. */
+export const RESCUE_FRAMES = 9, RESCUE_STEP = .1, RESCUE_TURN = .2;
 
 const sameEmitter = (a: PartEmitterSource, b: { partUid: string; copy: number; socketId: string }) => a.partUid === b.partUid && a.copy === b.copy && a.socketId === b.socketId;
 
