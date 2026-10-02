@@ -232,15 +232,15 @@ check('5b', 'Soft world edge', async () => {
   // An in-page sampler watches every frame for 10 s of game time while real keys swim toward +x (bounded in real time).
   const sampling = page.evaluate(([edgeText]) => new Promise(resolve => {
     const t0 = window.__tinyTide.time, w0 = performance.now(), track = [];
-    let boundsFrames = 0, refused = 0, toast = false, inZone = false, fog = 0;
+    let boundsFrames = 0, refused = 0, toast = false, toasts = 0, showing = false, inZone = false, fog = 0;
     const tick = () => {
       const s = window.__tinyTide, el = document.getElementById('toast');
       if (s.contactNow && `${s.lastContact}`.startsWith('bounds')) boundsFrames++;
       if (s.legal === false || s.mode !== 'playing') refused++;
-      if (el.classList.contains('show') && el.textContent === edgeText) toast = true;
+      const now = el.classList.contains('show') && el.textContent === edgeText; if (now) toast = true; if (now && !showing) toasts++; showing = now;
       inZone ||= s.edge.inZone; fog = Math.max(fog, s.world.edgeFog);
       track.push({ t: s.time - t0, reach: Math.max(Math.abs(s.player.x), Math.abs(s.player.z)) });
-      if (s.time - t0 >= 10) return resolve({ boundsFrames, refused, toast, inZone, fog, track, s });
+      if (s.time - t0 >= 10) return resolve({ boundsFrames, refused, toast, toasts, inZone, fog, track, s });
       if (performance.now() - w0 > 60000) return resolve({ wall: true, s });
       requestAnimationFrame(tick);
     };
@@ -263,6 +263,7 @@ check('5b', 'Soft world edge', async () => {
   assert.ok(reach < half - 1, `the reach settles inside the bound (max ${reach.toFixed(2)} of ${half})`);
   assert.ok(Math.max(...last) - Math.min(...last) < .5, `the reach has settled in the last second (${Math.min(...last).toFixed(2)}–${Math.max(...last).toFixed(2)})`);
   assert.ok(r.toast, 'the edge toast showed in the push zone');
+  assert.equal(r.toasts, 1, 'the edge toast shows once per entry, not again while the creature stays in the zone');
   assert.ok(r.fog > .5, `the edge fog closed in (${r.fog.toFixed(2)})`);
   // Released, the current carries the creature back inward.
   const released = await state(page), from = Math.max(Math.abs(released.player.x), Math.abs(released.player.z));

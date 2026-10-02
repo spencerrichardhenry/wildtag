@@ -13,6 +13,10 @@ let modelRequests = 0; page.on('request', r => { if (new URL(r.url()).pathname.e
 const state = () => page.evaluate(() => window.__tinyTide);
 const shot = name => page.screenshot({ path: `${out}/${name}.png` });
 const url = process.env.VERIFY_URL || GAME;
+/** The world seed of the journey's fixture save: TIDE_SEED=<n>, else 1501. It is logged at the start and on failure. */
+const SEED = Number(process.env.TIDE_SEED ?? 1501);
+if (!Number.isInteger(SEED)) throw new Error(`TIDE_SEED must be an integer, got ${process.env.TIDE_SEED}`);
+console.log(`Journey seed ${SEED} (${process.env.TIDE_LINE === 'crawler' ? 'crawler' : 'swimmer'} line); rerun with TIDE_SEED=${SEED}`);
 /** Braking-aware stop check: wait until the controlled velocity is zero, then the body must stay put for 200 ms. */
 async function assertStops(label) {
   await page.waitForFunction(() => { const v = window.__tinyTide.velocity; return Math.hypot(v.x, v.y, v.z) < .01; }, {}, { timeout: 2000 });
@@ -33,8 +37,8 @@ async function placePart(kindLabel, partName) {
   await tapCreature();
 }
 try {
-  // The journey starts from a fixture save built by the game's own modules (seed 1501, stage 0).
-  const fixture = await makeFixture(page, { seed: 1501, stage: 0 });
+  // The journey starts from a fixture save built by the game's own modules (seed SEED, stage 0).
+  const fixture = await makeFixture(page, { seed: SEED, stage: 0 });
   await toFixturePage(page); await page.evaluate(([key, json]) => { localStorage.clear(); localStorage.setItem(key, json); }, [fixture.key, fixture.json]);
   await page.goto(url); await page.waitForFunction(() => window.__tinyTide?.time > .5, {}, { timeout: 60000 });
   await shot('01-home');
@@ -103,7 +107,7 @@ try {
       for (const k of [...held]) if (!wanted.includes(k)) { await page.keyboard.up(k); held.delete(k); }
       for (const k of wanted) if (!held.has(k)) { await page.keyboard.down(k); held.add(k); }
     }
-    const eatenKinds = new Set(), diets = new Set(), skipped = new Map(); let loops = 0, targetId = null, lastStage = -1, sawHit = false, approach = { best: Infinity, since: 0 };
+    const eatenKinds = new Set(), diets = new Set(), skipped = new Map(); let loops = 0, targetId = null, lastStage = -1, sawHit = false, approach = { best: Infinity, since: 0 }, lastDna = -1, lastDnaLoop = 0;
     while (!(await state()).completed && loops++ < 8000) {
       s = await state();
       if (s.health < s.maxHealth) sawHit = true;
@@ -155,6 +159,11 @@ try {
       if (s.caps.dive && s.arc === null && s.player.y - f.y > .8) desired.push('KeyQ');
       await control(desired); await page.waitForTimeout(130);
       const after = await state(); for (const food of s.foods) if (!after.foods.find(o => o.id === food.id) && after.stage === s.stage) eatenKinds.add(`${food.tier}:${food.kind}`);
+      // A stall report: no DNA for 600 loops (about 80 s) prints what the bot sees.
+      if (s.stageDna !== lastDna) { lastDna = s.stageDna; lastDnaLoop = loops; }
+      else if ((loops - lastDnaLoop) % 600 === 0) console.log('Stall', JSON.stringify({ seed: SEED, loops, stage: s.stage, dna: `${s.stageDna}/${s.goal}`, player: s.player, velocity: s.velocity, zone: s.zone,
+        lastContact: s.lastContact, contactNow: s.contactNow, edge: s.edge, arc: s.arc !== null, target: { id: f.id, kind: f.kind, x: f.x, y: f.y, z: f.z, mode: f.mode },
+        edible: edible.length, skipped: [...skipped.values()].filter(t => t > s.time).length, foods: s.foods.length }));
       if (loops % 150 === 0) console.log('Progress', s.mode, s.stage, s.stageDna, '/', s.goal, 'player', s.player, 'target', f.kind, [f.x, f.y, f.z]);
     }
     await control([]); const done = await state();
@@ -183,4 +192,4 @@ try {
     assert.deepEqual(errors, []); writeFileSync(`${out}/results.json`, JSON.stringify({ passed: true, eatenKinds: [...eatenKinds], final: done, errors }, null, 2));
     console.log(`PASSED (${LINE[0]} line): editor (place, undo, paint, body, name), path screen, diet changes, DNA evolution through five sizes, in-place transformations, persistent world, look camera, breach, victory, new seeded world, save/resume, pause, sound, joystick, mobile layout.`);
   }
-} finally { await browser.close(); }
+} catch (error) { console.log(`FAILED with journey seed ${SEED}: ${error.message}`); throw error; } finally { await browser.close(); }

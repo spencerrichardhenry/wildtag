@@ -7,7 +7,7 @@ import { adaptToPlan, derive, dietOf, effectiveStats } from './genome';
 import { DROPS, part } from './parts';
 import { tierSpecies } from './species';
 import { PLAYER_HALF, SIZES, SPAWN_HALF } from './biomes';
-import { EDGE_HINT, inEdgeZone } from './edge';
+import { EDGE_HINT, EDGE_SOFT_START, inEdgeZone } from './edge';
 import { entityRadius, provoke, type EcoEvent, type Entity } from './ecosystem';
 import { canApproachFood, type Traversal } from './food-access';
 import { openEditor, type EditorResult, type SubmitOutcome } from './editor';
@@ -185,7 +185,7 @@ let sinceHit = 99, regenClock = 0, wrongDietClock = 0, readyToasted = false, las
 let rt = newRuntime();
 /** The player's authoritative physical position. The rendered root follows it every frame. */
 let physical: Vec3 = { x: 0, y: 0, z: 0 };
-let genomeRevision = 0, acceptedHits = 0, rejectedHits = 0, contactNow = false, lastContact: Constraint | null = null, edgeNow = false;
+let genomeRevision = 0, acceptedHits = 0, rejectedHits = 0, contactNow = false, lastContact: Constraint | null = null, edgeNow = false, edgeHinted = false;
 const faintLog: { time: number; hadPermit: boolean; hadArc: boolean }[] = [];
 let dialogReturn: 'menu' | 'playing' | 'paused' = 'menu';
 const modal = el<HTMLDialogElement>('modal');
@@ -400,7 +400,7 @@ function begin(fresh = false) {
   refreshDerived(); run.health = Math.min(run.health, derived.maxHealth);
   world.build(run.stage, run); el('evolution-banner').hidden = true; el('faint').hidden = true; mode = 'playing'; clearInput(); cooldown = 0; sinceHit = 99; readyToasted = evolveReady(run); lastBiome = '';
   // A fresh runtime for every new run or load. The start grace lives in the runtime.
-  rt = newRuntime(); genomeRevision++; hintClock = 0; contactNow = false; lastContact = null; edgeNow = false; startGracePending = false;
+  rt = newRuntime(); genomeRevision++; hintClock = 0; contactNow = false; lastContact = null; edgeNow = false; edgeHinted = false; startGracePending = false;
   faintLog.length = 0; acceptedHits = 0; rejectedHits = 0;
   el('home').hidden = true; el('game-ui').hidden = false; el('pause').hidden = false; el('edit').hidden = false; el('corner-note').hidden = true; el('mode-label').textContent = 'NIBBLE. GROW. REPEAT.';
   document.body.classList.add('is-playing'); toast(STAGES[run.stage]!.description);
@@ -733,9 +733,11 @@ function frame(now: number) {
     const contact = r.contacts[0];
     contactNow = !!contact;
     if (contact) { lastContact = contact.constraint; if (hintClock <= 0) { toast(blockHint(plan, contact)); hintClock = 6; } }
-    // The soft edge: the push zone shows the edge hint too (rate-limited with the block hints).
+    // The soft edge: the edge hint shows once per entry into the push zone, rate-limited with the block hints, and
+    // only when no other toast is on screen (so a one-shot message is never replaced).
     edgeNow = inEdgeZone(physical, legal.bounds.half);
-    if (edgeNow && hintClock <= 0) { toast(EDGE_HINT); hintClock = 6; }
+    if (!edgeNow) edgeHinted = false;
+    else if (!edgeHinted && hintClock <= 0 && toastTimer <= 0) { toast(EDGE_HINT); edgeHinted = true; hintClock = 6; }
     if (r.breachStarted) { audio.breach(); world.burst(p.x, world.surface, p.z, '#d6fff1', 22); }
     if (r.arcEnded) world.burst(p.x, world.surface, p.z, '#d6fff1', 18);
     const v = rt.controlledVelocity; moving = Math.hypot(v.x, v.y, v.z) > .5 * SIZES[stage]!;
@@ -820,7 +822,7 @@ if (QA) {
   Object.defineProperty(window, '__tinyTide', { get: () => ({ mode,
     plan: currentPlan(run).id, plans: [...run.plans], zone: zoneNow(), velocity: copy(rt.controlledVelocity), externalVelocity: copy(rt.externalVelocity),
     orientation: { ...rt.orientation }, permit: rt.permit ? { ...rt.permit } : null, arc: rt.arc ? { ...rt.arc } : null, breachReadyAt: rt.breachReadyAt, invulnerableUntil: rt.invulnerableUntil,
-    pendingRespawn: run.pendingRespawn, caps: capsOf(), physical: copy(physical), legal: mode === 'menu' ? null : admitted(playerActor(currentPlan(run), run.genome, run.stage, growthOf(run))), contactNow, lastContact: lastContact === null ? null : `${lastContact}`, edge: { inZone: edgeNow, half: PLAYER_HALF, softStart: SPAWN_HALF }, hazardSources: hazardSources(), growth: growthOf(run), acceptedHits, rejectedHits,
+    pendingRespawn: run.pendingRespawn, caps: capsOf(), physical: copy(physical), legal: mode === 'menu' ? null : admitted(playerActor(currentPlan(run), run.genome, run.stage, growthOf(run))), contactNow, lastContact: lastContact === null ? null : `${lastContact}`, edge: { inZone: edgeNow, hinted: edgeHinted, half: PLAYER_HALF, softStart: EDGE_SOFT_START * PLAYER_HALF }, hazardSources: hazardSources(), growth: growthOf(run), acceptedHits, rejectedHits,
     faintLog: faintLog.map(f => ({ ...f })), stage: run.stage, dna: dnaOf(run), stageDna: run.stageDna, goal: STAGES[run.stage]!.goal, health: run.health, maxHealth: derived.maxHealth, deaths: run.deaths, diet: dietOf(run.genome), genome: structuredClone(run.genome), name: run.name, unlocked: [...run.unlocked], evolveReady: evolveReady(run), bites: run.bites, totalDna: run.totalDna, elapsed: run.elapsed, completed: run.completed, eatenPlanets: [...run.eatenPlanets], player: { x: world.player.position.x, y: world.player.position.y, z: world.player.position.z }, foods: world.edibleFoods.map(f => ({ ...f.data, tag: f.entity.spec.tag, label: f.entity.spec.label, mode: f.entity.mode, hp: f.entity.hp, approachable: approachable(f.entity) })), threats: world.threats.map(f => ({ ...f.data, label: f.entity.spec.label, mode: f.entity.mode })), landmarks: world.foods.filter(f => f.model.visible && f.tier > run.stage).map(f => ({ tier: f.tier, kind: f.data.kind, x: f.data.x, y: f.data.y, z: f.data.z })), world: world.diagnostics, assets: assetDiagnostics(), saveKey: writeKey, loadedKey, time, holdingStart, editorProjection, poseAgreement, render: { calls: world.renderer.info.render.calls, triangles: world.renderer.info.render.triangles, geometries: world.renderer.info.memory.geometries } }) });
 }
 requestAnimationFrame(frame);

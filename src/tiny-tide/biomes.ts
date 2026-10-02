@@ -1,14 +1,14 @@
-import { EDGE_SOFT_START } from './edge';
+import { EDGE_REACH, EDGE_SOFT_START } from './edge';
 import { SPECIES, tierSpecies, type FoodKind, type Species } from './species';
 
 // Physical sizes in one persistent world. The camera stays close while the
 // entire habitat shrinks continuously as the creature grows.
 export const SIZES = [1, 4, 16, 64, 256] as const;
 export const WATER_LEVEL = 85;
-/** Food and creatures roam inside this square, in tier-local units. */
-export const WORLD_HALF = 46;
 /** The player's hard bound (admission), in tier-local units. A soft current pushes back before it (edge.ts). */
 export const PLAYER_HALF = 50;
+/** Food and creatures roam (and flee and hunt) inside this square, in tier-local units: the edge's reach bound (44). */
+export const WORLD_HALF = EDGE_REACH * PLAYER_HALF;
 /** New food and creatures are placed inside this square (tier-local), outside the edge's push zone. */
 export const SPAWN_HALF = EDGE_SOFT_START * PLAYER_HALF;
 export function seabedHeight(x: number, z: number) {

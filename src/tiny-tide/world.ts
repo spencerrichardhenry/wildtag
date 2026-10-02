@@ -1,6 +1,7 @@
 import * as T from 'three';
 import { batch, coral, foodModel, kelp, material, sceneryAsset } from './models';
-import { biomeAt, PLAYER_HALF, random, seabedHeight, SIZES, SPAWN_HALF, WATER_LEVEL, type Biome } from './biomes';
+import { biomeAt, PLAYER_HALF, random, seabedHeight, SIZES, WATER_LEVEL, type Biome } from './biomes';
+import { EDGE_SOFT_START } from './edge';
 import { CreatureModel } from './creature';
 import { Ecosystem, type Entity } from './ecosystem';
 import type { Vec3 } from './combat-types';
@@ -150,7 +151,8 @@ export class TideWorld {
     const bp: number[] = []; for (let i = 0; i < 800; i++) bp.push((rand() - .5) * 460, rand() * WATER_LEVEL, (rand() - .5) * 460);
     const bg = new T.BufferGeometry(); bg.setAttribute('position', new T.Float32BufferAttribute(bp, 3));
     this.bubbles = new T.Points(bg, new T.PointsMaterial({ color: '#c4f3e5', size: .23, transparent: true, opacity: .45, sizeAttenuation: true, depthWrite: false })); this.scenery.add(this.bubbles);
-    (this.bubbles.material as T.PointsMaterial).onBeforeCompile = shader => { shader.fragmentShader = shader.fragmentShader.replace('void main() {', 'void main() { if (length(gl_PointCoord - vec2(0.5)) > 0.5) discard;'); };
+    // Round points, and the same fade past the bound as the scenery.
+    (this.bubbles.material as T.PointsMaterial).onBeforeCompile = shader => { edgeFadeShader(shader); shader.fragmentShader = shader.fragmentShader.replace('void main() {', 'void main() { if (length(gl_PointCoord - vec2(0.5)) > 0.5) discard;'); };
     const sky = new T.Group();
     for (let i = 0; i < 35; i++) {
       const x = (rand() - .5) * 6000, z = (rand() - .5) * 6000, y = 300 + rand() * 180;
@@ -364,8 +366,9 @@ export class TideWorld {
     if (this.stage <= 2 && !menu) this.tint.lerp(new T.Color(this.biome.tint), 1 - Math.exp(-dt * 1.5)); else this.tint.lerp(new T.Color('#267a89'), 1 - Math.exp(-dt * 1.5));
     const color = this.tint.clone().lerp(new T.Color('#88bbcb'), above).lerp(new T.Color('#141a36'), this.spaceMix);
     // The soft edge: 0 at the push zone's start, full at half way to the hard bound (where creatures settle); off in space.
-    const edgeU = menu ? 0 : T.MathUtils.clamp((Math.max(Math.abs(p.x), Math.abs(p.z)) - SPAWN_HALF) / (PLAYER_HALF - SPAWN_HALF), 0, 1);
-    this.edgeFog = T.MathUtils.smoothstep(edgeU, 0, .5) * (1 - this.spaceMix);
+    // Damped, so a teleport (respawn, recovery, evolution rescale) does not change the fog in one frame.
+    const soft = EDGE_SOFT_START * PLAYER_HALF, edgeU = menu ? 0 : T.MathUtils.clamp((Math.max(Math.abs(p.x), Math.abs(p.z)) - soft) / (PLAYER_HALF - soft), 0, 1);
+    this.edgeFog = T.MathUtils.damp(this.edgeFog, T.MathUtils.smoothstep(edgeU, 0, .5) * (1 - this.spaceMix), 4, dt);
     color.lerp(EDGE_DARK, EDGE_DARKEN * this.edgeFog);
     this.scene.background = color; const fog = this.scene.fog as T.FogExp2; fog.color.copy(color);
     fog.density = T.MathUtils.lerp(T.MathUtils.lerp(above > .5 ? .005 : .014, .002, this.spaceMix), EDGE_FOG_DENSITY, this.edgeFog);

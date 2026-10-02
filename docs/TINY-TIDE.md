@@ -140,12 +140,18 @@ plan, and it is not stored in a velocity. When the input is released, the
 creature drifts back inward. The admission bound stays as a safety net. In the
 push zone the water gets darker and the fog gets thicker. The seabed, the reef,
 the islands and the water surface fade into the fog between 50 and 58 units
-from the centre. Space (the stars and the sun) does not change. New food and
-creatures are placed inside 40 units (`SPAWN_HALF`), and a tap-to-walk target
-is clamped there too.
+from the centre (the bubbles too). Space (the stars and the sun) does not
+change. The fog changes smoothly, also after a jump (respawn, recovery,
+evolution). New food and creatures are placed inside 40 units (`SPAWN_HALF`),
+and a tap-to-walk target is clamped there too. Food and creatures roam, flee
+and hunt inside 44 units (`WORLD_HALF` = `EDGE_REACH` × the bound), and food
+past 44 units is not approachable. Every creature can bite at 44 units: the
+slowest possible creature settles at about 42 units, and the smallest bite
+reaches 2.2 units further.
 
 **Hints.** When a move hits a border, a toast says why (at most one each 6 s).
-The world-edge hint also shows in the edge's push zone:
+The world-edge hint also shows once each time the creature enters the edge's
+push zone, but only when no other toast is on screen:
 
 | Border | Hint |
 | --- | --- |

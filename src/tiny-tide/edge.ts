@@ -11,6 +11,10 @@ export const EDGE_SOFT_START = .8;
  *  8 (Cosmic) × 1.65 (speed factor cap) × 1.15 (Darter) ≈ 15.2, so every creature settles where the smoothstep is ≤ .51,
  *  about 4.9 local units (1.5 grown body lengths) inside the bound. */
 export const EDGE_CURRENT_MAX = 30;
+/** Food and creatures roam inside this fraction of the hard bound (Chebyshev, centres), and food past it is not
+ *  approachable. Every creature can bite there: the slowest possible top speed (5.8 × .7 × .8 ≈ 3.2 local/s) settles at
+ *  about 42.0 local units, and the smallest bite radius (1.7 + .5) reaches 44.2 ≥ .88 × 50 = 44. */
+export const EDGE_REACH = .88;
 /** The toast for the edge (push zone and hard bound). */
 export const EDGE_HINT = "That's the edge of the world for now.";
 

@@ -2,6 +2,7 @@
 // A food item counts as approachable when some pose near it is admitted, is one the plan's locomotion can hold,
 // and passes the unchanged bite rule (`inReach` on stage-local positions). Approach never vetoes a real bite.
 import { PLAYER_HALF, SIZES } from './biomes';
+import { EDGE_REACH } from './edge';
 import type { Actor, AdmissionContext, LegalityContext, MovementMode, MutVec3, Orientation, TraversalPermit } from './combat-types';
 import { Ecosystem } from './ecosystem';
 import { derive, effectiveStats, starterFor } from './genome';
@@ -24,6 +25,8 @@ export function canApproachFood(actor: Actor, mode: MovementMode, food: FoodPoin
   const R = (spec.radius * growth + .5 + reach) * size + food.radius;
   const V = ((stage === 0 ? 2 : 2.2) + reach / 2) * size + food.radius;
   const q = ctx.queries, t = q.terrain, hab = actor.habitat, L = actor.bodyLength, eps = .01 * L;
+  // The edge current keeps the player away from food past the reach bound (edge.ts), so it is not approachable.
+  if (ctx.bounds && Math.max(Math.abs(food.x), Math.abs(food.z)) > EDGE_REACH * ctx.bounds.half) return false;
 
   // Traversal: the admission time and permit, and the breach ceiling.
   const trav = ctx.traversal ?? { kind: 'none' };
