@@ -58,7 +58,8 @@ export interface Contact { point: Vec3; normal: Vec3; constraint: Constraint; di
 export interface MotionResult { status: 'moved' | 'blocked' | 'clamped' | 'invalid-start' | 'needs-recovery'; position: Vec3; orientation: Orientation; contacts: readonly Contact[]; unconsumed: Vec3; time: number }
 export type RecoveryResult = { ok: true; position: Vec3; orientation: Orientation } | { ok: false; reason: string };
 export interface ActionState { instanceId: string; definitionId: string; grantId: string; source: EmitterSource; phase: 'windup' | 'active' | 'recovery' | 'interrupted'; startedAt: number; aim: Vec3; committedPose: CombatPose | null; hitCounts: Map<string, number>; lastHitAt: Map<string, number> }
-export interface BreachArc { startedAt: number; duration: number; fromY: number }
+/** `endY`: the height the arc ends at, fixed when it starts (player-motion.ts `breachEndY`). */
+export interface BreachArc { startedAt: number; duration: number; fromY: number; endY: number }
 export interface CombatRuntime { targetable: boolean; perceivable: boolean; damageable: boolean; invulnerableUntil: number; staggerUntil: number; guardProfileId: string | null;
   controlledVelocity: MutVec3; externalVelocity: MutVec3; orientation: Orientation; cooldowns: Map<string, number>; actions: ActionState[]; permit: TraversalPermit | null;
   arc: BreachArc | null; breachReadyAt: number; groundOffset: number }

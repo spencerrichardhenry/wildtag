@@ -6,10 +6,25 @@ import { EDGE_HINT, edgeCurrent } from './edge';
 import { resolveMotion, projectVelocity } from './motion';
 import type { BodyPlan } from './plans';
 import { BREACH_RISE, breachPermit, type MovementCapabilities } from './profiles';
-import { supportHeight } from './world-queries';
+import { hullExtents, supportHeight } from './world-queries';
 
 export const BREACH_SECONDS = 1.8, BREACH_COOLDOWN = 2.3, BREACH_END_DEPTH = 1.3, EXTERNAL_DECAY = 6, GROUND_SETTLE = 6;
-const PITCH_LIMIT = 1.2, FACING_MIN = .05;
+/** The space between the hull top and the surface at the end of a Breach arc, in body lengths. */
+export const BREACH_CLEARANCE = .02;
+export const PITCH_LIMIT = 1.2;
+const FACING_MIN = .05, BREACH_PITCH_STEP = .05;
+
+/** The height a Breach arc ends at: BREACH_END_DEPTH × size under the surface, or deeper, so that the hull top at every pitch
+ *  the body can turn to during the arc (|pitch| ≤ PITCH_LIMIT) is at least BREACH_CLEARANCE × L under the surface. Then the
+ *  landing is admitted in the water without the permit, at every size and growth (owner playtest P3). The top is sampled
+ *  every BREACH_PITCH_STEP; between samples it can grow by at most lip × step / 2, which is added. */
+export function breachEndY(actor: Actor, surface: number, size: number): number {
+  let top = -Infinity, lip = 0;
+  for (const c of actor.hull) lip = Math.max(lip, Math.hypot(c.start.y, c.start.z) + (c.heave ?? 0) + (c.sway ?? 0), Math.hypot(c.end.y, c.end.z) + (c.heave ?? 0) + (c.sway ?? 0));
+  const n = Math.ceil(2 * PITCH_LIMIT / BREACH_PITCH_STEP), step = 2 * PITCH_LIMIT / n;
+  for (let i = 0; i <= n; i++) top = Math.max(top, hullExtents(actor, { yaw: 0, pitch: -PITCH_LIMIT + i * step }).top);
+  return surface - Math.max(BREACH_END_DEPTH * size, top + lip * step / 2 + BREACH_CLEARANCE * actor.bodyLength);
+}
 
 export interface PlayerStepContext {
   plan: BodyPlan; profile: MovementProfile; caps: MovementCapabilities; actor: Actor; queries: WorldQueries; bounds: { half: number; maxY?: number };
@@ -34,7 +49,7 @@ export function stepPlayer(position: Vec3, rt: CombatRuntime, intent: CombatInpu
   // 1. Breach.
   let breachStarted = false;
   if (intent.traversal === 'breach' && caps.breach && rt.arc === null && now >= rt.breachReadyAt) {
-    rt.arc = { startedAt: now, duration: BREACH_SECONDS, fromY: position.y };
+    rt.arc = { startedAt: now, duration: BREACH_SECONDS, fromY: position.y, endY: breachEndY(actor, t.surface, size) };
     rt.permit = breachPermit(now);
     rt.breachReadyAt = now + BREACH_COOLDOWN;
     breachStarted = true;
@@ -83,7 +98,7 @@ export function stepPlayer(position: Vec3, rt: CombatRuntime, intent: CombatInpu
   let arcDone = false;
   const grounded = caps.ground && arc === null && !t.space;
   if (arc !== null) {
-    const endY = t.surface - BREACH_END_DEPTH * size, lift = t.surface + BREACH_RISE * size - Math.max(arc.fromY, endY);
+    const endY = arc.endY, lift = t.surface + BREACH_RISE * size - Math.max(arc.fromY, endY);
     const u = (time: number) => Math.min(1, (time - arc.startedAt) / arc.duration);
     const arcY = (s: number) => arc.fromY + (endY - arc.fromY) * s + Math.sin(s * Math.PI) * lift;
     const uEnd = u(end);
@@ -107,7 +122,11 @@ export function stepPlayer(position: Vec3, rt: CombatRuntime, intent: CombatInpu
 
   // 8. Ends.
   let arcEnded = false, permitEnded = false, needsRecovery = result.status === 'invalid-start' || result.status === 'needs-recovery';
-  if (arcDone) { rt.arc = null; arcEnded = true; }
+  if (arcDone) {
+    rt.arc = null; arcEnded = true;
+    // The landing: a pose admitted in the water ends the permit at once, so a held rise cannot lift the body out before it expires.
+    if (rt.permit && queries.overlapHull(actor, result.position, rt.orientation, { time: end, bounds: ctx.bounds }).ok) { rt.permit = null; permitEnded = true; }
+  }
   if (rt.permit && end >= rt.permit.expiresAt) {
     rt.permit = null; permitEnded = true;
     if (!queries.overlapHull(actor, result.position, rt.orientation, { time: end, bounds: ctx.bounds }).ok) needsRecovery = true;

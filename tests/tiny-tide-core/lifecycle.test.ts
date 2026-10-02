@@ -20,7 +20,7 @@ import { REGISTRY_HAZARDS, syntheticAttack } from './helpers';
 
 const action = (uid: string, copy: 0 | 1) => ({ instanceId: `${uid}${copy}`, definitionId: 'pinch', grantId: 'snap', source: { kind: 'part' as const, partUid: uid, copy, socketId: 'pinch' }, phase: 'windup' as const, startedAt: 0, aim: { x: 0, y: 0, z: 1 }, committedPose: null, hitCounts: new Map(), lastHitAt: new Map() });
 const busy = (): CombatRuntime => { const rt = newRuntime({ yaw: 1, pitch: .4 }); Object.assign(rt.controlledVelocity, { x: 1, y: 0, z: 0 }); Object.assign(rt.externalVelocity, { x: 0, y: 2, z: 0 });
-  rt.permit = { id: 'breach', startsAt: 0, expiresAt: 2, media: ['air'], landingRequired: true }; rt.arc = { startedAt: 0, duration: 1.8, fromY: 3 }; rt.breachReadyAt = 2.3;
+  rt.permit = { id: 'breach', startsAt: 0, expiresAt: 2, media: ['air'], landingRequired: true }; rt.arc = { startedAt: 0, duration: 1.8, fromY: 3, endY: 60 }; rt.breachReadyAt = 2.3;
   rt.staggerUntil = 4; rt.guardProfileId = 'g'; rt.damageable = false; rt.cooldowns.set('player:p5:snap', 5); rt.actions.push(action('p5', 0), action('p5', 1)); return rt; };
 const claw = (over: Partial<Genome['parts'][number]> = {}): Genome => ({ ...starterGenome(), parts: [...starterGenome().parts, { uid: 'p5', id: 'claw_pincer', t: .45, angle: 2, scale: 1, mirror: true, roll: 0, ...over }] });
 const grant: PartSpec[] = PARTS.map(p => p.id === 'claw_pincer' ? { ...p, activeGrants: [{ id: 'snap', abilityId: 'dash', socketIds: ['pinch'], mirrorPolicy: 'shared-cast' as const }] } : p);

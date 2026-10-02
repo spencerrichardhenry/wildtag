@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { EDGE_CURRENT_MAX, EDGE_REACH, EDGE_SOFT_START, edgeCurrent, inEdgeZone } from '../../src/tiny-tide/edge';
 import { canApproachFood } from '../../src/tiny-tide/food-access';
-import { stepPlayer } from '../../src/tiny-tide/player-motion';
+import { breachEndY, stepPlayer } from '../../src/tiny-tide/player-motion';
 import { movement, movementCapabilities } from '../../src/tiny-tide/profiles';
 import { newRuntime, type Actor, type CombatRuntime, type Vec3 } from '../../src/tiny-tide/combat-types';
 import { RELEASED } from '../../src/tiny-tide/input';
@@ -91,10 +91,9 @@ describe('edge current in the player step (600 frames of full push)', () => {
     expect(r.refused).toBe(0); expect(r.boundsContacts).toBe(0); expect(r.outsideInner).toBe(0); expect(r.maxReach).toBeGreaterThan(EDGE_SOFT_START * r.half);
   });
   it('pushes a Darter back during Breach arcs at the edge', () => {
-    // A starter-size hull: the grown Darter's hull does not fit at the arc's end depth (surface − 1.3 × size), so its landing
-    // goes through recovery in the game (an existing limit of the arc, not of the edge).
-    const b = body('darter', 2, undefined, 1), r = run(b, { x: 1, z: 0 }, 600, undefined, { y: WATER_LEVEL - 1.3 * b.size, breach: true });
-    expect(r.startY).toBe(WATER_LEVEL - 1.3 * b.size); expect(r.startZone.medium).toBe('water');
+    // The grown hull (growth 1.38). It starts at the arc's end height, which the grown hull fits (breachEndY, owner playtest P3).
+    const b = body('darter', 2), endY = breachEndY(b.actor, WATER_LEVEL, b.size), r = run(b, { x: 1, z: 0 }, 600, undefined, { y: endY, breach: true });
+    expect(r.startY).toBe(endY); expect(r.startZone.medium).toBe('water');
     expect(r.breaches, 'Breach arcs started').toBeGreaterThanOrEqual(3);
     expect(r.refused, 'refused poses').toBe(0); expect(r.boundsContacts, 'bounds contacts').toBe(0); expect(r.outsideInner).toBe(0);
     expect(r.maxReach).toBeGreaterThan(EDGE_SOFT_START * r.half);
