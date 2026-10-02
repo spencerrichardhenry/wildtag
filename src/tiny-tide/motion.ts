@@ -94,9 +94,19 @@ export function resolveMotion(req: MotionRequest, ctx: LegalityContext & { actor
       const aq = admAt(q, actor, Q, o, tk);
       if (aq.ok) { P.x = Q.x; P.y = Q.y; P.z = Q.z; time = tk; travelled += slotLen; continue; }
 
-      // Contact: time-only at P, or the bisected boundary between P and Q.
+      // Contact: time-only at P, or the bisected boundary between P and Q. A leg that starts at a contact (or at rest against one) is
+      // first tested at the bisection's finest step, 2^-BISECTIONS of the slot: refused there, every bisection point is refused too
+      // (each is at least that far), so the bisection would end at P with this refusal. That one admission replaces its eight
+      // (fix round 4: a body at rest against two walls spent 4 contacts × 8 bisections a frame to stay still).
       let f = 0, failed = admAt(q, actor, P, o, tk);
-      if (failed.ok) {
+      let near: Admission | null = null;
+      if (failed.ok && k === 1) {
+        const fine = 2 ** -BISECTIONS;
+        M.x = P.x + (Q.x - P.x) * fine; M.y = P.y + (Q.y - P.y) * fine; M.z = P.z + (Q.z - P.z) * fine;
+        near = admAt(q, actor, M, o, tk);
+      }
+      if (near && !near.ok) failed = near;
+      else if (failed.ok) {
         failed = aq;
         let lo = 0, hi = 1;
         for (let i = 0; i < BISECTIONS; i++) {

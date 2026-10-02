@@ -1,7 +1,7 @@
 // Pure lifecycle transitions: reset, one guarded respawn, recovery, commit reconciliation, damage resolution, evolution.
 import type { Actor, Admission, CombatRuntime, LegalityContext, Orientation, RecoveryResult, Vec3 } from './combat-types';
 import { findRecoveryPose } from './motion';
-import { supportHeight } from './world-queries';
+import { STEP_LIFT_MAX, STEP_TRIES, stepKind, supportHeight } from './world-queries';
 import { defaultCatalogs, type Catalogs } from './registries';
 import type { DesignDelta, PartEmitterSource } from './design-delta';
 import type { Genome } from './genome';
@@ -140,73 +140,115 @@ export type Rescue = { ok: true; position: Vec3; orientation: Orientation; path:
  *  first, at the body's height and (ground plans) at the support height there. The body's own pose is not a result. A candidate is
  *  used only when the whole hull is admitted along the straight path to it, position and yaw together, in steps of at most
  *  RESCUE_STEP L and RESCUE_TURN radians: so the body never passes through a solid, and it glides along that path (main.ts).
- *  The search runs in slices (`step(budget)` tests at most `budget` candidates), so a frame never pays for all of it. */
+ *  The search runs in slices: `step(budget)` spends at most `budget` admissions (support heights count as one) and goes on where it
+ *  stopped, inside a candidate too (fix round 4: a hard budget), so a frame never pays for more than it gives. */
 export class UnstickSearch {
-  private ring = 0; private angle = 0; private yawIndex = 0; private done = false; private used = 0;
+  private used = 0; private until = 0; private result: Rescue | null = null;
   private readonly yaws: number[];
+  private readonly run: Generator<void, Rescue, void>;
   /** `free`: how far the push must be free from the rescue pose (RESCUE_FREE, or RESCUE_FREE_REPEAT at a repeated trap). */
   constructor(private readonly actor: Actor, readonly at: Vec3, private readonly yaw: number, private readonly current: Orientation,
     private readonly ctx: LegalityContext & { time: number; ground: boolean }, private readonly free = RESCUE_FREE) {
     this.yaws = [yaw, yaw + Math.PI / 4, yaw - Math.PI / 4, yaw + Math.PI / 2, yaw - Math.PI / 2, current.yaw];
+    this.run = this.search();
   }
-  /** A rescue, null while the search goes on, or a failure when every candidate is refused. One call spends about `budget`
-   *  admissions (support heights count as one): candidates are not split, so a call can go over by one candidate's checks. */
+  /** Admissions (and support heights) spent so far. */
+  get spent(): number { return this.used; }
+  /** A rescue, null while the search goes on, or a failure when every candidate is refused. One call spends at most `budget`
+   *  admissions (support heights count as one); a budget of 0 spends nothing. */
   step(budget: number): Rescue | null {
-    const rings = Math.floor(TRAP_REACH / UNSTICK_RING + 1e-9), until = this.used + budget;
-    while (this.used < until && !this.done) {
-      const r = this.ring * UNSTICK_RING * this.actor.bodyLength, a = this.yaw + (this.angle % 2 === 0 ? 1 : -1) * Math.ceil(this.angle / 2) * Math.PI / 8;
-      const found = this.test(this.at.x + Math.sin(a) * r, this.at.z + Math.cos(a) * r, this.yaws[this.yawIndex]!, this.ring === 0);
-      if (found) { this.done = true; return found; }
-      // Next: yaw, then angle (one in place), then ring.
-      if (++this.yawIndex < this.yaws.length) continue;
-      this.yawIndex = 0;
-      if (this.ring > 0 && ++this.angle < 16) continue;
-      this.angle = 0;
-      if (++this.ring > rings) this.done = true;
-    }
-    return this.done ? { ok: false, reason: 'no free pose near the trap' } : null;
+    if (this.result) return this.result;
+    this.until = this.used + Math.max(0, budget);
+    const r = this.run.next();
+    if (r.done) this.result = r.value;
+    return this.result;
   }
-  private test(x: number, z: number, y0: number, inPlace: boolean): Rescue | null {
-    const q = this.ctx.queries, L = this.actor.bodyLength, at = this.at, c = this.current;
+  /** One admission, after the slice has room for it. */
+  private *admit(p: Vec3, o: Orientation): Generator<void, Admission, void> {
+    while (this.used >= this.until) yield;
+    this.used++;
+    return this.ctx.queries.overlapHull(this.actor, p, o, { time: this.ctx.time, permit: null, bounds: this.ctx.bounds });
+  }
+  /** The walking height over the seabed at (x, z): supportHeight + .01 L (one unit of the budget). */
+  private *support(x: number, z: number, o: Orientation): Generator<void, number, void> {
+    while (this.used >= this.until) yield;
+    this.used++;
+    return supportHeight(this.actor, x, z, o, this.ctx.queries.terrain) + .01 * this.actor.bodyLength;
+  }
+  private *search(): Generator<void, Rescue, void> {
+    const rings = Math.floor(TRAP_REACH / UNSTICK_RING + 1e-9), L = this.actor.bodyLength;
+    for (let ring = 0; ring <= rings; ring++) {
+      const r = ring * UNSTICK_RING * L;
+      // One in place, then 16 angles nearest the push first; at each, the yaws in order.
+      for (let angle = 0; angle < (ring === 0 ? 1 : 16); angle++) {
+        const a = this.yaw + (angle % 2 === 0 ? 1 : -1) * Math.ceil(angle / 2) * Math.PI / 8;
+        for (const y0 of this.yaws) {
+          const found = yield* this.test(this.at.x + Math.sin(a) * r, this.at.z + Math.cos(a) * r, y0, ring === 0);
+          if (found) return found;
+        }
+      }
+    }
+    return { ok: false, reason: 'no free pose near the trap' };
+  }
+  private *test(x: number, z: number, y0: number, inPlace: boolean): Generator<void, Rescue | null, void> {
+    const q = this.ctx.queries, L = this.actor.bodyLength, at = this.at, c = this.current, ground = this.ctx.ground && !q.terrain.space;
     if (inPlace && Math.abs(Math.sin((y0 - c.yaw) / 2)) < 1e-6) return null;
-    const o: Orientation = { yaw: y0, pitch: 0 }, actx = { time: this.ctx.time, permit: null, bounds: this.ctx.bounds };
+    // The push must be free from the candidate (fix round 3), for the run the walking body makes (fix round 4, re-review 3 I-1): facing
+    // the push, at the walking height over the seabed (lifted onto a low rock as stepLift does; a wall ends the run). The run goes
+    // RESCUE_FREE L, or RESCUE_FREE_REPEAT at a repeated trap, past the trap point's line across the push, so a candidate behind the
+    // trap is checked over the trap too; a run that passes back over the trap point (within UNSTICK_RING L) is not a rescue.
+    const fx = Math.sin(this.yaw), fz = Math.cos(this.yaw), ahead = (x - at.x) * fx + (z - at.z) * fz;
+    if (ahead < 0 && Math.abs((at.x - x) * fz - (at.z - z) * fx) < UNSTICK_RING * L) return null;
+    const o: Orientation = { yaw: y0, pitch: 0 };
     const ys = [at.y];
-    if (this.ctx.ground && !q.terrain.space) { ys.unshift(supportHeight(this.actor, x, z, o, q.terrain) + .01 * L); this.used++; }
+    if (ground) ys.unshift(yield* this.support(x, z, o));
     for (const y of ys) {
       const p = { x, y, z };
-      this.used++;
-      if (!q.overlapHull(this.actor, p, o, actx).ok) continue;
-      // The push must be free from there for `free` L (fix round 3): a rescue never leaves the body in the same pocket, to be
-      // wedged and rescued again; when no such pose is near, there is no rescue (the body stays, admitted, against the walls).
+      if (!(yield* this.admit(p, o)).ok) continue;
       // Checked before the path (it is cheaper and rejects more).
-      const fx = Math.sin(this.yaw), fz = Math.cos(this.yaw), steps = Math.ceil(this.free / (RESCUE_FREE / RESCUE_FREE_STEPS));
-      let clear = true;
-      for (let k = 1; k <= steps && clear; k++) {
-        const d = this.free * L * k / steps, qx = x + fx * d, qz = z + fz * d;
-        const qy = this.ctx.ground && !q.terrain.space ? Math.max(y, supportHeight(this.actor, qx, qz, o, q.terrain) + .01 * L) : y;
-        this.used += 2;
-        if (!q.overlapHull(this.actor, { x: qx, y: qy, z: qz }, o, actx).ok) clear = false;
-      }
-      if (!clear) continue;
+      if (!(yield* this.freeRun(x, z, y, Math.max(0, -ahead) + this.free * L))) continue;
       // The path: position and yaw (shortest arc) and pitch together, every step admitted.
       const turn = Math.atan2(Math.sin(y0 - c.yaw), Math.cos(y0 - c.yaw)), dist = Math.hypot(x - at.x, y - at.y, z - at.z);
       const n = Math.max(RESCUE_FRAMES, Math.ceil(dist / (RESCUE_STEP * L)), Math.ceil(Math.max(Math.abs(turn), Math.abs(c.pitch)) / RESCUE_TURN));
       const path: { position: Vec3; orientation: Orientation }[] = [];
+      let clear = true;
       for (let k = 1; k <= n && clear; k++) {
         const f = k / n, pose = { position: { x: at.x + (x - at.x) * f, y: at.y + (y - at.y) * f, z: at.z + (z - at.z) * f }, orientation: { yaw: k === n ? y0 : c.yaw + turn * f, pitch: c.pitch * (1 - f) } };
-        this.used++;
-        if (!q.overlapHull(this.actor, pose.position, pose.orientation, actx).ok) clear = false; else path.push(pose);
+        if (!(yield* this.admit(pose.position, pose.orientation)).ok) clear = false; else path.push(pose);
       }
       if (clear) return { ok: true, position: p, orientation: o, path };
     }
     return null;
   }
+  /** Whether the walking body is free for `length` along the push from (x, z), in steps of RESCUE_FREE / RESCUE_FREE_STEPS L. A ground
+   *  body is at the walking height at each step; refused by a low rock, it tries the lifts stepLift tries (STEP_TRIES up to
+   *  STEP_LIFT_MAX L); refused by a wall, or by any other rule, the run ends. A body that is not on the ground keeps height y. */
+  private *freeRun(x: number, z: number, y: number, length: number): Generator<void, boolean, void> {
+    const q = this.ctx.queries, L = this.actor.bodyLength, ground = this.ctx.ground && !q.terrain.space, o: Orientation = { yaw: this.yaw, pitch: 0 };
+    const fx = Math.sin(this.yaw), fz = Math.cos(this.yaw), steps = Math.ceil(length / (RESCUE_FREE / RESCUE_FREE_STEPS * L) - 1e-9);
+    for (let k = 1; k <= steps; k++) {
+      const d = length * k / steps, qx = x + fx * d, qz = z + fz * d, qy = ground ? yield* this.support(qx, qz, o) : y;
+      const a = yield* this.admit({ x: qx, y: qy, z: qz }, o);
+      if (a.ok) continue;
+      if (!ground || stepKind(a, q, qx, qz, L) !== 1) return false;
+      let lifted = false;
+      for (let i = 1; i <= STEP_TRIES && !lifted; i++) {
+        const b = yield* this.admit({ x: qx, y: qy + STEP_LIFT_MAX * L * i / STEP_TRIES, z: qz }, o);
+        if (b.ok) lifted = true;
+        else if (stepKind(b, q, qx, qz, L) !== 1) return false;
+      }
+      if (!lifted) return false;
+    }
+    return true;
+  }
 }
 /** The whole search at once (tests). */
 export const unstickPose = (actor: Actor, at: Vec3, yaw: number, current: Orientation, ctx: LegalityContext & { time: number; ground: boolean }): Rescue =>
   new UnstickSearch(actor, at, yaw, current, ctx).step(Infinity)!;
-/** Admissions a frame's slice of the search may spend (support heights count as one), and the ring spacing in body lengths. */
-export const UNSTICK_BUDGET = 40, UNSTICK_RING = .25;
+/** Admissions a played frame may spend on the player's motion and the rescue search together (fix round 4): the search gets
+ *  `rescueBudget(step)`, what the step left, and the ring spacing in body lengths. */
+export const FRAME_ADMISSIONS = 60, UNSTICK_RING = .25;
+export const rescueBudget = (stepAdmissions: number): number => Math.max(0, FRAME_ADMISSIONS - stepAdmissions);
 /** The glide: at least RESCUE_FRAMES frames (about .15 s at 60 Hz), at most RESCUE_STEP L and RESCUE_TURN radians a step. */
 export const RESCUE_FRAMES = 9, RESCUE_STEP = .1, RESCUE_TURN = .2;
 /** From a rescue pose the push is free for RESCUE_FREE body lengths (in steps of RESCUE_FREE / RESCUE_FREE_STEPS). A trap within

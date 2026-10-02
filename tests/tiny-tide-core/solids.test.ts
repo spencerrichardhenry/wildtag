@@ -5,7 +5,7 @@ import { newRuntime, type Actor, type CombatRuntime, type Orientation, type Terr
 import { Ecosystem, speciesActor } from '../../src/tiny-tide/ecosystem';
 import { derive, effectiveStats, starterFor } from '../../src/tiny-tide/genome';
 import { RELEASED } from '../../src/tiny-tide/input';
-import { growthPose, newTrapWatch, RESCUE_FREE, RESCUE_FREE_REPEAT, rescueFreeRun, TRAP_MOVE, trapDue, trapFailed, trapRescued, UNSTICK_BUDGET, UnstickSearch, wedged } from '../../src/tiny-tide/lifecycle';
+import { growthPose, newTrapWatch, RESCUE_FREE, RESCUE_FREE_REPEAT, rescueFreeRun, TRAP_MOVE, trapDue, trapFailed, trapRescued, FRAME_ADMISSIONS, rescueBudget, UnstickSearch, wedged } from '../../src/tiny-tide/lifecycle';
 import { startAnchor } from '../../src/tiny-tide/motion';
 import { playerActor } from '../../src/tiny-tide/mount';
 import { PLANS, plan } from '../../src/tiny-tide/plans';
@@ -15,7 +15,7 @@ import { archShapes, placeReef, REEF_LAYERS, REEF_MESHES, rockShape, stageSolids
 import { meshShape, newContact, pointInSolid, solidOf, SolidIndex, sphereShape, type EllipsoidShape, type Solid } from '../../src/tiny-tide/solids';
 import { SPECIES } from '../../src/tiny-tide/species';
 import { STAGES } from '../../src/tiny-tide/state';
-import { makeTerrain, makeWorldQueries, stageBounds, stageWorldQueries, supportHeight } from '../../src/tiny-tide/world-queries';
+import { admissionCount, makeTerrain, makeWorldQueries, stageBounds, stageWorldQueries, supportHeight } from '../../src/tiny-tide/world-queries';
 import { REEF_SEEDS } from './glb';
 
 const flat = (surface = WATER_LEVEL): Terrain => ({ groundAt: () => 0, surface, space: false, slopeBound: 0 });
@@ -23,9 +23,10 @@ const O = { yaw: 0, pitch: 0 };
 const index = (solids: Solid[], cell = 8) => new SolidIndex(solids, cell);
 const inAnySolid = (ix: SolidIndex, p: Vec3) => ix.solidAt(p.x, p.y, p.z) !== null;
 
-/** main.ts's trap rescue around the player step: the watch, the search in slices and the glide (one admitted path pose a frame). */
+/** main.ts's trap rescue around the player step: the watch, the search in slices (what the step left of FRAME_ADMISSIONS) and the
+ *  glide (one admitted path pose a frame). `worstFrame`: the most admissions a frame with a search slice spent (step and slice). */
 function rescuer(a: Actor, q: WorldQueries, bounds: { half: number; maxY?: number } | undefined, ground: boolean) {
-  const watch = newTrapWatch(), L = a.bodyLength, stats = { rescues: 0, failed: 0, recov: 0, ends: [] as Vec3[], paths: [] as Vec3[][] };
+  const watch = newTrapWatch(), L = a.bodyLength, stats = { rescues: 0, failed: 0, recov: 0, ends: [] as Vec3[], paths: [] as Vec3[][], worstFrame: 0 };
   let search: UnstickSearch | null = null, glide: { path: { position: Vec3; orientation: Orientation }[]; index: number } | null = null;
   const frame = (pos: Vec3, rt: CombatRuntime, wish: Vec3, f: number, step: () => PlayerStepResult): Vec3 => {
     if (glide) {
@@ -36,12 +37,13 @@ function rescuer(a: Actor, q: WorldQueries, bounds: { half: number; maxY?: numbe
       if (glide.index >= glide.path.length) glide = null;
       return pose.position;
     }
-    const r = step();
+    const before = admissionCount.n, r = step(), stepped = admissionCount.n - before;
     if (r.needsRecovery) { stats.recov++; return pos; }
     const p = r.position;
     if (!search && trapDue(watch, p, wish, L, wedged(r.contacts, wish, r.turnRefused, rt.orientation.yaw), 1 / 60)) search = new UnstickSearch(a, { ...p }, Math.atan2(wish.x, wish.z), { ...rt.orientation }, { queries: q, bounds, time: (f + 1) / 60, ground }, rescueFreeRun(watch, p, f / 60, L));
     if (search) {
-      const u = Math.hypot(p.x - search.at.x, p.z - search.at.z) > TRAP_MOVE * L ? { ok: false as const, reason: 'moved' } : search.step(UNSTICK_BUDGET);
+      const spent = search.spent, u = Math.hypot(p.x - search.at.x, p.z - search.at.z) > TRAP_MOVE * L ? { ok: false as const, reason: 'moved' } : search.step(rescueBudget(stepped));
+      stats.worstFrame = Math.max(stats.worstFrame, stepped + search.spent - spent);
       if (u) { const at = search.at; search = null; if (u.ok) { glide = { path: u.path, index: 0 }; stats.rescues++; stats.ends.push(u.position); stats.paths.push(u.path.map(x => x.position)); trapRescued(watch, at, f / 60); } else if (u.reason !== 'moved') { stats.failed++; trapFailed(watch, at, wish); } }
     }
     return p;
@@ -364,6 +366,13 @@ describe('the Colossus reaches its food among the stage-3 rocks (re-review N1)',
   }, 60_000);
 });
 
+interface PocketHold { rescues: number; ends: Vec3[]; refused: number; recov: number; L: number; yaw: number; restFrames: number; restWorst: number; worstFrame: number }
+/** Pockets on a downslope where a held push was rescued again and again (re-review 3 I-1): plan, stage, seed, the two solids, the approach. */
+const POCKETS: readonly (readonly [string, number, number, string, string, number])[] = [
+  ['shellback', 2, 763919134, 'rock:1:0', 'rock:1:35', 0],
+  ['burrower', 2, 358833899, 'rock:1:2', 'rock:1:20', 3],
+  ['shellback', 2, 1553277208, 'rock:1:4', 'rock:1:7', 3],
+];
 describe('the trap rescue (continuation: crawler freeze)', () => {
   const crawler = plan('crawler')!, g = starterFor(crawler), a = playerActor(crawler, g, 1, 1), L = a.bodyLength, top = STAGES[1]!.speed * derive(effectiveStats(g, crawler)).speedFactor;
   const walk = (q: ReturnType<typeof makeWorldQueries>, from: Vec3, wish: Vec3, frames: number, yaw = Math.atan2(wish.x, wish.z), keepY = false) => {
@@ -411,6 +420,76 @@ describe('the trap rescue (continuation: crawler freeze)', () => {
     expect(rescueFreeRun(w, { x: 5 + .5 * L, y: 0, z: 5 }, 8, L)).toBe(RESCUE_FREE_REPEAT);
     expect(rescueFreeRun(w, { x: 5 + 2 * L, y: 0, z: 5 }, 8, L)).toBe(RESCUE_FREE);
     expect(rescueFreeRun(w, at, 14, L)).toBe(RESCUE_FREE);
+  });
+  /** A held push of `frames` frames into the pocket between two nearby solids of a real stage (re-review 3 I-1 and its probe): from
+   *  2.5 L outside the pair, across its axis from side `k < 2 ? +1 : −1`, tilted ∓30° (k even / odd). Every installed pose is checked. */
+  function pocketHold(planId: string, stage: number, seed: number, id1: string, id2: string, k: number, frames?: number, segments?: number): PocketHold;
+  function pocketHold(planId: string, stage: number, seed: number, id1: string, id2: string, k: number, frames: number, segments: number, skipBlocked: true): PocketHold | null;
+  function pocketHold(planId: string, stage: number, seed: number, id1: string, id2: string, k: number, frames = 600, segments = 0, skipBlocked = false): PocketHold | null {
+    const p0 = plan(planId)!, s0 = starterFor(p0), g = segments ? { ...s0, spine: Array.from({ length: segments }, (_, i) => s0.spine[Math.min(i, s0.spine.length - 1)]!) } : s0;
+    const a = playerActor(p0, g, stage, 1.2), L = a.bodyLength, size = SIZES[stage]!, q = stageWorldQueries(stage, seed), t = q.terrain, bounds = stageBounds(stage);
+    const top = STAGES[stage]!.speed * derive(effectiveStats(g, p0)).speedFactor, solids = stageSolids(stage, seed);
+    const c = (id: string) => { const s = solids.byId(id)!; return { x: (s.minX + s.maxX) / 2, z: (s.minZ + s.maxZ) / 2, r: Math.max(s.maxX - s.minX, s.maxZ - s.minZ) / 2 }; };
+    const A = c(id1), B = c(id2), mx = (A.x + B.x) / 2, mz = (A.z + B.z) / 2, ax = B.z - A.z, az = -(B.x - A.x), al = Math.hypot(ax, az) || 1;
+    const side = k < 2 ? 1 : -1, tilt = (k % 2 ? 1 : -1) * Math.PI / 6, ang = Math.atan2(side * ax / al, side * az / al) + tilt;
+    const R = Math.max(A.r, B.r) + 2.5 * L, x0 = mx + Math.sin(ang) * R, z0 = mz + Math.cos(ang) * R;
+    const wish = { x: -Math.sin(ang), y: 0, z: -Math.cos(ang) }, rt = newRuntime({ yaw: Math.atan2(wish.x, wish.z), pitch: 0 }), rescue = rescuer(a, q, bounds, true);
+    let pos: Vec3 = { x: x0, y: supportHeight(a, x0, z0, rt.orientation, t) + .01 * L, z: z0 }, refused = 0, restFrames = 0, restWorst = 0;
+    const startOk = q.overlapHull(a, pos, rt.orientation, { time: 0, bounds }).ok;
+    if (!startOk && skipBlocked) return null;
+    expect(startOk, 'the start is admitted').toBe(true);
+    for (let f = 0; f < frames; f++) {
+      const at = pos, ff = f;
+      let calls = -1;
+      pos = rescue.frame(pos, rt, wish, f, () => {
+        const n0 = admissionCount.n, r = stepPlayer(at, rt, RELEASED, { plan: p0, profile: movement(p0.movement), caps: movementCapabilities(p0), actor: a, queries: q, bounds, size, topSpeedLocal: top, now: ff / 60, dt: 1 / 60, wish, aim: null, actionLock: false });
+        calls = admissionCount.n - n0; return r;
+      });
+      // A step that left the body where it was (at rest against the walls).
+      if (calls >= 0 && pos.x === at.x && pos.y === at.y && pos.z === at.z) { restFrames++; restWorst = Math.max(restWorst, calls); }
+      if (!q.overlapHull(a, pos, rt.orientation, { time: (f + 1) / 60, bounds }).ok) refused++;
+    }
+    return { rescues: rescue.stats.rescues, ends: rescue.stats.ends, refused, recov: rescue.stats.recov, L, yaw: Math.atan2(wish.x, wish.z), restFrames, restWorst, worstFrame: rescue.stats.worstFrame };
+  }
+  // Re-review 3 I-1: the free-run check held the body at the candidate's height over a seabed that falls away, so it passed over a
+  // tall rock the walking body meets; a held push got a rescue back out of the pocket about every 2 s, without end.
+  for (const [planId, stage, seed, id1, id2, k] of POCKETS) it(`a ${planId} holding one push for 10 s into the downslope pocket ${id1}/${id2} (seed ${seed}) gets at most 1 rescue, every pose admitted (re-review 3 I-1)`, () => {
+    const r = pocketHold(planId, stage, seed, id1, id2, k);
+    expect({ refused: r.refused, recov: r.recov }).toEqual({ refused: 0, recov: 0 });
+    expect(r.rescues, `rescues to ${r.ends.map(e => `(${(e.x / r.L).toFixed(2)}, ${(e.z / r.L).toFixed(2)})`).join(' ')}`).toBeLessThanOrEqual(1);
+  }, 60_000);
+  // Fix round 4: a body held against the walls of a pocket stayed still for 43 admissions a frame (4 contacts × 8 bisections), and
+  // a rescue slice came on top of that (up to 110 in one frame).
+  it('a body at rest against the walls of a pocket spends at most 16 admissions on a step, and a frame with a rescue slice at most FRAME_ADMISSIONS', () => {
+    const rows: string[] = [];
+    for (const [planId, stage, seed, id1, id2, k] of POCKETS) {
+      const r = pocketHold(planId, stage, seed, id1, id2, k);
+      rows.push(`${planId} ${seed} ${id1}/${id2}: ${r.restFrames} frames at rest, worst ${r.restWorst} admissions; worst frame with a rescue slice ${r.worstFrame}`);
+      expect(r.refused).toBe(0);
+      expect(r.restFrames, rows.at(-1)).toBeGreaterThan(30);
+      expect(r.restWorst, rows.at(-1)).toBeLessThanOrEqual(16);
+      expect(r.worstFrame, rows.at(-1)).toBeLessThanOrEqual(FRAME_ADMISSIONS);
+    }
+    console.log(rows.join('\n'));
+  }, 60_000);
+  it('a search slice never spends more than its budget, goes on inside a candidate, and finds what one whole search finds (fix round 4)', () => {
+    // A crawler against a small rock, pushing into it: the rescue is beside the rock, after candidates whose free run or path fails.
+    const rock = solidOf('rock:small', 'rock', [rockShape(0, 0, 0, 1.2 * L, 2 * L, 1.2 * L, 0)]), q = makeWorldQueries(flat(), { solids: index([rock]) });
+    const o = { yaw: 0, pitch: 0 }, ctx = { queries: q, time: 0, ground: true };
+    let z = -3 * L;
+    while (q.overlapHull(a, { x: 0, y: supportHeight(a, 0, z + .02 * L, o, q.terrain) + .01 * L, z: z + .02 * L }, o, { time: 0 }).ok) z += .02 * L;
+    const at = { x: 0, y: supportHeight(a, 0, z, o, q.terrain) + .01 * L, z };
+    const whole = new UnstickSearch(a, at, 0, o, ctx).step(Infinity)!;
+    expect(whole.ok, 'a rescue beside the rock').toBe(true);
+    for (const budget of [1, 5, 13]) {
+      const sliced = new UnstickSearch(a, at, 0, o, ctx);
+      let r: ReturnType<UnstickSearch['step']> = null, slices = 0;
+      while (!r) { const before = sliced.spent; r = sliced.step(budget); slices++; expect(sliced.spent - before, `slice ${slices} of budget ${budget}`).toBeLessThanOrEqual(budget); }
+      expect(r, `budget ${budget}`).toEqual(whole);
+    }
+    const idle = new UnstickSearch(a, at, 0, o, ctx);
+    expect(idle.step(0)).toBeNull(); expect(idle.spent, 'a budget of 0 spends nothing').toBe(0);
+    expect(rescueBudget(43)).toBe(FRAME_ADMISSIONS - 43); expect(rescueBudget(75)).toBe(0);
   });
   it('never fires for a push into one flat wall while facing it', () => {
     const wall = solidOf('rock:wall', 'rock', [rockShape(0, -4, 0, 18, 30, 22, 0)]), q = makeWorldQueries(flat(), { solids: index([wall]) });

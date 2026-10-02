@@ -18,9 +18,9 @@ import { quoteDesign } from './economy';
 import { newRuntime, type Actor, type Capsule, type CombatInput, type Constraint, type MutVec3, type Orientation, type RecoveryResult, type Vec3, type WorldQueries } from './combat-types';
 import { basicRequested, readIntent, RELEASED } from './input';
 import { blockHint, blockHintDue, newBlockHintGate, type PlayerStepResult, newStepSnapshot, newTapWatch, restoreStep, snapshotStep, stepPlayer, tapTargetStalled } from './player-motion';
-import { beginRespawn, canChooseNextPlan, evolutionDestination, growthPose, newTrapWatch, reconcileAfterCommit, recoverPlayer, resetRuntime, resolveHazards, resolveRespawn, rescueFreeRun, TRAP_MOVE, trapDue, trapFailed, trapRescued, UNSTICK_BUDGET, UnstickSearch, wedged } from './lifecycle';
+import { beginRespawn, canChooseNextPlan, evolutionDestination, growthPose, newTrapWatch, reconcileAfterCommit, recoverPlayer, resetRuntime, resolveHazards, resolveRespawn, rescueFreeRun, TRAP_MOVE, trapDue, trapFailed, trapRescued, rescueBudget, UnstickSearch, wedged } from './lifecycle';
 import { habitat, movement, movementCapabilities } from './profiles';
-import { admissionClock, makeWorldQueries, resetAdmissionClock, stageBounds, stageWorldQueries, supportHeight, zoneLabel } from './world-queries';
+import { admissionClock, admissionCount, makeWorldQueries, resetAdmissionClock, stageBounds, stageWorldQueries, supportHeight, zoneLabel } from './world-queries';
 import { ROCK_FIT, stageSolids } from './reef';
 import { orientedHeave, orientedSway, rotateInto } from './orientation';
 import { startAnchor } from './motion';
@@ -101,7 +101,7 @@ const QA = import.meta.env.DEV || new URLSearchParams(location.search).has('qa')
 /** QA: the admission time (every overlapHull call: player, ecosystem, food guide) of each played frame, summed per stage, in total and
  *  per caller, with the player's contacts. Only calls made inside a played frame count (the clock resets when a frame starts). */
 admissionClock.on = QA;
-const admissionStats = SIZES.map(() => ({ frames: 0, ms: 0, calls: 0, worst: 0, contacts: 0, player: { ms: 0, calls: 0, worst: 0 }, ecosystem: { ms: 0, calls: 0, worst: 0 }, guide: { ms: 0, calls: 0, worst: 0 } }));
+const admissionStats = SIZES.map(() => ({ frames: 0, ms: 0, calls: 0, worst: 0, contacts: 0, player: { ms: 0, calls: 0, worst: 0, worstCalls: 0 }, rescueWorstCalls: 0, ecosystem: { ms: 0, calls: 0, worst: 0 }, guide: { ms: 0, calls: 0, worst: 0 } }));
 let frameContacts = 0;
 // QA-only URL parameters (development or `?qa`). Each is read once here, at load. None changes a running game from outside.
 const qaParams = new URLSearchParams(QA ? location.search : '');
@@ -192,6 +192,7 @@ let sinceHit = 99, regenClock = 0, wrongDietClock = 0, readyToasted = false, las
 /** The one combat runtime of the player. Never cache its fields across frames (resets replace them). */
 let rt = newRuntime();
 /** The player's authoritative physical position. The rendered root follows it every frame. */
+// The installed pose. Every write but a rescue glide step cancels a pending rescue (cancelRescue): tests/tiny-tide-core/main-rescue.test.ts.
 let physical: Vec3 = { x: 0, y: 0, z: 0 };
 let genomeRevision = 0, acceptedHits = 0, rejectedHits = 0, contactNow = false, lastContact: Constraint | null = null, lastContactSolid: string | null = null, edgeNow = false, edgeHinted = false;
 const faintLog: { time: number; hadPermit: boolean; hadArc: boolean }[] = [];
@@ -199,6 +200,8 @@ const blockGate = newBlockHintGate(), beforeStep = newStepSnapshot(), tapWatch =
 /** QA: the rescues of this page (searches started, found, failed) and the last one (from, to, time, the solids in contact). */
 const rescueLog = { searches: 0, found: 0, failed: 0, last: null as null | { from: Vec3; to: Vec3; time: number; solids: string[] } };
 let lastSolids: string[] = [];
+/** Admissions of this frame's player step and rescue slice (fix round 4: the slice gets what the step left of FRAME_ADMISSIONS). */
+let stepCalls = 0, rescueCalls = 0;
 let trapRescues = 0, unstick: UnstickSearch | null = null, glide: { path: { position: Vec3; orientation: Orientation }[]; index: number } | null = null;
 let dialogReturn: 'menu' | 'playing' | 'paused' = 'menu';
 const modal = el<HTMLDialogElement>('modal');
@@ -725,6 +728,7 @@ function frame(now: number) {
   requestAnimationFrame(frame);
   const dt = Math.min((now - last) / 1000, .05); last = now;
   if (admissionClock.on) { resetAdmissionClock(); admissionClock.caller = 'player'; frameContacts = 0; }
+  stepCalls = 0; rescueCalls = 0;
   // The game clock runs in these modes only (not while paused, editing, stuck or won).
   const held = holdingStart && mode === 'playing';
   const active = !held && (mode === 'playing' || mode === 'menu' || mode === 'evolving' || mode === 'fainted');
@@ -765,19 +769,21 @@ function frame(now: number) {
       else glide = null;
       if (glide && glide.index >= glide.path.length) glide = null;
       r = { position: physical, status: 'moved', contacts: [], progress: 1, needsRecovery: false, breachStarted: false, arcEnded: false, permitEnded: false, turnRefused: false };
-    } else r = stepPlayer(physical, rt, intent, { plan, profile: movement(plan.movement), caps, actor, ...legal, size: SIZES[stage]!, topSpeedLocal: STAGES[stage]!.speed * derived.speedFactor,
+    } else stepCalls = admissionCount.n, r = stepPlayer(physical, rt, intent, { plan, profile: movement(plan.movement), caps, actor, ...legal, size: SIZES[stage]!, topSpeedLocal: STAGES[stage]!.speed * derived.speedFactor,
       now: time, dt, wish, aim: null, actionLock: false });
+    stepCalls = admissionCount.n - stepCalls;
     // A result that needs recovery is never installed or rendered: recover from it, or keep the last legal pose while stuck, with
     // the orientation, permit and arc it was admitted with (final review M10).
     if (!r.needsRecovery) { physical = r.position; renderRoot(); }
     else if (!recover(actor, time + dt, r.position)) { restoreStep(rt, beforeStep); enterStuck(); }
     // A trapped body (pushed, really wedged on most frames, no progress for TRAP_SECONDS) glides to the nearest admitted pose that
-    // faces the push, along a path the whole hull is admitted on. The search runs UNSTICK_BUDGET candidates a frame; it is dropped
-    // when the body moves away on its own.
+    // faces the push, along a path the whole hull is admitted on. The search spends what the step left of FRAME_ADMISSIONS a frame
+    // (rescueBudget; fix round 4), and goes on next frame where it stopped; it is dropped when the body moves away on its own.
     if (!glide && !r.needsRecovery && !unstick && trapDue(trapWatch, physical, wish, actor.bodyLength, wedged(r.contacts, wish, r.turnRefused, rt.orientation.yaw), dt))
       { unstick = new UnstickSearch(actor, { ...physical }, Math.atan2(wish.x, wish.z), { ...rt.orientation }, { ...legal, time: time + dt, ground: caps.ground && !legal.queries.terrain.space }, rescueFreeRun(trapWatch, physical, time, actor.bodyLength)); rescueLog.searches++; }
     if (unstick) {
-      const u = Math.hypot(physical.x - unstick.at.x, physical.z - unstick.at.z) > TRAP_MOVE * actor.bodyLength ? { ok: false as const, reason: 'moved' } : unstick.step(UNSTICK_BUDGET);
+      const spent = unstick.spent, u = Math.hypot(physical.x - unstick.at.x, physical.z - unstick.at.z) > TRAP_MOVE * actor.bodyLength ? { ok: false as const, reason: 'moved' } : unstick.step(rescueBudget(stepCalls));
+      rescueCalls = unstick.spent - spent;
       if (u) {
         if (u.ok) { rescueLog.found++; rescueLog.last = { from: { ...unstick.at }, to: { ...u.position }, time, solids: [...lastSolids] }; glide = { path: u.path, index: 0 }; trapRescues++; trapRescued(trapWatch, unstick.at, time); }
         else if (u.reason !== 'moved') { rescueLog.failed++; trapFailed(trapWatch, unstick.at, wish); }
@@ -846,6 +852,7 @@ function frame(now: number) {
     if (mode === 'playing' && !held) {
       const a = admissionStats[stage]!, by = admissionClock.by; a.frames++; a.ms += admissionClock.ms; a.calls += admissionClock.calls; a.worst = Math.max(a.worst, admissionClock.ms); a.contacts += frameContacts;
       for (const k of ['player', 'ecosystem', 'guide'] as const) { a[k].ms += by[k].ms; a[k].calls += by[k].calls; a[k].worst = Math.max(a[k].worst, by[k].ms); }
+      a.player.worstCalls = Math.max(a.player.worstCalls, by.player.calls); a.rescueWorstCalls = Math.max(a.rescueWorstCalls, rescueCalls);
     }
     resetAdmissionClock();
   }
@@ -911,6 +918,6 @@ if (QA) {
     orientation: { ...rt.orientation }, permit: rt.permit ? { ...rt.permit } : null, arc: rt.arc ? { ...rt.arc } : null, breachReadyAt: rt.breachReadyAt, invulnerableUntil: rt.invulnerableUntil,
     pendingRespawn: run.pendingRespawn, caps: capsOf(), physical: copy(physical), legal: mode === 'menu' ? null : admitted(playerActor(currentPlan(run), run.genome, run.stage, growthOf(run))), contactNow, lastContact: lastContact === null ? null : `${lastContact}`, lastContactSolid, trapRescues, rescueLog: JSON.parse(JSON.stringify(rescueLog)), contactSolids: [...lastSolids], groundOffset: rt.groundOffset, solidOverlap: mode === 'menu' ? null : solidOverlap(), solidsNear: mode === 'menu' ? [] : solidsNear(32), edge: { inZone: edgeNow, hinted: edgeHinted, half: PLAYER_HALF, softStart: EDGE_SOFT_START * PLAYER_HALF }, hazardSources: hazardSources(), growth: growthOf(run), acceptedHits, rejectedHits,
     faintLog: faintLog.map(f => ({ ...f })), stage: run.stage, dna: dnaOf(run), stageDna: run.stageDna, goal: STAGES[run.stage]!.goal, health: run.health, maxHealth: derived.maxHealth, deaths: run.deaths, diet: dietOf(run.genome), genome: structuredClone(run.genome), name: run.name, unlocked: [...run.unlocked], evolveReady: evolveReady(run), bites: run.bites, totalDna: run.totalDna, elapsed: run.elapsed, completed: run.completed, eatenPlanets: [...run.eatenPlanets], player: { x: world.player.position.x, y: world.player.position.y, z: world.player.position.z }, foods: world.edibleFoods.map(f => ({ ...f.data, tag: f.entity.spec.tag, label: f.entity.spec.label, mode: f.entity.mode, hp: f.entity.hp, approachable: approachable(f.entity) })), threats: world.threats.map(f => ({ ...f.data, label: f.entity.spec.label, mode: f.entity.mode })), landmarks: world.foods.filter(f => f.model.visible && f.tier > run.stage).map(f => ({ tier: f.tier, kind: f.data.kind, x: f.data.x, y: f.data.y, z: f.data.z })), world: world.diagnostics, assets: assetDiagnostics(), saveKey: writeKey, loadedKey, time, holdingStart, editorProjection, poseAgreement, admission: admissionStats.map(a => { const per = (v: number) => a.frames ? v / a.frames : 0; return { frames: a.frames, msPerFrame: per(a.ms), callsPerFrame: per(a.calls), worstMs: a.worst, contactsPerFrame: per(a.contacts),
-      player: { msPerFrame: per(a.player.ms), callsPerFrame: per(a.player.calls), worstMs: a.player.worst }, ecosystem: { msPerFrame: per(a.ecosystem.ms), callsPerFrame: per(a.ecosystem.calls), worstMs: a.ecosystem.worst }, guide: { msPerFrame: per(a.guide.ms), callsPerFrame: per(a.guide.calls), worstMs: a.guide.worst } }; }), render: { calls: world.renderer.info.render.calls, triangles: world.renderer.info.render.triangles, geometries: world.renderer.info.memory.geometries } }) });
+      player: { msPerFrame: per(a.player.ms), callsPerFrame: per(a.player.calls), worstMs: a.player.worst, worstCalls: a.player.worstCalls }, rescueWorstCalls: a.rescueWorstCalls, ecosystem: { msPerFrame: per(a.ecosystem.ms), callsPerFrame: per(a.ecosystem.calls), worstMs: a.ecosystem.worst }, guide: { msPerFrame: per(a.guide.ms), callsPerFrame: per(a.guide.calls), worstMs: a.guide.worst } }; }), render: { calls: world.renderer.info.render.calls, triangles: world.renderer.info.render.triangles, geometries: world.renderer.info.memory.geometries } }) });
 }
 requestAnimationFrame(frame);

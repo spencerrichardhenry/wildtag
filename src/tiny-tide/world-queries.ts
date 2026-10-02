@@ -47,6 +47,9 @@ function timedAdmit(actor: Actor, at: Vec3, o: Orientation, ctx: AdmissionContex
   return r;
 }
 
+/** Every overlapHull call made through makeWorldQueries, counted always (no clock): main.ts reads it around the player's step to give
+ *  the rescue search only what the frame has left (fix round 4). */
+export const admissionCount = { n: 0 };
 export function makeWorldQueries(t: Terrain, extras: WorldExtras = {}): WorldQueries {
   return {
     terrain: t,
@@ -55,7 +58,7 @@ export function makeWorldQueries(t: Terrain, extras: WorldExtras = {}): WorldQue
     refugeAt: p => extras.refugeAt ? extras.refugeAt(p) : null,
     refugeOverlap: world => extras.refugeOverlap ? extras.refugeOverlap(world) : null,
     refugeAccess: (actor, id) => extras.refugeAccess ? extras.refugeAccess(actor, id) : true,
-    overlapHull: (actor, at, o, ctx) => admissionClock.on ? timedAdmit(actor, at, o, ctx, t, extras) : admit(actor, at, o, ctx, t, extras),
+    overlapHull: (actor, at, o, ctx) => (admissionCount.n++, admissionClock.on) ? timedAdmit(actor, at, o, ctx, t, extras) : admit(actor, at, o, ctx, t, extras),
     solidTop: id => extras.solids?.byId(id)?.maxY,
   };
 }
@@ -377,17 +380,21 @@ const stepAt: MutVec3 = { x: 0, y: 0, z: 0 };
  *  1 + STEP_TRIES + STEP_HALVINGS = 12 admissions a call (one when no rock is under the body). A lift refused only by another rule
  *  counts as clear: motion admits every pose anyway. */
 export const STEP_TRIES = 6, STEP_HALVINGS = 5;
+/** What refused a ground body at (x, z) for stepLift: 0 clear (or another rule than a solid), 1 a low rock it may step onto, 2 a wall
+ *  (an arch, or a rock whose top is more than STEP_HEIGHT × L above the seabed under the contact point). */
+export function stepKind(a: Admission, q: WorldQueries, x: number, z: number, L: number): 0 | 1 | 2 {
+  if (a.constraint !== 'solid') return 0;
+  const top = a.solidId === undefined || a.solidId.startsWith('arch') || !q.solidTop ? Infinity : q.solidTop(a.solidId) ?? Infinity;
+  const foot = a.point ? q.terrain.groundAt(a.point.x, a.point.z) : q.terrain.groundAt(x, z);
+  return top - foot <= STEP_HEIGHT * L ? 1 : 2;
+}
 export function stepLift(actor: Actor, x: number, z: number, o: Orientation, q: WorldQueries, base: number, ctx: AdmissionContext): number {
   if (q.terrain.space || !q.solidTop) return 0;
   const L = actor.bodyLength, eps = .01 * L, max = STEP_LIFT_MAX * L;
   stepAt.x = x; stepAt.z = z;
   const solidAt = (lift: number): number => {   // 1: a low rock refuses it, 2: a wall refuses it, 0: clear
     stepAt.y = base + eps + lift;
-    const a = q.overlapHull(actor, stepAt, o, ctx);
-    if (a.constraint !== 'solid') return 0;
-    const top = a.solidId === undefined || a.solidId.startsWith('arch') ? Infinity : q.solidTop!(a.solidId) ?? Infinity;
-    const foot = a.point ? q.terrain.groundAt(a.point.x, a.point.z) : q.terrain.groundAt(x, z);
-    return top - foot <= STEP_HEIGHT * L ? 1 : 2;
+    return stepKind(q.overlapHull(actor, stepAt, o, ctx), q, x, z, L);
   };
   if (solidAt(0) !== 1) return 0;
   let lo = 0, hi = -1;
