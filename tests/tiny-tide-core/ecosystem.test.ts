@@ -1,15 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { Ecosystem, provoke, speciesActor, type Entity } from '../../src/tiny-tide/ecosystem';
+import { Ecosystem, HUNTER_MARGIN, provoke, speciesActor, type Entity } from '../../src/tiny-tide/ecosystem';
 import { makeTerrain, makeWorldQueries } from '../../src/tiny-tide/world-queries';
 import { habitat } from '../../src/tiny-tide/profiles';
-import { SIZES, WATER_LEVEL, WORLD_HALF } from '../../src/tiny-tide/biomes';
+import { SIZES, SPAWN_HALF, WATER_LEVEL, WORLD_HALF } from '../../src/tiny-tide/biomes';
 import { SPECIES } from '../../src/tiny-tide/species';
 import type { Terrain, Vec3 } from '../../src/tiny-tide/combat-types';
 
 const hullAt = (p: Vec3, r = .6) => [{ start: p, end: p, radius: r }];
 const ctx = (player: Vec3, now: number, extra: { stage?: number; playerHull?: ReturnType<typeof hullAt>; perceivable?: boolean } = {}) =>
   ({ stage: 0, dt: .1, now, player, playerHull: hullAt(player), perceivable: true, stealthFactor: 1, ...extra });
-const crabOf = (eco: Ecosystem) => eco.entities.find(e => e.spec.key === '1:crab' && !e.eaten)!;
+/** The crab nearest the centre: a stage 0 player (bound ±50, push zone past 40) can meet it, and hunters do not chase into the push
+ *  zone (owner ruling M11). */
+const crabOf = (eco: Ecosystem) => eco.entities.filter(e => e.spec.key === '1:crab' && !e.eaten).sort((a, b) => Math.max(Math.abs(a.x), Math.abs(a.z)) - Math.max(Math.abs(b.x), Math.abs(b.z)))[0]!;
 const at = (e: Entity, dx: number, dy: number, dz = 0) => ({ x: e.x + dx, y: e.y + dy, z: e.z + dz });
 const tick = (t: number) => Math.round(t * 10) / 10;
 const legal = (e: Entity) => makeWorldQueries(makeTerrain(e.spec.tier === 4 ? 4 : 0))
@@ -59,7 +61,8 @@ describe('pursuit', () => {
     eco.step(ctx(at(crab, 3, 0), 8.2)); expect(crab.mode).toBe('hunt');
   });
   it('goes to the last seen point when the target hides, then gives up', () => {
-    let visible = true; const eco = new Ecosystem(7, { queries: tier => makeWorldQueries(makeTerrain(tier), { visibility: () => visible ? 1 : 0 }) });
+    // Seed 4: its central crab (x −21) keeps both sightings inside the stage 0 soft start (seed 7's nearest crab is at x −38.4).
+    let visible = true; const eco = new Ecosystem(4, { queries: tier => makeWorldQueries(makeTerrain(tier), { visibility: () => visible ? 1 : 0 }) });
     const crab = crabOf(eco), start = at(crab, 0, 0); eco.step(ctx(at(crab, 6, 0), 0)); visible = false;
     for (let t = .1; t <= 1; t = tick(t + .1)) eco.step(ctx({ x: start.x - 6, y: start.y, z: start.z }, t));
     expect(crab.mode).toBe('hunt'); expect(crab.x).toBeGreaterThan(start.x);   // toward the old sighting (east), not the hidden player (west)
@@ -143,5 +146,33 @@ describe('provocation and hazards', () => {
     const eco = new Ecosystem(7), crab = crabOf(eco), events: ReturnType<Ecosystem['step']> = [];
     for (let i = 0; i <= 14; i++) events.push(...eco.step(ctx(at(crab, 0, 0), i / 10, { playerHull: hullAt(at(crab, 100, 0)) })).filter(e => e.entity === crab));
     expect(events).toEqual([]); expect(crab.mode).toBe('hunt');
+  });
+});
+
+describe('hunters and the world edge (owner ruling M11)', () => {
+  it('hunters roam inside SPAWN_HALF + HUNTER_MARGIN, even when chasing a player at the edge of their bound', () => {
+    for (const seed of [1, 2, 3]) {
+      const eco = new Ecosystem(seed);
+      for (const stage of [0, 1, 2]) {
+        // The player sits just inside its soft start, beyond each hunter: they chase it toward the edge.
+        const size = SIZES[stage]!, player = { x: 39.5 * size, y: 30, z: 0 }, hull = [{ start: player, end: player, radius: .5 * size }];
+        for (let f = 0; f < 600; f++) eco.step({ stage, dt: 1 / 30, now: stage * 100 + f / 30, player, playerHull: hull, perceivable: true, stealthFactor: 1 });
+      }
+      for (const e of eco.entities) if (!e.eaten && e.spec.tier <= 3 && (e.spec.hunts.length > 0 || e.spec.fights)) {
+        const reach = Math.max(Math.abs(e.x), Math.abs(e.z)) / SIZES[e.spec.tier]!;
+        expect(reach, `${e.spec.key} ${e.id}`).toBeLessThanOrEqual(SPAWN_HALF + HUNTER_MARGIN + 1e-9);
+      }
+    }
+  });
+  it('a hunter gives up a target in the push zone and does not acquire one there', () => {
+    const eco = new Ecosystem(1), crab = eco.entities.find(e => e.spec.key === '1:crab' && !e.eaten)!;
+    // A Speck (stage 0) right next to the crab: inside the soft start it is acquired; in the push zone it is given up / never acquired.
+    const at = (x: number) => ({ x, y: crab.y, z: crab.z });
+    const step = (p: Vec3, now: number) => eco.step({ stage: 0, dt: 1 / 60, now, player: p, playerHull: [{ start: p, end: p, radius: .3 }], perceivable: true, stealthFactor: 1 });
+    crab.x = crab.hx = 38; crab.z = crab.hz = 0; crab.y = crab.hy;
+    step(at(36), 0); expect(crab.mode).toBe('hunt');
+    step(at(41), 1 / 60); expect(crab.mode).toBe('return');
+    for (let f = 2; f < 400; f++) step(at(41), f / 60);
+    expect(crab.mode === 'hunt' || crab.mode === 'angry').toBe(false);
   });
 });

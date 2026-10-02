@@ -9,7 +9,7 @@ import { growthPose } from '../../src/tiny-tide/lifecycle';
 import { startAnchor } from '../../src/tiny-tide/motion';
 import { playerActor } from '../../src/tiny-tide/mount';
 import { PLANS, plan } from '../../src/tiny-tide/plans';
-import { blockHint, stepPlayer } from '../../src/tiny-tide/player-motion';
+import { blockHint, newTapWatch, stepPlayer, TAP_STALL_SECONDS, tapTargetStalled } from '../../src/tiny-tide/player-motion';
 import { habitat, movement, movementCapabilities } from '../../src/tiny-tide/profiles';
 import { archShapes, placeReef, REEF_LAYERS, rockShape, stageSolids } from '../../src/tiny-tide/reef';
 import { newContact, pointInSolid, solidOf, SolidIndex, sphereShape, type EllipsoidShape, type Solid } from '../../src/tiny-tide/solids';
@@ -140,6 +140,37 @@ describe('the player against solids', () => {
   });
 });
 
+describe('a tap-to-walk target behind a rock (owner ruling M12: rocks stay walls for ground plans)', () => {
+  /** A Crawler walks to a tap target as main.ts does: the wish points at the target, and the target is cleared when it is reached
+   *  (.25 local units) or when the walk makes no progress for TAP_STALL_SECONDS. Returns the frame it was cleared and why. */
+  const walk = (q: ReturnType<typeof makeWorldQueries>, target: Vec3, frames: number) => {
+    const crawler = plan('crawler')!, g = starterFor(crawler), a = playerActor(crawler, g, 1, 1), size = SIZES[1]!, t = q.terrain, watch = newTapWatch();
+    const top = STAGES[1]!.speed * derive(effectiveStats(g, crawler)).speedFactor, rt = newRuntime({ yaw: Math.PI / 2, pitch: 0 });
+    let pos: Vec3 = { x: -70, y: supportHeight(a, -70, 0, O, t) + .01 * a.bodyLength, z: 0 }, firstContact = -1;
+    for (let f = 0; f < frames; f++) {
+      const dx = target.x - pos.x, dz = target.z - pos.z, d = Math.hypot(dx, dz) / size;
+      if (d < .25) return { cleared: f, why: 'reached', firstContact };
+      if (tapTargetStalled(watch, d, 1 / 60)) return { cleared: f, why: 'stalled', firstContact };
+      const r = stepPlayer(pos, rt, RELEASED, { plan: crawler, profile: movement(crawler.movement), caps: movementCapabilities(crawler), actor: a, queries: q, bounds: { half: 1e6 }, size, topSpeedLocal: top, now: f / 60, dt: 1 / 60, wish: { x: dx / Math.hypot(dx, dz), y: 0, z: dz / Math.hypot(dx, dz) }, aim: null, actionLock: false });
+      if (firstContact < 0 && r.contacts.some(c => c.constraint === 'solid')) firstContact = f;
+      pos = r.position;
+    }
+    return { cleared: -1, why: 'never', firstContact };
+  };
+  it('clears the target about a second after a head-on stop at the rock', () => {
+    const wall = solidOf('rock:wall', 'rock', [rockShape(0, -4, 0, 18, 30, 22, 0)]), q = makeWorldQueries(flat(), { solids: index([wall]) });
+    const r = walk(q, { x: 70, y: 0, z: 0 }, 60 * 30);
+    expect(r.why).toBe('stalled');
+    expect(r.firstContact).toBeGreaterThan(0);
+    expect((r.cleared - r.firstContact) / 60).toBeGreaterThanOrEqual(TAP_STALL_SECONDS - .05);
+    expect((r.cleared - r.firstContact) / 60).toBeLessThanOrEqual(TAP_STALL_SECONDS + .5);
+  });
+  it('keeps the target while the walk makes progress, until it is reached', () => {
+    const r = walk(makeWorldQueries(flat()), { x: 30, y: 0, z: 0 }, 60 * 60);
+    expect(r.why).toBe('reached');
+  });
+});
+
 describe('growth lift and thin solids (P1 review, R4)', () => {
   it('stops the lift at a thin solid above the body instead of jumping past it', () => {
     const L = 2, body: Actor = { id: 'player', hull: [{ start: { x: 0, y: 0, z: -.8 }, end: { x: 0, y: 0, z: .8 }, radius: .1 }], habitat: habitat('open-water'), bodyLength: L };
@@ -152,6 +183,31 @@ describe('growth lift and thin solids (P1 review, R4)', () => {
     // Without the bar the lift is found; with it, the lift would pass through the bar, so there is no lift.
     expect(growthPose(body, pos, rt, { queries: without, time: 0 })).not.toBeNull();
     expect(growthPose(body, pos, rt, { queries: withBar, time: 0 })).toBeNull();
+  });
+});
+
+describe('growth lift at a rock base and between two solids (final review M6, P4 review)', () => {
+  const L = 2, body: Actor = { id: 'player', hull: [{ start: { x: 0, y: 0, z: -.8 }, end: { x: 0, y: 0, z: .8 }, radius: .1 }], habitat: habitat('open-water'), bodyLength: L };
+  it('lifts a body out of the crease of the seabed and a rock base along both normals, keeping the motion', () => {
+    // The body sinks .02 into the seabed and its side touches the underside of a rock that bulges over it, so a lift straight up
+    // (the seabed's normal) goes deeper into the rock.
+    const rock = solidOf('rock:base', 'rock', [rockShape(2.85, 1 - .15 * 3, 0, 3, 3, 3, 0)]), q = makeWorldQueries(flat(), { solids: index([rock]) }), pos = { x: 0, y: .08, z: 0 };
+    expect(q.overlapHull(body, pos, O, { time: 0 }).constraint).toBe('ground');
+    expect(q.overlapHull(body, { x: 0, y: .2, z: 0 }, O, { time: 0 }).constraint).toBe('solid');
+    const lifted = growthPose(body, pos, newRuntime(), { queries: q, time: 0 });
+    expect(lifted).not.toBeNull();
+    expect(q.overlapHull(body, lifted!, O, { time: 0 }).ok).toBe(true);
+    expect(Math.hypot(lifted!.x - pos.x, lifted!.y - pos.y, lifted!.z - pos.z)).toBeLessThanOrEqual(.5 * L);
+    expect(lifted!.x).toBeLessThan(pos.x);   // away from the rock
+  });
+  it('never lifts a body out of solid A through a thin solid B above it', () => {
+    // The body sinks .02 into the top of a wide flat rock A (normal +y), and a thin bar B lies .02 above its top.
+    const y0 = 5, A = solidOf('rock:A', 'rock', [{ kind: 'capsule', x0: -6, y0: y0 - .1 - 1 + .02, z0: 0, x1: 6, y1: y0 - .1 - 1 + .02, z1: 0, radius: 1 }]);
+    const B = solidOf('arch:B', 'arch', [{ kind: 'capsule', x0: -3, y0: y0 + .1 + .02 + .02, z0: 0, x1: 3, y1: y0 + .1 + .02 + .02, z1: 0, radius: .02 }]);
+    const pos = { x: 0, y: y0, z: 0 }, onlyA = makeWorldQueries(flat(), { solids: index([A]) }), both = makeWorldQueries(flat(), { solids: index([A, B]) });
+    expect(both.overlapHull(body, pos, O, { time: 0 })).toMatchObject({ constraint: 'solid', solidId: 'rock:A' });
+    expect(growthPose(body, pos, newRuntime(), { queries: onlyA, time: 0 })).not.toBeNull();
+    expect(growthPose(body, pos, newRuntime(), { queries: both, time: 0 })).toBeNull();
   });
 });
 
@@ -185,23 +241,26 @@ describe('spawning and the ecosystem never use a solid (R5)', () => {
       for (const e of eco.entities) if (e.spec.tier <= 2 && !e.eaten) { expect(inAnySolid(stageSolids(e.spec.tier, seed), e)).toBe(false); expect(inAnySolid(stageSolids(e.spec.tier, seed), { x: e.hx, y: e.hy, z: e.hz })).toBe(false); }
     }
   });
-  it('critters and hunters stay out of every solid over 600 frames near the player', () => {
+  it('critters and hunters stay out of every solid over 600 frames near the player: no centre inside, and no hull refused as solid', () => {
     for (const [seed, stage] of [[4242, 0], [99, 1], [1501, 2]] as const) {
-      const eco = new Ecosystem(seed), size = SIZES[stage]!;
+      const eco = new Ecosystem(seed), size = SIZES[stage]!, actors = new Map<number, Actor>();
       // The player sits by the nearest rock of its stage, so creatures move about rocks.
       const near = placeReef(stage, seed).rocks.sort((a, b) => Math.hypot(a.x, a.z) - Math.hypot(b.x, b.z))[0]!;
       const player = { x: near.x + 2 * near.sx, y: near.y + 3 * size, z: near.z }, hull = [{ start: player, end: player, radius: .6 * size }];
-      let inside = 0, steps = 0;
+      let inside = 0, hullInside = 0, steps = 0;
       for (let f = 0; f < 600; f++) {
         eco.step({ stage, dt: 1 / 60, now: f / 60, player, playerHull: hull, perceivable: true, stealthFactor: 1 });
         for (const e of eco.entities) {
           if (e.eaten || !e.active || e.spec.tier > 3) continue;
           steps++;
           if (inAnySolid(stageSolids(e.spec.tier, seed), e)) inside++;
+          // The whole hull (P4 review): admitted against the solids. No bounds, so a bounds rule cannot hide a solid one.
+          const a = actors.get(e.id) ?? speciesActor(e); actors.set(e.id, a);
+          if (stageWorldQueries(e.spec.tier, seed).overlapHull(a, e, O, { time: 0 }).constraint === 'solid') hullInside++;
         }
       }
       expect(steps).toBeGreaterThan(1000);
-      expect(inside, `seed ${seed} stage ${stage}`).toBe(0);
+      expect({ inside, hullInside }, `seed ${seed} stage ${stage}`).toEqual({ inside: 0, hullInside: 0 });
     }
   });
   it('a reef plant base is never inside a solid, at every stage that collides with it', () => {

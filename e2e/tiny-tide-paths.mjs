@@ -1,4 +1,4 @@
-// Tiny Tide C11: paths, editor, gestures, limits, soft world edge, solid reef rocks, hazards, pose agreement, lifecycle and saves (18 checks, with 5b, 5c, 7b and 12b).
+// Tiny Tide C11: paths, editor, gestures, limits, soft world edge, solid reef rocks, block hints, hazards, pose agreement, lifecycle and saves (18 checks, with 5b, 5c, 5d, 7b, 7c and 12b).
 // Fixtures come from the dev-only fixture page (the game's own modules). Run one or more checks: node e2e/tiny-tide-paths.mjs 3 7b
 import assert from 'node:assert/strict';
 import { mkdirSync } from 'node:fs';
@@ -279,7 +279,8 @@ check('5c', 'Reef rocks are solid', async () => {
   // It must touch it (the contact names the rock), never pass into it, stay admitted, and keep moving as it slides around it.
   const { page, errors } = await newPage(), spec = { path: ['swimmer'], seed: 4242 };
   await play(page, spec);
-  const near = (await state(page)).solidsNear.filter(r => r.kind === 'rock' && Math.max(Math.abs(r.x), Math.abs(r.z)) + r.half < 30).sort((a, b) => (b.top - b.ground) - (a.top - a.ground));
+  // A layer 1 rock (the stage's own size): since final review I3 the small layer 0 rocks near the start collide at stage 1 too.
+  const near = (await state(page)).solidsNear.filter(r => r.id.startsWith('rock:1:') && Math.max(Math.abs(r.x), Math.abs(r.z)) + r.half < 30).sort((a, b) => (b.top - b.ground) - (a.top - a.ground));
   assert.ok(near.length > 0, 'a reef rock near the start');
   const rock = near[0], z0 = rock.z + .35 * rock.inner, x0 = rock.x - rock.half - 4, y0 = rock.ground + .5 * (rock.top - rock.ground);
   await page.close();
@@ -287,15 +288,17 @@ check('5c', 'Reef rocks are solid', async () => {
   await play(second.page, spec, `forcedSpawn=${x0},${y0},${z0}`);
   const sampling = second.page.evaluate(id => new Promise(resolve => {
     const t0 = window.__tinyTide.time, w0 = performance.now(), track = [];
-    let touched = 0, firstTouch = null, refused = 0, deepest = Infinity, rock = null;
+    let touched = 0, firstTouch = null, refused = 0, inside = 0, deepest = Infinity, rock = null;
     const tick = () => {
       const s = window.__tinyTide;
       rock ??= s.solidsNear.find(r => r.id === id) ?? null;
       if (s.contactNow && s.lastContact === 'solid' && s.lastContactSolid === id) { touched++; firstTouch ??= { t: s.time - t0, x: s.player.x, z: s.player.z }; }
       if (s.legal === false || s.mode !== 'playing') refused++;
+      // The admission's own solid test (no other rule first): the hull never overlaps a rock (P4 review: no pass-through).
+      if (s.solidOverlap !== null) inside++;
       if (rock) deepest = Math.min(deepest, Math.hypot(s.player.x - rock.x, s.player.z - rock.z));
       track.push({ t: s.time - t0, x: s.player.x, y: s.player.y, z: s.player.z });
-      if (s.time - t0 >= 8) return resolve({ touched, firstTouch, refused, deepest, track, rock, s });
+      if (s.time - t0 >= 8) return resolve({ touched, firstTouch, refused, inside, deepest, track, rock, s });
       if (performance.now() - w0 > 90000) return resolve({ wall: true, s });
       requestAnimationFrame(tick);
     };
@@ -314,13 +317,66 @@ check('5c', 'Reef rocks are solid', async () => {
   noWallTimeout(r, 'check 5c (rock)');
   assert.ok(r.touched > 0 && r.firstTouch, `the Swimmer touched rock ${rock.id} (contact 'solid' naming it); closest ${r.deepest?.toFixed(2)}`);
   assert.equal(r.refused, 0, 'every frame is admitted and playing');
-  assert.ok(r.deepest > rock.inner, `the centre never entered the rock (closest ${r.deepest.toFixed(2)}, rock inner ${rock.inner.toFixed(2)})`);
+  // No pass-through, from the admission's own solid test on every frame (P4 review: the old check compared the centre's horizontal
+  // distance with the rock's smallest semi-axis, which says nothing above or below the rock's widest part).
+  assert.equal(r.inside, 0, 'no frame has the hull inside a rock (the admission solid test)');
   // After the first touch the body keeps moving: it slides at least 2 units in the next 2 s, and ends past the rock's centre.
   const after = r.track.filter(f => f.t >= r.firstTouch.t && f.t <= r.firstTouch.t + 2), moved = Math.hypot(after.at(-1).x - after[0].x, after.at(-1).z - after[0].z);
   assert.ok(moved > 2, `the Swimmer slides on after touching the rock (${moved.toFixed(2)} in 2 s)`);
   assert.ok(r.track.at(-1).x > rock.x, `the Swimmer got around the rock (x ${r.track.at(-1).x.toFixed(2)} past ${rock.x.toFixed(2)})`);
   assert.deepEqual([...errors, ...second.errors], []);
   console.log(`     rock ${rock.id}: first touch at ${r.firstTouch.t.toFixed(2)} s, ${r.touched} contact frames, closest ${r.deepest.toFixed(2)} (inner ${rock.inner.toFixed(2)}), slid ${moved.toFixed(2)} in 2 s`);
+});
+
+check('5d', 'Block hints only for a real block; one-shot toasts stay', async () => {
+  // Final review I1. (a) A Swimmer that skims and dives along the seabed for 10 s with real keys gets no block hint. (b) A Swimmer
+  // that dives straight into the seabed at the start keeps the stage toast for its full time; the block hint shows only after it.
+  const hints = ['Something solid is in the way.', 'A rock is in the way.'];
+  const watch = (page, seconds) => page.evaluate(([hintTexts, seconds]) => new Promise(resolve => {
+    const t0 = window.__tinyTide.time, w0 = performance.now(), shown = [];
+    let contacts = 0, last = null;
+    const tick = () => {
+      const s = window.__tinyTide, el = document.getElementById('toast'), text = el.classList.contains('show') ? el.textContent : null;
+      if (s.contactNow && s.lastContact === 'ground') contacts++;
+      if (text !== last) { shown.push({ t: s.time - t0, text }); last = text; }
+      if (s.time - t0 >= seconds) return resolve({ contacts, shown, hinted: shown.filter(x => hintTexts.includes(x.text)) });
+      if (performance.now() - w0 > 90000) return resolve({ wall: true, s });
+      requestAnimationFrame(tick);
+    };
+    tick();
+  }), [hints, seconds]);
+  const { page, errors } = await newPage();
+  await play(page, { path: ['swimmer'] });
+  await waitGameTime(page, 5);   // the stage toast (4.5 s) is gone
+  const first = await state(page);
+  const skim = watch(page, 10);
+  let done = false; skim.then(() => { done = true; });
+  let k = 0;
+  while (!done) {
+    const s = await state(page), a = k++ * .05;
+    // Forward along a slowly turning heading, with Dive held: the body stays pressed onto the seabed and slides along it.
+    await control(page, ['KeyQ', ...steer(s, { x: s.player.x + 10 * Math.cos(a), z: s.player.z + 10 * Math.sin(a) }, .38)]);
+    await page.waitForTimeout(120);
+  }
+  const r = await skim; await control(page, []);
+  noWallTimeout(r, 'check 5d (skim)');
+  assert.ok(r.contacts > 30, `the Swimmer skimmed the seabed (${r.contacts} contact frames, from y ${first.player.y.toFixed(2)})`);
+  assert.deepEqual(r.hinted, [], 'no block hint while sliding along the seabed');
+  // (b) A fresh start; Dive held straight down at once.
+  const second = await newPage();
+  await play(second.page, { path: ['swimmer'] });
+  const stageToast = await second.page.locator('#toast').textContent();
+  await control(second.page, ['KeyQ']);
+  const d = await watch(second.page, 7.5);
+  await control(second.page, []);
+  noWallTimeout(d, 'check 5d (dive)');
+  const ownEnd = d.shown.find(x => x.text !== stageToast)?.t ?? Infinity;
+  assert.ok(ownEnd >= 4.3, `the stage toast stays its full time (until ${ownEnd.toFixed(2)} s of 4.5 s): ${JSON.stringify(d.shown)}`);
+  assert.ok(d.contacts > 30, `the dive pushed into the seabed (${d.contacts} contact frames)`);
+  assert.equal(d.hinted.length, 1, `one block hint, after the stage toast: ${JSON.stringify(d.shown)}`);
+  assert.ok(d.hinted[0].t >= 4.3, 'the block hint waits for the stage toast');
+  assert.deepEqual([...errors, ...second.errors], []);
+  console.log(`     skim: ${r.contacts} contact frames, 0 hints; dive: stage toast until ${ownEnd.toFixed(2)} s, hint at ${d.hinted[0].t.toFixed(2)} s`);
 });
 
 check('6', 'Crawler', async () => {
@@ -364,6 +420,41 @@ check('7', 'A Crawler placed high recovers onto the seabed', async () => {
   assert.ok(r.frames.every(f => f.legal === true && f.mode === 'playing'), 'the position is legal on every frame');
   assert.equal(r.s.zone, 'seabed', `zone is seabed (start zone ${first.zone}, ${r.frames.length} frames)`);
   assert.deepEqual(errors, []);
+});
+
+check('7c', 'A bite at the floor keeps the body moving', async () => {
+  // Final review M4: a Speck that eats on the seabed grows; the grown body keeps its motion (main.ts checkGrownPose, the growth
+  // lift), so on the frame after each bite the mode is 'playing' and the speed is at least half of the speed at the bite.
+  const { page, errors } = await newPage();
+  await play(page, {});
+  const sampler = page.evaluate(() => new Promise(resolve => {
+    const w0 = performance.now(), bites = [];
+    let last = window.__tinyTide, pending = null;
+    const speed = s => Math.hypot(s.velocity.x, s.velocity.y, s.velocity.z);
+    const tick = () => {
+      const s = window.__tinyTide;
+      if (pending) { bites.push({ ...pending, after: speed(s), mode: s.mode, growth: s.growth, zone: s.zone }); pending = null; }
+      if (s.bites > last.bites) pending = { at: speed(s), before: speed(last), growthBefore: last.growth };
+      last = s;
+      if (bites.length >= 3) return resolve({ bites });
+      if (performance.now() - w0 > 90000) return resolve({ wall: true, bites, s });
+      requestAnimationFrame(tick);
+    };
+    tick();
+  }));
+  for (let i = 0; i < 3; i++) await eatOnce(page, `bite ${i + 1}`);
+  const r = await sampler;
+  noWallTimeout(r, 'check 7c (bites)');
+  assert.equal(r.bites.length, 3, 'three bites sampled');
+  for (const b of r.bites) {
+    assert.equal(b.mode, 'playing', `playing on the frame after the bite: ${JSON.stringify(b)}`);
+    assert.ok(b.growth > b.growthBefore, `the bite grew the body: ${JSON.stringify(b)}`);
+    assert.equal(b.zone, 'seabed', `the bite was at the floor: ${JSON.stringify(b)}`);
+    if (b.at > .5) assert.ok(b.after >= .5 * b.at, `the speed is kept through the growth step: ${JSON.stringify(b)}`);
+  }
+  assert.ok(r.bites.some(b => b.at > .5 && b.after > 0), `at least one bite while moving keeps moving: ${JSON.stringify(r.bites)}`);
+  assert.deepEqual(errors, []);
+  console.log(`     bites at the floor: ${r.bites.map(b => `${b.at.toFixed(2)} → ${b.after.toFixed(2)}`).join(', ')}`);
 });
 
 check('7b', 'The transformation moves toward the destination', async () => {
@@ -681,4 +772,4 @@ try {
   }
 } finally { await browser.close(); }
 if (failures.length) { console.log(`FAILED: ${failures.join(', ')}`); process.exit(1); }
-console.log(`PASSED: ${only.length ? `checks ${only.join(', ')}` : 'all 18 checks (with 5b, 5c, 7b and 12b)'}: path screen, customize fallback, submit failure, evolve editor, swimmer and crawler limits, soft world edge, solid reef rocks, high spawn recovery, transformation path, diet lock, size pricing, desktop and touch gestures, allocation, lost abilities, hazards and invulnerability, pose agreement, faint during a Breach, pause, kept coast save, legacy keys.`);
+console.log(`PASSED: ${only.length ? `checks ${only.join(', ')}` : 'all 18 checks (with 5b, 5c, 5d, 7b, 7c and 12b)'}: path screen, customize fallback, submit failure, evolve editor, swimmer and crawler limits, soft world edge, solid reef rocks, block hints, high spawn recovery, bite at the floor, transformation path, diet lock, size pricing, desktop and touch gestures, allocation, lost abilities, hazards and invulnerability, pose agreement, faint during a Breach, pause, kept coast save, legacy keys.`);

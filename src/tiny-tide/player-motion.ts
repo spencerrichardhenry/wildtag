@@ -1,7 +1,7 @@
 // One pure player step (spec §3 "Motion", "Facing", permits; §9). It owns the controlled and external velocities,
 // completes the wish, submits the desired orientation as a turn, dispatches Breach, keeps a grounded body on its
 // support line, and ends the arc and the permit. It mutates only the runtime it is given and returns the result.
-import type { Actor, CombatInput, CombatRuntime, Contact, MotionResult, MovementProfile, MutVec3, Orientation, Vec3, WorldQueries } from './combat-types';
+import type { Actor, BreachArc, CombatInput, CombatRuntime, Contact, MotionResult, MovementProfile, MutVec3, Orientation, TraversalPermit, Vec3, WorldQueries } from './combat-types';
 import { EDGE_HINT, edgeCurrent } from './edge';
 import { resolveMotion, projectVelocity } from './motion';
 import type { BodyPlan } from './plans';
@@ -9,6 +9,9 @@ import { BREACH_RISE, breachPermit, type MovementCapabilities } from './profiles
 import { hullExtents, supportHeight } from './world-queries';
 
 export const BREACH_SECONDS = 1.8, BREACH_COOLDOWN = 2.3, BREACH_END_DEPTH = 1.3, EXTERNAL_DECAY = 6, GROUND_SETTLE = 6;
+/** A Rise tap is a Breach only when the body's origin is within this many body lengths under the surface; deeper, a tap (and a
+ *  hold) is a normal Rise (owner ruling M9: a tap on the seabed must not throw the body into a 1.8 s arc). */
+export const BREACH_REACH = 2;
 /** The space between the hull top and the surface at the end of a Breach arc, in body lengths. */
 export const BREACH_CLEARANCE = .02;
 export const PITCH_LIMIT = 1.2;
@@ -32,7 +35,8 @@ export interface PlayerStepContext {
   /** The camera-mapped move wish in world space, |wish| ≤ 1; y is the camera pitch part, used only when caps.pitch. */
   wish: Vec3; aim: Vec3 | null; actionLock: boolean;
 }
-export interface PlayerStepResult { position: Vec3; status: MotionResult['status']; contacts: readonly Contact[]; needsRecovery: boolean; breachStarted: boolean; arcEnded: boolean; permitEnded: boolean }
+/** `progress`: the applied displacement over the asked one (1 when nothing was asked). */
+export interface PlayerStepResult { position: Vec3; status: MotionResult['status']; contacts: readonly Contact[]; progress: number; needsRecovery: boolean; breachStarted: boolean; arcEnded: boolean; permitEnded: boolean }
 
 /** The signed shortest arc from a to b, in (−π, π]. */
 function shortestArc(a: number, b: number): number {
@@ -46,9 +50,9 @@ const clampAbs = (v: number, max: number) => Math.max(-max, Math.min(max, v));
 export function stepPlayer(position: Vec3, rt: CombatRuntime, intent: CombatInput, ctx: PlayerStepContext): PlayerStepResult {
   const { caps, profile, actor, queries, size, now, dt } = ctx, t = queries.terrain, L = actor.bodyLength, end = now + dt;
 
-  // 1. Breach.
+  // 1. Breach, near the surface only. A Breach tap that starts no arc is a Rise.
   let breachStarted = false;
-  if (intent.traversal === 'breach' && caps.breach && rt.arc === null && now >= rt.breachReadyAt) {
+  if (intent.traversal === 'breach' && caps.breach && rt.arc === null && now >= rt.breachReadyAt && t.surface - position.y <= BREACH_REACH * L) {
     rt.arc = { startedAt: now, duration: BREACH_SECONDS, fromY: position.y, endY: breachEndY(actor, t.surface, size) };
     rt.permit = breachPermit(now);
     rt.breachReadyAt = now + BREACH_COOLDOWN;
@@ -58,7 +62,7 @@ export function stepPlayer(position: Vec3, rt: CombatRuntime, intent: CombatInpu
 
   // 2. Complete wish, before acceleration.
   const w: MutVec3 = { x: ctx.wish.x, y: caps.pitch ? ctx.wish.y : 0, z: ctx.wish.z };
-  if (caps.rise && arc === null) { if (intent.traversal === 'rise') w.y += 1; else if (intent.traversal === 'dive') w.y -= 1; }
+  if (caps.rise && arc === null) { if (intent.traversal === 'rise' || intent.traversal === 'breach') w.y += 1; else if (intent.traversal === 'dive') w.y -= 1; }
   if (caps.ground) w.y = 0;
   const wLen = Math.hypot(w.x, w.y, w.z);
   if (wLen > 1) { w.x /= wLen; w.y /= wLen; w.z /= wLen; }
@@ -131,8 +135,48 @@ export function stepPlayer(position: Vec3, rt: CombatRuntime, intent: CombatInpu
     rt.permit = null; permitEnded = true;
     if (!queries.overlapHull(actor, result.position, rt.orientation, { time: end, bounds: ctx.bounds }).ok) needsRecovery = true;
   }
-  return { position: result.position, status: result.status, contacts: result.contacts, needsRecovery, breachStarted, arcEnded, permitEnded };
+  // The move asked for: the displacement, or the wish at full speed when that is longer (a velocity that a wall projected away
+  // each frame asks for little, but the player still pushes).
+  const asked = Math.max(Math.hypot(d.x, d.y, d.z), Math.hypot(w.x, w.y, w.z) * k * dt), p = result.position;
+  const progress = asked > 1e-12 ? Math.hypot(p.x - position.x, p.y - position.y, p.z - position.z) / asked : 1;
+  return { position: result.position, status: result.status, contacts: result.contacts, progress, needsRecovery, breachStarted, arcEnded, permitEnded };
 }
+
+/** A block hint is for a real block only (final review I1): the move is `blocked` and less than BLOCK_HINT_PROGRESS of it was
+ *  applied, frame after frame for BLOCK_HINT_SECONDS. A slide along a border is not a block. */
+export const BLOCK_HINT_PROGRESS = .25, BLOCK_HINT_SECONDS = .3;
+export interface BlockHintGate { blockedFor: number; shown: boolean }
+export const newBlockHintGate = (): BlockHintGate => ({ blockedFor: 0, shown: false });
+/** True on the one frame of a block when its hint may show. `canShow` is false while another toast is on screen (or the hints'
+ *  rate limit runs), so a one-shot message is never replaced; the hint then waits. One hint per block: a new one needs a free frame. */
+export function blockHintDue(gate: BlockHintGate, step: Pick<PlayerStepResult, 'status' | 'progress'>, dt: number, canShow: boolean): boolean {
+  if (step.status !== 'blocked' || step.progress >= BLOCK_HINT_PROGRESS) { gate.blockedFor = 0; gate.shown = false; return false; }
+  gate.blockedFor += dt;
+  if (gate.shown || gate.blockedFor < BLOCK_HINT_SECONDS - 1e-9 || !canShow) return false;
+  gate.shown = true;
+  return true;
+}
+
+/** A tap-to-walk target is dropped after TAP_STALL_SECONDS without TAP_PROGRESS stage-local units of new progress toward it (owner
+ *  ruling M12: rocks stay walls for ground plans, so a target behind one would otherwise hold the body against the rock). */
+export const TAP_STALL_SECONDS = 1, TAP_PROGRESS = .05;
+export interface TapWatch { best: number; stalled: number }
+export const newTapWatch = (): TapWatch => ({ best: Infinity, stalled: 0 });
+/** Call once per frame with the horizontal distance to the target (stage-local units). True when the target should be dropped. A new
+ *  target needs a reset watch (`best` = Infinity). */
+export function tapTargetStalled(w: TapWatch, distance: number, dt: number): boolean {
+  if (distance < w.best - TAP_PROGRESS) { w.best = distance; w.stalled = 0; return false; }
+  w.stalled += dt;
+  return w.stalled >= TAP_STALL_SECONDS;
+}
+
+/** What a step changes that the kept pose depends on: the orientation, the permit and the arc (final review M10). The caller takes a
+ *  snapshot before the step; when the step needs recovery and none is found, `restoreStep` puts them back, so the kept (last
+ *  installed) pose is admitted again while stuck. One snapshot object is reused every frame. */
+export interface StepSnapshot { yaw: number; pitch: number; permit: TraversalPermit | null; arc: BreachArc | null }
+export const newStepSnapshot = (): StepSnapshot => ({ yaw: 0, pitch: 0, permit: null, arc: null });
+export function snapshotStep(rt: CombatRuntime, out: StepSnapshot): void { out.yaw = rt.orientation.yaw; out.pitch = rt.orientation.pitch; out.permit = rt.permit; out.arc = rt.arc; }
+export function restoreStep(rt: CombatRuntime, s: StepSnapshot): void { rt.orientation = { yaw: s.yaw, pitch: s.pitch }; rt.permit = s.permit; rt.arc = s.arc; }
 
 /** A short player-facing reason for a blocked move, by the contact's constraint. */
 export function blockHint(plan: BodyPlan, contact: Contact): string {

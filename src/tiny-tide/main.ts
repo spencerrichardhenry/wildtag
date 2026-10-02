@@ -17,12 +17,12 @@ import { cardSummary, COAST_READY, eligibleChildren, leadsTo, type BodyPlan } fr
 import { quoteDesign } from './economy';
 import { newRuntime, type Actor, type Capsule, type CombatInput, type Constraint, type MutVec3, type Orientation, type RecoveryResult, type Vec3, type WorldQueries } from './combat-types';
 import { basicRequested, readIntent, RELEASED } from './input';
-import { blockHint, stepPlayer } from './player-motion';
+import { blockHint, blockHintDue, newBlockHintGate, newStepSnapshot, newTapWatch, restoreStep, snapshotStep, stepPlayer, tapTargetStalled } from './player-motion';
 import { beginRespawn, canChooseNextPlan, evolutionDestination, growthPose, reconcileAfterCommit, recoverPlayer, resetRuntime, resolveHazards, resolveRespawn } from './lifecycle';
 import { habitat, movement, movementCapabilities } from './profiles';
-import { admissionClock, stageWorldQueries, supportHeight, zoneLabel } from './world-queries';
-import { stageSolids } from './reef';
-import { orientHull } from './orientation';
+import { admissionClock, makeWorldQueries, resetAdmissionClock, stageBounds, stageWorldQueries, supportHeight, zoneLabel } from './world-queries';
+import { ROCK_FIT, stageSolids } from './reef';
+import { orientedHeave, orientedSway, rotateInto } from './orientation';
 import { startAnchor } from './motion';
 import { bodyLengthOf, hullFitOf, hullOffsets, massFor, playerActor } from './mount';
 import { designDelta } from './design-delta';
@@ -98,9 +98,11 @@ catch {
 }
 const SAVE_KEY = 'tiny-tide-adventure-v4';
 const QA = import.meta.env.DEV || new URLSearchParams(location.search).has('qa');
-/** QA: the admission time (every overlapHull call: player, ecosystem, food guide) of each played frame, summed per stage. */
+/** QA: the admission time (every overlapHull call: player, ecosystem, food guide) of each played frame, summed per stage, in total and
+ *  per caller, with the player's contacts. Only calls made inside a played frame count (the clock resets when a frame starts). */
 admissionClock.on = QA;
-const admissionStats = SIZES.map(() => ({ frames: 0, ms: 0, calls: 0, worst: 0 }));
+const admissionStats = SIZES.map(() => ({ frames: 0, ms: 0, calls: 0, worst: 0, contacts: 0, player: { ms: 0, calls: 0 }, ecosystem: { ms: 0, calls: 0 }, guide: { ms: 0, calls: 0 } }));
+let frameContacts = 0;
 // QA-only URL parameters (development or `?qa`). Each is read once here, at load. None changes a running game from outside.
 const qaParams = new URLSearchParams(QA ? location.search : '');
 /** `?qaStartGrace=0` removes the start grace. */
@@ -125,15 +127,14 @@ function qaRejection(): SubmitOutcome | null {
   qaRejectSubmit = false; return { ok: false, reason: 'QA rejection' };
 }
 interface Legality { queries: WorldQueries; bounds: { half: number; maxY?: number } }
-const legalities = new Map<string, Legality>();
+const legalities = new Map<number, Legality>();
 /** The player's world queries (terrain and the run's reef solids) and bounds for a stage (physical units). `maxY` replaces the old
- *  sky clamp. The world seed defaults to the current run's. */
+ *  sky clamp. The world seed defaults to the current run's. The cache key is numeric (no string per call; seeds are 32-bit integers). */
 function legality(stage: number, seed = run.seed): Legality {
-  const key = `${seed}:${stage}`;
+  const key = seed * 8 + stage;
   let l = legalities.get(key);
   if (!l) {
-    const size = SIZES[stage]!;
-    l = { queries: stageWorldQueries(stage, seed), bounds: { half: PLAYER_HALF * size, maxY: stage >= 3 ? 30 * size : undefined } };
+    l = { queries: stageWorldQueries(stage, seed), bounds: stageBounds(stage) };
     if (legalities.size >= 16) legalities.clear();
     legalities.set(key, l);
   }
@@ -194,6 +195,7 @@ let rt = newRuntime();
 let physical: Vec3 = { x: 0, y: 0, z: 0 };
 let genomeRevision = 0, acceptedHits = 0, rejectedHits = 0, contactNow = false, lastContact: Constraint | null = null, lastContactSolid: string | null = null, edgeNow = false, edgeHinted = false;
 const faintLog: { time: number; hadPermit: boolean; hadArc: boolean }[] = [];
+const blockGate = newBlockHintGate(), beforeStep = newStepSnapshot(), tapWatch = newTapWatch();
 let dialogReturn: 'menu' | 'playing' | 'paused' = 'menu';
 const modal = el<HTMLDialogElement>('modal');
 world.setCreature(run.genome);
@@ -262,10 +264,20 @@ function approachable(e: Entity): boolean | null {
   const entry = guideCache.get(e.id); if (!entry) return null;
   return entry.key === guideKey(e, currentPlan(run).id, growthOf(run), guideTraversal().key) ? entry.value : null;
 }
-/** The player's hull in world space: oriented (envelope converted under pitch) and translated to the physical position. */
+/** The player's hull in world space: oriented (envelope converted under pitch) and translated to the physical position. The buffer
+ *  is reused every frame (final review M17): its readers (the ecosystem's step and provoke) copy what they keep. */
+const hullBuffer: { start: MutVec3; end: MutVec3; radius: number; sway: number; heave: number }[] = [];
 function worldHull(actor: Actor): Capsule[] {
-  const at = (v: Vec3): Vec3 => ({ x: v.x + physical.x, y: v.y + physical.y, z: v.z + physical.z });
-  return orientHull(actor.hull, rt.orientation).map(c => ({ ...c, start: at(c.start), end: at(c.end) }));
+  const o = rt.orientation, h = actor.hull;
+  while (hullBuffer.length < h.length) hullBuffer.push({ start: { x: 0, y: 0, z: 0 }, end: { x: 0, y: 0, z: 0 }, radius: 0, sway: 0, heave: 0 });
+  hullBuffer.length = h.length;
+  for (let i = 0; i < h.length; i++) {
+    const c = h[i]!, b = hullBuffer[i]!, w = c.sway ?? 0, v = c.heave ?? 0;
+    rotateInto(o, c.start, b.start); rotateInto(o, c.end, b.end);
+    b.start.x += physical.x; b.start.y += physical.y; b.start.z += physical.z; b.end.x += physical.x; b.end.y += physical.y; b.end.z += physical.z;
+    b.radius = c.radius; b.sway = orientedSway(w, v, o.pitch); b.heave = orientedHeave(w, v, o.pitch);
+  }
+  return hullBuffer;
 }
 /** The grounded offset against the support under the current pose (0 when supported or not grounded). */
 function settleOffset(actor: Actor) {
@@ -408,7 +420,7 @@ function begin(fresh = false) {
   refreshDerived(); run.health = Math.min(run.health, derived.maxHealth);
   world.build(run.stage, run); el('evolution-banner').hidden = true; el('faint').hidden = true; mode = 'playing'; clearInput(); cooldown = 0; sinceHit = 99; readyToasted = evolveReady(run); lastBiome = '';
   // A fresh runtime for every new run or load. The start grace lives in the runtime.
-  rt = newRuntime(); genomeRevision++; hintClock = 0; contactNow = false; lastContact = null; lastContactSolid = null; edgeNow = false; edgeHinted = false; startGracePending = false;
+  rt = newRuntime(); genomeRevision++; hintClock = 0; blockGate.blockedFor = 0; blockGate.shown = false; contactNow = false; lastContact = null; lastContactSolid = null; edgeNow = false; edgeHinted = false; startGracePending = false;
   faintLog.length = 0; acceptedHits = 0; rejectedHits = 0;
   el('home').hidden = true; el('game-ui').hidden = false; el('pause').hidden = false; el('edit').hidden = false; el('corner-note').hidden = true; el('mode-label').textContent = 'NIBBLE. GROW. REPEAT.';
   document.body.classList.add('is-playing'); toast(STAGES[run.stage]!.description);
@@ -645,7 +657,7 @@ canvas.addEventListener('pointerup', event => {
   endedPointers.add(event.pointerId);
   if (event.pointerId !== lookPointer) return;
   if (!looked && mode === 'playing' && capsOf().ground) {
-    target = world.groundPoint(event.clientX, event.clientY);
+    target = world.groundPoint(event.clientX, event.clientY); tapWatch.best = Infinity; tapWatch.stalled = 0;
     if (target) { target.x = T.MathUtils.clamp(target.x, -SPAWN_HALF, SPAWN_HALF); target.z = T.MathUtils.clamp(target.z, -SPAWN_HALF, SPAWN_HALF); world.targetRing.position.copy(target); world.targetRing.position.y = world.groundAt(target.x, target.z) + .08; world.targetRing.scale.setScalar(.45); world.targetRing.visible = true; }
   }
   lookPointer = null;
@@ -702,6 +714,7 @@ const NO_WISH: Vec3 = Object.freeze({ x: 0, y: 0, z: 0 });
 function frame(now: number) {
   requestAnimationFrame(frame);
   const dt = Math.min((now - last) / 1000, .05); last = now;
+  if (admissionClock.on) { resetAdmissionClock(); admissionClock.caller = 'player'; frameContacts = 0; }
   // The game clock runs in these modes only (not while paused, editing, stuck or won).
   const held = holdingStart && mode === 'playing';
   const active = !held && (mode === 'playing' || mode === 'menu' || mode === 'evolving' || mode === 'fainted');
@@ -726,21 +739,25 @@ function frame(now: number) {
     let wish: Vec3 = NO_WISH;
     if (target && caps.ground) {
       const dx = target.x - p.x, dz = target.z - p.z, d = Math.hypot(dx, dz);
-      if (d < .25) { target = null; world.targetRing.visible = false; } else wish = { x: dx / d, y: 0, z: dz / d };
+      // Reached, or no progress for a second (a rock in the way: rocks are walls for ground plans): the target is dropped.
+      if (d < .25 || tapTargetStalled(tapWatch, d, dt)) { target = null; world.targetRing.visible = false; } else wish = { x: dx / d, y: 0, z: dz / d };
     } else {
       if (target) { target = null; world.targetRing.visible = false; }
       const v = world.moveVector(intent.move.x, intent.move.z, caps.pitch); wish = { x: v.x, y: v.y, z: v.z };
     }
     const legal = legality(stage);
-    const poseBefore = { yaw: rt.orientation.yaw, pitch: rt.orientation.pitch };
+    snapshotStep(rt, beforeStep);
     const r = stepPlayer(physical, rt, intent, { plan, profile: movement(plan.movement), caps, actor, ...legal, size: SIZES[stage]!, topSpeedLocal: STAGES[stage]!.speed * derived.speedFactor,
       now: time, dt, wish, aim: null, actionLock: false });
-    // A result that needs recovery is never installed or rendered: recover from it, or keep the last legal pose while stuck.
+    // A result that needs recovery is never installed or rendered: recover from it, or keep the last legal pose while stuck, with
+    // the orientation, permit and arc it was admitted with (final review M10).
     if (!r.needsRecovery) { physical = r.position; renderRoot(); }
-    else if (!recover(actor, time + dt, r.position)) { rt.orientation = poseBefore; enterStuck(); }
+    else if (!recover(actor, time + dt, r.position)) { restoreStep(rt, beforeStep); enterStuck(); }
     const contact = r.contacts[0];
-    contactNow = !!contact;
-    if (contact) { lastContact = contact.constraint; lastContactSolid = contact.solidId ?? null; if (hintClock <= 0) { toast(blockHint(plan, contact)); hintClock = 6; } }
+    contactNow = !!contact; frameContacts += r.contacts.length;
+    if (contact) { lastContact = contact.constraint; lastContactSolid = contact.solidId ?? null; }
+    // A block hint only for a real, sustained block (not a slide), and never over another toast (final review I1).
+    if (blockHintDue(blockGate, r, dt, hintClock <= 0 && toastTimer <= 0) && contact) { toast(blockHint(plan, contact)); hintClock = 6; }
     // The soft edge: the edge hint shows once per entry into the push zone, rate-limited with the block hints, and
     // only when no other toast is on screen (so a one-shot message is never replaced).
     edgeNow = inEdgeZone(physical, legal.bounds.half);
@@ -759,13 +776,15 @@ function frame(now: number) {
     if (stuckRetry <= 0) { stuckRetry = 1; if (recover(actor, time)) { if (startGracePending) { startGracePending = false; applyStartGrace(); } mode = 'playing'; el('toast').classList.remove('show'); syncUI(); } }
   }
   if ((mode === 'playing' || mode === 'evolving' || mode === 'fainted') && actor && !held) {
+    admissionClock.caller = 'ecosystem';
     const events = world.eco.step({ stage, dt, now: time, player: physical, playerHull: worldHull(actor), perceivable: rt.perceivable && mode !== 'fainted', stealthFactor: derived.stealthFactor });
+    admissionClock.caller = 'player';
     const accepted = resolveHazards(events, { mode, pendingRespawn: run.pendingRespawn, rt, now: time, mass: massFor(plan, run.genome, actor.bodyLength), resistance: plan.physics.knockbackResistance });
     rejectedHits += events.length - accepted.length;
     // A hit counts as accepted only when it is applied (not when skipped after a same-frame faint).
     for (const event of accepted) { if (mode !== 'playing') break; acceptedHits++; takeHit(event); }
     // After the ecosystem step, so fresh entries match the food positions that the guide and diagnostics read.
-    if (mode === 'playing') stepGuideCache(actor);
+    if (mode === 'playing') { admissionClock.caller = 'guide'; stepGuideCache(actor); admissionClock.caller = 'other'; }
   }
   if (mode === 'fainted') tickFaint(dt);
   if (toastTimer > 0 && mode === 'playing') { toastTimer -= dt; if (toastTimer <= 0) el('toast').classList.remove('show'); }
@@ -792,8 +811,11 @@ function frame(now: number) {
     }
   }
   if (admissionClock.on) {
-    if (mode === 'playing' && !held) { const a = admissionStats[stage]!; a.frames++; a.ms += admissionClock.ms; a.calls += admissionClock.calls; a.worst = Math.max(a.worst, admissionClock.ms); }
-    admissionClock.ms = 0; admissionClock.calls = 0;
+    if (mode === 'playing' && !held) {
+      const a = admissionStats[stage]!, by = admissionClock.by; a.frames++; a.ms += admissionClock.ms; a.calls += admissionClock.calls; a.worst = Math.max(a.worst, admissionClock.ms); a.contacts += frameContacts;
+      for (const k of ['player', 'ecosystem', 'guide'] as const) { a[k].ms += by[k].ms; a[k].calls += by[k].calls; }
+    }
+    resetAdmissionClock();
   }
 }
 /** Read-only: the player's zone at its physical position. */
@@ -804,9 +826,20 @@ function solidsNear(count = 8) {
   const size = SIZES[run.stage]!, p = physical;
   return stageSolids(run.stage, run.seed).solids.map(s => ({ id: s.id, kind: s.kind, x: (s.minX + s.maxX) / 2 / size, z: (s.minZ + s.maxZ) / 2 / size,
     half: Math.max(s.maxX - s.minX, s.maxZ - s.minZ) / 2 / size, top: s.maxY / size, bottom: s.minY / size, ground: world.groundAt((s.minX + s.maxX) / 2 / size, (s.minZ + s.maxZ) / 2 / size),
-    // A rock's smallest horizontal semi-axis: a centre closer than this to the rock's centre is inside it.
-    inner: s.shapes[0]!.kind === 'ellipsoid' ? Math.min(s.shapes[0]!.a, s.shapes[0]!.c) / size : 0,
+    // A rock's stone stands at least .9 of its footprint ellipsoid's smallest horizontal semi-axis (÷ ROCK_FIT) out from its centre
+    // (make_rock's noise is at most 9.5 %): a centre closer than this to the rock's centre is inside the stone.
+    inner: s.footprint?.[0]?.kind === 'ellipsoid' ? .9 * Math.min(s.footprint[0].a, s.footprint[0].c) / ROCK_FIT / size : 0,
     distance: Math.hypot((s.minX + s.maxX) / 2 - p.x, (s.minZ + s.maxZ) / 2 - p.z) / size })).sort((a, b) => a.distance - b.distance).slice(0, count);
+}
+/** Read-only (QA): the id of the stage solid the player's hull overlaps at its physical pose, or null. Only the solid rule is tested
+ *  (no ground, bounds or media rule can come first), so a body that passed into a rock is seen even where another rule fails. */
+const solidOnly = new Map<number, WorldQueries>();
+function solidOverlap(): string | null {
+  const key = run.seed * 8 + run.stage;
+  let q = solidOnly.get(key);
+  if (!q) { q = makeWorldQueries({ groundAt: () => -1e9, surface: 1e9, space: false, slopeBound: 0 }, { solids: stageSolids(run.stage, run.seed) }); solidOnly.clear(); solidOnly.set(key, q); }
+  const a = q.overlapHull(playerActor(currentPlan(run), run.genome, run.stage, growthOf(run)), physical, rt.orientation, { time });
+  return a.constraint === 'solid' ? a.solidId ?? null : null;
 }
 /** Read-only: relevant-tier entities with a contact hazard, in local units. */
 function hazardSources() {
@@ -844,7 +877,8 @@ if (QA) {
   Object.defineProperty(window, '__tinyTide', { get: () => ({ mode,
     plan: currentPlan(run).id, plans: [...run.plans], zone: zoneNow(), velocity: copy(rt.controlledVelocity), externalVelocity: copy(rt.externalVelocity),
     orientation: { ...rt.orientation }, permit: rt.permit ? { ...rt.permit } : null, arc: rt.arc ? { ...rt.arc } : null, breachReadyAt: rt.breachReadyAt, invulnerableUntil: rt.invulnerableUntil,
-    pendingRespawn: run.pendingRespawn, caps: capsOf(), physical: copy(physical), legal: mode === 'menu' ? null : admitted(playerActor(currentPlan(run), run.genome, run.stage, growthOf(run))), contactNow, lastContact: lastContact === null ? null : `${lastContact}`, lastContactSolid, solidsNear: mode === 'menu' ? [] : solidsNear(), edge: { inZone: edgeNow, hinted: edgeHinted, half: PLAYER_HALF, softStart: EDGE_SOFT_START * PLAYER_HALF }, hazardSources: hazardSources(), growth: growthOf(run), acceptedHits, rejectedHits,
-    faintLog: faintLog.map(f => ({ ...f })), stage: run.stage, dna: dnaOf(run), stageDna: run.stageDna, goal: STAGES[run.stage]!.goal, health: run.health, maxHealth: derived.maxHealth, deaths: run.deaths, diet: dietOf(run.genome), genome: structuredClone(run.genome), name: run.name, unlocked: [...run.unlocked], evolveReady: evolveReady(run), bites: run.bites, totalDna: run.totalDna, elapsed: run.elapsed, completed: run.completed, eatenPlanets: [...run.eatenPlanets], player: { x: world.player.position.x, y: world.player.position.y, z: world.player.position.z }, foods: world.edibleFoods.map(f => ({ ...f.data, tag: f.entity.spec.tag, label: f.entity.spec.label, mode: f.entity.mode, hp: f.entity.hp, approachable: approachable(f.entity) })), threats: world.threats.map(f => ({ ...f.data, label: f.entity.spec.label, mode: f.entity.mode })), landmarks: world.foods.filter(f => f.model.visible && f.tier > run.stage).map(f => ({ tier: f.tier, kind: f.data.kind, x: f.data.x, y: f.data.y, z: f.data.z })), world: world.diagnostics, assets: assetDiagnostics(), saveKey: writeKey, loadedKey, time, holdingStart, editorProjection, poseAgreement, admission: admissionStats.map(a => ({ frames: a.frames, msPerFrame: a.frames ? a.ms / a.frames : 0, callsPerFrame: a.frames ? a.calls / a.frames : 0, worstMs: a.worst })), render: { calls: world.renderer.info.render.calls, triangles: world.renderer.info.render.triangles, geometries: world.renderer.info.memory.geometries } }) });
+    pendingRespawn: run.pendingRespawn, caps: capsOf(), physical: copy(physical), legal: mode === 'menu' ? null : admitted(playerActor(currentPlan(run), run.genome, run.stage, growthOf(run))), contactNow, lastContact: lastContact === null ? null : `${lastContact}`, lastContactSolid, solidOverlap: mode === 'menu' ? null : solidOverlap(), solidsNear: mode === 'menu' ? [] : solidsNear(32), edge: { inZone: edgeNow, hinted: edgeHinted, half: PLAYER_HALF, softStart: EDGE_SOFT_START * PLAYER_HALF }, hazardSources: hazardSources(), growth: growthOf(run), acceptedHits, rejectedHits,
+    faintLog: faintLog.map(f => ({ ...f })), stage: run.stage, dna: dnaOf(run), stageDna: run.stageDna, goal: STAGES[run.stage]!.goal, health: run.health, maxHealth: derived.maxHealth, deaths: run.deaths, diet: dietOf(run.genome), genome: structuredClone(run.genome), name: run.name, unlocked: [...run.unlocked], evolveReady: evolveReady(run), bites: run.bites, totalDna: run.totalDna, elapsed: run.elapsed, completed: run.completed, eatenPlanets: [...run.eatenPlanets], player: { x: world.player.position.x, y: world.player.position.y, z: world.player.position.z }, foods: world.edibleFoods.map(f => ({ ...f.data, tag: f.entity.spec.tag, label: f.entity.spec.label, mode: f.entity.mode, hp: f.entity.hp, approachable: approachable(f.entity) })), threats: world.threats.map(f => ({ ...f.data, label: f.entity.spec.label, mode: f.entity.mode })), landmarks: world.foods.filter(f => f.model.visible && f.tier > run.stage).map(f => ({ tier: f.tier, kind: f.data.kind, x: f.data.x, y: f.data.y, z: f.data.z })), world: world.diagnostics, assets: assetDiagnostics(), saveKey: writeKey, loadedKey, time, holdingStart, editorProjection, poseAgreement, admission: admissionStats.map(a => { const per = (v: number) => a.frames ? v / a.frames : 0; return { frames: a.frames, msPerFrame: per(a.ms), callsPerFrame: per(a.calls), worstMs: a.worst, contactsPerFrame: per(a.contacts),
+      player: { msPerFrame: per(a.player.ms), callsPerFrame: per(a.player.calls) }, ecosystem: { msPerFrame: per(a.ecosystem.ms), callsPerFrame: per(a.ecosystem.calls) }, guide: { msPerFrame: per(a.guide.ms), callsPerFrame: per(a.guide.calls) } }; }), render: { calls: world.renderer.info.render.calls, triangles: world.renderer.info.render.triangles, geometries: world.renderer.info.memory.geometries } }) });
 }
 requestAnimationFrame(frame);

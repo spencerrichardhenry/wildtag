@@ -117,10 +117,13 @@ describe('Tiny Tide ecosystem', () => {
     expect(attacked).toBe(true);
   });
   it('gives up a hunt when the player escapes, and perceives independently of damage', () => {
-    const eco = new Ecosystem(9), crab = eco.entities.find(e => e.spec.key === '1:crab')!;
+    // The seed's crab nearest the centre (8.8, −26.8): a stage 0 player beside it is inside its world, and hunters do not chase into
+    // the edge's push zone (owner ruling M11).
+    const central = (eco: Ecosystem) => eco.entities.filter(e => e.spec.key === '1:crab').sort((a, b) => Math.hypot(a.x, a.z) - Math.hypot(b.x, b.z))[0]!;
+    const eco = new Ecosystem(9), crab = central(eco);
     eco.step(ctx(eco, 0, { x: crab.x + 5, y: crab.y, z: crab.z })); expect(crab.mode).toBe('hunt');
     eco.step(ctx(eco, 0, { x: crab.x + 500, y: crab.y, z: crab.z })); expect(crab.mode).toBe('return');
-    const safe = new Ecosystem(9), crab2 = safe.entities.find(e => e.spec.key === '1:crab')!;
+    const safe = new Ecosystem(9), crab2 = central(safe);
     // The ecosystem has no damage flag: only the perceivable flag decides whether the player is noticed.
     safe.step(ctx(safe, 0, { x: crab2.x, y: crab2.y, z: crab2.z }, { perceivable: false })); expect(crab2.mode).toBe('calm');
     safe.step(ctx(safe, 0, { x: crab2.x, y: crab2.y, z: crab2.z })); expect(crab2.mode).toBe('hunt');

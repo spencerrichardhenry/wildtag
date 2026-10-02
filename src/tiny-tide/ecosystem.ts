@@ -1,7 +1,8 @@
 // Creature behavior for every tier. Positions are physical units (stage 0 units).
 // Active tiers (|tier − stage| ≤ 1) move through the motion resolver, perceive, pursue (spec §10) and emit contact hazards.
 // Every entry path (construction, reset, respawn, becoming relevant) installs an entity on a legal pose.
-import { makeBiomes, populate, seabedHeight, SIZES, spawnPoint, WORLD_HALF, random, type Biome } from './biomes';
+import { makeBiomes, PLAYER_HALF, populate, seabedHeight, SIZES, SPAWN_HALF, spawnPoint, WORLD_HALF, random, type Biome } from './biomes';
+import { EDGE_SOFT_START } from './edge';
 import type { Actor, AdmissionContext, Capsule, ContactHazard, LegalityContext, MotionRequest, MovementMode, MutVec3, Orientation, PursuitPolicy, Vec3, WorldQueries } from './combat-types';
 import { findRecoveryPose, resolveMotion } from './motion';
 import { speciesActor } from './mount';
@@ -46,6 +47,13 @@ export const RESPAWN_TIME = [14, 22] as const;
 export const BLOCK_CLEAR_SECONDS = 1;
 /** Seconds before an entity that could not be installed tries again. */
 const INSTALL_RETRY = 2;
+/** Hunters (species that hunt or fight back) roam inside SPAWN_HALF + HUNTER_MARGIN tier-local units, and they do not chase into the
+ *  player's edge push zone (owner ruling M11): a target past EDGE_SOFT_START × the player's bound is given up and not acquired, so the
+ *  edge current never holds a fleeing player for a hunter. */
+export const HUNTER_MARGIN = 2;
+const isHunter = (spec: Species) => spec.hunts.length > 0 || spec.fights;
+/** True when the point is in the push zone of a player of this stage. */
+const pastSoftEdge = (p: Vec3, stage: number) => Math.max(Math.abs(p.x), Math.abs(p.z)) > EDGE_SOFT_START * PLAYER_HALF * SIZES[Math.min(stage, SIZES.length - 1)]!;
 
 const pursuitState = () => ({ lastKnown: null, lastKnownHull: null, lastSeenAt: 0, reachable: false, reachableSince: null, blockedSince: null, returnUntil: 0, hazardReadyAt: 0 });
 
@@ -128,6 +136,7 @@ export class Ecosystem {
   private rand: () => number;
   private readonly queries: WorldQueries[];
   private readonly bounds: { half: number }[];
+  private readonly hunterBounds: { half: number }[];
   private readonly actors = new Map<Entity, Actor>();
   /** Test seam: a pursuit policy per entity; undefined falls back to the registry. */
   private readonly pursuitFor: ((e: Entity) => PursuitPolicy | undefined) | undefined;
@@ -147,6 +156,7 @@ export class Ecosystem {
     if (opts.queries) this.queries = SIZES.map((_, tier) => opts.queries!(tier));
     else this.queries = SIZES.map((_, tier) => stageWorldQueries(tier, seed));
     this.bounds = SIZES.map(size => ({ half: WORLD_HALF * size }));
+    this.hunterBounds = SIZES.map(size => ({ half: (SPAWN_HALF + HUNTER_MARGIN) * size }));
     for (const e of this.entities) { this.actors.set(e, speciesActor(e)); owners.set(e, this); this.install(e); }
   }
   /** Restores a run: planets already eaten stay eaten, everything else is fresh. */
@@ -165,12 +175,14 @@ export class Ecosystem {
     e.respawn = e.spec.kind === 'planet' ? -1 : RESPAWN_TIME[0] + this.rand() * (RESPAWN_TIME[1] - RESPAWN_TIME[0]);
   }
 
+  /** The roaming bound of an entity's tier: tighter for hunters. */
+  private boundsOf(e: Entity) { return (isHunter(e.spec) ? this.hunterBounds : this.bounds)[e.spec.tier]!; }
   /** Moves the entity (and its home) to the nearest legal pose within 4 body lengths, or removes it until a retry. */
   private install(e: Entity): boolean {
     if (isStatic(e)) return true;
     const actor = this.actors.get(e)!, tier = e.spec.tier;
     e.lastKnownHull = null;
-    const found = findRecoveryPose(actor, { x: e.x, y: e.y, z: e.z }, { queries: this.queries[tier]!, bounds: this.bounds[tier]!, orientation: O0, time: 0 }, { maxDistance: 4 * actor.bodyLength });
+    const found = findRecoveryPose(actor, { x: e.x, y: e.y, z: e.z }, { queries: this.queries[tier]!, bounds: this.boundsOf(e), orientation: O0, time: 0 }, { maxDistance: 4 * actor.bodyLength });
     if (!found.ok) { e.eaten = true; e.respawn = INSTALL_RETRY; e.mode = 'calm'; e.modeTime = 0; this.installFailures++; return false; }
     e.x = e.hx = found.position.x; e.y = e.hy = found.position.y; e.z = e.hz = found.position.z;
     e.groundOffset = e.y - seabedHeight(e.x, e.z);
@@ -190,7 +202,7 @@ export class Ecosystem {
         this.ambient(e, ctx, this.disp);
         e.x += this.disp.x; e.y += this.disp.y; e.z += this.disp.z;
         if (movement(e.spec.movementProfileId).mode === 'ground' && e.spec.tier < 4) e.y = seabedHeight(e.x, e.z) + e.groundOffset;
-        const half = WORLD_HALF * SIZES[e.spec.tier]!; e.x = Math.max(-half, Math.min(half, e.x)); e.z = Math.max(-half, Math.min(half, e.z));
+        const half = this.boundsOf(e).half; e.x = Math.max(-half, Math.min(half, e.x)); e.z = Math.max(-half, Math.min(half, e.z));
         continue;
       }
       if (!e.active) { e.active = true; if (!this.install(e)) continue; }
@@ -216,14 +228,15 @@ export class Ecosystem {
       const giveUp = Math.hypot(e.x - e.hx, e.y - e.hy, e.z - e.hz) > policy.leashBodyLengths * L
         || distance > policy.giveUpBodyLengths * L
         || (!perceived && now - e.lastSeenAt > policy.memorySeconds)
-        || (perceived && !e.reachable && e.blockedSince !== null && now - e.blockedSince > policy.blockedWaitSeconds + policy.memorySeconds);
+        || (perceived && !e.reachable && e.blockedSince !== null && now - e.blockedSince > policy.blockedWaitSeconds + policy.memorySeconds)
+        || pastSoftEdge(p, ctx.stage);
       if (giveUp) { this.setMode(e, 'return'); e.returnUntil = now + policy.reacquireSeconds; }
       return perceived;
     }
     if (e.mode === 'flee') { if (e.modeTime > 2.5) this.setMode(e, 'calm'); return perceived; }
     if (e.mode === 'return' && (Math.hypot(e.x - e.hx, e.z - e.hz) <= this.actors.get(e)!.bodyLength || now >= e.returnUntil + 6)) this.setMode(e, 'calm');
     // Acquire, from calm or return, once the reacquire window has passed.
-    if (now >= e.returnUntil && perceived && spec.hunts.includes(ctx.stage)) {
+    if (now >= e.returnUntil && perceived && spec.hunts.includes(ctx.stage) && !pastSoftEdge(p, ctx.stage)) {
       this.setMode(e, 'hunt'); clearBlocked(e); remember(e, p, now, ctx.playerHull); this.updateReachability(e, now); return perceived;
     }
     if (e.mode !== 'calm' || !ctx.perceivable) return perceived;
@@ -241,7 +254,7 @@ export class Ecosystem {
     pose.x = known.x; pose.y = known.y; pose.z = known.z;
     if ((mode === 'ground' || mode === 'burrow' || e.spec.behavior === 'still') && !t.space) pose.y = supportHeight(actor, known.x, known.z, O0, t) + .01 * actor.bodyLength;
     else if (mode === 'surface') pose.y = e.hy;
-    const actx = this.actx; actx.time = now; actx.bounds = this.bounds[e.spec.tier];
+    const actx = this.actx; actx.time = now; actx.bounds = this.boundsOf(e);
     const R = entityRadius(e), hull = e.lastKnownHull;
     const touch = hull ? touches(pose, R, hull) : Math.hypot(pose.x - known.x, pose.y - known.y, pose.z - known.z) <= R;
     e.reachable = touch && q.overlapHull(actor, pose, O0, actx).ok;
@@ -284,7 +297,7 @@ export class Ecosystem {
     const req = this.req, from = this.from;
     from.x = e.x; from.y = e.y; from.z = e.z;
     req.actorId = actor.id; req.hull = actor.hull; req.habitatProfileId = actor.habitat.id;
-    const m = this.motion; m.queries = q; m.bounds = this.bounds[spec.tier]; m.actor = actor; m.interval.start = ctx.now; m.interval.end = ctx.now + dt;
+    const m = this.motion; m.queries = q; m.bounds = this.boundsOf(e); m.actor = actor; m.interval.start = ctx.now; m.interval.end = ctx.now + dt;
     const result = resolveMotion(req, m);
     if (result.status === 'invalid-start' || result.status === 'needs-recovery') { this.install(e); return; }
     e.x = result.position.x; e.y = result.position.y; e.z = result.position.z;

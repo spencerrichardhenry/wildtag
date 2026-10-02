@@ -1,6 +1,6 @@
 // tests/tiny-tide-core/player-motion.test.ts
 import { describe, expect, it } from 'vitest';
-import { blockHint, stepPlayer, type PlayerStepContext } from '../../src/tiny-tide/player-motion';
+import { BLOCK_HINT_SECONDS, BREACH_REACH, blockHint, blockHintDue, newBlockHintGate, newStepSnapshot, restoreStep, snapshotStep, stepPlayer, type PlayerStepContext } from '../../src/tiny-tide/player-motion';
 import { breachPermit, habitat, movement, movementCapabilities } from '../../src/tiny-tide/profiles';
 import { newRuntime, type Actor, type CombatInput, type MovementProfile, type Terrain, type Vec3 } from '../../src/tiny-tide/combat-types';
 import { RELEASED } from '../../src/tiny-tide/input';
@@ -93,6 +93,20 @@ describe('player step: Breach', () => {
     expect(stepPlayer(r.position, rt, intent({ traversal: 'breach' }), { ...darter(), now: 10.1 }).breachStarted).toBe(false);
     const c = newRuntime(); expect(stepPlayer({ x: 0, y: 2.6, z: 0 }, c, intent({ traversal: 'breach' }), ctxFor('crawler', ball('seabed', 2.5, 10), sea())).breachStarted).toBe(false); expect(c.permit).toBeNull();
   });
+  it('starts a Breach only within BREACH_REACH body lengths of the surface; deeper, the tap rises (owner ruling M9)', () => {
+    // L = 10, surface 85: the reach is 20 under the surface.
+    expect(BREACH_REACH).toBe(2);
+    const near = newRuntime(), a = stepPlayer({ x: 0, y: 85 - 19, z: 0 }, near, intent({ traversal: 'breach' }), darter());
+    expect(a.breachStarted).toBe(true); expect(near.arc).not.toBeNull();
+    const deep = newRuntime(), b = stepPlayer({ x: 0, y: 85 - 21, z: 0 }, deep, intent({ traversal: 'breach' }), darter());
+    expect(b.breachStarted).toBe(false); expect(deep.arc).toBeNull(); expect(deep.permit).toBeNull(); expect(deep.breachReadyAt).toBe(0);
+    expect(deep.controlledVelocity.y).toBeGreaterThan(0);   // a normal Rise
+    expect(b.position.y).toBeGreaterThan(85 - 21);
+    // A held Rise after the tap keeps rising, and a tap near the surface on cooldown also rises.
+    const held = stepPlayer(b.position, deep, intent({ traversal: 'rise' }), { ...darter(), now: 10.1 }); expect(held.position.y).toBeGreaterThan(b.position.y);
+    const cool = newRuntime(); cool.breachReadyAt = 99; stepPlayer({ x: 0, y: 85 - 19, z: 0 }, cool, intent({ traversal: 'breach' }), darter());
+    expect(cool.arc).toBeNull(); expect(cool.controlledVelocity.y).toBeGreaterThan(0);
+  });
   it('accumulates external vertical motion on top of the arc', () => {
     const rt = newRuntime(); rt.externalVelocity.y = 5;
     const a = stepPlayer({ x: 0, y: 70, z: 0 }, rt, intent({ traversal: 'breach' }), darter()); expect(a.position.y).toBeCloseTo(83.3403, 3);   // + 5 × .1
@@ -116,6 +130,36 @@ describe('player step: Breach', () => {
     const rt = newRuntime(); rt.permit = { id: 'breach', startsAt: 9, expiresAt: 10.05, media: ['air'], landingRequired: true };
     const r = stepPlayer({ x: 0, y: 90, z: 0 }, rt, intent(), darter()); expect(r.permitEnded).toBe(true); expect(rt.permit).toBeNull(); expect(r.needsRecovery).toBe(true);
   });
+  it('a step that needs recovery can be undone: orientation, permit and arc come back, so the kept pose is admitted (M10)', () => {
+    const rt = newRuntime({ yaw: .3, pitch: 0 }), from = { x: 0, y: 90, z: 0 }, ctx = darter();
+    rt.permit = { id: 'breach', startsAt: 9, expiresAt: 10.05, media: ['air'], landingRequired: true }; rt.arc = { startedAt: 9.5, duration: 1.8, fromY: 70, endY: 64 };
+    const snap = newStepSnapshot(); snapshotStep(rt, snap);
+    const r = stepPlayer(from, rt, intent({ traversal: 'dive' }), { ...ctx, wish: { x: 1, y: 0, z: 0 } });
+    expect(r.needsRecovery).toBe(true); expect(rt.permit).toBeNull();
+    // The step cleared the permit; the last installed pose (in the air at y 90) is then refused without it.
+    expect(ctx.queries.overlapHull(ctx.actor, from, rt.orientation, { time: ctx.now, permit: rt.permit, bounds: ctx.bounds }).ok).toBe(false);
+    restoreStep(rt, snap);
+    expect(rt.permit).toEqual({ id: 'breach', startsAt: 9, expiresAt: 10.05, media: ['air'], landingRequired: true }); expect(rt.arc).toEqual({ startedAt: 9.5, duration: 1.8, fromY: 70, endY: 64 }); expect(rt.orientation).toEqual({ yaw: .3, pitch: 0 });
+    expect(ctx.queries.overlapHull(ctx.actor, from, rt.orientation, { time: ctx.now, permit: rt.permit, bounds: ctx.bounds }).ok).toBe(true);
+  });
+  it('a grown Darter that Breaches at full speed lands in the water and keeps ≥ 95 % of its horizontal speed (M14)', () => {
+    const p0 = plan('darter')!, g = starterFor(p0), size = SIZES[2]!, t = makeTerrain(2), q = makeWorldQueries(t), top = STAGES[2]!.speed * derive(effectiveStats(g, p0)).speedFactor;
+    for (const growth of [1, 1.38]) {
+      const actor = playerActor(p0, g, 2, growth), L = actor.bodyLength, rt = newRuntime(), wish = { x: 0, y: 0, z: 1 };
+      let p: Vec3 = { x: 0, y: 85 - .8 * L, z: 0 }, before = 0, landed = -1;
+      for (let f = 0; f < 60 * 4; f++) {
+        const tap = f === 60 ? intent({ traversal: 'breach' }) : intent();
+        const r = stepPlayer(p, rt, tap, { ...ctxFor('darter', actor, t, { size, topSpeedLocal: top, now: f / 60, dt: 1 / 60, wish }), queries: q });
+        expect(r.needsRecovery, `growth ${growth} frame ${f} ${r.status} ${JSON.stringify(p)}`).toBe(false);
+        if (f === 59) before = Math.hypot(rt.controlledVelocity.x, rt.controlledVelocity.z);
+        p = r.position;
+        if (r.arcEnded) { landed = f; break; }
+      }
+      expect(landed, `growth ${growth}: the arc ended`).toBeGreaterThan(60);
+      expect(q.overlapHull(actor, p, rt.orientation, { time: (landed + 1) / 60 }).ok).toBe(true);
+      expect(Math.hypot(rt.controlledVelocity.x, rt.controlledVelocity.z) / before, `growth ${growth}`).toBeGreaterThanOrEqual(.95);
+    }
+  });
   it('lands in the water at the end of a full arc', () => {
     const rt = newRuntime(); let p: Vec3 = { x: 0, y: 70, z: 0 }, ended = false;
     for (let i = 0; i < 20; i++) { const r = stepPlayer(p, rt, intent(i === 0 ? { traversal: 'breach' } : {}), { ...darter(), now: 10 + i / 10 }); p = r.position; ended ||= r.arcEnded; expect(r.needsRecovery).toBe(false); }
@@ -127,6 +171,43 @@ describe('block hints', () => {
     const c = (constraint: string) => ({ point: { x: 0, y: 0, z: 0 }, normal: { x: 0, y: -1, z: 0 }, constraint: constraint as never, distanceFraction: 0, time: 0 });
     expect(blockHint(plan('swimmer')!, c('surface-top'))).toBe("Swimmers can't leave the water."); expect(blockHint(plan('crawler')!, c('floor-gap'))).toBe('Crawlers stay on the seabed.');
     expect(blockHint(plan('swimmer')!, c('bounds-x'))).toBe("That's the edge of the world for now."); expect(blockHint(plan('swimmer')!, c('ground'))).toBe('Something solid is in the way.');
+  });
+});
+describe('block hints show only for a real block (final review I1)', () => {
+  /** Steps `frames` at 60 Hz and feeds the hint gate; `free(f)` says whether no other toast is on screen at frame f. */
+  const run = (id: string, actor: Actor, t: Terrain, start: Vec3, wish: Vec3, frames: number, free: (f: number) => boolean, stage = 1) => {
+    const size = SIZES[stage]!, top = STAGES[stage]!.speed, rt = newRuntime({ yaw: Math.atan2(wish.x, wish.z), pitch: 0 }), q = makeWorldQueries(t), gate = newBlockHintGate();
+    let p = start, contacts = 0, slid = 0;
+    const due: number[] = [];
+    for (let f = 0; f < frames; f++) {
+      const r = stepPlayer(p, rt, intent(), { ...ctxFor(id, actor, t, { size, topSpeedLocal: top, now: f / 60, dt: 1 / 60, wish }), queries: q });
+      expect(r.needsRecovery).toBe(false);
+      if (r.contacts.length > 0) { contacts++; if (r.progress >= .25) slid++; }
+      if (blockHintDue(gate, r, 1 / 60, free(f))) due.push(f);
+      p = r.position;
+    }
+    return { due, contacts, slid };
+  };
+  it('a Swimmer that skims and dives along the seabed for 10 s never gets a hint', () => {
+    const p0 = plan('swimmer')!, actor = playerActor(p0, starterFor(p0), 1, 1), t = makeTerrain(1), a = Math.PI / 4, o = { yaw: a, pitch: 0 };
+    const start = { x: 0, y: supportHeight(actor, 0, 0, o, t) + .02 * actor.bodyLength, z: 0 };
+    const r = run('swimmer', actor, t, start, { x: Math.sin(a) * .95, y: -.3, z: Math.cos(a) * .95 }, 600, () => true);
+    expect(r.contacts, 'the skim touches the seabed').toBeGreaterThan(30);
+    expect(r.slid, 'the skim slides').toBeGreaterThan(30);
+    expect(r.due).toEqual([]);
+  });
+  it('a sustained head-on block gets one hint, after BLOCK_HINT_SECONDS', () => {
+    const wall: Terrain = { groundAt: x => x > .5 ? 30 : 0, surface: 85, space: false, slopeBound: 0 };
+    const r = run('swimmer', ball('open-water', .3, 2), wall, { x: -1, y: 10, z: 0 }, { x: 1, y: 0, z: 0 }, 180, () => true);
+    expect(r.due.length).toBe(1);
+    const firstContact = 0;   // the wall is .8 away: the body reaches it within a few frames
+    expect(r.due[0]! / 60).toBeGreaterThanOrEqual(firstContact + BLOCK_HINT_SECONDS - 1e-9);
+    expect(r.due[0]! / 60).toBeLessThan(1);
+  });
+  it('never replaces a toast on screen: the hint waits until the toast is gone', () => {
+    const wall: Terrain = { groundAt: x => x > .5 ? 30 : 0, surface: 85, space: false, slopeBound: 0 };
+    const r = run('swimmer', ball('open-water', .3, 2), wall, { x: -1, y: 10, z: 0 }, { x: 1, y: 0, z: 0 }, 300, f => f >= 120);
+    expect(r.due).toEqual([120]);
   });
 });
 describe('player step: seabed slopes (playtest stalls)', () => {
