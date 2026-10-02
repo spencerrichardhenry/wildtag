@@ -208,7 +208,9 @@ solid (`solidId`).
   there is no rescue: the body stays, admitted, against the walls, and the
   player can back out. Every other install (respawn, recovery, evolution, an
   edit, a growth step, a new run) cancels a pending rescue (`cancelRescue`).
-  The QA diagnostics count rescues (`trapRescues`, `rescueLog`): COUNTS.
+  The QA diagnostics count rescues (`trapRescues`, `rescueLog`). Measured after fix round 3: 0 in four
+  swimmer journeys; 0–3 in twelve crawler journeys and 17 in one (seed
+  763919134). Before the repeat rule, one crawler journey had 126.
 - A growth lift stops at the first step that a different rule or a different
   solid refuses, so it never carries a body through a thin solid. In a crease
   (for example the seabed and a rock base) the two refusal normals are across
