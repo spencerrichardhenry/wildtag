@@ -1,5 +1,5 @@
 // Pure lifecycle transitions: reset, one guarded respawn, recovery, commit reconciliation, damage resolution, evolution.
-import type { Actor, CombatRuntime, LegalityContext, Orientation, RecoveryResult, Vec3 } from './combat-types';
+import type { Actor, Admission, CombatRuntime, LegalityContext, Orientation, RecoveryResult, Vec3 } from './combat-types';
 import { findRecoveryPose } from './motion';
 import { defaultCatalogs, type Catalogs } from './registries';
 import type { DesignDelta, PartEmitterSource } from './design-delta';
@@ -41,25 +41,42 @@ export function recoverPlayer(actor: Actor, position: Vec3, orientation: Orienta
 
 /** The largest lift, in body lengths, that a growth rescale may use to keep the motion, and its step. */
 export const GROWTH_LIFT_MAX = .5, GROWTH_LIFT_STEP = .005;
+/** Two refusal normals form a crease when the cosine of their angle is at most this in size (45° to 135° apart). */
+export const CREASE_COS = .7;
 
 /** After a growth rescale: a pose for the grown hull that keeps the motion. The position itself when the grown hull is admitted;
  *  else the smallest lift, in steps of GROWTH_LIFT_STEP × L up to GROWTH_LIFT_MAX × L, along the refusal's normal (the support
  *  normal on the seabed; +y when the refusal has no normal) that admits it, with the runtime's orientation and permit.
- *  The search stops (null) at the first step refused by a different rule or a different solid than the first refusal, so the lift
- *  never carries the body through a thin solid it meets on the way (owner playtest P4).
+ *  The lift stops at the first step refused by a different rule or a different solid than the first refusal, so it never carries the
+ *  body through a thin solid it meets on the way (owner playtest P4). In a crease (for example the seabed and a rock base), that second
+ *  refusal is part of the same pinch: when the two normals are across each other (CREASE_COS), the lift is tried once more along their
+ *  sum, and it stops at a third rule (final review M6).
  *  `rt` is only read: velocities, orientation, permit and arc stay as they are. null → the caller recovers instead. */
 export function growthPose(actor: Actor, position: Vec3, rt: Pick<CombatRuntime, 'orientation' | 'permit'>, ctx: LegalityContext & { time: number }): Vec3 | null {
   const o = rt.orientation, actx = { time: ctx.time, permit: rt.permit, bounds: ctx.bounds };
   const first = ctx.queries.overlapHull(actor, position, o, actx);
   if (first.ok) return { x: position.x, y: position.y, z: position.z };
-  const n = first.normal ?? { x: 0, y: 1, z: 0 }, step = GROWTH_LIFT_STEP * actor.bodyLength, steps = Math.round(GROWTH_LIFT_MAX / GROWTH_LIFT_STEP);
-  for (let i = 1; i <= steps; i++) {
-    const p = { x: position.x + n.x * step * i, y: position.y + n.y * step * i, z: position.z + n.z * step * i };
-    const a = ctx.queries.overlapHull(actor, p, o, actx);
-    if (a.ok) return p;
-    if (a.constraint !== first.constraint || a.solidId !== first.solidId) return null;
-  }
-  return null;
+  const step = GROWTH_LIFT_STEP * actor.bodyLength, steps = Math.round(GROWTH_LIFT_MAX / GROWTH_LIFT_STEP), UP = { x: 0, y: 1, z: 0 };
+  const same = (a: Admission, b: Admission) => a.constraint === b.constraint && a.solidId === b.solidId;
+  /** The lift along n: the first admitted step, or the refusal that stopped it (a rule not in `allowed`), or null when none is admitted. */
+  const lift = (n: Vec3, allowed: readonly Admission[]): Vec3 | Admission | null => {
+    for (let i = 1; i <= steps; i++) {
+      const p = { x: position.x + n.x * step * i, y: position.y + n.y * step * i, z: position.z + n.z * step * i };
+      const a = ctx.queries.overlapHull(actor, p, o, actx);
+      if (a.ok) return p;
+      if (!allowed.some(b => same(a, b))) return a;
+    }
+    return null;
+  };
+  const n1 = first.normal ?? UP, one = lift(n1, [first]);
+  if (one === null || !('constraint' in one)) return one;
+  // Only a crease: a second normal across the first (|n1 · n2| ≤ CREASE_COS). One that opposes the lift is a solid in its way; one
+  // along it means the lift already reached past that solid's middle (an earlier rule hid it), so both give up.
+  const n2 = one.normal ?? UP;
+  if (Math.abs(n1.x * n2.x + n1.y * n2.y + n1.z * n2.z) > CREASE_COS) return null;
+  const sx = n1.x + n2.x, sy = n1.y + n2.y, sz = n1.z + n2.z, len = Math.hypot(sx, sy, sz);
+  const two = lift({ x: sx / len, y: sy / len, z: sz / len }, [first, one]);
+  return two !== null && !('constraint' in two) ? two : null;
 }
 
 const sameEmitter = (a: PartEmitterSource, b: { partUid: string; copy: number; socketId: string }) => a.partUid === b.partUid && a.copy === b.copy && a.socketId === b.socketId;

@@ -1,10 +1,10 @@
 import * as T from 'three';
 import { batch, foodModel, material, sceneryAsset } from './models';
 import { biomeAt, PLAYER_HALF, random, seabedHeight, SIZES, WATER_LEVEL, type Biome } from './biomes';
-import { REEF_LAYERS, reefLayer } from './reef';
+import { REEF_LAYERS, reefLayer, reefLayerVisible } from './reef';
 import { EDGE_FADE_END, EDGE_SOFT_START } from './edge';
 import { CreatureModel } from './creature';
-import { SEABED_RINGS, seabedRingGeometry, seabedRingVisible, type SeabedRing } from './seabed-mesh';
+import { SEABED_RINGS, seabedCoarseGeometry, seabedCoarseVisible, seabedRingGeometry, seabedRingVisible, type SeabedRing } from './seabed-mesh';
 import { Ecosystem, type Entity } from './ecosystem';
 import type { Vec3 } from './combat-types';
 import type { Genome } from './genome';
@@ -96,7 +96,7 @@ export class TideWorld {
   private waterMaterial: T.ShaderMaterial;
   private stars: T.Points;
   private bubbles: T.Points;
-  private lods: { group: T.Group; size: number }[] = [];
+  private lods: { group: T.Group; layer: number; size: number }[] = [];
   private sunSphere: T.Mesh;
   private isMenu = true;
   private spaceMix = 0;
@@ -104,6 +104,7 @@ export class TideWorld {
   private scenery: T.Group;
   /** The far seabed rings (seabed-mesh.ts), each shown only where it can be seen at the current scale. */
   private seabedRings: { ring: SeabedRing; mesh: T.Mesh }[] = [];
+  private seabedCoarse!: T.Mesh;
   private sceneryMaterials: T.Material[] = [];
   private homePlanetMaterials: T.Material[] = [];
   private instances: { mesh: T.InstancedMesh; foods: FoodObject[]; local: T.Matrix4 }[] = [];
@@ -141,6 +142,8 @@ export class TideWorld {
       this.scenery.add(mesh);
       return { ring, mesh };
     });
+    this.seabedCoarse = ownMesh(seabedCoarseGeometry(), sand!); this.seabedCoarse.castShadow = false; this.seabedCoarse.receiveShadow = true; this.seabedCoarse.name = 'Seabed coarse ring';
+    this.scenery.add(this.seabedCoarse);
     this.scenery.add(this.reef, this.islands);
     this.caustics = new T.ShaderMaterial({ uniforms: { time: { value: 0 }, fade: { value: 1 } }, transparent: true, depthWrite: false,
       vertexShader: 'varying vec2 p; void main(){p=position.xz;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',
@@ -212,7 +215,7 @@ export class TideWorld {
       }
       const g = new T.Group(); for (const chunk of chunks.values()) g.add(batch(chunk));
       g.traverse(obj => this.fadeable(obj));
-      this.reef.add(g); this.lods.push({ group: g, size });
+      this.reef.add(g); this.lods.push({ group: g, layer, size });
     });
   }
   private disposeUniverse() {
@@ -389,10 +392,11 @@ export class TideWorld {
     this.waterMaterial.uniforms.time!.value = time; this.waterMaterial.uniforms.above!.value = above; this.waterMaterial.uniforms.fade!.value = 1 - this.spaceMix;
     this.surfaceMesh.visible = this.spaceMix < .995; this.scenery.visible = this.spaceMix < .995; this.sunSphere.visible = this.spaceMix < .9;
     for (const r of this.seabedRings) r.mesh.visible = seabedRingVisible(r.ring, this.scale);
+    this.seabedCoarse.visible = seabedCoarseVisible(this.scale);
     (this.stars.material as T.PointsMaterial).opacity = this.spaceMix; this.stars.position.copy(p);
     this.bubbles.rotation.y = Math.sin(time * .015) * .04;
     for (const lod of this.lods) {
-      lod.group.visible = this.scale / lod.size < 18;
+      lod.group.visible = reefLayerVisible(lod.layer, this.scale);
       const shadow = this.scale / lod.size > .45;
       lod.group.traverse(object => { if (object instanceof T.Mesh) object.castShadow = shadow; });
     }

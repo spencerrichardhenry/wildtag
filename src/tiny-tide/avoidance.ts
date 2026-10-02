@@ -1,8 +1,8 @@
 // Avoidance acceptance (spec §3): real encounters with the real hunter rules and the real player step.
 // The encounter search (fixture construction) is separate from the escape evaluation. Both start from fresh ecosystems.
-import { PLAYER_HALF, SIZES } from './biomes';
+import { SIZES, WORLD_HALF } from './biomes';
 import { newRuntime, type Actor, type Capsule, type CombatInput, type CombatRuntime, type Orientation, type PursuitPolicy, type Vec3, type WorldQueries } from './combat-types';
-import { Ecosystem, entityRadius, noticeRadius, touches, type EcoEvent, type Entity } from './ecosystem';
+import { Ecosystem, entityRadius, noticeRadius, speciesActor, touches, type EcoEvent, type Entity } from './ecosystem';
 import { derive, effectiveStats, starterFor } from './genome';
 import { RELEASED } from './input';
 import { recoverPlayer } from './lifecycle';
@@ -14,9 +14,11 @@ import { movement, movementCapabilities } from './profiles';
 import { stepPlayer } from './player-motion';
 import { EDGE_SOFT_START } from './edge';
 import { STAGES } from './state';
-import { stageWorldQueries, supportHeight } from './world-queries';
+import { stageBounds, stageWorldQueries, supportHeight } from './world-queries';
 
-export interface Encounter { seed: number; entityId: number; hunterKey: string; planId: string; start: Vec3; hunterStart: Vec3; separation: number }
+/** `startYaw`: the orientation the start pose was admitted with (the player faces away from the hunter's start, from the searched point).
+ *  `relocate`: the hunter is moved to `hunterStart` (and its home there) before the escape (an edge encounter's fixture). */
+export interface Encounter { seed: number; entityId: number; hunterKey: string; planId: string; start: Vec3; startYaw: number; hunterStart: Vec3; separation: number; relocate?: boolean }
 export interface EscapeResult { ok: boolean; reason: 'gave-up' | 'no-hit' | 'hit' | 'not-acquired' | 'stuck'; seconds: number }
 
 const DT = 1 / 60, ESCAPE_SECONDS = 8;
@@ -28,8 +30,7 @@ const legalities = new Map<string, Legality>();
 function legality(stage: number, seed: number): Legality {
   let l = legalities.get(`${seed}:${stage}`);
   if (!l) {
-    const size = SIZES[stage]!;
-    l = { queries: stageWorldQueries(stage, seed), bounds: { half: PLAYER_HALF * size, maxY: stage >= 3 ? 30 * size : undefined } };
+    l = { queries: stageWorldQueries(stage, seed), bounds: stageBounds(stage) };
     legalities.set(`${seed}:${stage}`, l);
   }
   return l;
@@ -89,12 +90,38 @@ export function findEncounters(planId: string, hunterKey: string, count: number,
         // Each candidate is judged on its own fresh ecosystem.
         const eco = new Ecosystem(seed), fresh = eco.entities.find(e => e.id === h.id)!;
         if (!acquires(eco, fresh, pl, start, ro)) continue;
-        out.push({ seed, entityId: h.id, hunterKey, planId, start: { ...start }, hunterStart: hunter, separation: distance(start, hunter) });
+        out.push({ seed, entityId: h.id, hunterKey, planId, start: { ...start }, startYaw: ro.yaw, hunterStart: hunter, separation: distance(start, hunter) });
         if (out.length >= count) return out;
       }
     }
   }
   return out;
+}
+
+/** The x (stage-local units) of an edge encounter's start: inside the soft start (40), so the flight goes into the edge current. */
+export const EDGE_ENCOUNTER_X = 38;
+/** Fixture construction (final review M11): the player stands at x = EDGE_ENCOUNTER_X, facing +x, and the first hunter of `hunterKey`
+ *  in the seed is moved .95 of its notice distance further in (−x), on the same z. Fleeing straight away from it runs into the push
+ *  zone, where the current holds the player. null when no admitted pair is found. */
+export function edgeEncounter(planId: string, hunterKey: string, seed: number): Encounter | null {
+  const pl = playerFor(planId), stage = pl.plan.size, size = SIZES[stage]!, legal = legality(stage, seed), L = pl.actor.bodyLength, t = legal.queries.terrain;
+  const eco = new Ecosystem(seed), h = eco.entities.find(e => e.spec.key === hunterKey && !e.eaten);
+  if (!h) return null;
+  const n = noticeRadius(h, stage, pl.stealth), hunterActor = speciesActor(h), tier = h.spec.tier, hunterLegal = { queries: stageWorldQueries(tier, seed), bounds: { half: WORLD_HALF * SIZES[tier]! } };
+  const o: Orientation = { yaw: Math.PI / 2, pitch: 0 };
+  for (const z of [0, 6, -6, 12, -12, 18, -18]) {
+    const x = EDGE_ENCOUNTER_X * size, near: Vec3 = { x, y: t.groundAt(x, z * size) + L, z: z * size };
+    const rec = findRecoveryPose(pl.actor, near, { ...legal, orientation: o, time: 0 }, { maxDistance: 2 * L });
+    if (!rec.ok || !insideSoftEdge(pl.actor, rec.position, legal.bounds.half)) continue;
+    // A ground hunter keeps its height over the seabed; any other comes level with the player.
+    const start = rec.position, hx = start.x - .95 * n, hz = start.z, hy = movement(h.spec.movementProfileId).mode === 'ground' ? t.groundAt(hx, hz) + h.y - t.groundAt(h.x, h.z) : start.y;
+    const hrec = findRecoveryPose(hunterActor, { x: hx, y: hy, z: hz }, { ...hunterLegal, orientation: { yaw: 0, pitch: 0 }, time: 0 }, { maxDistance: 2 * hunterActor.bodyLength });
+    if (!hrec.ok) continue;
+    const hunter = hrec.position;
+    if (distance(start, hunter) > n || touches(hunter, entityRadius(h), worldHull(pl.actor, start, o))) continue;
+    return { seed, entityId: h.id, hunterKey, planId, start: { ...start }, startYaw: o.yaw, hunterStart: { ...hunter }, separation: distance(start, hunter), relocate: true };
+  }
+  return null;
 }
 
 /** Runs straight away from the hunter for eight seconds with the real player step and the real hunter rules. */
@@ -106,10 +133,11 @@ export function simulateEscape(e: Encounter, hunter: { speedScale?: number; poli
   const h = eco.entities.find(x => x.id === e.entityId);
   if (!h) throw new Error(`avoidance: no entity ${e.entityId} in seed ${e.seed}`);
   if (hunter.speedScale !== undefined) h.spec = { ...h.spec, speed: h.spec.speed * hunter.speedScale };
+  if (e.relocate) { h.x = h.hx = e.hunterStart.x; h.y = h.hy = e.hunterStart.y; h.z = h.hz = e.hunterStart.z; }
 
-  // Place the player at the start, as installPose does: level, away from the hunter, settled on its support.
+  // Place the player at the start, as installPose does: with the admitted orientation (level, away from the hunter), settled on its support.
   let position: Vec3 = { ...e.start };
-  const rt: CombatRuntime = newRuntime(awayYaw(e.start, e.hunterStart));
+  const rt: CombatRuntime = newRuntime({ yaw: e.startYaw, pitch: 0 });
   const settle = () => { rt.groundOffset = caps.ground && !t.space ? Math.max(0, position.y - (supportHeight(actor, position.x, position.z, rt.orientation, t) + .01 * L)) : 0; };
   settle();
   if (!acquires(eco, h, pl, position, rt.orientation)) return { ok: false, reason: 'not-acquired', seconds: 0 };

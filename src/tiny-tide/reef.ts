@@ -4,7 +4,8 @@
 // under or around a plant; solid footprints never overlap each other; a rock sits beside its plant and an arch frames it from the
 // other side, with its opening facing the plant; both feet of an arch stand in the seabed.
 import { biomeAt, makeBiomes, random, seabedHeight, SIZES } from './biomes';
-import { solidOf, SolidIndex, sphereShape, newContact, type CapsuleShape, type Solid, type SolidShape } from './solids';
+import { colliderMesh, meshShape, solidOf, SolidIndex, sphereShape, newContact, type CapsuleShape, type ColliderMesh, type Solid, type SolidShape } from './solids';
+import colliders from './reef-colliders.json';
 
 /** The physical size of each reef layer. Layer i uses the biomes of tier i. Several layers are drawn together at every stage. */
 export const REEF_LAYERS = [1, 5, 20] as const;
@@ -15,8 +16,25 @@ export const REEF_INNER = 7, REEF_SPAN = 47;
 
 // ---- the art (asset units; build_assets.py) ----
 
-/** The rock ellipsoid in asset units (make_rock: centre (0, .15, 0), radii (1, .66, .83), ±9.5 % radial noise), grown by
- *  ROCK_FIT. The fit keeps every vertex within .04 of the collider and the collider within .14 of the mesh (reef.test.ts). */
+/** The colliders are the visible meshes themselves (final review I2): the stone (Tide_rock) and the moss (Tide_leaf) of each GLB,
+ *  exported to reef-colliders.json by scripts/tiny-tide/reef-colliders.mjs (reef.test.ts checks it against the GLBs). Each closed
+ *  piece (the stone, each moss patch) is its own mesh, so the inside test of each stays exact where pieces overlap. The arch's thin
+ *  crown coral has no collision, like all coral. */
+type MeshData = { positions: readonly number[]; index: readonly number[] };
+function pieces(data: MeshData, cell: number): ColliderMesh[] {
+  const parent = Array.from({ length: data.positions.length / 3 }, (_, i) => i), find = (i: number): number => parent[i] === i ? i : (parent[i] = find(parent[i]!));
+  for (let t = 0; t < data.index.length; t += 3) { const a = find(data.index[t]!); parent[find(data.index[t + 1]!)] = a; parent[find(data.index[t + 2]!)] = a; }
+  const groups = new Map<number, number[]>();
+  for (let t = 0; t < data.index.length; t += 3) { const g = find(data.index[t]!), list = groups.get(g) ?? []; list.push(data.index[t]!, data.index[t + 1]!, data.index[t + 2]!); groups.set(g, list); }
+  return [...groups.values()].map(index => colliderMesh(data.positions, index, cell));
+}
+const meshesOf = (data: { stone: MeshData; moss: MeshData }) => [...pieces(data.stone, .2), ...pieces(data.moss, .1)];
+export const REEF_MESHES: Readonly<Record<'reef_rock_0' | 'reef_rock_1' | 'reef_arch', readonly ColliderMesh[]>> = {
+  reef_rock_0: meshesOf(colliders.reef_rock_0), reef_rock_1: meshesOf(colliders.reef_rock_1), reef_arch: meshesOf(colliders.reef_arch),
+};
+/** The rock's placement footprint in asset units: the ellipsoid of make_rock (centre (0, .15, 0), radii (1, .66, .83), ±9.5 % radial
+ *  noise) grown by ROCK_FIT. Every stone vertex is within .04 of it (reef.test.ts). Placement keeps footprints apart; collision uses
+ *  the mesh. */
 export const ROCK_CENTER_Y = .15, ROCK_RADII = [1, .66, .83] as const, ROCK_FIT = 1.05;
 /** The arch tube (make_arch): Catmull-Rom points, radii, 5 steps per span, and the vertex jitter (x ± .04, y ± .065). */
 const ARCH_POINTS: readonly (readonly [number, number, number])[] = [[-1.65, -.2, 0], [-1.5, .78, 0], [-1.1, 1.9, .03], [-.31, 2.53, .04], [.62, 2.31, .04], [1.36, 1.40, 0], [1.58, -.2, 0]];
@@ -45,8 +63,8 @@ function archRings(): { p: [number, number, number]; r: number }[] {
 }
 /** Rings per arch capsule, and the jitter allowance (the largest vertex jitter of make_arch). */
 const ARCH_RUN = 2, ARCH_JITTER = Math.hypot(.04, .065);
-/** The arch collider in asset units: 15 capsules along the tube (the legs and the top span), each holding its ARCH_RUN + 1 rings with
- *  their jitter. The opening under the top span stays free. The tube body lies inside it, and it is at most .2 outside the mesh. */
+/** The arch's placement footprint in asset units: 15 capsules along the tube (the legs and the top span), each holding its ARCH_RUN + 1
+ *  rings with their jitter. The tube body lies inside it. Collision uses the mesh (REEF_MESHES.reef_arch). */
 export const ARCH_CAPSULES: readonly CapsuleShape[] = (() => {
   const rings = archRings(), out: CapsuleShape[] = [];
   for (let i = 0; i + ARCH_RUN < rings.length; i += ARCH_RUN) {
@@ -90,7 +108,8 @@ export function archShapes(x: number, y: number, z: number, s: number, yaw: numb
  *  is its equator (the closest point to a point at the centre height lies on it), and a capsule's is a 2D stadium. */
 export function footprintClear(solid: Solid, x: number, z: number, R: number): boolean {
   if (x + R < solid.minX || x - R > solid.maxX || z + R < solid.minZ || z - R > solid.maxZ) return true;
-  for (const s of solid.shapes) {
+  for (const s of solid.footprint ?? solid.shapes) {
+    if (s.kind === 'mesh') throw new Error(`footprintClear: ${solid.id} has a mesh and no footprint`);
     if (s.kind === 'ellipsoid') {
       const c = newContact(); c.depth = 0;
       if (sphereShape(s, x, s.y, z, R, c)) return false;
@@ -105,7 +124,8 @@ export function footprintClear(solid: Solid, x: number, z: number, R: number): b
 /** Discs that cover a solid's footprint: an ellipsoid's bounding circle, and along each capsule discs every radius/2 that hold it. */
 function coverDiscs(solid: Solid): [number, number, number][] {
   const out: [number, number, number][] = [];
-  for (const s of solid.shapes) {
+  for (const s of solid.footprint ?? solid.shapes) {
+    if (s.kind === 'mesh') throw new Error(`coverDiscs: ${solid.id} has a mesh and no footprint`);
     if (s.kind === 'ellipsoid') { out.push([s.x, s.z, Math.max(s.a, s.c)]); continue; }
     const len = Math.hypot(s.x1 - s.x0, s.z1 - s.z0), n = Math.max(1, Math.ceil(len / (s.radius / 2))), step = len / n;
     for (let k = 0; k <= n; k++) out.push([s.x0 + (s.x1 - s.x0) * k / n, s.z0 + (s.z1 - s.z0) * k / n, s.radius + step / 2]);
@@ -133,13 +153,14 @@ export function placeReef(layer: number, seed: number): ReefLayer {
     if (plantClear(x, z, footprint + gap)) out.plants.push({ asset, x, y: seabedHeight(x, z), z, scale, footprint });
     const reach = Math.max(sx * ROCK_RADII[0], sz * ROCK_RADII[2]) * ROCK_FIT, d = footprint + reach + 2 * gap;
     const rx = x + Math.cos(side) * d, rz = z + Math.sin(side) * d, ry = seabedHeight(rx, rz) - .2 * size;
-    const rock = solidOf(`rock:${layer}:${i}`, 'rock', [rockShape(rx, ry, rz, sx, sy, sz, a)]);
-    if (solidClear(rock)) { out.rocks.push({ asset: `reef_rock_${i % 2}` as Rock['asset'], x: rx, y: ry, z: rz, sx, sy, sz, yaw: a, solid: rock }); out.solids.push(rock); }
+    const rockAsset = `reef_rock_${i % 2}` as Rock['asset'];
+    const rock = solidOf(`rock:${layer}:${i}`, 'rock', REEF_MESHES[rockAsset].map(m => meshShape(m, rx, ry, rz, sx, sy, sz, a)), [rockShape(rx, ry, rz, sx, sy, sz, a)]);
+    if (solidClear(rock)) { out.rocks.push({ asset: rockAsset, x: rx, y: ry, z: rz, sx, sy, sz, yaw: a, solid: rock }); out.solids.push(rock); }
     if (i % 7 === 0 || (decor === 'rock' && i % 3 === 0)) {
       // The arch's span (asset x) is across the line to the plant, so the plant shows through its opening.
       const s = size * ARCH_SCALE, phi = side + Math.PI, yaw = Math.PI / 2 - phi, depth = .7 * s, ad = footprint + depth + 2 * gap;
       const ax = x + Math.cos(phi) * ad, az = z + Math.sin(phi) * ad;
-      const ay = archBase(ax, az, s, yaw), arch = solidOf(`arch:${layer}:${i}`, 'arch', archShapes(ax, ay, az, s, yaw));
+      const ay = archBase(ax, az, s, yaw), arch = solidOf(`arch:${layer}:${i}`, 'arch', REEF_MESHES.reef_arch.map(m => meshShape(m, ax, ay, az, s, s, s, yaw)), archShapes(ax, ay, az, s, yaw));
       if (solidClear(arch)) { out.arches.push({ x: ax, y: ay, z: az, scale: s, yaw, solid: arch }); out.solids.push(arch); }
     }
   }
@@ -170,8 +191,12 @@ function archBase(x: number, z: number, s: number, yaw: number): number {
 
 // ---- stage solids ----
 
-/** A reef layer collides with a stage's bodies when its size is at least the stage's size (smaller layers are pebbles to it). */
-export const layerCollides = (layer: number, stage: number) => stage < 4 && REEF_LAYERS[layer]! >= SIZES[stage]!;
+/** A layer is drawn while the world scale (physical units per render unit, SIZES[stage] at rest) is under 18 × its size (world.ts). */
+export const reefLayerVisible = (layer: number, scale: number) => scale / REEF_LAYERS[layer]! < 18;
+/** A reef layer collides with a stage's bodies when its rocks are tall enough to meet them: 4 × its size at least the stage's size
+ *  (final review I3). Its tallest rocks then stand .14–.18 body lengths over the seabed; a layer under that is drawn only as pebbles
+ *  under .05 L, or not at all. Stage 0: layers 0–2; stage 1: 0–2; stage 2: 1 and 2; stage 3: 2; stage 4 (space): none. */
+export const layerCollides = (layer: number, stage: number) => stage < 4 && REEF_LAYERS[layer]! * 4 >= SIZES[stage]!;
 const layers = new Map<string, ReefLayer>(), indices = new Map<string, SolidIndex>();
 const CACHE = 48;
 function remember<T>(map: Map<string, T>, key: string, make: () => T): T {
