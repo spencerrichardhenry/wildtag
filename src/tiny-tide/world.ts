@@ -1,8 +1,9 @@
 import * as T from 'three';
 import { batch, coral, foodModel, kelp, material, sceneryAsset } from './models';
 import { biomeAt, PLAYER_HALF, random, seabedHeight, SIZES, WATER_LEVEL, type Biome } from './biomes';
-import { EDGE_SOFT_START } from './edge';
+import { EDGE_FADE_END, EDGE_SOFT_START } from './edge';
 import { CreatureModel } from './creature';
+import { SEABED_RINGS, seabedRingGeometry, seabedRingVisible, type SeabedRing } from './seabed-mesh';
 import { Ecosystem, type Entity } from './ecosystem';
 import type { Vec3 } from './combat-types';
 import type { Genome } from './genome';
@@ -27,7 +28,7 @@ const EDGE_FOG_DENSITY = .045;
 const EDGE_DARKEN = .6;
 const EDGE_DARK = new T.Color('#0b2f3a');
 /** Scenery fades into the fog between these Chebyshev distances from the centre (render units). */
-const EDGE_FADE_FROM = PLAYER_HALF, EDGE_FADE_TO = PLAYER_HALF * 1.16;
+const EDGE_FADE_FROM = PLAYER_HALF, EDGE_FADE_TO = PLAYER_HALF * EDGE_FADE_END;
 /** Shared by every scenery material: the fade strength (off in space) and the height (render units) above which nothing fades (clouds). */
 const edgeUniforms = { edgeFade: { value: 1 }, edgeTop: { value: 200 } };
 function edgeFadeShader(shader: T.WebGLProgramParametersWithUniforms) {
@@ -100,6 +101,8 @@ export class TideWorld {
   private spaceMix = 0;
   private surfaceMesh: T.Mesh;
   private scenery: T.Group;
+  /** The far seabed rings (seabed-mesh.ts), each shown only where it can be seen at the current scale. */
+  private seabedRings: { ring: SeabedRing; mesh: T.Mesh }[] = [];
   private sceneryMaterials: T.Material[] = [];
   private homePlanetMaterials: T.Material[] = [];
   private instances: { mesh: T.InstancedMesh; foods: FoodObject[]; local: T.Matrix4 }[] = [];
@@ -125,12 +128,18 @@ export class TideWorld {
     this.scene.fog = new T.FogExp2('#247e8b', .017);
     const rand = random(71829);
     this.scenery = new T.Group(); this.environment.add(this.scenery);
-    // The seabed is a continuous height field, with finer tessellation nearby.
-    for (let index = 0; index < 3; index++) {
-      const ground = sceneryAsset(`seabed_${index}`);
-      ground.traverse(obj => { if (obj instanceof T.Mesh) { obj.castShadow = false; obj.receiveShadow = true; } });
-      this.scenery.add(ground);
-    }
+    // The seabed is a continuous height field: the Blender reef mesh (seabed_0) and, around it, rings sampled from the collision
+    // ground (seabed-mesh.ts) in its material. A ring is drawn only at scales where it can be seen (update).
+    const reefGround = sceneryAsset('seabed_0');
+    let sand: T.Material | null = null;
+    reefGround.traverse(obj => { if (obj instanceof T.Mesh) { obj.castShadow = false; obj.receiveShadow = true; sand ??= obj.material as T.Material; } });
+    this.scenery.add(reefGround);
+    if (!sand) throw new Error('seabed_0 has no mesh');
+    this.seabedRings = SEABED_RINGS.map((ring, index) => {
+      const mesh = ownMesh(seabedRingGeometry(index), sand!); mesh.castShadow = false; mesh.receiveShadow = true; mesh.name = `Seabed ring ${index}`;
+      this.scenery.add(mesh);
+      return { ring, mesh };
+    });
     this.scenery.add(this.reef, this.islands);
     this.caustics = new T.ShaderMaterial({ uniforms: { time: { value: 0 }, fade: { value: 1 } }, transparent: true, depthWrite: false,
       vertexShader: 'varying vec2 p; void main(){p=position.xz;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',
@@ -387,6 +396,7 @@ export class TideWorld {
     const bubbleMat = this.bubbles.material as T.PointsMaterial; bubbleMat.size = .23 / this.scale; bubbleMat.opacity = .4 * (1 - this.spaceMix);
     this.waterMaterial.uniforms.time!.value = time; this.waterMaterial.uniforms.above!.value = above; this.waterMaterial.uniforms.fade!.value = 1 - this.spaceMix;
     this.surfaceMesh.visible = this.spaceMix < .995; this.scenery.visible = this.spaceMix < .995; this.sunSphere.visible = this.spaceMix < .9;
+    for (const r of this.seabedRings) r.mesh.visible = seabedRingVisible(r.ring, this.scale);
     (this.stars.material as T.PointsMaterial).opacity = this.spaceMix; this.stars.position.copy(p);
     this.bubbles.rotation.y = Math.sin(time * .015) * .04;
     for (const lod of this.lods) {

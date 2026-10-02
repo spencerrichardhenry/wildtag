@@ -1,0 +1,76 @@
+// tests/tiny-tide-core/seabed.test.ts — owner playtest P3: the drawn seabed agrees with the collision ground (seabedHeight).
+import { readFileSync } from 'node:fs';
+import { describe, expect, it } from 'vitest';
+import { PLAYER_HALF, SIZES, seabedHeight } from '../../src/tiny-tide/biomes';
+import { starterFor } from '../../src/tiny-tide/genome';
+import { bodyLengthOf } from '../../src/tiny-tide/mount';
+import { PLANS } from '../../src/tiny-tide/plans';
+import { SEABED_INNER_HALF, SEABED_INNER_SEGMENTS, SEABED_RINGS, SEABED_VISIBLE, seabedRingGeometry, seabedRingVisible } from '../../src/tiny-tide/seabed-mesh';
+
+interface Mesh { positions: ArrayLike<number>; index: ArrayLike<number> }
+/** POSITION and indices of every primitive of a GLB (no node transforms: the seabed GLBs have none). */
+function readGlb(path: string): Mesh[] {
+  const data = readFileSync(path), dv = new DataView(data.buffer, data.byteOffset, data.byteLength), jsonLength = dv.getUint32(12, true);
+  const json = JSON.parse(new TextDecoder().decode(data.subarray(20, 20 + jsonLength))), bin = 28 + jsonLength, out: Mesh[] = [];
+  const view = (i: number) => {
+    const a = json.accessors[i], v = json.bufferViews[a.bufferView], n = { SCALAR: 1, VEC3: 3 }[a.type as 'SCALAR' | 'VEC3'];
+    const o = bin + (v.byteOffset ?? 0) + (a.byteOffset ?? 0), arr: number[] = [];
+    for (let k = 0; k < a.count * n!; k++) arr.push(a.componentType === 5126 ? dv.getFloat32(o + 4 * k, true) : a.componentType === 5125 ? dv.getUint32(o + 4 * k, true) : dv.getUint16(o + 2 * k, true));
+    return arr;
+  };
+  for (const m of json.meshes) for (const p of m.primitives) out.push({ positions: view(p.attributes.POSITION), index: view(p.indices) });
+  return out;
+}
+
+/** The largest |drawn height − seabedHeight| at 15 points per triangle, inside the Chebyshev radius `reach`. */
+function maxError(meshes: readonly Mesh[], reach: number): number {
+  let worst = 0;
+  for (const { positions: p, index } of meshes) for (let t = 0; t < index.length; t += 3) {
+    const a = 3 * index[t]!, b = 3 * index[t + 1]!, c = 3 * index[t + 2]!;
+    if (Math.min(Math.max(Math.abs(p[a]!), Math.abs(p[a + 2]!)), Math.max(Math.abs(p[b]!), Math.abs(p[b + 2]!)), Math.max(Math.abs(p[c]!), Math.abs(p[c + 2]!))) > reach) continue;
+    for (let i = 0; i <= 4; i++) for (let j = 0; j <= 4 - i; j++) {
+      const u = i / 4, v = j / 4, w = 1 - u - v;
+      const x = p[a]! * u + p[b]! * v + p[c]! * w, z = p[a + 2]! * u + p[b + 2]! * v + p[c + 2]! * w;
+      if (Math.max(Math.abs(x), Math.abs(z)) > reach) continue;
+      worst = Math.max(worst, Math.abs(p[a + 1]! * u + p[b + 1]! * v + p[c + 1]! * w - seabedHeight(x, z)));
+    }
+  }
+  return worst;
+}
+
+describe('the drawn seabed (owner playtest P3)', () => {
+  const inner = readGlb('public/tiny-tide/models/seabed_0.glb');
+  const rings = SEABED_RINGS.map((r, i) => { const g = seabedRingGeometry(i); return { ring: r, mesh: { positions: g.getAttribute('position').array, index: g.getIndex()!.array } }; });
+  for (let stage = 0; stage < 4; stage++) {
+    // The smallest starter body length of the stage's plans, at growth 1 (the strictest L).
+    const L = Math.min(...PLANS.filter(p => p.size === stage).map(p => bodyLengthOf(starterFor(p)))) * SIZES[stage]!, reach = PLAYER_HALF * SIZES[stage]!;
+    it(`matches seabedHeight within .02 L everywhere a stage ${stage} player can reach`, () => {
+      const shown = [inner[0]!, ...rings.filter(r => seabedRingVisible(r.ring, SIZES[stage]!)).map(r => r.mesh)];
+      const err = maxError(shown, reach);
+      expect(err / L, `max error ${err.toFixed(3)} physical`).toBeLessThanOrEqual(.02);
+    });
+  }
+  it('covers every stage out to its edge fade without gaps, each ring on the boundary of the one inside it', () => {
+    expect(SEABED_RINGS[0]!.from).toBe(SEABED_INNER_HALF);
+    for (let i = 1; i < SEABED_RINGS.length; i++) expect(SEABED_RINGS[i]!.from).toBe(SEABED_RINGS[i - 1]!.to);
+    for (let stage = 0; stage < 4; stage++) {
+      const scale = SIZES[stage]!, far = Math.max(SEABED_INNER_HALF, ...SEABED_RINGS.filter(r => seabedRingVisible(r, scale)).map(r => r.to));
+      expect(far, `stage ${stage}`).toBeGreaterThanOrEqual(SEABED_VISIBLE * scale);
+      // Each visible ring's inside is visible too (no hole between the reef and a far ring).
+      for (const r of SEABED_RINGS) if (seabedRingVisible(r, scale) && r.from > SEABED_INNER_HALF) expect(SEABED_RINGS.some(q => q.to === r.from && seabedRingVisible(q, scale))).toBe(true);
+    }
+    // The first loop of the first ring is seabed_0's boundary (100 quads per side over ±65): the same vertices, no crack.
+    const p = rings[0]!.mesh.positions, g = inner[0]!.positions, boundary = new Set<string>();
+    for (let k = 0; k < g.length; k += 3) if (Math.max(Math.abs(g[k]!), Math.abs(g[k + 2]!)) > SEABED_INNER_HALF - 1e-3) boundary.add(`${g[k]!.toFixed(3)},${g[k + 1]!.toFixed(3)},${g[k + 2]!.toFixed(3)}`);
+    let onBoundary = 0;
+    for (let k = 0; k < p.length; k += 3) if (Math.max(Math.abs(p[k]!), Math.abs(p[k + 2]!)) < SEABED_INNER_HALF + 1e-3) { onBoundary++; expect(boundary.has(`${p[k]!.toFixed(3)},${p[k + 1]!.toFixed(3)},${p[k + 2]!.toFixed(3)}`)).toBe(true); }
+    expect(onBoundary).toBe(4 * SEABED_INNER_SEGMENTS);
+  });
+  it('faces every triangle up', () => {
+    for (const { mesh: { positions: p, index } } of rings) for (let t = 0; t < index.length; t += 3) {
+      const a = 3 * index[t]!, b = 3 * index[t + 1]!, c = 3 * index[t + 2]!;
+      const ux = p[b]! - p[a]!, uz = p[b + 2]! - p[a + 2]!, vx = p[c]! - p[a]!, vz = p[c + 2]! - p[a + 2]!;
+      expect(uz * vx - ux * vz).toBeGreaterThan(0);   // the y part of (b − a) × (c − a)
+    }
+  });
+});

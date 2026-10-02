@@ -15,6 +15,8 @@ export const EDGE_CURRENT_MAX = 30;
  *  approachable. Every creature can bite there: the slowest possible top speed (5.8 × .7 × .8 ≈ 3.2 local/s) settles at
  *  about 42.0 local units, and the smallest bite radius (1.7 + .5) reaches 44.2 ≥ .88 × 50 = 44. */
 export const EDGE_REACH = .88;
+/** Scenery past the hard bound fades out by this fraction of its half size (world.ts); nothing past it is seen. */
+export const EDGE_FADE_END = 1.16;
 /** The toast for the edge (push zone and hard bound). */
 export const EDGE_HINT = "That's the edge of the world for now.";
 

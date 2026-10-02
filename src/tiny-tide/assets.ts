@@ -3,7 +3,7 @@ import { GLTFLoader, type GLTF } from 'three/addons/loaders/GLTFLoader.js';
 import { PART_ASSETS } from './parts';
 import { FOOD_MODEL_KINDS } from './species';
 export const FOOD_ASSETS = FOOD_MODEL_KINDS;
-export const SCENERY_ASSETS = ['reef_rock_0', 'reef_rock_1', 'reef_arch', 'reef_coral_0', 'reef_coral_1', 'reef_coral_2', 'reef_coral_3', 'reef_kelp', 'reef_grass', 'reef_shell', 'reef_starfish', 'island', 'cloud', 'seabed_0', 'seabed_1', 'seabed_2'] as const;
+export const SCENERY_ASSETS = ['reef_rock_0', 'reef_rock_1', 'reef_arch', 'reef_coral_0', 'reef_coral_1', 'reef_coral_2', 'reef_coral_3', 'reef_kelp', 'reef_grass', 'reef_shell', 'reef_starfish', 'island', 'cloud', 'seabed_0'] as const;
 export const ASSET_NAMES = [...PART_ASSETS, ...FOOD_ASSETS, ...SCENERY_ASSETS, ...Array.from({ length: 12 }, (_, i) => `planet_${String(i).padStart(2, '0')}`)];
 const library = new Map<string, GLTF>();
 const materials = new Map<string, T.Material>();
