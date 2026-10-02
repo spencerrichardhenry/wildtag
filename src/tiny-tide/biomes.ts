@@ -1,12 +1,16 @@
+import { EDGE_SOFT_START } from './edge';
 import { SPECIES, tierSpecies, type FoodKind, type Species } from './species';
 
 // Physical sizes in one persistent world. The camera stays close while the
 // entire habitat shrinks continuously as the creature grows.
 export const SIZES = [1, 4, 16, 64, 256] as const;
 export const WATER_LEVEL = 85;
-/** Food and creatures live inside this square, in tier-local units. */
+/** Food and creatures roam inside this square, in tier-local units. */
 export const WORLD_HALF = 46;
+/** The player's hard bound (admission), in tier-local units. A soft current pushes back before it (edge.ts). */
 export const PLAYER_HALF = 50;
+/** New food and creatures are placed inside this square (tier-local), outside the edge's push zone. */
+export const SPAWN_HALF = EDGE_SOFT_START * PLAYER_HALF;
 export function seabedHeight(x: number, z: number) {
   return Math.sin(x * .075) * Math.cos(z * .055) * 2.4 + Math.sin((x + z) * .018) * 4.5 + Math.sin(x * .006) * Math.sin(z * .009) * 13;
 }
@@ -78,14 +82,14 @@ export function spawnHeight(spec: Species, x: number, z: number, rand: () => num
 export function spawnPoint(spec: Species, biomes: readonly Biome[], rand: () => number, avoid?: { x: number; z: number; radius: number }) {
   const size = SIZES[spec.tier]!, best = Math.max(1, ...biomes.map(b => b.weights[spec.kind] ?? 1));
   for (let attempt = 0; attempt < 60; attempt++) {
-    const x = (rand() * 2 - 1) * WORLD_HALF, z = (rand() * 2 - 1) * WORLD_HALF;
+    const x = (rand() * 2 - 1) * SPAWN_HALF, z = (rand() * 2 - 1) * SPAWN_HALF;
     if (Math.hypot(x, z) < 4) continue;
     if (avoid && Math.hypot(x * size - avoid.x, z * size - avoid.z) < avoid.radius) continue;
     const weight = biomeAt(biomes, x, z).weights[spec.kind] ?? 1;
     if (attempt < 59 && rand() * best > weight) continue;
     return { x: x * size, y: spawnHeight(spec, x * size, z * size, rand), z: z * size };
   }
-  return { x: WORLD_HALF * size * .8, y: spawnHeight(spec, 0, 0, rand), z: 0 };
+  return { x: SPAWN_HALF * size * .8, y: spawnHeight(spec, 0, 0, rand), z: 0 };
 }
 export interface Spawn { id: number; spec: Species; x: number; y: number; z: number; phase: number }
 /** The opening population of every tier. The ids are stable for a seed. */

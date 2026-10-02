@@ -1,6 +1,6 @@
 import * as T from 'three';
 import { batch, coral, foodModel, kelp, material, sceneryAsset } from './models';
-import { biomeAt, random, seabedHeight, SIZES, WATER_LEVEL, type Biome } from './biomes';
+import { biomeAt, PLAYER_HALF, random, seabedHeight, SIZES, SPAWN_HALF, WATER_LEVEL, type Biome } from './biomes';
 import { CreatureModel } from './creature';
 import { Ecosystem, type Entity } from './ecosystem';
 import type { Vec3 } from './combat-types';
@@ -18,6 +18,35 @@ const ringGeometry = new T.RingGeometry(1, 1.025, 56);
 const shadowMaterial = new T.MeshBasicMaterial({ color: '#103e4f', transparent: true, opacity: .2, depthWrite: false });
 const ringMaterial = new T.MeshBasicMaterial({ color: '#e0f6ad', transparent: true, opacity: .75, side: T.DoubleSide, depthWrite: false });
 const UP = new T.Vector3(0, 1, 0);
+// The soft world edge (edge.ts): in the push zone the water gets darker and foggier, and scenery past the hard bound
+// (render units = stage-local units, so the bound is at ±PLAYER_HALF) fades into the fog colour.
+/** Fog density at the full edge fog (the clear-water density is .014). */
+const EDGE_FOG_DENSITY = .045;
+/** The fog colour mixes this far toward EDGE_DARK at the full edge fog. */
+const EDGE_DARKEN = .6;
+const EDGE_DARK = new T.Color('#0b2f3a');
+/** Scenery fades into the fog between these Chebyshev distances from the centre (render units). */
+const EDGE_FADE_FROM = PLAYER_HALF, EDGE_FADE_TO = PLAYER_HALF * 1.16;
+/** Shared by every scenery material: the fade strength (off in space) and the height (render units) above which nothing fades (clouds). */
+const edgeUniforms = { edgeFade: { value: 1 }, edgeTop: { value: 200 } };
+function edgeFadeShader(shader: T.WebGLProgramParametersWithUniforms) {
+  Object.assign(shader.uniforms, edgeUniforms);
+  shader.vertexShader = shader.vertexShader.replace('#include <fog_pars_vertex>', '#include <fog_pars_vertex>\nvarying vec3 vEdgeWorld;')
+    .replace('#include <fog_vertex>', `#include <fog_vertex>
+vec4 edgeP = vec4(transformed, 1.);
+#ifdef USE_BATCHING
+edgeP = batchingMatrix * edgeP;
+#endif
+#ifdef USE_INSTANCING
+edgeP = instanceMatrix * edgeP;
+#endif
+vEdgeWorld = (modelMatrix * edgeP).xyz;`);
+  shader.fragmentShader = shader.fragmentShader.replace('#include <fog_pars_fragment>', '#include <fog_pars_fragment>\nuniform float edgeFade;\nuniform float edgeTop;\nvarying vec3 vEdgeWorld;')
+    .replace('#include <fog_fragment>', `#include <fog_fragment>
+#ifdef USE_FOG
+if (vEdgeWorld.y < edgeTop) gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, edgeFade * smoothstep(${EDGE_FADE_FROM.toFixed(2)}, ${EDGE_FADE_TO.toFixed(2)}, max(abs(vEdgeWorld.x), abs(vEdgeWorld.z))));
+#endif`);
+}
 function ownMesh(geometry: T.BufferGeometry, mat: T.Material, ownsMaterial = false) {
   const mesh = new T.Mesh(geometry, mat); mesh.userData.ownedGeometry = true; mesh.userData.ownedMaterial = ownsMaterial; return mesh;
 }
@@ -75,6 +104,8 @@ export class TideWorld {
   private instances: { mesh: T.InstancedMesh; foods: FoodObject[]; local: T.Matrix4 }[] = [];
   private instanceMatrix = new T.Matrix4();
   private homePlanet: FoodObject | null = null;
+  /** 0–1: how far the edge fog has closed in (diagnostics). */
+  private edgeFog = 0;
 
   constructor(canvas: HTMLCanvasElement) {
     this.renderer = new T.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
@@ -108,8 +139,10 @@ export class TideWorld {
     causticSource.traverse(obj => { if (obj instanceof T.Mesh && !causticGeometry) causticGeometry = obj.geometry.clone().applyMatrix4(obj.matrixWorld); });
     if (causticGeometry) { const glow = ownMesh(causticGeometry, this.caustics, true); glow.position.y = .035; this.scenery.add(glow); }
     this.waterMaterial = new T.ShaderMaterial({ uniforms: { time: { value: 0 }, above: { value: 0 }, fade: { value: 1 } }, transparent: true, depthWrite: false, side: T.DoubleSide,
-      vertexShader: 'varying vec2 p;void main(){p=position.xy;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',
-      fragmentShader: 'varying vec2 p;uniform float time;uniform float above;uniform float fade;void main(){float w=sin(p.x*.023+sin(p.y*.035+time*.17)*2.+time*.24)*sin(p.y*.03-time*.15);float line=pow(1.-abs(w),20.);vec3 color=mix(vec3(.26,.76,.79),vec3(.14,.48,.62),above);gl_FragColor=vec4(color+line*.17,(mix(.22,.63,above)+line*.08)*fade);}' });
+      vertexShader: 'varying vec2 p;varying vec2 e;void main(){p=position.xy;e=(modelMatrix*vec4(position,1.)).xz;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',
+      // Past the hard bound the surface fades out like the scenery (edgeFade is 0 in space).
+      fragmentShader: `varying vec2 p;varying vec2 e;uniform float time;uniform float above;uniform float fade;uniform float edgeFade;void main(){float w=sin(p.x*.023+sin(p.y*.035+time*.17)*2.+time*.24)*sin(p.y*.03-time*.15);float line=pow(1.-abs(w),20.);vec3 color=mix(vec3(.26,.76,.79),vec3(.14,.48,.62),above);float edge=1.-edgeFade*smoothstep(${EDGE_FADE_FROM.toFixed(2)},${EDGE_FADE_TO.toFixed(2)},max(abs(e.x),abs(e.y)));gl_FragColor=vec4(color+line*.17,(mix(.22,.63,above)+line*.08)*fade*edge);}` });
+    this.waterMaterial.uniforms.edgeFade = edgeUniforms.edgeFade;
     this.surfaceMesh = ownMesh(new T.PlaneGeometry(16000, 16000), this.waterMaterial, true); this.surfaceMesh.rotation.x = -Math.PI / 2; this.surfaceMesh.position.y = WATER_LEVEL; this.environment.add(this.surfaceMesh);
     // Shafts and suspended particles make the depth of the water readable.
     const rayMat = new T.MeshBasicMaterial({ color: '#c1f9df', transparent: true, opacity: .035, depthWrite: false, side: T.DoubleSide });
@@ -141,7 +174,7 @@ export class TideWorld {
     if (!this.sceneryMaterialMap.has(obj.material)) {
       const clone = obj.material.clone(); clone.userData.initialOpacity = clone.opacity;
       clone.userData.initialTransparent = clone.transparent; clone.userData.initialDepthWrite = clone.depthWrite;
-      clone.forceSinglePass = true; this.sceneryMaterialMap.set(obj.material, clone); this.sceneryMaterialMap.set(clone, clone);
+      clone.forceSinglePass = true; clone.onBeforeCompile = edgeFadeShader; this.sceneryMaterialMap.set(obj.material, clone); this.sceneryMaterialMap.set(clone, clone);
       this.sceneryMaterials.push(clone);
     }
     obj.material = this.sceneryMaterialMap.get(obj.material)!;
@@ -330,7 +363,13 @@ export class TideWorld {
     // Each biome tints the water a little, so the habitat changes as you explore.
     if (this.stage <= 2 && !menu) this.tint.lerp(new T.Color(this.biome.tint), 1 - Math.exp(-dt * 1.5)); else this.tint.lerp(new T.Color('#267a89'), 1 - Math.exp(-dt * 1.5));
     const color = this.tint.clone().lerp(new T.Color('#88bbcb'), above).lerp(new T.Color('#141a36'), this.spaceMix);
-    this.scene.background = color; const fog = this.scene.fog as T.FogExp2; fog.color.copy(color); fog.density = T.MathUtils.lerp(above > .5 ? .005 : .014, .002, this.spaceMix);
+    // The soft edge: 0 at the push zone's start, full at half way to the hard bound (where creatures settle); off in space.
+    const edgeU = menu ? 0 : T.MathUtils.clamp((Math.max(Math.abs(p.x), Math.abs(p.z)) - SPAWN_HALF) / (PLAYER_HALF - SPAWN_HALF), 0, 1);
+    this.edgeFog = T.MathUtils.smoothstep(edgeU, 0, .5) * (1 - this.spaceMix);
+    color.lerp(EDGE_DARK, EDGE_DARKEN * this.edgeFog);
+    this.scene.background = color; const fog = this.scene.fog as T.FogExp2; fog.color.copy(color);
+    fog.density = T.MathUtils.lerp(T.MathUtils.lerp(above > .5 ? .005 : .014, .002, this.spaceMix), EDGE_FOG_DENSITY, this.edgeFog);
+    edgeUniforms.edgeFade.value = 1 - this.spaceMix; edgeUniforms.edgeTop.value = 200 / this.scale;
     this.caustics.uniforms.fade!.value = 1 - this.spaceMix;
     // The coarse home globe replaces the detailed habitat as we reach space.
     // Its continents must not poke through the shrimp's centimeter-scale sand.
@@ -387,5 +426,5 @@ export class TideWorld {
     for (let i = this.particles.length - 1; i >= 0; i--) { const particle = this.particles[i]!; particle.life -= dt; particle.mesh.position.addScaledVector(particle.velocity, dt); particle.velocity.y -= dt * 2; particle.mesh.scale.multiplyScalar(Math.exp(-dt * 1.8)); if (particle.life <= 0) { this.effects.remove(particle.mesh); this.particles.splice(i, 1); } }
     this.renderer.render(this.scene, this.camera);
   }
-  get diagnostics() { return { worldId: this.universe.uuid, seed: this.eco.seed, biome: this.biome.name, consumedByTier: SIZES.map((_, i) => this.foods.filter(f => f.tier === i && f.data.eaten).length), scale: this.scale, surface: this.surface, yaw: this.yaw, pitch: this.pitch, menu: this.isMenu, transitioning: this.transitioning, physicalPosition: { x: this.player.position.x * this.scale, y: this.player.position.y * this.scale, z: this.player.position.z * this.scale } }; }
+  get diagnostics() { return { worldId: this.universe.uuid, seed: this.eco.seed, biome: this.biome.name, consumedByTier: SIZES.map((_, i) => this.foods.filter(f => f.tier === i && f.data.eaten).length), scale: this.scale, surface: this.surface, yaw: this.yaw, pitch: this.pitch, menu: this.isMenu, transitioning: this.transitioning, edgeFog: this.edgeFog, physicalPosition: { x: this.player.position.x * this.scale, y: this.player.position.y * this.scale, z: this.player.position.z * this.scale } }; }
 }

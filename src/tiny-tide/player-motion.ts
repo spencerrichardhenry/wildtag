@@ -2,6 +2,7 @@
 // completes the wish, submits the desired orientation as a turn, dispatches Breach, keeps a grounded body on its
 // support line, and ends the arc and the permit. It mutates only the runtime it is given and returns the result.
 import type { Actor, CombatInput, CombatRuntime, Contact, MotionResult, MovementProfile, MutVec3, Orientation, Vec3, WorldQueries } from './combat-types';
+import { EDGE_HINT, edgeCurrent } from './edge';
 import { resolveMotion, projectVelocity } from './motion';
 import type { BodyPlan } from './plans';
 import { BREACH_RISE, breachPermit, type MovementCapabilities } from './profiles';
@@ -75,9 +76,10 @@ export function stepPlayer(position: Vec3, rt: CombatRuntime, intent: CombatInpu
     pitch: o.pitch + clampAbs(pitchTarget - o.pitch, profile.maxPitchRate * dt),
   };
 
-  // 5. Displacement. The vertical part has one owner; external motion accumulates.
-  const ev = rt.externalVelocity;
-  const d: MutVec3 = { x: (v.x + ev.x) * dt, y: (v.y + ev.y) * dt, z: (v.z + ev.z) * dt };
+  // 5. Displacement. The vertical part has one owner; external motion accumulates. The edge current (edge.ts) is a
+  //    pure function of the position: it is added here and stored in neither velocity owner.
+  const ev = rt.externalVelocity, edge = edgeCurrent(position, ctx.bounds.half, size);
+  const d: MutVec3 = { x: (v.x + ev.x + edge.x) * dt, y: (v.y + ev.y) * dt, z: (v.z + ev.z + edge.z) * dt };
   let arcDone = false;
   const grounded = caps.ground && arc === null && !t.space;
   if (arc !== null) {
@@ -117,7 +119,7 @@ export function stepPlayer(position: Vec3, rt: CombatRuntime, intent: CombatInpu
 export function blockHint(plan: BodyPlan, contact: Contact): string {
   const many = `${plan.name}s`;
   switch (contact.constraint) {
-    case 'bounds-x': case 'bounds-z': return "That's the edge of the world for now.";
+    case 'bounds-x': case 'bounds-z': return EDGE_HINT;
     case 'bounds-y': return "That's as high as you can go for now.";
     case 'ground': return 'Something solid is in the way.';
     case 'surface-top': return `${many} can't leave the water.`;

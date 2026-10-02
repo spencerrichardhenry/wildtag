@@ -126,7 +126,26 @@ ground, the water, the land band, the air, space and the world bounds. The
 simulation never installs a pose that the test refuses. A blocked move stops at
 the border and slides along it where the border allows.
 
-**Hints.** When a move hits a border, a toast says why (at most one each 6 s):
+**World edge.** The world bound is a square at ±50 stage-local units
+(`PLAYER_HALF`). It is not felt as a wall. From 0.8 × the bound (40 units,
+`EDGE_SOFT_START`), a current pushes the creature back toward the centre, on
+each horizontal axis separately (in a corner, both axes push). The current
+rises with a smoothstep from 0 at 40 units to 30 units/s at the bound
+(`EDGE_CURRENT_MAX` × size). That is more than the fastest possible top speed
+(about 15.2 units/s), so a creature that swims or walks straight at the edge
+settles before the bound: a starter Swimmer or Crawler at about 43 units, a
+Darter at about 43.3 units, and a Darter at the highest speed factor at about
+44.8 units. The current is added to the movement in every stage and for every
+plan, and it is not stored in a velocity. When the input is released, the
+creature drifts back inward. The admission bound stays as a safety net. In the
+push zone the water gets darker and the fog gets thicker. The seabed, the reef,
+the islands and the water surface fade into the fog between 50 and 58 units
+from the centre. Space (the stars and the sun) does not change. New food and
+creatures are placed inside 40 units (`SPAWN_HALF`), and a tap-to-walk target
+is clamped there too.
+
+**Hints.** When a move hits a border, a toast says why (at most one each 6 s).
+The world-edge hint also shows in the edge's push zone:
 
 | Border | Hint |
 | --- | --- |

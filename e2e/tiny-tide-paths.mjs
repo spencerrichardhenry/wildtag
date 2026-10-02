@@ -1,8 +1,8 @@
-// Tiny Tide C11: paths, editor, gestures, limits, hazards, pose agreement, lifecycle and saves (18 checks).
+// Tiny Tide C11: paths, editor, gestures, limits, soft world edge, hazards, pose agreement, lifecycle and saves (18 checks, with 5b, 7b and 12b).
 // Fixtures come from the dev-only fixture page (the game's own modules). Run one or more checks: node e2e/tiny-tide-paths.mjs 3 7b
 import assert from 'node:assert/strict';
 import { mkdirSync } from 'node:fs';
-import { control, damageAfterArmor, forcedStart, eatOnce, frames, KEYS, launch, makeFixture, openGame, pickHazard, start, state, storageOf, untilGameTime, waitGameTime, watchErrors } from './fixtures/tiny-tide-fixtures.mjs';
+import { control, damageAfterArmor, forcedStart, eatOnce, frames, KEYS, launch, makeFixture, openGame, pickHazard, start, state, steer, storageOf, untilGameTime, waitGameTime, watchErrors } from './fixtures/tiny-tide-fixtures.mjs';
 
 const out = '.codex-drafts/tiny-tide-qa'; mkdirSync(out, { recursive: true });
 const only = process.argv.slice(2);
@@ -223,6 +223,54 @@ check('5', 'Swimmer surface limit', async () => {
   await untilGameTime(sky.page, s => s.player.y > s.world.surface + .5, 30, 'a Sky drifter rises above the surface');
   await control(sky.page, []);
   assert.deepEqual([...errors, ...sky.errors], []);
+});
+
+check('5b', 'Soft world edge', async () => {
+  const { page, errors } = await newPage();
+  await play(page, { path: ['swimmer'] }, 'forcedSpawn=20,10,0');
+  const first = await state(page), half = first.edge.half, soft = first.edge.softStart;
+  // An in-page sampler watches every frame for 10 s of game time while real keys swim toward +x (bounded in real time).
+  const sampling = page.evaluate(([edgeText]) => new Promise(resolve => {
+    const t0 = window.__tinyTide.time, w0 = performance.now(), track = [];
+    let boundsFrames = 0, refused = 0, toast = false, inZone = false, fog = 0;
+    const tick = () => {
+      const s = window.__tinyTide, el = document.getElementById('toast');
+      if (s.contactNow && `${s.lastContact}`.startsWith('bounds')) boundsFrames++;
+      if (s.legal === false || s.mode !== 'playing') refused++;
+      if (el.classList.contains('show') && el.textContent === edgeText) toast = true;
+      inZone ||= s.edge.inZone; fog = Math.max(fog, s.world.edgeFog);
+      track.push({ t: s.time - t0, reach: Math.max(Math.abs(s.player.x), Math.abs(s.player.z)) });
+      if (s.time - t0 >= 10) return resolve({ boundsFrames, refused, toast, inZone, fog, track, s });
+      if (performance.now() - w0 > 60000) return resolve({ wall: true, s });
+      requestAnimationFrame(tick);
+    };
+    tick();
+  }), ["That's the edge of the world for now."]);
+  let done = false; sampling.then(() => { done = true; });
+  while (!done) {
+    const s = await state(page);
+    // A unit step toward +x picks the nearest of the 8 key directions (camera-relative).
+    await control(page, steer(s, { x: s.player.x + 1, z: s.player.z }, .38));
+    await page.waitForTimeout(100);
+  }
+  const r = await sampling;
+  await control(page, []);
+  noWallTimeout(r, 'check 5b (edge)');
+  const reach = Math.max(...r.track.map(f => f.reach)), last = r.track.filter(f => f.t >= 9).map(f => f.reach);
+  assert.ok(r.inZone && reach > soft, `the Swimmer entered the push zone (max reach ${reach.toFixed(2)}, soft start ${soft})`);
+  assert.equal(r.boundsFrames, 0, 'no frame touches the hard bound');
+  assert.equal(r.refused, 0, 'every frame is admitted and playing');
+  assert.ok(reach < half - 1, `the reach settles inside the bound (max ${reach.toFixed(2)} of ${half})`);
+  assert.ok(Math.max(...last) - Math.min(...last) < .5, `the reach has settled in the last second (${Math.min(...last).toFixed(2)}–${Math.max(...last).toFixed(2)})`);
+  assert.ok(r.toast, 'the edge toast showed in the push zone');
+  assert.ok(r.fog > .5, `the edge fog closed in (${r.fog.toFixed(2)})`);
+  // Released, the current carries the creature back inward.
+  const released = await state(page), from = Math.max(Math.abs(released.player.x), Math.abs(released.player.z));
+  await waitGameTime(page, 2);
+  const after = await state(page), to = Math.max(Math.abs(after.player.x), Math.abs(after.player.z));
+  assert.ok(to < from - 1, `released, the creature drifts inward (${from.toFixed(2)} → ${to.toFixed(2)})`);
+  assert.deepEqual(errors, []);
+  console.log(`     edge: max reach ${reach.toFixed(2)} of ${half} (soft start ${soft}), fog ${r.fog.toFixed(2)}, drift ${from.toFixed(2)} → ${to.toFixed(2)}`);
 });
 
 check('6', 'Crawler', async () => {
@@ -583,4 +631,4 @@ try {
   }
 } finally { await browser.close(); }
 if (failures.length) { console.log(`FAILED: ${failures.join(', ')}`); process.exit(1); }
-console.log(`PASSED: ${only.length ? `checks ${only.join(', ')}` : 'all 18 checks (with 7b and 12b)'}: path screen, customize fallback, submit failure, evolve editor, swimmer and crawler limits, high spawn recovery, transformation path, diet lock, size pricing, desktop and touch gestures, allocation, lost abilities, hazards and invulnerability, pose agreement, faint during a Breach, pause, kept coast save, legacy keys.`);
+console.log(`PASSED: ${only.length ? `checks ${only.join(', ')}` : 'all 18 checks (with 5b, 7b and 12b)'}: path screen, customize fallback, submit failure, evolve editor, swimmer and crawler limits, soft world edge, high spawn recovery, transformation path, diet lock, size pricing, desktop and touch gestures, allocation, lost abilities, hazards and invulnerability, pose agreement, faint during a Breach, pause, kept coast save, legacy keys.`);
