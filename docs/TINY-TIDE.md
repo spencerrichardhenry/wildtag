@@ -122,7 +122,10 @@ of each GLB (`reef-colliders.json`, written by
 from the GLBs). Each closed piece (the stone, each moss patch) is one triangle
 mesh with a grid of its triangles. A sphere test measures the exact distance
 to the scaled, turned mesh, and a ray-parity test says whether the centre is
-inside it.
+inside it. Each mesh keeps its triangles in clusters, visited nearest first
+with their scaled bounds, and a padded grid of distance bounds that ends a test
+far from the surface at once; near a rock an admission costs about .04 ms
+(.27 ms with the first mesh colliders), with the same exact result.
 
 - Measured with a probe of .1 L against the three largest rocks and two arches
   of every colliding layer and stage (two seeds), the gap between the collider and the
@@ -160,6 +163,16 @@ solid (`solidId`).
   tap-to-walk target is dropped after 1 s with no progress toward it
   (`TAP_STALL_SECONDS`), so a target behind a rock does not hold the body
   against the rock.
+- A body that is wedged never freezes (continuation of the final review: a
+  long Crawler froze between small rocks and an arch leg in a journey). A turn
+  that a solid cuts short is tried again where the move ends. When the player
+  pushes one way and the body gains under .05 L along it for .75 s while it is
+  wedged (two contact normals more than 30° apart, or a facing more than 30°
+  off the push), the game moves it to the nearest admitted pose within 1.5 L
+  that faces the push (in place first; `UnstickSearch`, 3 candidates a frame).
+  A pose across a solid is never used, and a push into one flat wall while
+  facing it never triggers it. The QA diagnostics count these rescues
+  (`trapRescues`): 1–7 per swimmer journey and 5–38 per crawler journey.
 - A growth lift stops at the first step that a different rule or a different
   solid refuses, so it never carries a body through a thin solid. In a crease
   (for example the seabed and a rock base) the two refusal normals are across
