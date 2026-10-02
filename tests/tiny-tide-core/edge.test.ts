@@ -49,7 +49,8 @@ describe('edge current in the player step (600 frames of full push)', () => {
     const rt = start?.rt ?? newRuntime({ yaw: Math.atan2(dir.x, dir.z), pitch: 0 }), caps = movementCapabilities(b.p);
     const s = .7 * half;
     let p: Vec3 = start?.p ?? { x: dir.x === 0 ? 0 : Math.sign(dir.x) * s, y: 0, z: dir.z === 0 ? 0 : Math.sign(dir.z) * s };
-    if (!start) p = { ...p, y: opts.y ?? caps.ground ? supportHeight(b.actor, p.x, p.z, rt.orientation, t) + .02 * b.L : (t.groundAt(p.x, p.z) + WATER_LEVEL) / 2 };
+    if (!start) p = { ...p, y: opts.y ?? (caps.ground ? supportHeight(b.actor, p.x, p.z, rt.orientation, t) + .02 * b.L : (t.groundAt(p.x, p.z) + WATER_LEVEL) / 2) };
+    const startY = p.y, startZone = queries.sampleEnvironment(p);
     const len = Math.hypot(dir.x, dir.z), wish = len > 0 ? { x: dir.x / len, y: 0, z: dir.z / len } : { x: 0, y: 0, z: 0 };
     let maxReach = 0, boundsContacts = 0, refused = 0, outsideInner = 0, breaches = 0;
     for (let f = 0; f < frames; f++) {
@@ -63,7 +64,7 @@ describe('edge current in the player step (600 frames of full push)', () => {
       if (!inside.ok && inside.constraint?.startsWith('bounds')) outsideInner++;
       maxReach = Math.max(maxReach, Math.abs(p.x), Math.abs(p.z));
     }
-    return { p, rt, maxReach, boundsContacts, refused, outsideInner, half, breaches };
+    return { p, rt, maxReach, boundsContacts, refused, outsideInner, half, breaches, startY, startZone };
   };
   const cases: [string, Body][] = [['Darter', body('darter', 2)], ['Darter at the top speed factor', body('darter', 2, 1.65)], ['Crawler', body('crawler', 1)], ['Swimmer', body('swimmer', 1)]];
   for (const [name, b] of cases) for (const [label, dir] of [['+x', { x: 1, z: 0 }], ['a corner', { x: 1, z: -1 }]] as const) {
@@ -78,6 +79,7 @@ describe('edge current in the player step (600 frames of full push)', () => {
   }
   it('keeps a Sky drifter flying in the air at stage 3 inside the hard bound (sky limit and edge together)', () => {
     const b = body('sky_drifter', 3), r = run(b, { x: 1, z: -1 }, 600, undefined, { y: WATER_LEVEL + 4 * b.L });
+    expect(r.startY).toBe(WATER_LEVEL + 4 * b.L); expect(r.startZone.medium).toBe('air');
     expect(r.refused, 'refused poses').toBe(0); expect(r.boundsContacts, 'bounds contacts').toBe(0); expect(r.outsideInner).toBe(0);
     expect(r.maxReach).toBeGreaterThan(EDGE_SOFT_START * r.half);
     const after = run(b, { x: 0, z: 0 }, 120, { p: r.p, rt: r.rt });
@@ -85,12 +87,14 @@ describe('edge current in the player step (600 frames of full push)', () => {
   });
   it('keeps a Star swimmer in space at stage 4 inside the hard bound', () => {
     const b = body('star_swimmer', 4), r = run(b, { x: 1, z: 0 }, 600, undefined, { y: 0 });
+    expect(r.startY).toBe(0); expect(r.startZone.medium).toBe('space');
     expect(r.refused).toBe(0); expect(r.boundsContacts).toBe(0); expect(r.outsideInner).toBe(0); expect(r.maxReach).toBeGreaterThan(EDGE_SOFT_START * r.half);
   });
   it('pushes a Darter back during Breach arcs at the edge', () => {
     // A starter-size hull: the grown Darter's hull does not fit at the arc's end depth (surface − 1.3 × size), so its landing
     // goes through recovery in the game (an existing limit of the arc, not of the edge).
     const b = body('darter', 2, undefined, 1), r = run(b, { x: 1, z: 0 }, 600, undefined, { y: WATER_LEVEL - 1.3 * b.size, breach: true });
+    expect(r.startY).toBe(WATER_LEVEL - 1.3 * b.size); expect(r.startZone.medium).toBe('water');
     expect(r.breaches, 'Breach arcs started').toBeGreaterThanOrEqual(3);
     expect(r.refused, 'refused poses').toBe(0); expect(r.boundsContacts, 'bounds contacts').toBe(0); expect(r.outsideInner).toBe(0);
     expect(r.maxReach).toBeGreaterThan(EDGE_SOFT_START * r.half);

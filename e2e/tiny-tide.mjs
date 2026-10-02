@@ -13,8 +13,9 @@ let modelRequests = 0; page.on('request', r => { if (new URL(r.url()).pathname.e
 const state = () => page.evaluate(() => window.__tinyTide);
 const shot = name => page.screenshot({ path: `${out}/${name}.png` });
 const url = process.env.VERIFY_URL || GAME;
-/** The world seed of the journey's fixture save: TIDE_SEED=<n>, else 1501. It is logged at the start and on failure. */
-const SEED = Number(process.env.TIDE_SEED ?? 1501);
+/** The world seed of the journey's fixture save: TIDE_SEED=<n> to replay one, else a new random seed per run (so runs cover
+ *  many worlds). It is logged at the start and on failure. */
+const SEED = Number(process.env.TIDE_SEED ?? (Math.random() * 2 ** 31 | 0));
 if (!Number.isInteger(SEED)) throw new Error(`TIDE_SEED must be an integer, got ${process.env.TIDE_SEED}`);
 console.log(`Journey seed ${SEED} (${process.env.TIDE_LINE === 'crawler' ? 'crawler' : 'swimmer'} line); rerun with TIDE_SEED=${SEED}`);
 /** Braking-aware stop check: wait until the controlled velocity is zero, then the body must stay put for 200 ms. */
