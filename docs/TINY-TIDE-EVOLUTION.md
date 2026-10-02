@@ -137,3 +137,12 @@ eat meat. Omnivores eat both for 70% DNA. Every creature eats `any` food.
   stage's parts. Confirming the editor starts the in-place transformation.
 - The editor is also available at any time from the Edit button.
 - Removing a part refunds its full cost.
+
+## Later updates
+
+The evolution core update replaces parts of this design: body plans and
+lineage commitments, habitats and movement, diet fixed at each evolution, part
+size, the DNA ledger (refunds return the credit a part still holds, not always
+its full cost), the path screen and evolve editor, and v4 saves. See
+[the evolution core spec](superpowers/specs/2026-10-01-tiny-tide-evolution-core-design.md)
+and [TINY-TIDE.md](TINY-TIDE.md) for the current rules and the pacing baseline.
