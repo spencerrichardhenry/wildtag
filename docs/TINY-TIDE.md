@@ -158,21 +158,35 @@ mesh to the sphere's centre (outward). So the contact skin and the crease
 projection of motion slide a body around a rock. The admission also names the
 solid (`solidId`).
 
-- Ground plans treat rocks as walls (owner ruling M12). Their support height
-  is the seabed only, so they walk around rocks and do not climb them. A
-  tap-to-walk target is dropped after 1 s with no progress toward it
-  (`TAP_STALL_SECONDS`), so a target behind a rock does not hold the body
-  against the rock.
-- A body that is wedged never freezes (continuation of the final review: a
-  long Crawler froze between small rocks and an arch leg in a journey). A turn
-  that a solid cuts short is tried again where the move ends. When the player
-  pushes one way and the body gains under .05 L along it for .75 s while it is
-  wedged (two contact normals more than 30° apart, or a facing more than 30°
-  off the push), the game moves it to the nearest admitted pose within 1.5 L
-  that faces the push (in place first; `UnstickSearch`, 3 candidates a frame).
-  A pose across a solid is never used, and a push into one flat wall while
-  facing it never triggers it. The QA diagnostics count these rescues
-  (`trapRescues`): 1–7 per swimmer journey and 5–38 per crawler journey.
+- Ground plans step over low rocks (owner decision, fix round 2; it replaces
+  the M12 ruling "rocks are walls"). A rock whose top stands at most .15 L
+  above the seabed under the body (`STEP_HEIGHT`) is walkable: the body is
+  lifted by the smallest height that the solids admit (`stepLift`, at most
+  .5 L, because the hull's own margins under the belly can need more than the
+  rock's height). The lift rises at most 1.2 L/s (`STEP_CLIMB`): a steeper
+  step holds the horizontal move back to what that rise allows, so the body
+  rides up and does not snap. Going down, the height settles like any lift off
+  the seabed. Taller rocks and every arch stay walls. Each stepped pose goes
+  through the normal admission. Swim plans are not affected. A tap-to-walk
+  target is still dropped after 1 s with no progress toward it
+  (`TAP_STALL_SECONDS`), so a target behind a wall does not hold the body
+  against it.
+- A body that is really wedged never freezes. A turn that a solid cuts short
+  is tried again where the move ends. A trap is when the player pushes one way,
+  the body gains under .05 L along the push for .75 s, and on at least 60 % of
+  those frames it is wedged. Wedged means two solid contacts that oppose the
+  push from both sides of it, or a turn toward the push that the solids
+  refused. A push into one rock is not a trap. The game then searches for the
+  nearest admitted pose within 1.5 L that faces the push (`UnstickSearch`, 6
+  candidates a frame). A candidate is used only when the whole hull is
+  admitted at every step of the straight path to it, with position and yaw
+  together (steps of at most .1 L and .2 rad). The body then glides along that
+  path over at least .15 s (9 frames), and each step is admitted again for the
+  current body. So the body never passes through a solid and never snaps. Any
+  other install (respawn, recovery, evolution, an edit) cancels a pending
+  rescue. The QA diagnostics count rescues (`trapRescues`). Measured after fix round 2: 0, 0 and 2 in
+  three swimmer journeys; 8, 0, 14, 0, 8, 1 and 1 in seven crawler journeys (seeds 1927562791, 590530528 and
+  five random seeds; before: 274 and 38–331).
 - A growth lift stops at the first step that a different rule or a different
   solid refuses, so it never carries a body through a thin solid. In a crease
   (for example the seabed and a rock base) the two refusal normals are across
