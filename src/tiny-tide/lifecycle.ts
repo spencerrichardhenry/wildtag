@@ -39,6 +39,25 @@ export function recoverPlayer(actor: Actor, position: Vec3, orientation: Orienta
   return { ok: false, reason: 'no legal pose' };
 }
 
+/** The largest lift, in body lengths, that a growth rescale may use to keep the motion, and its step. */
+export const GROWTH_LIFT_MAX = .5, GROWTH_LIFT_STEP = .005;
+
+/** After a growth rescale: a pose for the grown hull that keeps the motion. The position itself when the grown hull is admitted;
+ *  else the smallest lift, in steps of GROWTH_LIFT_STEP × L up to GROWTH_LIFT_MAX × L, along the refusal's normal (the support
+ *  normal on the seabed; +y when the refusal has no normal) that admits it, with the runtime's orientation and permit.
+ *  `rt` is only read: velocities, orientation, permit and arc stay as they are. null → the caller recovers instead. */
+export function growthPose(actor: Actor, position: Vec3, rt: Pick<CombatRuntime, 'orientation' | 'permit'>, ctx: LegalityContext & { time: number }): Vec3 | null {
+  const o = rt.orientation, actx = { time: ctx.time, permit: rt.permit, bounds: ctx.bounds };
+  const first = ctx.queries.overlapHull(actor, position, o, actx);
+  if (first.ok) return { x: position.x, y: position.y, z: position.z };
+  const n = first.normal ?? { x: 0, y: 1, z: 0 }, step = GROWTH_LIFT_STEP * actor.bodyLength, steps = Math.round(GROWTH_LIFT_MAX / GROWTH_LIFT_STEP);
+  for (let i = 1; i <= steps; i++) {
+    const p = { x: position.x + n.x * step * i, y: position.y + n.y * step * i, z: position.z + n.z * step * i };
+    if (ctx.queries.overlapHull(actor, p, o, actx).ok) return p;
+  }
+  return null;
+}
+
 const sameEmitter = (a: PartEmitterSource, b: { partUid: string; copy: number; socketId: string }) => a.partUid === b.partUid && a.copy === b.copy && a.socketId === b.socketId;
 
 export function reconcileAfterCommit(rt: CombatRuntime, delta: DesignDelta, genome: Genome, actorId: string, now: number, catalogs: Pick<Catalogs, 'parts' | 'attacks' | 'abilities'> = defaultCatalogs()): void {

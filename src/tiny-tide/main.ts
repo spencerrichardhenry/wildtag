@@ -17,7 +17,7 @@ import { quoteDesign } from './economy';
 import { newRuntime, type Actor, type Capsule, type CombatInput, type Constraint, type MutVec3, type Orientation, type RecoveryResult, type Vec3, type WorldQueries } from './combat-types';
 import { basicRequested, readIntent, RELEASED } from './input';
 import { blockHint, stepPlayer } from './player-motion';
-import { beginRespawn, canChooseNextPlan, evolutionDestination, reconcileAfterCommit, recoverPlayer, resetRuntime, resolveHazards, resolveRespawn } from './lifecycle';
+import { beginRespawn, canChooseNextPlan, evolutionDestination, growthPose, reconcileAfterCommit, recoverPlayer, resetRuntime, resolveHazards, resolveRespawn } from './lifecycle';
 import { habitat, movement, movementCapabilities } from './profiles';
 import { makeTerrain, makeWorldQueries, supportHeight, zoneLabel } from './world-queries';
 import { orientHull } from './orientation';
@@ -193,6 +193,8 @@ let derived = derive(effectiveStats(run.genome, currentPlan(run)));
 function refreshDerived() { derived = derive(effectiveStats(run.genome, currentPlan(run))); }
 type MutCapsule = { start: MutVec3; end: MutVec3; radius: number; sway: number; heave: number };
 let actorCache: { key: string; unit: Capsule[]; unitLength: number; hull: MutCapsule[]; actor: Actor; scale: number } | null = null, hullRescaled = false;
+/** The last rescale changed only the growth (same plan, genome revision and stage). */
+let hullGrew = false;
 /** The player's actor. The hull is rebuilt only when the plan, the genome revision or the stage changes;
  *  a growth change rescales the cached buffers in place to the exact growth (no bucket). */
 function playerActorCached(): Actor {
@@ -209,7 +211,7 @@ function playerActorCached(): Actor {
       h.end.x = u.end.x * scale; h.end.y = u.end.y * scale; h.end.z = u.end.z * scale;
       h.radius = u.radius * scale; h.sway = (u.sway ?? 0) * scale; h.heave = (u.heave ?? 0) * scale;
     });
-    c.actor.bodyLength = c.unitLength * scale; c.scale = scale; hullRescaled = true;
+    hullGrew = !Number.isNaN(c.scale); c.actor.bodyLength = c.unitLength * scale; c.scale = scale; hullRescaled = true;
   }
   return c.actor;
 }
@@ -292,6 +294,13 @@ function enterStuck() { mode = 'stuck'; clearInput(); stuckRetry = 1; toast('Stu
 function checkPose(actor: Actor) {
   if (admitted(actor)) settleOffset(actor);
   else if (!recover(actor, time)) enterStuck();
+}
+/** After a growth rescale: the smallest admitted lift of the grown body, with both velocities kept (a bite at the floor does not
+ *  stop the body). Only when no lift within .5 L is admitted does the normal recovery run (it zeroes the velocities). */
+function checkGrownPose(actor: Actor) {
+  const lifted = growthPose(actor, physical, rt, { ...legality(run.stage), time });
+  if (!lifted) { checkPose(actor); return; }
+  physical = lifted; settleOffset(actor); renderRoot();
 }
 /** Completes a pending respawn at the start anchor for the actual growth. The caller shows the result. */
 function tryRespawn(): boolean {
@@ -692,8 +701,8 @@ function frame(now: number) {
   const actor = mode === 'menu' ? null : playerActorCached();
   if (actor && hullRescaled) {
     // A growth change rescaled the hull: settle again, or recover if the bigger body is not admitted.
-    hullRescaled = false;
-    if (mode === 'playing') checkPose(actor); else settleOffset(actor);
+    const grew = hullGrew; hullRescaled = false; hullGrew = false;
+    if (mode === 'playing') { if (grew) checkGrownPose(actor); else checkPose(actor); } else settleOffset(actor);
   }
   if (mode === 'playing' && actor && !held) {
     run.elapsed += dt; cooldown = Math.max(0, cooldown - dt); chompPulse = Math.max(0, chompPulse - dt * 5);

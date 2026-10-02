@@ -1,6 +1,6 @@
 // tests/tiny-tide-core/lifecycle.test.ts
 import { describe, expect, it } from 'vitest';
-import { beginRespawn, canChooseNextPlan, evolutionDestination, reconcileAfterCommit, recoverPlayer, resetRuntime, resolveHazards, resolveRespawn } from '../../src/tiny-tide/lifecycle';
+import { beginRespawn, canChooseNextPlan, evolutionDestination, growthPose, reconcileAfterCommit, recoverPlayer, resetRuntime, resolveHazards, resolveRespawn } from '../../src/tiny-tide/lifecycle';
 import { defaultCatalogs } from '../../src/tiny-tide/registries';
 import { newRuntime, type CombatRuntime } from '../../src/tiny-tide/combat-types';
 import { designDelta } from '../../src/tiny-tide/design-delta';
@@ -10,9 +10,13 @@ import { PLANS, plan } from '../../src/tiny-tide/plans';
 import { PARTS, type PartSpec } from '../../src/tiny-tide/parts';
 import { starterFor, starterGenome, type Genome } from '../../src/tiny-tide/genome';
 import { playerActor } from '../../src/tiny-tide/mount';
-import { makeTerrain, makeWorldQueries } from '../../src/tiny-tide/world-queries';
+import { makeTerrain, makeWorldQueries, supportHeight } from '../../src/tiny-tide/world-queries';
+import { derive, effectiveStats } from '../../src/tiny-tide/genome';
+import { PLAYER_HALF, SIZES } from '../../src/tiny-tide/biomes';
+import { stepPlayer } from '../../src/tiny-tide/player-motion';
+import { habitat, movement, movementCapabilities } from '../../src/tiny-tide/profiles';
+import { RELEASED } from '../../src/tiny-tide/input';
 import { REGISTRY_HAZARDS, syntheticAttack } from './helpers';
-import { habitat } from '../../src/tiny-tide/profiles';
 
 const action = (uid: string, copy: 0 | 1) => ({ instanceId: `${uid}${copy}`, definitionId: 'pinch', grantId: 'snap', source: { kind: 'part' as const, partUid: uid, copy, socketId: 'pinch' }, phase: 'windup' as const, startedAt: 0, aim: { x: 0, y: 0, z: 1 }, committedPose: null, hitCounts: new Map(), lastHitAt: new Map() });
 const busy = (): CombatRuntime => { const rt = newRuntime({ yaw: 1, pitch: .4 }); Object.assign(rt.controlledVelocity, { x: 1, y: 0, z: 0 }); Object.assign(rt.externalVelocity, { x: 0, y: 2, z: 0 });
@@ -84,5 +88,37 @@ describe('lifecycle', () => {
     const run = freshRun(1); expect(canChooseNextPlan(run, { coast: false })).toBe(false);
     run.stageDna = STAGES[0]!.goal; expect(canChooseNextPlan(run, { coast: false })).toBe(true);
     expect(canChooseNextPlan(run, { coast: false }, PLANS.filter(p => p.size === 0))).toBe(false);
+  });
+});
+describe('growth at the floor (playtest: a bite stops the body)', () => {
+  // The investigation's floor replay (probe-growth): 120 frames of a push along the seabed, then one 9-DNA bite grows the hull.
+  for (const [id, stage, heading] of [['swimmer', 1, 0], ['darter', 2, Math.PI / 4]] as const) it(`lifts a grown ${id} off the floor and keeps its velocity`, () => {
+    const p = plan(id)!, g = starterFor(p), size = SIZES[stage]!, terrain = makeTerrain(stage), queries = makeWorldQueries(terrain), bounds = { half: PLAYER_HALF * size };
+    const actor = playerActor(p, g, stage, 1), L = actor.bodyLength, rt = newRuntime({ yaw: heading, pitch: 0 });
+    const top = STAGES[stage]!.speed * derive(effectiveStats(g, p)).speedFactor;
+    let pos = { x: 0, y: supportHeight(actor, 0, 0, rt.orientation, terrain) + .02 * L, z: 0 }, touching = false;
+    for (let f = 0; f < 120; f++) {
+      const r = stepPlayer(pos, rt, RELEASED, { plan: p, profile: movement(p.movement), caps: movementCapabilities(p), actor, queries, bounds, size, topSpeedLocal: top,
+        now: f / 60, dt: 1 / 60, wish: { x: Math.sin(heading), y: 0, z: Math.cos(heading) }, aim: null, actionLock: false });
+      pos = r.position; touching = r.contacts.some(c => c.constraint === 'ground');
+    }
+    expect(touching).toBe(true);
+    const grown = playerActor(p, g, stage, 1 + .38 * 9 / STAGES[stage]!.goal), now = 2, ctx = { queries, bounds, time: now };
+    expect(queries.overlapHull(grown, pos, rt.orientation, { time: now, bounds }).ok).toBe(false);   // the grown hull reaches into the floor
+    const cv = { ...rt.controlledVelocity }, ev = { ...rt.externalVelocity }, o = { ...rt.orientation };
+    expect(Math.hypot(cv.x, cv.y, cv.z)).toBeGreaterThan(.5 * top * size);
+    const lifted = growthPose(grown, pos, rt, ctx);
+    expect(lifted).not.toBeNull(); if (!lifted) return;
+    expect(queries.overlapHull(grown, lifted, rt.orientation, { time: now, bounds }).ok).toBe(true);
+    const lift = Math.hypot(lifted.x - pos.x, lifted.y - pos.y, lifted.z - pos.z);
+    expect(lift).toBeGreaterThan(0); expect(lift).toBeLessThanOrEqual(.5 * grown.bodyLength);
+    expect(lifted.y).toBeGreaterThan(pos.y);
+    expect(rt.controlledVelocity).toEqual(cv); expect(rt.externalVelocity).toEqual(ev); expect(rt.orientation).toEqual(o);
+  });
+  it('returns the same position when the grown hull is already admitted, and null when no lift within .5 L helps', () => {
+    const p = plan('swimmer')!, grown = playerActor(p, starterFor(p), 1, 1.1), queries = makeWorldQueries(makeTerrain(1)), rt = newRuntime();
+    const mid = { x: 0, y: 60, z: 0 }; expect(growthPose(grown, mid, rt, { queries, time: 0 })).toEqual(mid);
+    const flat = makeWorldQueries({ groundAt: () => 0, surface: 1, space: false, slopeBound: 0 });   // no water deep enough for the body
+    expect(growthPose(grown, { x: 0, y: .5, z: 0 }, rt, { queries: flat, time: 0 })).toBeNull();
   });
 });
