@@ -5,7 +5,11 @@ import { breachPermit, habitat, movement, movementCapabilities } from '../../src
 import { newRuntime, type Actor, type CombatInput, type MovementProfile, type Terrain, type Vec3 } from '../../src/tiny-tide/combat-types';
 import { RELEASED } from '../../src/tiny-tide/input';
 import { plan } from '../../src/tiny-tide/plans';
-import { makeWorldQueries, supportHeight } from '../../src/tiny-tide/world-queries';
+import { makeTerrain, makeWorldQueries, supportHeight } from '../../src/tiny-tide/world-queries';
+import { SIZES } from '../../src/tiny-tide/biomes';
+import { STAGES } from '../../src/tiny-tide/state';
+import { derive, effectiveStats, starterFor } from '../../src/tiny-tide/genome';
+import { playerActor } from '../../src/tiny-tide/mount';
 import { forwardOf } from '../../src/tiny-tide/orientation';
 
 const sea = (surface = 85): Terrain => ({ groundAt: () => 0, surface, space: false, slopeBound: 0 });
@@ -123,5 +127,28 @@ describe('block hints', () => {
     const c = (constraint: string) => ({ point: { x: 0, y: 0, z: 0 }, normal: { x: 0, y: -1, z: 0 }, constraint: constraint as never, distanceFraction: 0, time: 0 });
     expect(blockHint(plan('swimmer')!, c('surface-top'))).toBe("Swimmers can't leave the water."); expect(blockHint(plan('crawler')!, c('floor-gap'))).toBe('Crawlers stay on the seabed.');
     expect(blockHint(plan('swimmer')!, c('bounds-x'))).toBe("That's the edge of the world for now."); expect(blockHint(plan('swimmer')!, c('ground'))).toBe('Something solid is in the way.');
+  });
+});
+describe('player step: seabed slopes (playtest stalls)', () => {
+  /** 240 frames at 60 Hz of a 45° push with the body starting on the seabed (support height + .02 L), as the investigation's skim. */
+  const push = (id: 'swimmer' | 'darter', stage: number, t: Terrain) => {
+    const p0 = plan(id)!, g = starterFor(p0), actor = playerActor(p0, g, stage, 1), L = actor.bodyLength, size = SIZES[stage]!;
+    const top = STAGES[stage]!.speed * derive(effectiveStats(g, p0)).speedFactor, a = Math.PI / 4, rt = newRuntime({ yaw: a, pitch: 0 });
+    const k = top * movement(p0.movement).speedMultiplier * size, q = makeWorldQueries(t);
+    let p: Vec3 = { x: 0, y: t.slopeBound > 0 ? supportHeight(actor, 0, 0, rt.orientation, t) + .02 * L : 0, z: 0 }, travel = 0, frozen = 0;
+    for (let f = 0; f < 240; f++) {
+      const r = stepPlayer(p, rt, intent(), { ...ctxFor(id, actor, t, { size, topSpeedLocal: top, now: f / 60, dt: 1 / 60, wish: { x: Math.sin(a), y: 0, z: Math.cos(a) } }), queries: q });
+      expect(r.needsRecovery).toBe(false);
+      const step = Math.hypot(r.position.x - p.x, r.position.y - p.y, r.position.z - p.z), v = rt.controlledVelocity;
+      if (step < 1e-6 && Math.hypot(v.x, v.y, v.z) > .5 * k) frozen++;
+      travel += step; p = r.position;
+    }
+    return { travel, frozen };
+  };
+  it('keeps a Swimmer and a Darter moving along a seabed slope', () => {
+    for (const [id, stage] of [['swimmer', 1], ['darter', 2]] as const) {
+      const real = push(id, stage, makeTerrain(stage)), ideal = push(id, stage, deep).travel;   // the same push without terrain
+      expect(real.frozen, id).toBeLessThanOrEqual(2); expect(real.travel / ideal, id).toBeGreaterThanOrEqual(.9);
+    }
   });
 });

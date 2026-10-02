@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { findRecoveryPose, projectVelocity, resolveMotion } from '../../src/tiny-tide/motion';
-import { makeWorldQueries } from '../../src/tiny-tide/world-queries';
+import { makeTerrain, makeWorldQueries, supportHeight } from '../../src/tiny-tide/world-queries';
+import { seabedHeight } from '../../src/tiny-tide/biomes';
+import { starterFor } from '../../src/tiny-tide/genome';
+import { playerActor } from '../../src/tiny-tide/mount';
+import { plan } from '../../src/tiny-tide/plans';
 import { orientHull } from '../../src/tiny-tide/orientation';
 import { habitat } from '../../src/tiny-tide/profiles';
 import type { Actor, Orientation, Terrain, TraversalPermit } from '../../src/tiny-tide/combat-types';
@@ -66,6 +70,45 @@ describe('resolveMotion', () => {
   it('treats world bounds as a contact with a face normal', () => {
     const r = run(ball('open-water'), flat, { x: 9, y: 1, z: 0 }, { x: 5, y: 0, z: 0 }, {}, { half: 10 });
     expect(r.position.x).toBeLessThanOrEqual(9.8); expect(r.contacts[0]).toMatchObject({ constraint: 'bounds-x', normal: { x: -1, y: 0, z: 0 } });
+  });
+});
+describe('resolveMotion on the curved seabed (playtest stalls)', () => {
+  // The starter Swimmer (stage 1) and Darter (stage 2) at growth 1: the hulls of the playtest fixtures.
+  const swimActor = (id: 'swimmer' | 'darter', stage: number) => playerActor(plan(id)!, starterFor(plan(id)!), stage, 1);
+  const move = (a: Actor, stage: number, from: V, d: V, o: Orientation, bounds?: { half: number }) =>
+    resolveMotion({ actorId: 'player', from, displacement: d, orientation: o, hull: a.hull, habitatProfileId: a.habitat.id, cause: 'locomotion' },
+      { queries: makeWorldQueries(makeTerrain(stage)), actor: a, interval: { start: 0, end: 1 / 60 }, bounds });
+  it('slides a Darter along the seabed from the replayed stall pose', () => {
+    // The replay pose of the investigation (probe-stuck, Darter, heading 45°, frame 170): the body touches the seabed, d is tangent.
+    const a = swimActor('darter', 2), o = { yaw: Math.PI / 4, pitch: 0 }, q = makeWorldQueries(makeTerrain(2));
+    const from = { x: 26.59556485410397, y: 21.87451239776108, z: 26.681934445099913 }, d = { x: 1.4145296383723478, y: .2657150390029284, z: 1.4469136184714597 };
+    const n = { x: -.1526, y: .9878, z: -.0322 }, dn = d.x * n.x + d.y * n.y + d.z * n.z;   // the replay's contact normal
+    const t = { x: d.x - dn * n.x, y: d.y - dn * n.y, z: d.z - dn * n.z }, ideal = Math.hypot(t.x, t.y, t.z);
+    expect(q.overlapHull(a, from, o, { time: 0 }).ok).toBe(true);
+    const r = move(a, 2, from, d, o), along = ((r.position.x - from.x) * t.x + (r.position.y - from.y) * t.y + (r.position.z - from.z) * t.z) / ideal;
+    expect(along / ideal).toBeGreaterThanOrEqual(.9);
+    expect(r.status).not.toBe('needs-recovery'); expect(q.overlapHull(a, r.position, o, { time: 1 / 60 }).ok).toBe(true);
+  });
+  it('slides along the crease of a box bound and the seabed instead of stopping in the corner', () => {
+    // A synthetic square bound (the world edge will change later). The body is settled into the bound and the floor, then pushed
+    // forward, down and sideways each frame. The ideal is the push along the crease of the two faces.
+    for (const [id, stage, half, heading, speed] of [['swimmer', 1, 10, .4, 6.5 * 4], ['swimmer', 1, 10, -.4, 6.5 * 4], ['darter', 2, 22, .4, 7.65 * 16]] as const) {
+      const a = swimActor(id, stage), L = a.bodyLength, bounds = { half: half * L }, o = { yaw: 0, pitch: 0 }, q = makeWorldQueries(makeTerrain(stage));
+      let p: V = { x: 0, y: 0, z: bounds.half - 3 * L }; p.y = supportHeight(a, p.x, p.z, o, makeTerrain(stage)) + .2 * L;
+      for (let i = 0; i < 30; i++) p = move(a, stage, p, { x: 0, y: -.5 * L, z: .5 * L }, o, bounds).position;
+      const s = speed / 60, d = { x: s * Math.sin(heading), y: -.3 * s, z: s * Math.cos(heading) };
+      let frozen = 0, along = 0, ideal = 0;
+      for (let f = 0; f < 120; f++) {
+        const r = move(a, stage, p, d, o, bounds);
+        // Crease direction: (terrain normal) × (0, 0, −1), from the analytic seabed gradient at the body.
+        const gx = seabedHeight(p.x + .5, p.z) - seabedHeight(p.x - .5, p.z), el = Math.hypot(1, gx), ex = -1 / el, ey = -gx / el;
+        ideal += Math.abs(d.x * ex + d.y * ey); along += Math.abs((r.position.x - p.x) * ex + (r.position.y - p.y) * ey);
+        if (Math.hypot(r.position.x - p.x, r.position.y - p.y, r.position.z - p.z) < 1e-6) frozen++;
+        expect(r.status, `${id} ${heading} frame ${f}`).not.toBe('needs-recovery'); expect(q.overlapHull(a, r.position, o, { time: 0, bounds }).ok).toBe(true);
+        p = r.position;
+      }
+      expect(frozen, `${id} ${heading}`).toBeLessThanOrEqual(2); expect(along / ideal, `${id} ${heading}`).toBeGreaterThanOrEqual(.9);
+    }
   });
 });
 describe('findRecoveryPose', () => {

@@ -6,6 +6,9 @@ import type { Actor, Admission, AdmissionContext, Contact, LegalityContext, Moti
 import { hullExtents, supportHeight } from './world-queries';
 
 const SLOT_CAP = 512, MAX_CONTACTS = 4, BISECTIONS = 8, TINY = 1e-9, RECOVERY_CAP = 2000;
+/** The separation, in body lengths, that a slide adds along the contact normal. Bisection leaves the body within a slot / 2⁸ of the
+ *  boundary, and a ground rule over many grid points has kinks there: a pure tangent step can go into a neighbouring point's shortfall. */
+export const CONTACT_SKIN = 1e-3;
 const NO_POSE = 'No legal pose within the search budget.';
 
 /** The smallest capsule radius, and the largest distance of any capsule end from the origin plus its radius and sway. */
@@ -59,6 +62,13 @@ export function resolveMotion(req: MotionRequest, ctx: LegalityContext & { actor
   const contacts: Contact[] = [];
   let bx = from.x, by = from.y, bz = from.z, vx = d.x, vy = d.y, vz = d.z, t0 = start, time = start, travelled = 0, tests = 0;
   let rem: Vec3 = { x: 0, y: 0, z: 0 }, clamped = false;
+  // After a contact, the remainder is projected onto the contact face and, when it also goes into an earlier face of this
+  // move, onto the crease of the two faces. A remainder that still slides gets a small separation (the skin) away from those
+  // faces. Every leg is admitted slot by slot, so the skin never installs a refused pose. A skinned leg that cannot start on the
+  // same face is retried once without the skin (the plain remainder); a plain retry that cannot start and whose projection changes
+  // nothing would repeat exactly, so the move stops there instead of using up the contact budget.
+  const skin = CONTACT_SKIN * actor.bodyLength, faces: Vec3[] = [];
+  let plainX = 0, plainY = 0, plainZ = 0, skinned = false, retried = false, skinFace: Vec3 | null = null;
   legs: while (true) {
     const vLen = Math.hypot(vx, vy, vz);
     if (vLen < TINY) { rem = { x: vx, y: vy, z: vz }; break; }
@@ -92,12 +102,23 @@ export function resolveMotion(req: MotionRequest, ctx: LegalityContext & { actor
       else n = { x: -vx / vLen, y: -vy / vLen, z: -vz / vLen };   // −step/|step|; the step is V/N
       contacts.push({ point: { x: P.x, y: P.y, z: P.z }, normal: n, constraint: failed.constraint!, distanceFraction: dLen > 0 ? travelled / dLen : 0, time: t });
 
-      const left = (N - k + 1 - f) / N;
-      let rx = vx * left, ry = vy * left, rz = vz * left;
-      const dot = rx * n.x + ry * n.y + rz * n.z;
-      if (dot < 0) { rx -= dot * n.x; ry -= dot * n.y; rz -= dot * n.z; }
+      const stuck = k === 1 && f === 0;   // this leg did not move the body
+      if (stuck && skinned && skinFace && dot3(n, skinFace) > 1 - 1e-6) {
+        // The skin did not help on this face: retry the plain remainder of this leg once.
+        rem = { x: plainX, y: plainY, z: plainZ };
+        if (contacts.length >= MAX_CONTACTS) break legs;
+        vx = plainX; vy = plainY; vz = plainZ; t0 = t; skinned = false; retried = true;
+        continue legs;
+      }
+      const left = (N - k + 1 - f) / N, slide = slideRemainder({ x: vx * left, y: vy * left, z: vz * left }, n, faces);
+      let rx = slide.r.x, ry = slide.r.y, rz = slide.r.z;
       rem = { x: rx, y: ry, z: rz };
       if (contacts.length >= MAX_CONTACTS) break legs;
+      if (stuck && retried && !slide.changed) break legs;   // the same leg from the same point would be refused again
+      if (!faces.some(m => dot3(m, n) > 1 - 1e-6)) faces.push(n);
+      // Only a slide gets the skin: a remainder that the projection removed stays at rest on the surface.
+      plainX = rx; plainY = ry; plainZ = rz; skinned = Math.hypot(rx, ry, rz) >= TINY; retried = false; skinFace = n;
+      if (skinned) { rx += slide.away.x * skin; ry += slide.away.y * skin; rz += slide.away.z * skin; }
       bx = P.x; by = P.y; bz = P.z; vx = rx; vy = ry; vz = rz; t0 = t;
       continue legs;
     }
@@ -108,6 +129,27 @@ export function resolveMotion(req: MotionRequest, ctx: LegalityContext & { actor
   const position = { x: P.x, y: P.y, z: P.z }, orientation = { ...o };
   const status: MotionResult['status'] = !adm(position, o, end).ok ? 'needs-recovery' : clamped ? 'clamped' : contacts.length > 0 ? 'blocked' : 'moved';
   return { status, position, orientation, contacts, unconsumed: rem, time };
+}
+
+const dot3 = (a: Vec3, b: Vec3) => a.x * b.x + a.y * b.y + a.z * b.z;
+/** The remainder `r` after a contact on face `n`, given the earlier faces of this move: r −= min(0, r · n) n; if that goes into an
+ *  earlier face m, r is kept only along the crease n × m; if it still goes into a face, nothing is left. `away` is the unit
+ *  separation direction (n, or n + m on a crease); `changed` says whether the projection changed r. */
+function slideRemainder(r: Vec3, n: Vec3, faces: readonly Vec3[]): { r: Vec3; away: Vec3; changed: boolean } {
+  let x = r.x, y = r.y, z = r.z, ax = n.x, ay = n.y, az = n.z, changed = false;
+  const d = x * n.x + y * n.y + z * n.z;
+  if (d < 0) { x -= d * n.x; y -= d * n.y; z -= d * n.z; changed = true; }
+  for (const m of faces) {
+    if (x * m.x + y * m.y + z * m.z >= -TINY) continue;
+    const ex = n.y * m.z - n.z * m.y, ey = n.z * m.x - n.x * m.z, ez = n.x * m.y - n.y * m.x, el = Math.hypot(ex, ey, ez);
+    if (el < 1e-6) continue;   // the same face again
+    const along = (x * ex + y * ey + z * ez) / (el * el);
+    x = ex * along; y = ey * along; z = ez * along; ax += m.x; ay += m.y; az += m.z; changed = true;
+    break;
+  }
+  if (faces.some(m => x * m.x + y * m.y + z * m.z < -TINY)) { x = 0; y = 0; z = 0; changed = true; }
+  const al = Math.hypot(ax, ay, az) || 1;
+  return { r: { x, y, z }, away: { x: ax / al, y: ay / al, z: az / al }, changed };
 }
 
 /** For each contact, v −= min(0, v · n) n. */
