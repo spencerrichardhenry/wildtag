@@ -160,33 +160,55 @@ solid (`solidId`).
 
 - Ground plans step over low rocks (owner decision, fix round 2; it replaces
   the M12 ruling "rocks are walls"). A rock whose top stands at most .15 L
-  above the seabed under the body (`STEP_HEIGHT`) is walkable: the body is
-  lifted by the smallest height that the solids admit (`stepLift`, at most
-  .5 L, because the hull's own margins under the belly can need more than the
-  rock's height). The lift rises at most 1.2 L/s (`STEP_CLIMB`): a steeper
-  step holds the horizontal move back to what that rise allows, so the body
-  rides up and does not snap. Going down, the height settles like any lift off
-  the seabed. Taller rocks and every arch stay walls. Each stepped pose goes
-  through the normal admission. Swim plans are not affected. A tap-to-walk
-  target is still dropped after 1 s with no progress toward it
-  (`TAP_STALL_SECONDS`), so a target behind a wall does not hold the body
-  against it.
+  above the seabed at its own foot (`STEP_HEIGHT`; the seabed under the
+  contact point) is walkable: the body is lifted by the smallest height that
+  the solids admit (`stepLift`, at most .5 L; at most 12 admissions a call, one
+  when no rock is under the body). The lift rises at most 1.2 L/s
+  (`STEP_CLIMB`): a steeper step holds the horizontal move back to what that
+  rise allows, so the body rides up and does not snap. Over a rock the height
+  comes down toward the lift at the same rate; off it, it settles like any
+  lift off the seabed. A slide along a solid never lifts a ground body more
+  than its move asked for, so it does not climb a wall by sliding. Taller
+  rocks and every arch stay walls. Each stepped pose goes through the normal
+  admission. Swim plans are not affected. A tap-to-walk target is still
+  dropped after 1 s with no progress toward it (`TAP_STALL_SECONDS`).
+- Against solids, each sample sphere's animation envelope counts like the
+  ground rule's: sway horizontally, heave vertically (fix round 3,
+  `SolidIndex.sphereEnvelope`). The sample is taken as the ellipsoid of
+  semi-axes r + sway (horizontal) and r + heave (vertical), tested exactly by
+  stretching space vertically so that it becomes a sphere (a mesh or an
+  ellipsoid solid stays one; a capsule keeps the plain sphere). Before, the
+  sway counted in every direction, and a .05 L pebble lifted a Shellback
+  .32 L. Measured gap between the belly (the hull without its margins) and the
+  stone on top of a low mesh rock: Crawler .052–.055 L (on the seabed .058 L),
+  Shellback .040–.043 L (.047 L), Colossus .065–.068 L (.068 L), 7-segment
+  Colossus .030 L (.039 L). An ellipsoid holds a little less than sphere +
+  sway + heave toward the diagonals, so a swinging tail can graze a rock's
+  shoulder there.
 - A body that is really wedged never freezes. A turn that a solid cuts short
   is tried again where the move ends. A trap is when the player pushes one way,
   the body gains under .05 L along the push for .75 s, and on at least 60 % of
-  those frames it is wedged. Wedged means two solid contacts that oppose the
-  push from both sides of it, or a turn toward the push that the solids
-  refused. A push into one rock is not a trap. The game then searches for the
-  nearest admitted pose within 1.5 L that faces the push (`UnstickSearch`, 6
-  candidates a frame). A candidate is used only when the whole hull is
-  admitted at every step of the straight path to it, with position and yaw
-  together (steps of at most .1 L and .2 rad). The body then glides along that
-  path over at least .15 s (9 frames), and each step is admitted again for the
-  current body. So the body never passes through a solid and never snaps. Any
-  other install (respawn, recovery, evolution, an edit) cancels a pending
-  rescue. The QA diagnostics count rescues (`trapRescues`). Measured after fix round 2: 0, 0 and 2 in
-  three swimmer journeys; 8, 0, 14, 0, 8, 1 and 1 in seven crawler journeys (seeds 1927562791, 590530528 and
-  five random seeds; before: 274 and 38–331).
+  those frames it is wedged. Wedged means contacts that oppose the push from
+  both sides of it, with two different solids or with two faces of one solid
+  that face each other (an arch's legs), or a refused turn toward the
+  push (refused by any rule) while a solid is touched. A head-on push into
+  one rock is not a trap (tested: 0 rescues in 101 such pushes). The game then
+  searches for the nearest admitted pose within 1.5 L that faces the push
+  (`UnstickSearch`, about 40 admissions a frame), from which the push is free
+  for .5 L (`RESCUE_FREE`). A trap within 1 L of the last rescue's start in the
+  last 10 s (the player pushes into the same pocket again) needs a free run of
+  2 L (`RESCUE_FREE_REPEAT`): the next rescue gets the body past the pocket, or
+  there is none. A search that finds nothing is not repeated at that spot for
+  that push.
+  A candidate is used only when the whole hull is admitted at every step of
+  the straight path to it, with position and yaw together (steps of at most
+  .1 L and .2 rad). The body then glides along that path over at least .15 s
+  (9 frames), and each step is admitted again for the current body. So the
+  body never passes through a solid and never snaps. When no such pose is near,
+  there is no rescue: the body stays, admitted, against the walls, and the
+  player can back out. Every other install (respawn, recovery, evolution, an
+  edit, a growth step, a new run) cancels a pending rescue (`cancelRescue`).
+  The QA diagnostics count rescues (`trapRescues`, `rescueLog`): COUNTS.
 - A growth lift stops at the first step that a different rule or a different
   solid refuses, so it never carries a body through a thin solid. In a crease
   (for example the seabed and a rock base) the two refusal normals are across

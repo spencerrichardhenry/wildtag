@@ -18,7 +18,7 @@ import { quoteDesign } from './economy';
 import { newRuntime, type Actor, type Capsule, type CombatInput, type Constraint, type MutVec3, type Orientation, type RecoveryResult, type Vec3, type WorldQueries } from './combat-types';
 import { basicRequested, readIntent, RELEASED } from './input';
 import { blockHint, blockHintDue, newBlockHintGate, type PlayerStepResult, newStepSnapshot, newTapWatch, restoreStep, snapshotStep, stepPlayer, tapTargetStalled } from './player-motion';
-import { beginRespawn, canChooseNextPlan, evolutionDestination, growthPose, newTrapWatch, reconcileAfterCommit, recoverPlayer, resetRuntime, resolveHazards, resolveRespawn, TRAP_MOVE, trapDue, trapFailed, UNSTICK_BUDGET, UnstickSearch, wedged } from './lifecycle';
+import { beginRespawn, canChooseNextPlan, evolutionDestination, growthPose, newTrapWatch, reconcileAfterCommit, recoverPlayer, resetRuntime, resolveHazards, resolveRespawn, rescueFreeRun, TRAP_MOVE, trapDue, trapFailed, trapRescued, UNSTICK_BUDGET, UnstickSearch, wedged } from './lifecycle';
 import { habitat, movement, movementCapabilities } from './profiles';
 import { admissionClock, makeWorldQueries, resetAdmissionClock, stageBounds, stageWorldQueries, supportHeight, zoneLabel } from './world-queries';
 import { ROCK_FIT, stageSolids } from './reef';
@@ -775,11 +775,11 @@ function frame(now: number) {
     // faces the push, along a path the whole hull is admitted on. The search runs UNSTICK_BUDGET candidates a frame; it is dropped
     // when the body moves away on its own.
     if (!glide && !r.needsRecovery && !unstick && trapDue(trapWatch, physical, wish, actor.bodyLength, wedged(r.contacts, wish, r.turnRefused, rt.orientation.yaw), dt))
-      { unstick = new UnstickSearch(actor, { ...physical }, Math.atan2(wish.x, wish.z), { ...rt.orientation }, { ...legal, time: time + dt, ground: caps.ground && !legal.queries.terrain.space }); rescueLog.searches++; }
+      { unstick = new UnstickSearch(actor, { ...physical }, Math.atan2(wish.x, wish.z), { ...rt.orientation }, { ...legal, time: time + dt, ground: caps.ground && !legal.queries.terrain.space }, rescueFreeRun(trapWatch, physical, time, actor.bodyLength)); rescueLog.searches++; }
     if (unstick) {
       const u = Math.hypot(physical.x - unstick.at.x, physical.z - unstick.at.z) > TRAP_MOVE * actor.bodyLength ? { ok: false as const, reason: 'moved' } : unstick.step(UNSTICK_BUDGET);
       if (u) {
-        if (u.ok) { rescueLog.found++; rescueLog.last = { from: { ...unstick.at }, to: { ...u.position }, time, solids: [...lastSolids] }; glide = { path: u.path, index: 0 }; trapRescues++; }
+        if (u.ok) { rescueLog.found++; rescueLog.last = { from: { ...unstick.at }, to: { ...u.position }, time, solids: [...lastSolids] }; glide = { path: u.path, index: 0 }; trapRescues++; trapRescued(trapWatch, unstick.at, time); }
         else if (u.reason !== 'moved') { rescueLog.failed++; trapFailed(trapWatch, unstick.at, wish); }
         unstick = null;
       }

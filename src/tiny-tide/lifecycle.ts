@@ -87,8 +87,10 @@ export function growthPose(actor: Actor, position: Vec3, rt: Pick<CombatRuntime,
 export const TRAP_SECONDS = .75, TRAP_MOVE = .05, TRAP_REACH = 1.5, WEDGE_ANGLE = Math.PI / 6, WEDGED_SHARE = .6, PINCH_ANGLE = 100 * Math.PI / 180;
 export interface TrapWatch { x: number; y: number; z: number; dx: number; dz: number; time: number; frames: number; wedgedFrames: number; armed: boolean;
   /** Where and toward what a search last failed: no new search there until the body moves or the push turns. */
-  failed: { x: number; z: number; dx: number; dz: number } | null }
-export const newTrapWatch = (): TrapWatch => ({ x: 0, y: 0, z: 0, dx: 0, dz: 0, time: 0, frames: 0, wedgedFrames: 0, armed: false, failed: null });
+  failed: { x: number; z: number; dx: number; dz: number } | null;
+  /** Where and when the last rescue started. */
+  lastRescue: { x: number; z: number; time: number } | null }
+export const newTrapWatch = (): TrapWatch => ({ x: 0, y: 0, z: 0, dx: 0, dz: 0, time: 0, frames: 0, wedgedFrames: 0, armed: false, failed: null, lastRescue: null });
 /** A search from here found no pose (fix round 3): the watch stays quiet at this spot for this push. */
 export function trapFailed(w: TrapWatch, at: Vec3, push: Vec3): void { const pl = Math.hypot(push.x, push.z) || 1; w.failed = { x: at.x, z: at.z, dx: push.x / pl, dz: push.z / pl }; }
 /** A real wedge on this step: contacts with two different solids whose horizontal normals both oppose the push and lie on opposite
@@ -140,16 +142,18 @@ export type Rescue = { ok: true; position: Vec3; orientation: Orientation; path:
  *  RESCUE_STEP L and RESCUE_TURN radians: so the body never passes through a solid, and it glides along that path (main.ts).
  *  The search runs in slices (`step(budget)` tests at most `budget` candidates), so a frame never pays for all of it. */
 export class UnstickSearch {
-  private ring = 0; private angle = 0; private yawIndex = 0; private done = false;
+  private ring = 0; private angle = 0; private yawIndex = 0; private done = false; private used = 0;
   private readonly yaws: number[];
+  /** `free`: how far the push must be free from the rescue pose (RESCUE_FREE, or RESCUE_FREE_REPEAT at a repeated trap). */
   constructor(private readonly actor: Actor, readonly at: Vec3, private readonly yaw: number, private readonly current: Orientation,
-    private readonly ctx: LegalityContext & { time: number; ground: boolean }) {
+    private readonly ctx: LegalityContext & { time: number; ground: boolean }, private readonly free = RESCUE_FREE) {
     this.yaws = [yaw, yaw + Math.PI / 4, yaw - Math.PI / 4, yaw + Math.PI / 2, yaw - Math.PI / 2, current.yaw];
   }
-  /** A rescue, null while the search goes on, or a failure when every candidate is refused. */
+  /** A rescue, null while the search goes on, or a failure when every candidate is refused. One call spends about `budget`
+   *  admissions (support heights count as one): candidates are not split, so a call can go over by one candidate's checks. */
   step(budget: number): Rescue | null {
-    const rings = Math.floor(TRAP_REACH / UNSTICK_RING + 1e-9);
-    for (let n = 0; n < budget && !this.done; n++) {
+    const rings = Math.floor(TRAP_REACH / UNSTICK_RING + 1e-9), until = this.used + budget;
+    while (this.used < until && !this.done) {
       const r = this.ring * UNSTICK_RING * this.actor.bodyLength, a = this.yaw + (this.angle % 2 === 0 ? 1 : -1) * Math.ceil(this.angle / 2) * Math.PI / 8;
       const found = this.test(this.at.x + Math.sin(a) * r, this.at.z + Math.cos(a) * r, this.yaws[this.yawIndex]!, this.ring === 0);
       if (found) { this.done = true; return found; }
@@ -167,26 +171,31 @@ export class UnstickSearch {
     if (inPlace && Math.abs(Math.sin((y0 - c.yaw) / 2)) < 1e-6) return null;
     const o: Orientation = { yaw: y0, pitch: 0 }, actx = { time: this.ctx.time, permit: null, bounds: this.ctx.bounds };
     const ys = [at.y];
-    if (this.ctx.ground && !q.terrain.space) ys.unshift(supportHeight(this.actor, x, z, o, q.terrain) + .01 * L);
+    if (this.ctx.ground && !q.terrain.space) { ys.unshift(supportHeight(this.actor, x, z, o, q.terrain) + .01 * L); this.used++; }
     for (const y of ys) {
       const p = { x, y, z };
+      this.used++;
       if (!q.overlapHull(this.actor, p, o, actx).ok) continue;
+      // The push must be free from there for `free` L (fix round 3): a rescue never leaves the body in the same pocket, to be
+      // wedged and rescued again; when no such pose is near, there is no rescue (the body stays, admitted, against the walls).
+      // Checked before the path (it is cheaper and rejects more).
+      const fx = Math.sin(this.yaw), fz = Math.cos(this.yaw), steps = Math.ceil(this.free / (RESCUE_FREE / RESCUE_FREE_STEPS));
+      let clear = true;
+      for (let k = 1; k <= steps && clear; k++) {
+        const d = this.free * L * k / steps, qx = x + fx * d, qz = z + fz * d;
+        const qy = this.ctx.ground && !q.terrain.space ? Math.max(y, supportHeight(this.actor, qx, qz, o, q.terrain) + .01 * L) : y;
+        this.used += 2;
+        if (!q.overlapHull(this.actor, { x: qx, y: qy, z: qz }, o, actx).ok) clear = false;
+      }
+      if (!clear) continue;
       // The path: position and yaw (shortest arc) and pitch together, every step admitted.
       const turn = Math.atan2(Math.sin(y0 - c.yaw), Math.cos(y0 - c.yaw)), dist = Math.hypot(x - at.x, y - at.y, z - at.z);
       const n = Math.max(RESCUE_FRAMES, Math.ceil(dist / (RESCUE_STEP * L)), Math.ceil(Math.max(Math.abs(turn), Math.abs(c.pitch)) / RESCUE_TURN));
       const path: { position: Vec3; orientation: Orientation }[] = [];
-      let clear = true;
       for (let k = 1; k <= n && clear; k++) {
         const f = k / n, pose = { position: { x: at.x + (x - at.x) * f, y: at.y + (y - at.y) * f, z: at.z + (z - at.z) * f }, orientation: { yaw: k === n ? y0 : c.yaw + turn * f, pitch: c.pitch * (1 - f) } };
+        this.used++;
         if (!q.overlapHull(this.actor, pose.position, pose.orientation, actx).ok) clear = false; else path.push(pose);
-      }
-      // The push must be free from there for RESCUE_FREE L (fix round 3): a rescue never leaves the body in the same pocket, to be
-      // wedged and rescued again; when no such pose is near, there is no rescue (the body stays, admitted, against the walls).
-      const fx = Math.sin(this.yaw), fz = Math.cos(this.yaw);
-      for (let k = 1; k <= RESCUE_FREE_STEPS && clear; k++) {
-        const d = RESCUE_FREE * L * k / RESCUE_FREE_STEPS, qx = x + fx * d, qz = z + fz * d;
-        const qy = this.ctx.ground && !q.terrain.space ? Math.max(y, supportHeight(this.actor, qx, qz, o, q.terrain) + .01 * L) : y;
-        if (!q.overlapHull(this.actor, { x: qx, y: qy, z: qz }, o, actx).ok) clear = false;
       }
       if (clear) return { ok: true, position: p, orientation: o, path };
     }
@@ -196,13 +205,21 @@ export class UnstickSearch {
 /** The whole search at once (tests). */
 export const unstickPose = (actor: Actor, at: Vec3, yaw: number, current: Orientation, ctx: LegalityContext & { time: number; ground: boolean }): Rescue =>
   new UnstickSearch(actor, at, yaw, current, ctx).step(Infinity)!;
-/** Candidates a frame may test, and the ring spacing in body lengths. A candidate costs a support height and one or two admissions;
- *  an admitted one adds its path (at least RESCUE_FRAMES admissions). */
-export const UNSTICK_BUDGET = 6, UNSTICK_RING = .25;
+/** Admissions a frame's slice of the search may spend (support heights count as one), and the ring spacing in body lengths. */
+export const UNSTICK_BUDGET = 40, UNSTICK_RING = .25;
 /** The glide: at least RESCUE_FRAMES frames (about .15 s at 60 Hz), at most RESCUE_STEP L and RESCUE_TURN radians a step. */
 export const RESCUE_FRAMES = 9, RESCUE_STEP = .1, RESCUE_TURN = .2;
-/** From a rescue pose the push is free for RESCUE_FREE body lengths, checked in RESCUE_FREE_STEPS admissions. */
-export const RESCUE_FREE = .5, RESCUE_FREE_STEPS = 5;
+/** From a rescue pose the push is free for RESCUE_FREE body lengths (in steps of RESCUE_FREE / RESCUE_FREE_STEPS). A trap within
+ *  REPEAT_REACH L of the last rescue's start and REPEAT_SECONDS of it (the player pushes into the same pocket again) needs
+ *  RESCUE_FREE_REPEAT L instead: the next rescue gets the body past the pocket, or there is none. */
+export const RESCUE_FREE = .5, RESCUE_FREE_STEPS = 5, RESCUE_FREE_REPEAT = 2, REPEAT_REACH = 1, REPEAT_SECONDS = 10;
+/** Records a rescue that started at `at` at time `now`. */
+export function trapRescued(w: TrapWatch, at: Vec3, now: number): void { w.lastRescue = { x: at.x, z: at.z, time: now }; }
+/** The free run a rescue from `at` at time `now` needs (see RESCUE_FREE_REPEAT). */
+export function rescueFreeRun(w: TrapWatch, at: Vec3, now: number, L: number): number {
+  const r = w.lastRescue;
+  return r && now - r.time < REPEAT_SECONDS && Math.hypot(at.x - r.x, at.z - r.z) < REPEAT_REACH * L ? RESCUE_FREE_REPEAT : RESCUE_FREE;
+}
 
 const sameEmitter = (a: PartEmitterSource, b: { partUid: string; copy: number; socketId: string }) => a.partUid === b.partUid && a.copy === b.copy && a.socketId === b.socketId;
 

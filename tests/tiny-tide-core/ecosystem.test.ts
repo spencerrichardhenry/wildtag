@@ -163,7 +163,7 @@ describe('hunters and the world edge (owner ruling M11)', () => {
         expect(reach, `${e.spec.key} ${e.id}`).toBeLessThanOrEqual(SPAWN_HALF + HUNTER_MARGIN + 1e-9);
       }
     }
-  });
+  }, 60_000);   // about 1 s alone; the full suite runs files in parallel
   it('a hunter gives up a target in the push zone and does not acquire one there', () => {
     const eco = new Ecosystem(1), crab = eco.entities.find(e => e.spec.key === '1:crab' && !e.eaten)!;
     // A Speck (stage 0) right next to the crab: inside the soft start it is acquired; in the push zone it is given up / never acquired.

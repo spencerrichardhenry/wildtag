@@ -5,7 +5,7 @@ import { newRuntime, type Actor, type CombatRuntime, type Orientation, type Terr
 import { Ecosystem, speciesActor } from '../../src/tiny-tide/ecosystem';
 import { derive, effectiveStats, starterFor } from '../../src/tiny-tide/genome';
 import { RELEASED } from '../../src/tiny-tide/input';
-import { growthPose, newTrapWatch, TRAP_MOVE, trapDue, trapFailed, UNSTICK_BUDGET, UnstickSearch, wedged } from '../../src/tiny-tide/lifecycle';
+import { growthPose, newTrapWatch, RESCUE_FREE, RESCUE_FREE_REPEAT, rescueFreeRun, TRAP_MOVE, trapDue, trapFailed, trapRescued, UNSTICK_BUDGET, UnstickSearch, wedged } from '../../src/tiny-tide/lifecycle';
 import { startAnchor } from '../../src/tiny-tide/motion';
 import { playerActor } from '../../src/tiny-tide/mount';
 import { PLANS, plan } from '../../src/tiny-tide/plans';
@@ -39,10 +39,10 @@ function rescuer(a: Actor, q: WorldQueries, bounds: { half: number; maxY?: numbe
     const r = step();
     if (r.needsRecovery) { stats.recov++; return pos; }
     const p = r.position;
-    if (!search && trapDue(watch, p, wish, L, wedged(r.contacts, wish, r.turnRefused, rt.orientation.yaw), 1 / 60)) search = new UnstickSearch(a, { ...p }, Math.atan2(wish.x, wish.z), { ...rt.orientation }, { queries: q, bounds, time: (f + 1) / 60, ground });
+    if (!search && trapDue(watch, p, wish, L, wedged(r.contacts, wish, r.turnRefused, rt.orientation.yaw), 1 / 60)) search = new UnstickSearch(a, { ...p }, Math.atan2(wish.x, wish.z), { ...rt.orientation }, { queries: q, bounds, time: (f + 1) / 60, ground }, rescueFreeRun(watch, p, f / 60, L));
     if (search) {
       const u = Math.hypot(p.x - search.at.x, p.z - search.at.z) > TRAP_MOVE * L ? { ok: false as const, reason: 'moved' } : search.step(UNSTICK_BUDGET);
-      if (u) { const at = search.at; search = null; if (u.ok) { glide = { path: u.path, index: 0 }; stats.rescues++; stats.ends.push(u.position); stats.paths.push(u.path.map(x => x.position)); } else if (u.reason !== 'moved') { stats.failed++; trapFailed(watch, at, wish); } }
+      if (u) { const at = search.at; search = null; if (u.ok) { glide = { path: u.path, index: 0 }; stats.rescues++; stats.ends.push(u.position); stats.paths.push(u.path.map(x => x.position)); trapRescued(watch, at, f / 60); } else if (u.reason !== 'moved') { stats.failed++; trapFailed(watch, at, wish); } }
     }
     return p;
   };
@@ -404,6 +404,14 @@ describe('the trap rescue (continuation: crawler freeze)', () => {
     expect(pushes).toBeGreaterThan(30);
     expect(rescues, `${rescues} rescues in ${pushes} head-on pushes of 5 s against one solid`).toBe(0);
   }, 120_000);
+  it('a trap at the spot of a rescue in the last 10 s needs a free run of 2 L, so the next rescue gets past the pocket (fix round 3)', () => {
+    const w = newTrapWatch(), L = 10, at = { x: 5, y: 0, z: 5 };
+    expect(rescueFreeRun(w, at, 3, L)).toBe(RESCUE_FREE);
+    trapRescued(w, at, 3);
+    expect(rescueFreeRun(w, { x: 5 + .5 * L, y: 0, z: 5 }, 8, L)).toBe(RESCUE_FREE_REPEAT);
+    expect(rescueFreeRun(w, { x: 5 + 2 * L, y: 0, z: 5 }, 8, L)).toBe(RESCUE_FREE);
+    expect(rescueFreeRun(w, at, 14, L)).toBe(RESCUE_FREE);
+  });
   it('never fires for a push into one flat wall while facing it', () => {
     const wall = solidOf('rock:wall', 'rock', [rockShape(0, -4, 0, 18, 30, 22, 0)]), q = makeWorldQueries(flat(), { solids: index([wall]) });
     const r = walk(q, { x: -70, y: 0, z: 0 }, { x: 1, y: 0, z: 0 }, 300);
