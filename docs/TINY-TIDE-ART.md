@@ -41,7 +41,12 @@ The style uses sculpted profiles, curved appendages, painted gradients, cream
 eyes with teal pupils, warm blush and a small shared PBR palette. Vertex colors
 keep the complete export library near 7 MiB without image texture downloads.
 The terrain consists of one detailed center mesh and two open rings with shared
-boundaries, so distant geometry never cuts through the small reef.
+boundaries, so distant geometry never cuts through the small reef. Since the P3
+playtest fix, the game draws only the center mesh (`seabed_0`). The far seabed
+is built at runtime from the collision ground (`src/tiny-tide/seabed-mesh.ts`),
+because rings dense enough to match it are too large for the GLB budget. The
+two Blender rings (`seabed_1`, `seabed_2`) stay in the library and in the
+checks, but the game does not load them.
 
 ## Rebuild through MCP
 

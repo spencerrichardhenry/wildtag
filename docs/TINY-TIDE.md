@@ -71,7 +71,20 @@ changes from seafloor to open water, surface, sky and space.
 
 The creature body is generated at runtime from its genome as a skinned mesh
 with one bone for each spine segment. All parts, food, scenery and planets
-are original Blender GLBs. Parts and the body move with procedural animation.
+are original Blender GLBs, except the far seabed.
+
+**Seabed.** The drawn seabed agrees with the collision ground (`seabedHeight`)
+to within .02 L everywhere the player can reach at each stage (L = the starter
+body length at growth 1). The Blender reef mesh (`seabed_0`, ±65 physical
+units) is drawn in the middle. Around it, `seabed-mesh.ts` builds rings
+sampled from `seabedHeight` once at load, in the reef's material: spacing 4 out
+to 232, 8 out to 928, 24 out to 3200 and 48 out to 3712 physical units. Each
+ring starts on the last loop of the ring inside it, so there are no cracks. A
+ring is drawn only at scales where it can be seen (its inside is within the
+edge fade). Measured maximum error: stage 1, .010 L; stage 2, .009 L; stage 3,
+.016 L. The old Blender rings (`seabed_1`, `seabed_2`) were off by up to .09 L
+at stage 1 and .21 L at stage 2, and did not reach the stage-3 bound. They are
+still in the asset library, but the game no longer loads them. Parts and the body move with procedural animation.
 The models preload once before play; editing and evolving make no network
 requests. Water, caustics, light shafts, particles and sound remain runtime effects.
 
@@ -126,6 +139,28 @@ ground, the water, the land band, the air, space and the world bounds. The
 simulation never installs a pose that the test refuses. A blocked move stops at
 the border and slides along it where the border allows.
 
+**Hull fit.** The ground and crawler plans keep the conservative hull: it holds
+every animated pose with a margin. The swim plans (Swimmer, Darter, Bulk) use a
+tight hull, so that they stop close to the sand. This is the owner's "tighter
+fit" decision after the playtest (P3). It overrides the conservative margin of
+the design spec for the swim envelope only. The tight hull:
+
+- uses a sphere on each end bone for the tips, and splits each spine segment
+  into three tapered pieces that follow the body's loft;
+- keeps half of the swim wave's sway of the hull's centre line
+  (`TIGHT_SWAY` = .5), so the tail can clip a little into the seabed at the
+  end of its sway (measured: never in the tests; allowed: .1 L);
+- adds a bite heave only for the part of a bite's dip (the body behind the head
+  drops by about .027 L) that the hull's room under the belly does not cover.
+
+Admission tests the tight hull with sample spheres that cover the tapered
+pieces exactly. The ground grid has a spacing of r'/6 (`TIGHT_GRID`), with a
+second-order margin from the terrain's curvature bound
+(`SEABED_CURVATURE_BOUND` = .026). Measured at rest on a flat seabed, the
+visible gap between the belly and the sand is .03 L. It was .13 L before.
+When sliding along slopes it is at most .058 L. It was .21 to .30 L before.
+Combat poses and hurtboxes still use the conservative hull.
+
 **World edge.** The world bound is a square at ±50 stage-local units
 (`PLAYER_HALF`). It is not felt as a wall. From 0.8 × the bound (40 units,
 `EDGE_SOFT_START`), a current pushes the creature back toward the centre, on
@@ -171,10 +206,15 @@ profile sets speed, acceleration, braking and turn rates.
 
 **Breach.** Darter and Bulk (size 2, free water) Breach instead of Rise: tap
 Rise / E. A Breach is a 1.8 s arc (`BREACH_SECONDS`) that rises 3.8 × the
-size scale above the surface (`BREACH_RISE × size`) and ends 1.3 × the size
-scale under it (`BREACH_END_DEPTH × size`).
-An air permit lasts 1.9 s. The cooldown is 2.3 s (`BREACH_COOLDOWN`). When the
-permit ends, the game checks the landing and recovers the pose if needed.
+size scale above the surface (`BREACH_RISE × size`). It ends 1.3 × the size
+scale under the surface (`BREACH_END_DEPTH × size`), or deeper when the
+body needs it: the arc's end height (`breachEndY`, fixed when the arc starts)
+keeps the hull's top at least .02 L (`BREACH_CLEARANCE`) under the surface at
+every pitch the body can turn to during the arc. So a grown body lands in the
+water with no recovery and keeps its horizontal speed. A landing that is
+admitted in the water ends the air permit at once. Otherwise the permit lasts
+1.9 s, and when it ends the game checks the landing and recovers the pose if
+needed. The cooldown is 2.3 s (`BREACH_COOLDOWN`).
 
 **Recovery.** When a pose stops being legal (for example, after a design
 change, a growth step or the end of a Breach), the game looks for the nearest

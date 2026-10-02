@@ -191,6 +191,14 @@ interface HabitatProfile {
 
 ### Admission of a body (conservative)
 
+> **Owner override (P3 playtest, "tighter fit"):** for the swim plans' envelope
+> only, admission uses a tight fit (`HullFit` 'tight'): tapered hull pieces,
+> sample spheres that cover them exactly, half the swim sway, a ground grid of
+> `r'/6` with a second-order (curvature) margin instead of the slope margin.
+> The body stops within .06 L of the seabed; the tail may clip a little into it.
+> Every other plan keeps the conservative rules below. See docs/TINY-TIDE.md,
+> "Hull fit".
+
 A body is a list of capsules, oriented and placed in physical space. With
 `L` = body length:
 
@@ -578,6 +586,8 @@ numbers, unit axes, integer counts, references, rig chains without cycles,
   and `heave`, the largest vertical displacement (from the head nod only).
   Admission treats the occupied volume as the capsule swept by any such
   offset, so grounded bodies do not float by the horizontal wave.
+  (Owner override P3: the swim plans' admission hull is the tight hull of
+  `bodyHull(genome, 'tight')`; see "Admission of a body".)
 - Hurtboxes are the posed capsules (bones applied) for the current tick.
 - `massFor(plan, genome, physicalLength)` = `massPerBodyLength × length`.
 
