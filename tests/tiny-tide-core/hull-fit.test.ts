@@ -17,7 +17,42 @@ import { gapOf, skinnedBody, swimPoses } from './body-gap';
 
 /** The owner's tighter fit: the largest visible gap between the body and the seabed, and the tail's allowed clip, in body lengths. */
 const MAX_GAP = .06, TAIL_CLIP = .1;
+/** The measured largest gap of an edited (non-starter) swim body while it slides along the seabed (final review M15; see the test). */
+const EDITED_GAP = .2;
 const SWIM_CASES = [['swimmer', 1], ['darter', 2], ['bulk', 2]] as const;
+
+/** The genomes of the fit tests: the swim starters, one extreme spine, and 12 random spines (16 in all). */
+function fitGenomes(): Genome[] {
+  const rand = random(97), pick = (lo: number, hi: number) => lo + (hi - lo) * rand();
+  const genomes: Genome[] = [...SWIM_CASES.map(([id]) => starterFor(plan(id)!)),
+    { ...starterGenome(), spine: [{ radius: 1.2, height: .25, lift: .5 }, { radius: .25, height: 1.2, lift: -.5 }, { radius: 1.2, height: 1.2, lift: 0 }, { radius: .25, height: .25, lift: .5 }] }];
+  for (let i = 0; i < 12; i++) genomes.push({ ...starterGenome(), spine: Array.from({ length: 3 + (i % 6) }, () => ({ radius: pick(.25, 1.2), height: pick(.25, 1.2), lift: pick(-.5, .5) })) });
+  return genomes;
+}
+/** A swim plan's body `g` slides along the real seabed slope (6 runs of 240 frames: three headings, level and diving). At every seabed
+ *  contact: the rest body's gap over the seabed, and the lowest swimming torso and tail, in body lengths. */
+function slideGaps(id: string, g: Genome, stage: number, growth: number) {
+  const p0 = plan(id)!, actor = playerActor(p0, g, stage, growth), L = actor.bodyLength, size = SIZES[stage]!, scale = size * growth, rest = skinnedBody(g);
+  const t = makeTerrain(stage), q = makeWorldQueries(t), swims = swimPoses(g, 8), caps = movementCapabilities(p0);
+  const top = STAGES[stage]!.speed * derive(effectiveStats(g, p0)).speedFactor;
+  let contacts = 0, maxGap = -Infinity, minRest = Infinity, minTorso = Infinity, minTail = Infinity, recoveries = 0;
+  for (const traversal of ['none', 'dive'] as const) for (const yaw of [Math.PI / 4, -1.05, 3]) {
+    const rt = newRuntime({ yaw, pitch: 0 });
+    let p: Vec3 = { x: 0, y: supportHeight(actor, 0, 0, rt.orientation, t) + .02 * L, z: 0 };
+    for (let f = 0; f < 240; f++) {
+      const r = stepPlayer(p, rt, { ...RELEASED, traversal }, { plan: p0, profile: movement(p0.movement), caps, actor, queries: q, bounds: { half: 50 * size }, size,
+        topSpeedLocal: top, now: f / 60, dt: 1 / 60, wish: { x: Math.sin(yaw), y: 0, z: Math.cos(yaw) }, aim: null, actionLock: false });
+      if (r.needsRecovery) { recoveries++; continue; }
+      p = r.position;
+      if (!r.contacts.some(c => c.constraint === 'ground')) continue;
+      contacts++;
+      const gap = gapOf(rest, scale, p, rt.orientation, t.groundAt).all / L; maxGap = Math.max(maxGap, gap); minRest = Math.min(minRest, gap);
+      for (const m of swims) { const s = gapOf(m, scale, p, rt.orientation, t.groundAt); minTorso = Math.min(minTorso, s.torso / L); minTail = Math.min(minTail, s.tail / L); }
+    }
+  }
+  expect(recoveries, `${id} ${JSON.stringify(g.spine)}`).toBe(0);
+  return { contacts, maxGap, minRest, minTorso, minTail };
+}
 
 describe('swim hull fit (owner playtest P3)', () => {
   const setup = (id: string, stage: number, growth: number) => {
@@ -39,32 +74,30 @@ describe('swim hull fit (owner playtest P3)', () => {
       }
     });
     it(`slides a ${id} (growth ${growth}) along the seabed slope with a gap of at most ${MAX_GAP} L; the tail clips at most ${TAIL_CLIP} L`, () => {
-      const b = setup(id, stage, growth), t = makeTerrain(stage), q = makeWorldQueries(t), swims = swimPoses(b.g, 8), caps = movementCapabilities(b.p0);
-      const top = STAGES[stage]!.speed * derive(effectiveStats(b.g, b.p0)).speedFactor;
-      let contacts = 0, maxGap = -Infinity, minRest = Infinity, minTorso = Infinity, minTail = Infinity;
-      for (const traversal of ['none', 'dive'] as const) for (const yaw of [Math.PI / 4, -1.05, 3]) {
-        const rt = newRuntime({ yaw, pitch: 0 });
-        let p: Vec3 = { x: 0, y: supportHeight(b.actor, 0, 0, rt.orientation, t) + .02 * b.L, z: 0 };
-        for (let f = 0; f < 240; f++) {
-          const r = stepPlayer(p, rt, { ...RELEASED, traversal }, { plan: b.p0, profile: movement(b.p0.movement), caps, actor: b.actor, queries: q, bounds: { half: 50 * b.size }, size: b.size,
-            topSpeedLocal: top, now: f / 60, dt: 1 / 60, wish: { x: Math.sin(yaw), y: 0, z: Math.cos(yaw) }, aim: null, actionLock: false });
-          expect(r.needsRecovery).toBe(false); p = r.position;
-          if (!r.contacts.some(c => c.constraint === 'ground')) continue;
-          contacts++;
-          const gap = gapOf(b.rest, b.scale, p, rt.orientation, t.groundAt).all / b.L; maxGap = Math.max(maxGap, gap); minRest = Math.min(minRest, gap);
-          for (const m of swims) { const s = gapOf(m, b.scale, p, rt.orientation, t.groundAt); minTorso = Math.min(minTorso, s.torso / b.L); minTail = Math.min(minTail, s.tail / b.L); }
-        }
-      }
+      const { contacts, maxGap, minRest, minTorso, minTail } = slideGaps(id, starterFor(plan(id)!), stage, growth);
       expect(contacts, 'seabed contacts').toBeGreaterThan(100);
       expect(maxGap, 'largest gap at a seabed contact').toBeLessThanOrEqual(MAX_GAP); expect(minRest, 'rest body above the seabed').toBeGreaterThanOrEqual(0);
       expect(minTorso, 'swimming torso above the seabed').toBeGreaterThanOrEqual(0); expect(minTail, 'tail clip').toBeGreaterThanOrEqual(-TAIL_CLIP);
     });
   }
+  // Final review M15: the gap probe on the 16 fit genomes. The starters stay within MAX_GAP; edited bodies with flat or tall segments
+  // (radius ≠ height, a round tight capsule holds the larger of the two) or large lift steps keep a larger belly gap: measured up to
+  // .19 L (genome 12 as a Darter). The bound below pins that measurement; fixing it needs non-round hull pieces (reported, not done).
+  it('slides each of the 16 fit genomes as a Swimmer and a Darter: never below the seabed, the starters within MAX_GAP L, edited bodies within EDITED_GAP L', () => {
+    const rows: { text: string; r: ReturnType<typeof slideGaps> }[] = [];
+    fitGenomes().forEach((g, i) => { for (const [id, stage] of [['swimmer', 1], ['darter', 2]] as const) {
+      const r = slideGaps(id, g, stage, 1);
+      rows.push({ text: `genome ${i} (${g.spine.length} segments) as ${id}: gap ${r.maxGap.toFixed(4)} L, rest ${r.minRest.toFixed(4)} L, torso ${r.minTorso.toFixed(4)} L, tail ${r.minTail.toFixed(4)} L (${r.contacts} contacts)`, r });
+    } });
+    console.log(rows.map(x => x.text).join('\n'));
+    for (const { text, r } of rows) {
+      expect(r.contacts, text).toBeGreaterThan(50);
+      expect(r.maxGap, text).toBeLessThanOrEqual(text.startsWith('genome 0 ') || text.startsWith('genome 1 ') || text.startsWith('genome 2 ') ? MAX_GAP : EDITED_GAP); expect(r.minRest, text).toBeGreaterThanOrEqual(0);
+      expect(r.minTorso, text).toBeGreaterThanOrEqual(0); expect(r.minTail, text).toBeGreaterThanOrEqual(-TAIL_CLIP);
+    }
+  }, 120_000);
   it('holds every rest-pose body vertex in the tight hull (tapered frusta and end balls), for many genomes', () => {
-    const rand = random(97), pick = (lo: number, hi: number) => lo + (hi - lo) * rand();
-    const genomes: Genome[] = [...SWIM_CASES.map(([id]) => starterFor(plan(id)!)),
-      { ...starterGenome(), spine: [{ radius: 1.2, height: .25, lift: .5 }, { radius: .25, height: 1.2, lift: -.5 }, { radius: 1.2, height: 1.2, lift: 0 }, { radius: .25, height: .25, lift: .5 }] }];
-    for (let i = 0; i < 12; i++) genomes.push({ ...starterGenome(), spine: Array.from({ length: 3 + (i % 6) }, () => ({ radius: pick(.25, 1.2), height: pick(.25, 1.2), lift: pick(-.5, .5) })) });
+    const genomes = fitGenomes();
     // A tapered capsule's cross-section in the plane of p (constant body z), or its end balls.
     const inside = (p: { x: number; y: number; z: number }, c: Capsule) => {
       const [r0, r1] = c.radii ?? [c.radius, c.radius];

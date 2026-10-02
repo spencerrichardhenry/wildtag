@@ -2,18 +2,28 @@
 import { describe, expect, it } from 'vitest';
 import { canApproachFood, reachableFoodDna } from '../../src/tiny-tide/food-access';
 import { playerActor } from '../../src/tiny-tide/mount';
-import { makeTerrain, makeWorldQueries } from '../../src/tiny-tide/world-queries';
+import { makeTerrain, makeWorldQueries, stageBounds } from '../../src/tiny-tide/world-queries';
 import { breachPermit, habitat } from '../../src/tiny-tide/profiles';
 import { eligibleChildren, plan, ROOT_PLAN } from '../../src/tiny-tide/plans';
 import { starterFor } from '../../src/tiny-tide/genome';
 import { STAGES } from '../../src/tiny-tide/state';
-import { populate, WATER_LEVEL } from '../../src/tiny-tide/biomes';
+import { PLAYER_HALF, populate, SIZES, WATER_LEVEL } from '../../src/tiny-tide/biomes';
 import type { Actor, Terrain } from '../../src/tiny-tide/combat-types';
 
 const visible = () => { const out: string[] = []; const walk = (path: string[]) => { out.push(path.at(-1)!); for (const c of eligibleChildren(path, { coast: false })) walk([...path, c.id]); }; walk([ROOT_PLAN]); return [...new Set(out)]; };
 const dietsOf = (size: number) => size >= 3 ? (['herbivore'] as const) : (['herbivore', 'carnivore', 'omnivore'] as const);
 const sea = (stage: number) => ({ queries: makeWorldQueries(makeTerrain(stage)) });
 
+describe('one source for the stage bounds (final review M7)', () => {
+  it('stageBounds holds the hard bound of every stage and the sky cap from stage 3', () => {
+    SIZES.forEach((size, stage) => expect(stageBounds(stage)).toEqual({ half: PLAYER_HALF * size, maxY: stage >= 3 ? 30 * size : undefined }));
+  });
+  it('food above the sky cap is not approachable with the stage bounds', () => {
+    const p = plan('sky_drifter')!, actor = playerActor(p, starterFor(p), 3, 1), q = makeWorldQueries(makeTerrain(3)), food = { x: 0, y: 30 * 64 + 400, z: 0, radius: 0 }, bite = { stage: 3, growth: 1, reach: 0 };
+    expect(canApproachFood(actor, 'fly', food, bite, { queries: q, bounds: { half: stageBounds(3).half } })).toBe(true);
+    expect(canApproachFood(actor, 'fly', food, bite, { queries: q, bounds: stageBounds(3) })).toBe(false);
+  });
+});
 describe('food approach', () => {
   it('lets a wading Colossus reach the first seed-1 boat', () => {
     const p = plan('colossus')!, boat = populate(1).find(s => s.spec.key === '3:boat')!;

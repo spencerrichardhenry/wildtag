@@ -37,6 +37,14 @@ describe('v4 saves', () => {
     for (const health of [0, -3]) { const run = parseSave(JSON.stringify({ ...r, health }), build); expect(run?.health).toBe(max); }
   });
 });
+describe('v4 saves keep only the run fields (final review M18)', () => {
+  it('drops unknown top-level keys when it loads a run, so they are never written back', () => {
+    const r = freshRun(42), loaded = parseSave(JSON.stringify({ ...r, junk: { big: 'x'.repeat(10) }, __proto__x: 1 }), build)!;
+    expect(loaded).toEqual(r);
+    expect(Object.keys(loaded).sort()).toEqual(Object.keys(r).sort());
+    expect(JSON.stringify(loaded)).not.toContain('junk');
+  });
+});
 describe('v2 migration', () => {
   it('sends a starter with legs and a tail to the Swimmer line, archives it, and keeps its value (30 + 14 = 44)', () => {
     const loaded = parseSaveWithNotes(v2({}), build); if (loaded?.status !== 'ok') throw new Error('load');

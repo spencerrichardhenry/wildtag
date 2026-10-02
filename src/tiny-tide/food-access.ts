@@ -1,7 +1,7 @@
 // Food approach for each way of moving, and the peaceful food budget of a plan (spec §3 "Food access").
 // A food item counts as approachable when some pose near it is admitted, is one the plan's locomotion can hold,
 // and passes the unchanged bite rule (`inReach` on stage-local positions). Approach never vetoes a real bite.
-import { PLAYER_HALF, SIZES } from './biomes';
+import { SIZES } from './biomes';
 import { EDGE_REACH } from './edge';
 import type { Actor, AdmissionContext, LegalityContext, MovementMode, MutVec3, Orientation, TraversalPermit } from './combat-types';
 import { Ecosystem } from './ecosystem';
@@ -11,7 +11,7 @@ import type { Diet } from './parts';
 import type { BodyPlan } from './plans';
 import { BREACH_RISE, breachPermit, movement, movementCapabilities } from './profiles';
 import { inReach, mealDna, dietCanEat, STAGES } from './state';
-import { hullExtents, stageWorldQueries, supportHeight } from './world-queries';
+import { hullExtents, stageBounds, stageWorldQueries, supportHeight } from './world-queries';
 
 export type Traversal = { kind: 'none' } | { kind: 'active'; permit: TraversalPermit; now: number } | { kind: 'hypothetical-breach'; now: number };
 export interface FoodPoint { x: number; y: number; z: number; radius: number }
@@ -88,7 +88,7 @@ export function reachableFoodDna(plan: BodyPlan, diet: Diet, seed: number, opts:
   const actor = playerActor(plan, starter, size, 1), mode = movement(plan.movement).mode;
   const bite: BiteRule = { stage: size, growth: 1, reach: derive(effectiveStats(starter, plan)).reach };
   const ctx: LegalityContext & { traversal: Traversal } = {
-    queries: stageWorldQueries(size, seed), bounds: { half: PLAYER_HALF * SIZES[size]! },
+    queries: stageWorldQueries(size, seed), bounds: stageBounds(size),
     traversal: caps.breach ? { kind: 'hypothetical-breach', now: 0 } : { kind: 'none' },
   };
   let total = 0;

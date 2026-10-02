@@ -263,7 +263,10 @@ function readV4(v: Record<string, unknown>): Run | null {
     const g = sanitizeGenome(a.genome); if (!g) return null;
     archive.push({ genome: g, name: a.name, savedAt: a.savedAt, reason: a.reason });
   }
-  const run = { ...v, genome, archive } as unknown as Run;
+  // Only the Run fields (final review M18): an unknown top-level key is dropped, so it is never written back.
+  const run = { version: 4, seed: v.seed, name: v.name, stage: v.stage, plans: v.plans, diet: v.diet, economy: v.economy, stageDna: v.stageDna, totalDna: v.totalDna,
+    bites: v.bites, elapsed: v.elapsed, deaths: v.deaths, health: v.health, genome, nextPartSerial: v.nextPartSerial, unlocked: v.unlocked, eatenPlanets: v.eatenPlanets,
+    completed: v.completed, loadout: v.loadout, pendingRespawn: v.pendingRespawn, mechanics: v.mechanics, archive, notices: v.notices } as unknown as Run;
   if (run.plans.length && run.plans.every(id => plan(id)) && Number.isFinite(run.health)) { const max = maxHealthOf(run); run.health = run.health <= 0 ? max : Math.max(1, Math.min(run.health, max)); }
   return run;
 }

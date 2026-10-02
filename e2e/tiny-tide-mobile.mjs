@@ -3,6 +3,9 @@ import { mkdirSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { GAME, KEYS, frames, makeFixture, openGame, start, writeStorage } from './fixtures/tiny-tide-fixtures.mjs';
 const out = '.codex-drafts/tiny-tide-qa'; mkdirSync(out, {recursive:true});
+/** The most triangles a phone frame may draw at any stage (final review M1). Measured at 390×844: .86M / 1.26M / 1.51M / 1.24M at
+ *  stages 0–3 (stage 3 was 1.35M before the coarse seabed ring); the budget leaves about 6 % over the largest. */
+const PHONE_TRIANGLE_BUDGET = 1_600_000;
 const browser=await chromium.launch({channel:'chrome',headless:true,args:['--enable-unsafe-swiftshader']});
 const context=await browser.newContext({viewport:{width:390,height:844},deviceScaleFactor:2,isMobile:true,hasTouch:true});
 const page=await context.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
@@ -48,5 +51,14 @@ try {
  assert.match(await line.textContent(),/\bleg/i,'the problem line mentions legs');
  const lb=await line.boundingBox();assert.ok(lb&&lb.x>=0&&lb.y>=0&&lb.x+lb.width<=391&&lb.y+lb.height<=845,'the problem line fits the phone');
  await second.screenshot({path:`${out}/mobile-problem-line.png`});
- assert.deepEqual(errors,[]);console.log('PASSED: v1 migration (-v1 unchanged), genuine multitouch move + rise, swipe camera, stable hover, Dive, touch cancellation, 390/320 portrait and landscape control layout, phone Evolve → Swimmer → Undo all problem line.');
+ // Final review M1: the triangle budget of a phone at every stage (a fixture per stage; the Big stage drew the fine seabed rings).
+ const tris={};
+ for(const stage of [0,1,2,3]){const pc=await browser.newContext({viewport:{width:390,height:844},deviceScaleFactor:2,isMobile:true,hasTouch:true});const pg=await pc.newPage();
+  pg.on('pageerror',e=>errors.push(e.message));pg.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
+  const fx=await makeFixture(pg,{stage});await openGame(pg,{storage:{[fx.key]:fx.json}});await start(pg);await frames(pg,30);
+  let most=0;for(let i=0;i<20;i++){await frames(pg,2);most=Math.max(most,(await pg.evaluate(()=>window.__tinyTide.render.triangles)));}
+  tris[stage]=most;await pc.close();}
+ console.log('Phone triangles per frame (most of 20 samples):',JSON.stringify(tris));
+ for(const [stage,count] of Object.entries(tris)) assert.ok(count<=PHONE_TRIANGLE_BUDGET,`stage ${stage}: ${count} triangles within the phone budget ${PHONE_TRIANGLE_BUDGET}`);
+ assert.deepEqual(errors,[]);console.log('PASSED: v1 migration (-v1 unchanged), genuine multitouch move + rise, swipe camera, stable hover, Dive, touch cancellation, 390/320 portrait and landscape control layout, phone Evolve → Swimmer → Undo all problem line, phone triangle budget at stages 0–3.');
 } finally {await browser.close();}

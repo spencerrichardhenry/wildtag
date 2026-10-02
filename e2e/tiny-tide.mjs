@@ -169,7 +169,7 @@ try {
     }
     await control([]); const done = await state();
     // Admission time per played frame (player, ecosystem and food guide), per stage.
-    console.log('Admission per frame', done.admission.map((a, i) => `stage ${i}: ${a.msPerFrame.toFixed(3)} ms (${a.callsPerFrame.toFixed(0)} calls, worst ${a.worstMs.toFixed(1)} ms, ${a.frames} frames)`).join('; '));
+    console.log('Admission per frame', done.admission.map((a, i) => `stage ${i}: ${a.msPerFrame.toFixed(3)} ms (${a.callsPerFrame.toFixed(0)} calls, worst ${a.worstMs.toFixed(1)} ms, ${a.frames} frames; player ${a.player.msPerFrame.toFixed(3)} ms / ${a.player.callsPerFrame.toFixed(0)} calls, ecosystem ${a.ecosystem.msPerFrame.toFixed(3)} ms / ${a.ecosystem.callsPerFrame.toFixed(0)}, guide ${a.guide.msPerFrame.toFixed(3)} ms / ${a.guide.callsPerFrame.toFixed(0)}; ${a.contactsPerFrame.toFixed(2)} player contacts)`).join('; '));
     assert.equal(done.completed, true); assert.equal(done.eatenPlanets.length, 12); assert.equal(transforms, 4); assert.equal(done.world.worldId, universeId);
     assert.deepEqual(done.plans, ['speck', ...LINE], `the journey followed the ${LINE[0]} line`);
     assert.deepEqual([...diets], ['0:herbivore', '1:carnivore', '2:omnivore', '3:omnivore', '4:omnivore']);

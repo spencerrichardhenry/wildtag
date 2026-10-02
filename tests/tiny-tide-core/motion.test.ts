@@ -105,7 +105,10 @@ describe('resolveMotion on the curved seabed (playtest stalls)', () => {
         const r = move(a, stage, p, d, o, bounds);
         // Crease direction: (terrain normal) × (0, 0, −1), from the analytic seabed gradient at the body.
         const gx = seabedHeight(p.x + .5, p.z) - seabedHeight(p.x - .5, p.z), el = Math.hypot(1, gx), ex = -1 / el, ey = -gx / el;
-        ideal += Math.abs(d.x * ex + d.y * ey); along += Math.abs((r.position.x - p.x) * ex + (r.position.y - p.y) * ey);
+        // Signed (final review M5): travel along the push's own crease direction counts, travel back against it subtracts, so a
+        // body that jitters to and fro along the crease does not pass.
+        const push = d.x * ex + d.y * ey, sign = Math.sign(push);
+        ideal += Math.abs(push); along += sign * ((r.position.x - p.x) * ex + (r.position.y - p.y) * ey);
         if (Math.hypot(r.position.x - p.x, r.position.y - p.y, r.position.z - p.z) < 1e-6) frozen++;
         expect(r.status, `${id} ${heading} frame ${f}`).not.toBe('needs-recovery'); expect(q.overlapHull(a, r.position, o, { time: 0, bounds }).ok).toBe(true);
         p = r.position;

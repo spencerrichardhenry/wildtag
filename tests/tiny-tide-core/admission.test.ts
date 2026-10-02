@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { makeTerrain, makeWorldQueries, sampleEnvironment, supportHeight, zoneLabel } from '../../src/tiny-tide/world-queries';
+import { admissionClock, makeTerrain, makeWorldQueries, resetAdmissionClock, sampleEnvironment, supportHeight, zoneLabel } from '../../src/tiny-tide/world-queries';
 import { forwardOf, orientHull } from '../../src/tiny-tide/orientation';
 import { habitat } from '../../src/tiny-tide/profiles';
 import type { Actor, Capsule, Terrain } from '../../src/tiny-tide/combat-types';
@@ -22,6 +22,21 @@ const clearOf = (t: Terrain, hull: Capsule[], at: { x: number; y: number; z: num
   return true;
 };
 
+describe('the QA admission clock (final review M8)', () => {
+  it('splits the calls by caller and resets them all', () => {
+    const q = makeWorldQueries(makeTerrain(1)), a: Actor = { id: 'x', hull: [{ start: { x: 0, y: 0, z: 0 }, end: { x: 0, y: 0, z: 1 }, radius: .3 }], habitat: habitat('open-water'), bodyLength: 2 };
+    admissionClock.on = true;
+    try {
+      resetAdmissionClock();
+      admissionClock.caller = 'player'; q.overlapHull(a, { x: 0, y: 40, z: 0 }, { yaw: 0, pitch: 0 }, { time: 0 }); q.overlapHull(a, { x: 1, y: 40, z: 0 }, { yaw: 0, pitch: 0 }, { time: 0 });
+      admissionClock.caller = 'ecosystem'; q.overlapHull(a, { x: 2, y: 40, z: 0 }, { yaw: 0, pitch: 0 }, { time: 0 });
+      expect(admissionClock.calls).toBe(3); expect(admissionClock.by.player.calls).toBe(2); expect(admissionClock.by.ecosystem.calls).toBe(1); expect(admissionClock.by.guide.calls).toBe(0);
+      expect(admissionClock.ms).toBeCloseTo(admissionClock.by.player.ms + admissionClock.by.ecosystem.ms, 9);
+      resetAdmissionClock();
+      expect(admissionClock.calls).toBe(0); expect(admissionClock.ms).toBe(0); expect(admissionClock.by.player).toEqual({ ms: 0, calls: 0 }); expect(admissionClock.caller).toBe('other');
+    } finally { admissionClock.on = false; resetAdmissionClock(); }
+  });
+});
 describe('orientation', () => {
   it('points the nose up for positive pitch', () => { const f = forwardOf({ yaw: 0, pitch: .3 }); expect(f.y).toBeCloseTo(Math.sin(.3)); expect(f.z).toBeCloseTo(Math.cos(.3)); });
   it('turns +Z toward +X for positive yaw', () => { expect(forwardOf({ yaw: Math.PI / 2, pitch: 0 }).x).toBeCloseTo(1); });

@@ -25,7 +25,8 @@ export default defineConfig(({ command, isPreview, mode }) => ({
   },
   test: {
     // Agent worktrees live under .claude/worktrees and contain full copies of
-    // the suite — exclude them so `npm test` runs each test exactly once.
-    exclude: ['**/node_modules/**', '.claude/**'],
+    // the suite, and .codex-drafts holds stale draft copies — exclude them so
+    // `npm test` runs each test exactly once.
+    exclude: ['**/node_modules/**', '.claude/**', '.codex-drafts/**'],
   },
 }));

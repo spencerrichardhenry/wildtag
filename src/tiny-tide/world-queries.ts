@@ -3,7 +3,7 @@
 // sphere against the habitat's media, then the whole hull against refuges. The actor's fit (combat-types `HullFit`) chooses the
 // conservative spheres and grid (the default) or the tight ones (the swim plans; owner playtest P3, overrides spec §3's
 // conservative margin for the swim envelope only).
-import { seabedHeight, WATER_LEVEL } from './biomes';
+import { PLAYER_HALF, seabedHeight, SIZES, WATER_LEVEL } from './biomes';
 import type { Actor, Admission, AdmissionContext, Capsule, Constraint, EnvironmentSample, MutVec3, Orientation, Terrain, Vec3, WorldQueries } from './combat-types';
 import { orientedHeave, orientedSway, rotateInto } from './orientation';
 import { LAND_BAND } from './profiles';
@@ -30,12 +30,20 @@ export interface WorldExtras {
   solids?: SolidIndex;
 }
 
-/** QA timing of every overlapHull call made through makeWorldQueries: main.ts turns it on in QA builds and reads and resets it
- *  once per frame. Off by default (no clock reads). */
-export const admissionClock = { on: false, ms: 0, calls: 0 };
+/** Who an admission is for (QA timing): the player's step and recovery, the ecosystem, the food guide, or anything else. */
+export type AdmissionCaller = 'player' | 'ecosystem' | 'guide' | 'other';
+/** QA timing of every overlapHull call made through makeWorldQueries, in total and per caller (`caller` names the current one).
+ *  main.ts turns it on in QA builds, resets it when a frame starts (so calls made by event handlers between frames, such as the editor's
+ *  anchor checks, are not counted; final review M8) and reads it when the frame ends. Off by default (no clock reads). */
+export const admissionClock = { on: false, caller: 'other' as AdmissionCaller, ms: 0, calls: 0,
+  by: { player: { ms: 0, calls: 0 }, ecosystem: { ms: 0, calls: 0 }, guide: { ms: 0, calls: 0 }, other: { ms: 0, calls: 0 } } as Record<AdmissionCaller, { ms: number; calls: number }> };
+export function resetAdmissionClock(): void {
+  const c = admissionClock; c.ms = 0; c.calls = 0; c.caller = 'other';
+  for (const k of ['player', 'ecosystem', 'guide', 'other'] as const) { c.by[k].ms = 0; c.by[k].calls = 0; }
+}
 function timedAdmit(actor: Actor, at: Vec3, o: Orientation, ctx: AdmissionContext, t: Terrain, extras: WorldExtras): Admission {
-  const t0 = performance.now(), r = admit(actor, at, o, ctx, t, extras);
-  admissionClock.ms += performance.now() - t0; admissionClock.calls++;
+  const t0 = performance.now(), r = admit(actor, at, o, ctx, t, extras), ms = performance.now() - t0, by = admissionClock.by[admissionClock.caller];
+  admissionClock.ms += ms; admissionClock.calls++; by.ms += ms; by.calls++;
   return r;
 }
 
@@ -56,6 +64,11 @@ export function makeWorldQueries(t: Terrain, extras: WorldExtras = {}): WorldQue
 export function stageWorldQueries(stage: number, seed: number, extras: Omit<WorldExtras, 'solids'> = {}): WorldQueries {
   return makeWorldQueries(makeTerrain(stage), { ...extras, solids: stageSolids(stage, seed) });
 }
+
+/** The player's hard bound for a stage (physical units): the square of PLAYER_HALF × size and, from stage 3, the sky cap 30 × size
+ *  (`maxY`, which replaced the old sky clamp). The one source for the game, avoidance, food access and the browser fixtures. */
+const STAGE_BOUNDS: readonly { readonly half: number; readonly maxY?: number }[] = SIZES.map((size, stage) => Object.freeze({ half: PLAYER_HALF * size, maxY: stage >= 3 ? 30 * size : undefined }));
+export const stageBounds = (stage: number): { readonly half: number; readonly maxY?: number } => STAGE_BOUNDS[stage]!;
 
 // ---- terrain helpers ----
 

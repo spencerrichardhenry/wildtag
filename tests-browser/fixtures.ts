@@ -6,7 +6,7 @@ import { adaptToPlan, cloneGenome, derive, effectiveStats, nextUid, starterGenom
 import { COAST_READY, eligibleChildren, plan as planById, type BodyPlan } from '../src/tiny-tide/plans';
 import { quoteDesign } from '../src/tiny-tide/economy';
 import { PLAYER_HALF, SIZES } from '../src/tiny-tide/biomes';
-import { stageWorldQueries } from '../src/tiny-tide/world-queries';
+import { stageBounds, stageWorldQueries } from '../src/tiny-tide/world-queries';
 import { startAnchor } from '../src/tiny-tide/motion';
 import { playerActor } from '../src/tiny-tide/mount';
 import { Ecosystem, entityRadius } from '../src/tiny-tide/ecosystem';
@@ -25,8 +25,7 @@ const legalities = new Map<string, Legality>();
 function legality(stage: number, seed: number): Legality {
   let l = legalities.get(`${seed}:${stage}`);
   if (!l) {
-    const size = SIZES[stage]!;
-    l = { queries: stageWorldQueries(stage, seed), bounds: { half: PLAYER_HALF * size, maxY: stage >= 3 ? 30 * size : undefined } };
+    l = { queries: stageWorldQueries(stage, seed), bounds: stageBounds(stage) };
     legalities.set(`${seed}:${stage}`, l);
   }
   return l;
