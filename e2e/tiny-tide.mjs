@@ -168,6 +168,8 @@ try {
       if (loops % 150 === 0) console.log('Progress', s.mode, s.stage, s.stageDna, '/', s.goal, 'player', s.player, 'target', f.kind, [f.x, f.y, f.z]);
     }
     await control([]); const done = await state();
+    // Admission time per played frame (player, ecosystem and food guide), per stage.
+    console.log('Admission per frame', done.admission.map((a, i) => `stage ${i}: ${a.msPerFrame.toFixed(3)} ms (${a.callsPerFrame.toFixed(0)} calls, worst ${a.worstMs.toFixed(1)} ms, ${a.frames} frames)`).join('; '));
     assert.equal(done.completed, true); assert.equal(done.eatenPlanets.length, 12); assert.equal(transforms, 4); assert.equal(done.world.worldId, universeId);
     assert.deepEqual(done.plans, ['speck', ...LINE], `the journey followed the ${LINE[0]} line`);
     assert.deepEqual([...diets], ['0:herbivore', '1:carnivore', '2:omnivore', '3:omnivore', '4:omnivore']);

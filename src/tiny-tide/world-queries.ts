@@ -26,6 +26,15 @@ export interface WorldExtras {
   refugeAccess?: (actor: Actor, id: string) => boolean;
 }
 
+/** QA timing of every overlapHull call made through makeWorldQueries: main.ts turns it on in QA builds and reads and resets it
+ *  once per frame. Off by default (no clock reads). */
+export const admissionClock = { on: false, ms: 0, calls: 0 };
+function timedAdmit(actor: Actor, at: Vec3, o: Orientation, ctx: AdmissionContext, t: Terrain, extras: WorldExtras): Admission {
+  const t0 = performance.now(), r = admit(actor, at, o, ctx, t, extras);
+  admissionClock.ms += performance.now() - t0; admissionClock.calls++;
+  return r;
+}
+
 export function makeWorldQueries(t: Terrain, extras: WorldExtras = {}): WorldQueries {
   return {
     terrain: t,
@@ -34,7 +43,7 @@ export function makeWorldQueries(t: Terrain, extras: WorldExtras = {}): WorldQue
     refugeAt: p => extras.refugeAt ? extras.refugeAt(p) : null,
     refugeOverlap: world => extras.refugeOverlap ? extras.refugeOverlap(world) : null,
     refugeAccess: (actor, id) => extras.refugeAccess ? extras.refugeAccess(actor, id) : true,
-    overlapHull: (actor, at, o, ctx) => admit(actor, at, o, ctx, t, extras),
+    overlapHull: (actor, at, o, ctx) => admissionClock.on ? timedAdmit(actor, at, o, ctx, t, extras) : admit(actor, at, o, ctx, t, extras),
   };
 }
 

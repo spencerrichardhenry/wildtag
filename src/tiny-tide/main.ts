@@ -20,7 +20,7 @@ import { basicRequested, readIntent, RELEASED } from './input';
 import { blockHint, stepPlayer } from './player-motion';
 import { beginRespawn, canChooseNextPlan, evolutionDestination, growthPose, reconcileAfterCommit, recoverPlayer, resetRuntime, resolveHazards, resolveRespawn } from './lifecycle';
 import { habitat, movement, movementCapabilities } from './profiles';
-import { makeTerrain, makeWorldQueries, supportHeight, zoneLabel } from './world-queries';
+import { admissionClock, makeTerrain, makeWorldQueries, supportHeight, zoneLabel } from './world-queries';
 import { orientHull } from './orientation';
 import { startAnchor } from './motion';
 import { bodyLengthOf, hullFitOf, hullOffsets, massFor, playerActor } from './mount';
@@ -97,6 +97,9 @@ catch {
 }
 const SAVE_KEY = 'tiny-tide-adventure-v4';
 const QA = import.meta.env.DEV || new URLSearchParams(location.search).has('qa');
+/** QA: the admission time (every overlapHull call: player, ecosystem, food guide) of each played frame, summed per stage. */
+admissionClock.on = QA;
+const admissionStats = SIZES.map(() => ({ frames: 0, ms: 0, calls: 0, worst: 0 }));
 // QA-only URL parameters (development or `?qa`). Each is read once here, at load. None changes a running game from outside.
 const qaParams = new URLSearchParams(QA ? location.search : '');
 /** `?qaStartGrace=0` removes the start grace. */
@@ -784,6 +787,10 @@ function frame(now: number) {
       el('evolve').hidden = !canEvolve; el('objective').hidden = canEvolve;
     }
   }
+  if (admissionClock.on) {
+    if (mode === 'playing' && !held) { const a = admissionStats[stage]!; a.frames++; a.ms += admissionClock.ms; a.calls += admissionClock.calls; a.worst = Math.max(a.worst, admissionClock.ms); }
+    admissionClock.ms = 0; admissionClock.calls = 0;
+  }
 }
 /** Read-only: the player's zone at its physical position. */
 function zoneNow() { return zoneLabel(legality(run.stage).queries.sampleEnvironment(physical), bodyLengthOf(run.genome) * SIZES[run.stage]! * growthOf(run)); }
@@ -824,6 +831,6 @@ if (QA) {
     plan: currentPlan(run).id, plans: [...run.plans], zone: zoneNow(), velocity: copy(rt.controlledVelocity), externalVelocity: copy(rt.externalVelocity),
     orientation: { ...rt.orientation }, permit: rt.permit ? { ...rt.permit } : null, arc: rt.arc ? { ...rt.arc } : null, breachReadyAt: rt.breachReadyAt, invulnerableUntil: rt.invulnerableUntil,
     pendingRespawn: run.pendingRespawn, caps: capsOf(), physical: copy(physical), legal: mode === 'menu' ? null : admitted(playerActor(currentPlan(run), run.genome, run.stage, growthOf(run))), contactNow, lastContact: lastContact === null ? null : `${lastContact}`, edge: { inZone: edgeNow, hinted: edgeHinted, half: PLAYER_HALF, softStart: EDGE_SOFT_START * PLAYER_HALF }, hazardSources: hazardSources(), growth: growthOf(run), acceptedHits, rejectedHits,
-    faintLog: faintLog.map(f => ({ ...f })), stage: run.stage, dna: dnaOf(run), stageDna: run.stageDna, goal: STAGES[run.stage]!.goal, health: run.health, maxHealth: derived.maxHealth, deaths: run.deaths, diet: dietOf(run.genome), genome: structuredClone(run.genome), name: run.name, unlocked: [...run.unlocked], evolveReady: evolveReady(run), bites: run.bites, totalDna: run.totalDna, elapsed: run.elapsed, completed: run.completed, eatenPlanets: [...run.eatenPlanets], player: { x: world.player.position.x, y: world.player.position.y, z: world.player.position.z }, foods: world.edibleFoods.map(f => ({ ...f.data, tag: f.entity.spec.tag, label: f.entity.spec.label, mode: f.entity.mode, hp: f.entity.hp, approachable: approachable(f.entity) })), threats: world.threats.map(f => ({ ...f.data, label: f.entity.spec.label, mode: f.entity.mode })), landmarks: world.foods.filter(f => f.model.visible && f.tier > run.stage).map(f => ({ tier: f.tier, kind: f.data.kind, x: f.data.x, y: f.data.y, z: f.data.z })), world: world.diagnostics, assets: assetDiagnostics(), saveKey: writeKey, loadedKey, time, holdingStart, editorProjection, poseAgreement, render: { calls: world.renderer.info.render.calls, triangles: world.renderer.info.render.triangles, geometries: world.renderer.info.memory.geometries } }) });
+    faintLog: faintLog.map(f => ({ ...f })), stage: run.stage, dna: dnaOf(run), stageDna: run.stageDna, goal: STAGES[run.stage]!.goal, health: run.health, maxHealth: derived.maxHealth, deaths: run.deaths, diet: dietOf(run.genome), genome: structuredClone(run.genome), name: run.name, unlocked: [...run.unlocked], evolveReady: evolveReady(run), bites: run.bites, totalDna: run.totalDna, elapsed: run.elapsed, completed: run.completed, eatenPlanets: [...run.eatenPlanets], player: { x: world.player.position.x, y: world.player.position.y, z: world.player.position.z }, foods: world.edibleFoods.map(f => ({ ...f.data, tag: f.entity.spec.tag, label: f.entity.spec.label, mode: f.entity.mode, hp: f.entity.hp, approachable: approachable(f.entity) })), threats: world.threats.map(f => ({ ...f.data, label: f.entity.spec.label, mode: f.entity.mode })), landmarks: world.foods.filter(f => f.model.visible && f.tier > run.stage).map(f => ({ tier: f.tier, kind: f.data.kind, x: f.data.x, y: f.data.y, z: f.data.z })), world: world.diagnostics, assets: assetDiagnostics(), saveKey: writeKey, loadedKey, time, holdingStart, editorProjection, poseAgreement, admission: admissionStats.map(a => ({ frames: a.frames, msPerFrame: a.frames ? a.ms / a.frames : 0, callsPerFrame: a.frames ? a.calls / a.frames : 0, worstMs: a.worst })), render: { calls: world.renderer.info.render.calls, triangles: world.renderer.info.render.triangles, geometries: world.renderer.info.memory.geometries } }) });
 }
 requestAnimationFrame(frame);
