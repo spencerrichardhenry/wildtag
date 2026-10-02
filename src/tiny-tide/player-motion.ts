@@ -121,15 +121,18 @@ export function stepPlayer(position: Vec3, rt: CombatRuntime, intent: CombatInpu
     const room = rt.groundOffset + STEP_CLIMB * L * dt;
     if (lift > room) {
       let lo = 0, hi = 1;
-      for (let i = 0; i < 4; i++) { const mid = (lo + hi) / 2; if (liftAt(mid) <= room) lo = mid; else hi = mid; }
+      // 3 halvings: with stepLift's 12 admissions, a steep step costs at most 5 × 12 = 60 admissions a frame (one call elsewhere).
+      for (let i = 0; i < 3; i++) { const mid = (lo + hi) / 2; if (liftAt(mid) <= room) lo = mid; else hi = mid; }
       d.x *= lo; d.z *= lo; lift = Math.min(room, liftAt(lo));
     }
-    d.y = supportHeight(actor, position.x + d.x, position.z + d.z, o, t) + .01 * L + Math.max(offset, lift) - position.y;
+    // Over a rock the height comes down toward the lift at least at STEP_CLIMB (the plain settle lags when a rock's top falls away).
+    const settled = lift > 0 && offset > lift ? Math.max(lift, Math.min(offset, rt.groundOffset - STEP_CLIMB * L * dt)) : offset;
+    d.y = supportHeight(actor, position.x + d.x, position.z + d.z, o, t) + .01 * L + Math.max(settled, lift) - position.y;
   }
 
   // 6. Motion.
   const result = resolveMotion({ actorId: 'player', from: position, displacement: d, orientation: o, turn: desired, hull: actor.hull, habitatProfileId: actor.habitat.id,
-    cause: 'locomotion', traversalPermit: rt.permit }, { queries, actor, bounds: ctx.bounds, interval: { start: now, end } });
+    cause: 'locomotion', traversalPermit: rt.permit, ...(grounded ? { riseCap: Math.max(0, d.y) } : {}) }, { queries, actor, bounds: ctx.bounds, interval: { start: now, end } });
   if (grounded) rt.groundOffset = Math.max(0, result.position.y - (supportHeight(actor, result.position.x, result.position.z, result.orientation, t) + .01 * L));
 
   // 7. Commit. The two velocity owners are projected separately; their sum is never stored.
@@ -173,7 +176,7 @@ export function blockHintDue(gate: BlockHintGate, step: Pick<PlayerStepResult, '
 }
 
 /** A tap-to-walk target is dropped after TAP_STALL_SECONDS without TAP_PROGRESS stage-local units of new progress toward it (owner
- *  ruling M12: rocks stay walls for ground plans, so a target behind one would otherwise hold the body against the rock). */
+ *  ruling M12: a tall rock or an arch is a wall for ground plans, so a target behind one would otherwise hold the body against it). */
 export const TAP_STALL_SECONDS = 1, TAP_PROGRESS = .05;
 export interface TapWatch { best: number; stalled: number }
 export const newTapWatch = (): TapWatch => ({ best: Infinity, stalled: 0 });

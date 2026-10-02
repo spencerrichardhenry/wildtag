@@ -128,6 +128,17 @@ export function resolveMotion(req: MotionRequest, ctx: LegalityContext & { actor
       const left = (N - k + 1 - f) / N;
       slideRemainder(vx * left, vy * left, vz * left, n, faceCount);
       let rx = SLIDE.x, ry = SLIDE.y, rz = SLIDE.z;
+      // A ground body does not climb by sliding: the slide may not lift it above the rise the move asked for (fix round 3; it only
+      // steps onto low rocks through its support, stepLift).
+      // When the slide would rise more, it goes along the face's horizontal tangent instead (n × up): around the solid, level.
+      if (req.riseCap !== undefined) {
+        const allowed = Math.max(0, req.riseCap - (P.y - from.y));
+        if (ry > allowed) {
+          const tx = -n.z, tz = n.x, tl = Math.hypot(tx, tz);
+          if (tl > 1e-9) { const along = (rx * tx + rz * tz) / (tl * tl); rx = tx * along; rz = tz * along; } else { rx = 0; rz = 0; }
+          ry = allowed;
+        }
+      }
       remX = rx; remY = ry; remZ = rz;
       if (contacts.length >= MAX_CONTACTS) break legs;
       if (stuck && retried && !SLIDE.changed) break legs;   // the same leg from the same point would be refused again
@@ -136,7 +147,7 @@ export function resolveMotion(req: MotionRequest, ctx: LegalityContext & { actor
       if (!known) { const m = FACES[faceCount] ?? (FACES[faceCount] = { x: 0, y: 0, z: 0 }); m.x = n.x; m.y = n.y; m.z = n.z; faceCount++; }
       // Only a slide gets the skin: a remainder that the projection removed stays at rest on the surface.
       plainX = rx; plainY = ry; plainZ = rz; skinned = Math.hypot(rx, ry, rz) >= TINY; retried = false; skinFace = n;
-      if (skinned) { rx += SLIDE.ax * skin; ry += SLIDE.ay * skin; rz += SLIDE.az * skin; }
+      if (skinned) { rx += SLIDE.ax * skin; ry += SLIDE.ay * skin; rz += SLIDE.az * skin; if (req.riseCap !== undefined) ry = Math.min(ry, Math.max(0, req.riseCap - (P.y - from.y)) + skin); }
       bx = P.x; by = P.y; bz = P.z; vx = rx; vy = ry; vz = rz; t0 = t;
       continue legs;
     }

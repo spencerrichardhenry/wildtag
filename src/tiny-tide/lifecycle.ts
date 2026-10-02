@@ -84,31 +84,45 @@ export function growthPose(actor: Actor, position: Vec3, rt: Pick<CombatRuntime,
  *  TRAP_MOVE body lengths along it for TRAP_SECONDS, and on at least WEDGED_SHARE of those frames it is really wedged (`wedged`). A
  *  push into one rock is not a trap, whatever the mesh's normals do. The body then glides to the nearest pose that lets it go on
  *  (`UnstickSearch`, its path swept by the hull). */
-export const TRAP_SECONDS = .75, TRAP_MOVE = .05, TRAP_REACH = 1.5, WEDGE_ANGLE = Math.PI / 6, WEDGED_SHARE = .6;
-export interface TrapWatch { x: number; y: number; z: number; dx: number; dz: number; time: number; frames: number; wedgedFrames: number; armed: boolean }
-export const newTrapWatch = (): TrapWatch => ({ x: 0, y: 0, z: 0, dx: 0, dz: 0, time: 0, frames: 0, wedgedFrames: 0, armed: false });
-/** A real wedge on this step: two solid contacts whose horizontal normals both oppose the push and lie on opposite sides of it (the body
- *  is pinched between them), or a turn toward the push that the solids refused while the facing is more than WEDGE_ANGLE off it. */
-export function wedged(contacts: readonly { normal: Vec3; constraint: string }[], push: Vec3, turnRefused: boolean, yaw: number): boolean {
+export const TRAP_SECONDS = .75, TRAP_MOVE = .05, TRAP_REACH = 1.5, WEDGE_ANGLE = Math.PI / 6, WEDGED_SHARE = .6, PINCH_ANGLE = 100 * Math.PI / 180;
+export interface TrapWatch { x: number; y: number; z: number; dx: number; dz: number; time: number; frames: number; wedgedFrames: number; armed: boolean;
+  /** Where and toward what a search last failed: no new search there until the body moves or the push turns. */
+  failed: { x: number; z: number; dx: number; dz: number } | null }
+export const newTrapWatch = (): TrapWatch => ({ x: 0, y: 0, z: 0, dx: 0, dz: 0, time: 0, frames: 0, wedgedFrames: 0, armed: false, failed: null });
+/** A search from here found no pose (fix round 3): the watch stays quiet at this spot for this push. */
+export function trapFailed(w: TrapWatch, at: Vec3, push: Vec3): void { const pl = Math.hypot(push.x, push.z) || 1; w.failed = { x: at.x, z: at.z, dx: push.x / pl, dz: push.z / pl }; }
+/** A real wedge on this step: contacts with two different solids whose horizontal normals both oppose the push and lie on opposite
+ *  sides of it, or two faces of one solid facing each other (the body is pinched between them), or a turn toward the push that was refused (by any rule) while the facing is more
+ *  than WEDGE_ANGLE off it and a solid is touched. */
+export function wedged(contacts: readonly { normal: Vec3; constraint: string; solidId?: string }[], push: Vec3, turnRefused: boolean, yaw: number): boolean {
   const pl = Math.hypot(push.x, push.z);
   if (pl < 1e-9) return false;
   const px = push.x / pl, pz = push.z / pl;
-  let left = false, right = false;
+  // Two different solids pinch the body (fix round 3: one rock's noisy mesh normals on both sides of a head-on push are not a wedge).
+  // Pinched: between two different solids, or between two faces of one solid that face each other (an arch's legs; normals more than
+  // PINCH_ANGLE apart). One rock's noisy normals on both sides of a head-on push are neither (fix round 3).
+  type Side = { id: string; x: number; z: number };
+  let left: Side | null = null, right: Side | null = null;
   for (const c of contacts) {
     if (c.constraint !== 'solid') continue;
     const n = c.normal, nl = Math.hypot(n.x, n.z);
     if (nl < 1e-9 || (n.x * px + n.z * pz) / nl >= -.05) continue;   // does not oppose the push
-    if (px * n.z - pz * n.x > 0) left = true; else right = true;
+    const side = { id: c.solidId ?? '?', x: n.x / nl, z: n.z / nl };
+    if (px * n.z - pz * n.x > 0) left ??= side; else right ??= side;
   }
-  if (left && right) return true;
-  return turnRefused && (Math.sin(yaw) * px + Math.cos(yaw) * pz) < Math.cos(WEDGE_ANGLE);
+  if (left && right && (left.id !== right.id || left.x * right.x + left.z * right.z < Math.cos(PINCH_ANGLE))) return true;
+  return turnRefused && contacts.some(c => c.constraint === 'solid') && (Math.sin(yaw) * px + Math.cos(yaw) * pz) < Math.cos(WEDGE_ANGLE);
 }
 /** Call once per played frame with the body's position, the horizontal push (zero when the player asks for nothing) and whether the
  *  step was wedged. True on the frame the body counts as trapped (the watch then restarts). */
 export function trapDue(w: TrapWatch, at: Vec3, push: Vec3, L: number, isWedged: boolean, dt: number): boolean {
   const pl = Math.hypot(push.x, push.z);
   if (pl < .05) { w.armed = false; return false; }
-  const dx = push.x / pl, dz = push.z / pl;
+  const dx = push.x / pl, dz = push.z / pl, f = w.failed;
+  if (f) {
+    if (Math.hypot(at.x - f.x, at.z - f.z) < TRAP_MOVE * L && dx * f.dx + dz * f.dz > .9) { w.armed = false; return false; }
+    w.failed = null;
+  }
   if (!w.armed || dx * w.dx + dz * w.dz < .9 || (at.x - w.x) * dx + (at.z - w.z) * dz > TRAP_MOVE * L) {
     w.armed = true; w.x = at.x; w.y = at.y; w.z = at.z; w.dx = dx; w.dz = dz; w.time = 0; w.frames = 0; w.wedgedFrames = 0;
   }
@@ -166,6 +180,14 @@ export class UnstickSearch {
         const f = k / n, pose = { position: { x: at.x + (x - at.x) * f, y: at.y + (y - at.y) * f, z: at.z + (z - at.z) * f }, orientation: { yaw: k === n ? y0 : c.yaw + turn * f, pitch: c.pitch * (1 - f) } };
         if (!q.overlapHull(this.actor, pose.position, pose.orientation, actx).ok) clear = false; else path.push(pose);
       }
+      // The push must be free from there for RESCUE_FREE L (fix round 3): a rescue never leaves the body in the same pocket, to be
+      // wedged and rescued again; when no such pose is near, there is no rescue (the body stays, admitted, against the walls).
+      const fx = Math.sin(this.yaw), fz = Math.cos(this.yaw);
+      for (let k = 1; k <= RESCUE_FREE_STEPS && clear; k++) {
+        const d = RESCUE_FREE * L * k / RESCUE_FREE_STEPS, qx = x + fx * d, qz = z + fz * d;
+        const qy = this.ctx.ground && !q.terrain.space ? Math.max(y, supportHeight(this.actor, qx, qz, o, q.terrain) + .01 * L) : y;
+        if (!q.overlapHull(this.actor, { x: qx, y: qy, z: qz }, o, actx).ok) clear = false;
+      }
       if (clear) return { ok: true, position: p, orientation: o, path };
     }
     return null;
@@ -179,6 +201,8 @@ export const unstickPose = (actor: Actor, at: Vec3, yaw: number, current: Orient
 export const UNSTICK_BUDGET = 6, UNSTICK_RING = .25;
 /** The glide: at least RESCUE_FRAMES frames (about .15 s at 60 Hz), at most RESCUE_STEP L and RESCUE_TURN radians a step. */
 export const RESCUE_FRAMES = 9, RESCUE_STEP = .1, RESCUE_TURN = .2;
+/** From a rescue pose the push is free for RESCUE_FREE body lengths, checked in RESCUE_FREE_STEPS admissions. */
+export const RESCUE_FREE = .5, RESCUE_FREE_STEPS = 5;
 
 const sameEmitter = (a: PartEmitterSource, b: { partUid: string; copy: number; socketId: string }) => a.partUid === b.partUid && a.copy === b.copy && a.socketId === b.socketId;
 

@@ -163,13 +163,13 @@ try {
       // A stall report: no DNA for 600 loops (about 80 s) prints what the bot sees.
       if (s.stageDna !== lastDna) { lastDna = s.stageDna; lastDnaLoop = loops; }
       else if ((loops - lastDnaLoop) % 600 === 0) console.log('Stall', JSON.stringify({ seed: SEED, loops, stage: s.stage, dna: `${s.stageDna}/${s.goal}`, player: s.player, velocity: s.velocity, zone: s.zone,
-        lastContact: s.lastContact, contactNow: s.contactNow, edge: s.edge, arc: s.arc !== null, target: { id: f.id, kind: f.kind, x: f.x, y: f.y, z: f.z, mode: f.mode },
+        lastContact: s.lastContact, contactNow: s.contactNow, contactSolids: s.contactSolids, physical: s.physical, orientation: s.orientation, groundOffset: s.groundOffset, growth: s.growth, plan: s.plan, spine: s.genome.spine, parts: s.genome.parts.map(p => p.id), rescueLog: s.rescueLog, edge: s.edge, arc: s.arc !== null, target: { id: f.id, kind: f.kind, x: f.x, y: f.y, z: f.z, mode: f.mode },
         edible: edible.length, skipped: [...skipped.values()].filter(t => t > s.time).length, foods: s.foods.length }));
       if (loops % 150 === 0) console.log('Progress', s.mode, s.stage, s.stageDna, '/', s.goal, 'player', s.player, 'target', f.kind, [f.x, f.y, f.z]);
     }
     await control([]); const done = await state();
     // Admission time per played frame (player, ecosystem and food guide), per stage.
-    console.log('Trap rescues during the journey:', done.trapRescues);
+    console.log('Trap rescues during the journey:', done.trapRescues, JSON.stringify({ searches: done.rescueLog.searches, found: done.rescueLog.found, failed: done.rescueLog.failed }));
     console.log('Admission per frame', done.admission.map((a, i) => `stage ${i}: ${a.msPerFrame.toFixed(3)} ms (${a.callsPerFrame.toFixed(0)} calls, worst ${a.worstMs.toFixed(1)} ms, ${a.frames} frames; player ${a.player.msPerFrame.toFixed(3)} ms / ${a.player.callsPerFrame.toFixed(0)} calls (worst ${a.player.worstMs.toFixed(1)}), ecosystem ${a.ecosystem.msPerFrame.toFixed(3)} ms / ${a.ecosystem.callsPerFrame.toFixed(0)} (worst ${a.ecosystem.worstMs.toFixed(1)}), guide ${a.guide.msPerFrame.toFixed(3)} ms / ${a.guide.callsPerFrame.toFixed(0)} (worst ${a.guide.worstMs.toFixed(1)}); ${a.contactsPerFrame.toFixed(2)} player contacts)`).join('; '));
     assert.equal(done.completed, true); assert.equal(done.eatenPlanets.length, 12); assert.equal(transforms, 4); assert.equal(done.world.worldId, universeId);
     assert.deepEqual(done.plans, ['speck', ...LINE], `the journey followed the ${LINE[0]} line`);

@@ -330,6 +330,21 @@ export const pointInSolid = (solid: Solid, x: number, y: number, z: number, marg
 
 // ---- grid index ----
 
+const ENVELOPE = newContact();
+const STRETCHED_MESH = { kind: 'mesh' } as MeshShape, STRETCHED_ELLIPSOID = { kind: 'ellipsoid' } as EllipsoidShape;
+/** The mesh shape stretched vertically by k about height y0 (scratch: valid until the next call). */
+function stretchedMesh(s: MeshShape, y0: number, k: number): MeshShape {
+  const t = STRETCHED_MESH as { -readonly [K in keyof MeshShape]: MeshShape[K] };
+  t.mesh = s.mesh; t.x = s.x; t.y = y0 + (s.y - y0) * k; t.z = s.z; t.sx = s.sx; t.sy = s.sy * k; t.sz = s.sz; t.yaw = s.yaw; t.co = s.co; t.si = s.si;
+  return t;
+}
+/** The ellipsoid shape stretched vertically by k about height y0 (scratch). */
+function stretchedEllipsoid(s: EllipsoidShape, y0: number, k: number): EllipsoidShape {
+  const t = STRETCHED_ELLIPSOID;
+  t.x = s.x; t.y = y0 + (s.y - y0) * k; t.z = s.z; t.a = s.a; t.b = s.b * k; t.c = s.c; t.yaw = s.yaw;
+  return t;
+}
+
 /** A uniform grid over the solids' horizontal bounds. Cell keys are packed integers; each cell lists solid indices. */
 export class SolidIndex {
   private readonly cells = new Map<number, number[]>();
@@ -379,6 +394,40 @@ export class SolidIndex {
       const s = this.solids[this.found[k]!]!;
       if (x + r < s.minX || x - r > s.maxX || y + r < s.minY || y - r > s.maxY || z + r < s.minZ || z - r > s.maxZ) continue;
       for (const shape of s.shapes) if (sphereShape(shape, x, y, z, r, out)) { out.id = s.id; hit = true; }
+    }
+    return hit;
+  }
+  /** As `sphere`, for a body sample of radius r whose envelope reaches `w` horizontally (sway) and `v` vertically (heave), like the
+   *  ground rule (fix round 3: the sway counted in every direction, and a body floated over a low rock by it). The occupied volume is
+   *  taken as the ellipsoid of semi-axes r + w (horizontal) and r + v (vertical). It is tested exactly by stretching space vertically
+   *  about the sample by k = (r + w) / (r + v): the ellipsoid becomes a sphere of radius r + w, and a mesh or an ellipsoid shape stays a
+   *  mesh or an ellipsoid with its vertical scale × k (a capsule does not, and keeps the sphere of radius r + max(w, v)). The overlap
+   *  test is exact and continuous in the body's position; the depth and the normal are mapped back to world space (first order). */
+  sphereEnvelope(x: number, y: number, z: number, r: number, w: number, v: number, out: SolidContact): boolean {
+    const a = r + w, k = a / (r + v), big = Math.max(a, r + v), c = ENVELOPE;
+    let hit = false;
+    for (let i = 0; i < this.count; i++) {
+      const s = this.solids[this.found[i]!]!;
+      if (x + big < s.minX || x - big > s.maxX || y + big < s.minY || y - big > s.maxY || z + big < s.minZ || z - big > s.maxZ) continue;
+      for (const shape of s.shapes) {
+        c.depth = 0;
+        let depth: number;
+        if (shape.kind === 'capsule' || Math.abs(k - 1) < 1e-9) {
+          if (!sphereShape(shape, x, y, z, Math.max(a, r + v), c)) continue;
+          depth = c.depth;
+        } else {
+          // The shape stretched vertically by k about the sample's height y.
+          const st = shape.kind === 'mesh' ? stretchedMesh(shape, y, k) : stretchedEllipsoid(shape, y, k);
+          if (!sphereShape(st, x, y, z, a, c)) continue;
+          // Back to world: the point's height unstretched, the normal by the inverse transpose, the depth over the gradient's size.
+          c.py = y + (c.py - y) / k;
+          const gx = c.nx, gy = c.ny * k, gz = c.nz, gl = Math.hypot(gx, gy, gz) || 1;
+          c.nx = gx / gl; c.ny = gy / gl; c.nz = gz / gl;
+          depth = c.depth / gl;
+        }
+        if (depth <= 0 || depth <= out.depth) continue;
+        out.depth = depth; out.px = c.px; out.py = c.py; out.pz = c.pz; out.nx = c.nx; out.ny = c.ny; out.nz = c.nz; out.id = s.id; hit = true;
+      }
     }
     return hit;
   }

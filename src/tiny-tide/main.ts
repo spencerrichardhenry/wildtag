@@ -18,7 +18,7 @@ import { quoteDesign } from './economy';
 import { newRuntime, type Actor, type Capsule, type CombatInput, type Constraint, type MutVec3, type Orientation, type RecoveryResult, type Vec3, type WorldQueries } from './combat-types';
 import { basicRequested, readIntent, RELEASED } from './input';
 import { blockHint, blockHintDue, newBlockHintGate, type PlayerStepResult, newStepSnapshot, newTapWatch, restoreStep, snapshotStep, stepPlayer, tapTargetStalled } from './player-motion';
-import { beginRespawn, canChooseNextPlan, evolutionDestination, growthPose, newTrapWatch, reconcileAfterCommit, recoverPlayer, resetRuntime, resolveHazards, resolveRespawn, TRAP_MOVE, trapDue, UNSTICK_BUDGET, UnstickSearch, wedged } from './lifecycle';
+import { beginRespawn, canChooseNextPlan, evolutionDestination, growthPose, newTrapWatch, reconcileAfterCommit, recoverPlayer, resetRuntime, resolveHazards, resolveRespawn, TRAP_MOVE, trapDue, trapFailed, UNSTICK_BUDGET, UnstickSearch, wedged } from './lifecycle';
 import { habitat, movement, movementCapabilities } from './profiles';
 import { admissionClock, makeWorldQueries, resetAdmissionClock, stageBounds, stageWorldQueries, supportHeight, zoneLabel } from './world-queries';
 import { ROCK_FIT, stageSolids } from './reef';
@@ -196,6 +196,9 @@ let physical: Vec3 = { x: 0, y: 0, z: 0 };
 let genomeRevision = 0, acceptedHits = 0, rejectedHits = 0, contactNow = false, lastContact: Constraint | null = null, lastContactSolid: string | null = null, edgeNow = false, edgeHinted = false;
 const faintLog: { time: number; hadPermit: boolean; hadArc: boolean }[] = [];
 const blockGate = newBlockHintGate(), beforeStep = newStepSnapshot(), tapWatch = newTapWatch(), trapWatch = newTrapWatch();
+/** QA: the rescues of this page (searches started, found, failed) and the last one (from, to, time, the solids in contact). */
+const rescueLog = { searches: 0, found: 0, failed: 0, last: null as null | { from: Vec3; to: Vec3; time: number; solids: string[] } };
+let lastSolids: string[] = [];
 let trapRescues = 0, unstick: UnstickSearch | null = null, glide: { path: { position: Vec3; orientation: Orientation }[]; index: number } | null = null;
 let dialogReturn: 'menu' | 'playing' | 'paused' = 'menu';
 const modal = el<HTMLDialogElement>('modal');
@@ -291,9 +294,12 @@ function renderRoot() {
   world.player.rotation.y = rt.orientation.yaw; world.avatar.rotation.x = -rt.orientation.pitch;
 }
 /** Installs an admitted full pose: position and orientation together, no permit or arc, zero velocities. `snap` moves the camera too (start, respawn). */
+/** Ends a pending rescue search or glide and restarts the trap watch. Every pose install except a rescue glide step calls it
+ *  (installPose, checkPose, checkGrownPose, begin, the evolution): a rescue never continues from a pose it did not start from. */
+function cancelRescue() { unstick = null; glide = null; trapWatch.armed = false; }
 function installPose(pose: { position: Vec3; orientation: Orientation }, actor: Actor, snap = false, rescue = false) {
   // Any install but a rescue glide step ends a pending rescue (re-review m3): respawn, evolution, recovery, an edit.
-  if (!rescue) { unstick = null; glide = null; trapWatch.armed = false; }
+  if (!rescue) cancelRescue();
   physical = { x: pose.position.x, y: pose.position.y, z: pose.position.z }; rt.orientation = { yaw: pose.orientation.yaw, pitch: pose.orientation.pitch };
   rt.permit = null; rt.arc = null; rt.controlledVelocity = { x: 0, y: 0, z: 0 }; rt.externalVelocity = { x: 0, y: 0, z: 0 };
   settleOffset(actor);
@@ -316,6 +322,7 @@ let startGracePending = false;
 function enterStuck() { mode = 'stuck'; clearInput(); stuckRetry = 1; toast('Stuck — finding you a safe spot…'); }
 /** After an edit, a growth change or a transformation: settle on the support, or recover when the body is not admitted. */
 function checkPose(actor: Actor) {
+  cancelRescue();
   if (admitted(actor)) settleOffset(actor);
   else if (!recover(actor, time)) enterStuck();
 }
@@ -324,7 +331,7 @@ function checkPose(actor: Actor) {
 function checkGrownPose(actor: Actor) {
   const lifted = growthPose(actor, physical, rt, { ...legality(run.stage), time });
   if (!lifted) { checkPose(actor); return; }
-  physical = lifted; settleOffset(actor); renderRoot();
+  cancelRescue(); physical = lifted; settleOffset(actor); renderRoot();
 }
 /** Completes a pending respawn at the start anchor for the actual growth. The caller shows the result. */
 function tryRespawn(): boolean {
@@ -423,7 +430,7 @@ function begin(fresh = false) {
   refreshDerived(); run.health = Math.min(run.health, derived.maxHealth);
   world.build(run.stage, run); el('evolution-banner').hidden = true; el('faint').hidden = true; mode = 'playing'; clearInput(); cooldown = 0; sinceHit = 99; readyToasted = evolveReady(run); lastBiome = '';
   // A fresh runtime for every new run or load. The start grace lives in the runtime.
-  rt = newRuntime(); genomeRevision++; hintClock = 0; blockGate.blockedFor = 0; blockGate.shown = false; trapWatch.armed = false; unstick = null; contactNow = false; lastContact = null; lastContactSolid = null; edgeNow = false; edgeHinted = false; startGracePending = false;
+  rt = newRuntime(); genomeRevision++; hintClock = 0; blockGate.blockedFor = 0; blockGate.shown = false; cancelRescue(); contactNow = false; lastContact = null; lastContactSolid = null; edgeNow = false; edgeHinted = false; startGracePending = false;
   faintLog.length = 0; acceptedHits = 0; rejectedHits = 0;
   el('home').hidden = true; el('game-ui').hidden = false; el('pause').hidden = false; el('edit').hidden = false; el('corner-note').hidden = true; el('mode-label').textContent = 'NIBBLE. GROW. REPEAT.';
   document.body.classList.add('is-playing'); toast(STAGES[run.stage]!.description);
@@ -502,7 +509,7 @@ function submitEvolution(next: BodyPlan, r: EditorResult): SubmitOutcome {
   const destination = evolutionDestination(nextActor, physical, { ...nextLegality, orientation: { yaw: rt.orientation.yaw, pitch: 0 }, time }, anchor.ok ? anchor.position : physical);
   if (!destination.ok) return { ok: false, reason: "This body can't fit anywhere here." };
   commitEvolution(run, prepared, CATALOG); resetRuntime(rt, destination.orientation); genomeRevision++; refreshDerived();
-  physical = { ...destination.position }; startTransformation(destination.position);
+  cancelRescue(); physical = { ...destination.position }; startTransformation(destination.position);
   return { ok: true };
 }
 /** The edit editor. A failed commit keeps the editor open with the reason. */
@@ -742,7 +749,7 @@ function frame(now: number) {
     let wish: Vec3 = NO_WISH;
     if (target && caps.ground) {
       const dx = target.x - p.x, dz = target.z - p.z, d = Math.hypot(dx, dz);
-      // Reached, or no progress for a second (a rock in the way: rocks are walls for ground plans): the target is dropped.
+      // Reached, or no progress for a second (a tall rock or an arch in the way: those are walls): the target is dropped.
       if (d < .25 || tapTargetStalled(tapWatch, d, dt)) { target = null; world.targetRing.visible = false; } else wish = { x: dx / d, y: 0, z: dz / d };
     } else {
       if (target) { target = null; world.targetRing.visible = false; }
@@ -768,13 +775,18 @@ function frame(now: number) {
     // faces the push, along a path the whole hull is admitted on. The search runs UNSTICK_BUDGET candidates a frame; it is dropped
     // when the body moves away on its own.
     if (!glide && !r.needsRecovery && !unstick && trapDue(trapWatch, physical, wish, actor.bodyLength, wedged(r.contacts, wish, r.turnRefused, rt.orientation.yaw), dt))
-      unstick = new UnstickSearch(actor, { ...physical }, Math.atan2(wish.x, wish.z), { ...rt.orientation }, { ...legal, time: time + dt, ground: caps.ground && !legal.queries.terrain.space });
+      { unstick = new UnstickSearch(actor, { ...physical }, Math.atan2(wish.x, wish.z), { ...rt.orientation }, { ...legal, time: time + dt, ground: caps.ground && !legal.queries.terrain.space }); rescueLog.searches++; }
     if (unstick) {
       const u = Math.hypot(physical.x - unstick.at.x, physical.z - unstick.at.z) > TRAP_MOVE * actor.bodyLength ? { ok: false as const, reason: 'moved' } : unstick.step(UNSTICK_BUDGET);
-      if (u) { unstick = null; if (u.ok) { glide = { path: u.path, index: 0 }; trapRescues++; } }
+      if (u) {
+        if (u.ok) { rescueLog.found++; rescueLog.last = { from: { ...unstick.at }, to: { ...u.position }, time, solids: [...lastSolids] }; glide = { path: u.path, index: 0 }; trapRescues++; }
+        else if (u.reason !== 'moved') { rescueLog.failed++; trapFailed(trapWatch, unstick.at, wish); }
+        unstick = null;
+      }
     }
     const contact = r.contacts[0];
     contactNow = !!contact; frameContacts += r.contacts.length;
+    if (QA) lastSolids = r.contacts.filter(c => c.solidId).map(c => c.solidId!);
     if (contact) { lastContact = contact.constraint; lastContactSolid = contact.solidId ?? null; }
     // A block hint only for a real, sustained block (not a slide), and never over another toast (final review I1).
     if (blockHintDue(blockGate, r, dt, hintClock <= 0 && toastTimer <= 0) && contact) { toast(blockHint(plan, contact)); hintClock = 6; }
@@ -897,7 +909,7 @@ if (QA) {
   Object.defineProperty(window, '__tinyTide', { get: () => ({ mode,
     plan: currentPlan(run).id, plans: [...run.plans], zone: zoneNow(), velocity: copy(rt.controlledVelocity), externalVelocity: copy(rt.externalVelocity),
     orientation: { ...rt.orientation }, permit: rt.permit ? { ...rt.permit } : null, arc: rt.arc ? { ...rt.arc } : null, breachReadyAt: rt.breachReadyAt, invulnerableUntil: rt.invulnerableUntil,
-    pendingRespawn: run.pendingRespawn, caps: capsOf(), physical: copy(physical), legal: mode === 'menu' ? null : admitted(playerActor(currentPlan(run), run.genome, run.stage, growthOf(run))), contactNow, lastContact: lastContact === null ? null : `${lastContact}`, lastContactSolid, trapRescues, solidOverlap: mode === 'menu' ? null : solidOverlap(), solidsNear: mode === 'menu' ? [] : solidsNear(32), edge: { inZone: edgeNow, hinted: edgeHinted, half: PLAYER_HALF, softStart: EDGE_SOFT_START * PLAYER_HALF }, hazardSources: hazardSources(), growth: growthOf(run), acceptedHits, rejectedHits,
+    pendingRespawn: run.pendingRespawn, caps: capsOf(), physical: copy(physical), legal: mode === 'menu' ? null : admitted(playerActor(currentPlan(run), run.genome, run.stage, growthOf(run))), contactNow, lastContact: lastContact === null ? null : `${lastContact}`, lastContactSolid, trapRescues, rescueLog: JSON.parse(JSON.stringify(rescueLog)), contactSolids: [...lastSolids], groundOffset: rt.groundOffset, solidOverlap: mode === 'menu' ? null : solidOverlap(), solidsNear: mode === 'menu' ? [] : solidsNear(32), edge: { inZone: edgeNow, hinted: edgeHinted, half: PLAYER_HALF, softStart: EDGE_SOFT_START * PLAYER_HALF }, hazardSources: hazardSources(), growth: growthOf(run), acceptedHits, rejectedHits,
     faintLog: faintLog.map(f => ({ ...f })), stage: run.stage, dna: dnaOf(run), stageDna: run.stageDna, goal: STAGES[run.stage]!.goal, health: run.health, maxHealth: derived.maxHealth, deaths: run.deaths, diet: dietOf(run.genome), genome: structuredClone(run.genome), name: run.name, unlocked: [...run.unlocked], evolveReady: evolveReady(run), bites: run.bites, totalDna: run.totalDna, elapsed: run.elapsed, completed: run.completed, eatenPlanets: [...run.eatenPlanets], player: { x: world.player.position.x, y: world.player.position.y, z: world.player.position.z }, foods: world.edibleFoods.map(f => ({ ...f.data, tag: f.entity.spec.tag, label: f.entity.spec.label, mode: f.entity.mode, hp: f.entity.hp, approachable: approachable(f.entity) })), threats: world.threats.map(f => ({ ...f.data, label: f.entity.spec.label, mode: f.entity.mode })), landmarks: world.foods.filter(f => f.model.visible && f.tier > run.stage).map(f => ({ tier: f.tier, kind: f.data.kind, x: f.data.x, y: f.data.y, z: f.data.z })), world: world.diagnostics, assets: assetDiagnostics(), saveKey: writeKey, loadedKey, time, holdingStart, editorProjection, poseAgreement, admission: admissionStats.map(a => { const per = (v: number) => a.frames ? v / a.frames : 0; return { frames: a.frames, msPerFrame: per(a.ms), callsPerFrame: per(a.calls), worstMs: a.worst, contactsPerFrame: per(a.contacts),
       player: { msPerFrame: per(a.player.ms), callsPerFrame: per(a.player.calls), worstMs: a.player.worst }, ecosystem: { msPerFrame: per(a.ecosystem.ms), callsPerFrame: per(a.ecosystem.calls), worstMs: a.ecosystem.worst }, guide: { msPerFrame: per(a.guide.ms), callsPerFrame: per(a.guide.calls), worstMs: a.guide.worst } }; }), render: { calls: world.renderer.info.render.calls, triangles: world.renderer.info.render.triangles, geometries: world.renderer.info.memory.geometries } }) });
 }

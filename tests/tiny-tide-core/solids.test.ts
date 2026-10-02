@@ -5,7 +5,7 @@ import { newRuntime, type Actor, type CombatRuntime, type Orientation, type Terr
 import { Ecosystem, speciesActor } from '../../src/tiny-tide/ecosystem';
 import { derive, effectiveStats, starterFor } from '../../src/tiny-tide/genome';
 import { RELEASED } from '../../src/tiny-tide/input';
-import { growthPose, newTrapWatch, TRAP_MOVE, trapDue, UNSTICK_BUDGET, UnstickSearch, wedged } from '../../src/tiny-tide/lifecycle';
+import { growthPose, newTrapWatch, TRAP_MOVE, trapDue, trapFailed, UNSTICK_BUDGET, UnstickSearch, wedged } from '../../src/tiny-tide/lifecycle';
 import { startAnchor } from '../../src/tiny-tide/motion';
 import { playerActor } from '../../src/tiny-tide/mount';
 import { PLANS, plan } from '../../src/tiny-tide/plans';
@@ -42,7 +42,7 @@ function rescuer(a: Actor, q: WorldQueries, bounds: { half: number; maxY?: numbe
     if (!search && trapDue(watch, p, wish, L, wedged(r.contacts, wish, r.turnRefused, rt.orientation.yaw), 1 / 60)) search = new UnstickSearch(a, { ...p }, Math.atan2(wish.x, wish.z), { ...rt.orientation }, { queries: q, bounds, time: (f + 1) / 60, ground });
     if (search) {
       const u = Math.hypot(p.x - search.at.x, p.z - search.at.z) > TRAP_MOVE * L ? { ok: false as const, reason: 'moved' } : search.step(UNSTICK_BUDGET);
-      if (u) { search = null; if (u.ok) { glide = { path: u.path, index: 0 }; stats.rescues++; stats.ends.push(u.position); stats.paths.push(u.path.map(x => x.position)); } else if (u.reason !== 'moved') stats.failed++; }
+      if (u) { const at = search.at; search = null; if (u.ok) { glide = { path: u.path, index: 0 }; stats.rescues++; stats.ends.push(u.position); stats.paths.push(u.path.map(x => x.position)); } else if (u.reason !== 'moved') { stats.failed++; trapFailed(watch, at, wish); } }
     }
     return p;
   };
@@ -166,7 +166,7 @@ describe('the player against solids', () => {
   });
 });
 
-describe('a tap-to-walk target behind a rock (owner ruling M12: rocks stay walls for ground plans)', () => {
+describe('a tap-to-walk target behind a tall rock (owner ruling M12: tall rocks and arches are walls for ground plans)', () => {
   /** A Crawler walks to a tap target as main.ts does: the wish points at the target, and the target is cleared when it is reached
    *  (.25 local units) or when the walk makes no progress for TAP_STALL_SECONDS. Returns the frame it was cleared and why. */
   const walk = (q: ReturnType<typeof makeWorldQueries>, target: Vec3, frames: number) => {
@@ -216,7 +216,7 @@ describe('a ground creature touching a rock or an arch can always move away from
       for (const g of bodies(planId)) {
         const a = playerActor(p0, g, stage, 1.2), L = a.bodyLength, top = STAGES[stage]!.speed * derive(effectiveStats(g, p0)).speedFactor;
         const step = (pos: Vec3, rt: ReturnType<typeof newRuntime>, wish: Vec3, f: number) => stepPlayer(pos, rt, RELEASED, { plan: p0, profile, caps, actor: a, queries: q, bounds, size, topSpeedLocal: top, now: f / 60, dt: 1 / 60, wish, aim: null, actionLock: false });
-        for (const solid of near.slice(0, 10)) for (let k = 0; k < 6; k++) {
+        for (const solid of near.slice(0, planId === 'crawler' ? 24 : 10)) for (let k = 0; k < 6; k++) {   // stage 1: most rocks are low steps, so more of them
           // Walk toward the solid's centre from 2 L outside its bounds until it stops the body.
           const cx = (solid.minX + solid.maxX) / 2, cz = (solid.minZ + solid.maxZ) / 2, ang = k * Math.PI / 3, R = Math.max(solid.maxX - solid.minX, solid.maxZ - solid.minZ) / 2 + 2 * L;
           const x0 = cx + Math.cos(ang) * R, z0 = cz + Math.sin(ang) * R, o = { yaw: Math.atan2(cx - x0, cz - z0), pitch: 0 }, rt = newRuntime(o);
@@ -238,22 +238,23 @@ describe('a ground creature touching a rock or an arch can always move away from
           const moved = Math.hypot(pos.x - from.x, pos.z - from.z), along = (pos.x - from.x) * away.x + (pos.z - from.z) * away.z;
           if (along < .3 * L) slower.push(`${solid.id} ${(along / L).toFixed(2)} L along`);
           // A body that slid into a concave corner of other solids (two walls ahead of it) is not trapped as long as it can back out:
-          // 1 s of the opposite input moves it ≥ .1 L (fix round 2: the rescue is only for real wedges, and the hull's path must be free).
+          // 1.5 s of the opposite input moves it ≥ .3 L (fix round 3; .1 L in round 2: the rescue is only for real wedges, and the hull's path must be free).
           let backed = Infinity;
           if (moved < .3 * L) {
             const back = { x: -away.x, y: 0, z: -away.z }, start = pos, rescue2 = rescuer(a, q, bounds, caps.ground);
-            for (let e = 0; e < 60; e++, f++) { const at = pos, ff = f; pos = rescue2.frame(pos, rt, back, f, () => step(at, rt, back, ff)); }
+            for (let e = 0; e < 90; e++, f++) { const at = pos, ff = f; pos = rescue2.frame(pos, rt, back, f, () => step(at, rt, back, ff)); }
             backed = Math.hypot(pos.x - start.x, pos.z - start.z);
-            if (backed >= .1 * L) corners.push(`${solid.id} (${(moved / L).toFixed(2)} L, then backed out ${(backed / L).toFixed(2)} L)`);
+            if (backed >= .3 * L) corners.push(`${solid.id} (${(moved / L).toFixed(2)} L, then backed out ${(backed / L).toFixed(2)} L)`);
           }
-          if ((moved < .3 * L && backed < .1 * L) || recov > 0) fails.push(`seed ${seed} ${solid.id} body ${g.spine.length} segs dir ${k}: moved ${(moved / L).toFixed(3)} L, backed ${(backed / L).toFixed(3)} L, recoveries ${recov}, failed rescues ${failedRescues}`);
+          if ((moved < .3 * L && backed < .3 * L) || recov > 0) fails.push(`seed ${seed} ${solid.id} body ${g.spine.length} segs dir ${k}: moved ${(moved / L).toFixed(3)} L, backed ${(backed / L).toFixed(3)} L, recoveries ${recov}, failed rescues ${failedRescues}`);
         }
       }
     }
     console.log(`${planId}: ${cases} contact cases, ${unstuck} trap rescues; out around another solid (under .3 L along the normal): ${slower.join(', ') || 'none'}; stopped in a corner and backed out: ${corners.join(', ') || 'none'}`);
-    expect(cases, 'contact cases').toBeGreaterThan(30);
+    // Fewer cases since bodies step over low rocks (fix round 2) and the belly sits low over them (round 3): most stage-1 rocks.
+    expect(cases, 'contact cases').toBeGreaterThanOrEqual(10);
     expect(fails, `${fails.length} of ${cases}`).toEqual([]);
-  }, 120_000);
+  }, 900_000);   // 2–6 min alone (the crawler case tests 24 solids); the full suite runs files in parallel
 });
 
 describe('ground plans step over low rocks (owner decision, fix round 2)', () => {
@@ -282,6 +283,38 @@ describe('ground plans step over low rocks (owner decision, fix round 2)', () =>
     }
     return { pos, L, refused, recov, maxRise, slow, maxStepUp, solid };
   };
+  // Fix round 3 (re-review 2 I1): on a low rock the belly is as close to the stone as it is to the seabed. The gap is how far the hull
+  // without its animation margins (sway and heave 0) can drop before it touches the rock or the seabed, over the middle of the rock.
+  const bare = (a: Actor): Actor => ({ ...a, hull: a.hull.map(c => ({ ...c, sway: 0, heave: 0 })) });
+  const dropGap = (a: Actor, q: WorldQueries, p: Vec3, o: Orientation) => {
+    const b = bare(a), L = a.bodyLength; let lo = 0, hi = .8 * L;
+    if (q.overlapHull(b, { ...p, y: p.y - hi }, o, { time: 0 }).ok) return hi;
+    for (let i = 0; i < 20; i++) { const m = (lo + hi) / 2; if (q.overlapHull(b, { ...p, y: p.y - m }, o, { time: 0 }).ok) lo = m; else hi = m; }
+    return lo;
+  };
+  for (const [planId, stage, segments] of [['crawler', 1, 4], ['shellback', 2, 4], ['colossus', 3, 3], ['colossus', 3, 7]] as const) it(`a ${planId} (${segments} segments) rides over low rocks with the belly as close to the stone as to the seabed (≤ max(.06 L, its seabed gap + .01 L))`, () => {
+    const p0 = plan(planId)!, g = genomeOf(planId, segments), a = playerActor(p0, g, stage, 1.2), L = a.bodyLength, size = SIZES[stage]!, rows: string[] = [];
+    for (const h of [.05, .1, .14]) {
+      const solid = meshRock(L, h, 1.2), q = makeWorldQueries(flat(), { solids: index([solid], 4 * size) }), top = STAGES[stage]!.speed * derive(effectiveStats(g, p0)).speedFactor;
+      // On top: within 8 % of the rock's width of its middle. The shoulders (to 25 %) are reported too.
+      const rt = newRuntime({ yaw: Math.PI / 2, pitch: 0 }), x0 = solid.minX - 2 * L, mid = (solid.maxX - solid.minX) * .08, shoulder = (solid.maxX - solid.minX) * .25;
+      let pos: Vec3 = { x: x0, y: supportHeight(a, x0, 0, rt.orientation, q.terrain) + .01 * L, z: 0 }, onTop = 0, worst = 0, shoulders = 0;
+      const seabed = dropGap(a, q, pos, rt.orientation);
+      for (let f = 0; f < 400 && pos.x < solid.maxX + L; f++) {
+        const r = stepPlayer(pos, rt, RELEASED, { plan: p0, profile: movement(p0.movement), caps: movementCapabilities(p0), actor: a, queries: q, bounds: { half: 1e6 }, size, topSpeedLocal: top, now: f / 60, dt: 1 / 60, wish: { x: 1, y: 0, z: 0 }, aim: null, actionLock: false });
+        if (r.needsRecovery) continue;
+        pos = r.position;
+        if (Math.abs(pos.x) < mid) { onTop++; worst = Math.max(worst, dropGap(a, q, pos, rt.orientation)); }
+        else if (Math.abs(pos.x) < shoulder) shoulders = Math.max(shoulders, dropGap(a, q, pos, rt.orientation));
+      }
+      rows.push(`rock ${h} L: seabed gap ${(seabed / L).toFixed(3)} L, gap on top ${(worst / L).toFixed(3)} L (${onTop} frames), on the shoulders ${(shoulders / L).toFixed(3)} L`);
+      expect(onTop, rows.at(-1)).toBeGreaterThan(0);
+      // Target: as close as on the seabed (≤ .06 L, or the body's own seabed gap + .01 L). Measured (fix round 3): Crawler .052–.055,
+      // Shellback .040–.043, Colossus .065–.068 (its seabed gap .068), 7-segment Colossus .030 L; before: .21–.32 L.
+      expect(worst / L, rows.at(-1)).toBeLessThanOrEqual(Math.max(.06, seabed / L + .01));
+    }
+    console.log(`${planId} ${segments}: ${rows.join('; ')}`);
+  });
   for (const [planId, stage, segments] of cases) {
     it(`a ${planId} (${segments} segments) walks across a rock .1 L high without stopping, and rides over it smoothly`, () => {
       const r = cross(planId, stage, segments, L => meshRock(L, .1, 1.2));
@@ -333,20 +366,20 @@ describe('the Colossus reaches its food among the stage-3 rocks (re-review N1)',
 
 describe('the trap rescue (continuation: crawler freeze)', () => {
   const crawler = plan('crawler')!, g = starterFor(crawler), a = playerActor(crawler, g, 1, 1), L = a.bodyLength, top = STAGES[1]!.speed * derive(effectiveStats(g, crawler)).speedFactor;
-  const walk = (q: ReturnType<typeof makeWorldQueries>, from: Vec3, wish: Vec3, frames: number) => {
-    const rt = newRuntime({ yaw: Math.atan2(wish.x, wish.z), pitch: 0 }), t = q.terrain, rescue = rescuer(a, q, undefined, true);
-    let pos: Vec3 = { x: from.x, y: supportHeight(a, from.x, from.z, rt.orientation, t) + .01 * L, z: from.z }, frozen = 0, last = pos;
+  const walk = (q: ReturnType<typeof makeWorldQueries>, from: Vec3, wish: Vec3, frames: number, yaw = Math.atan2(wish.x, wish.z), keepY = false) => {
+    const rt = newRuntime({ yaw, pitch: 0 }), t = q.terrain, rescue = rescuer(a, q, undefined, true);
+    let pos: Vec3 = { x: from.x, y: keepY ? from.y : supportHeight(a, from.x, from.z, rt.orientation, t) + .01 * L, z: from.z }, frozen = 0, last = pos;
     for (let f = 0; f < frames; f++) {
       const at = pos, ff = f;
       pos = rescue.frame(pos, rt, wish, f, () => stepPlayer(at, rt, RELEASED, { plan: crawler, profile: movement(crawler.movement), caps: movementCapabilities(crawler), actor: a, queries: q, bounds: { half: 1e6 }, size: 4, topSpeedLocal: top, now: ff / 60, dt: 1 / 60, wish, aim: null, actionLock: false }));
       frozen = Math.hypot(pos.x - last.x, pos.z - last.z) < 1e-3 * L ? frozen + 1 : 0; last = pos;
     }
     expect(rescue.stats.recov).toBe(0);
-    return { pos, rescues: rescue.stats.rescues, rescued: rescue.stats.ends, paths: rescue.stats.paths, frozen };
+    return { pos, rescues: rescue.stats.rescues, rescued: rescue.stats.ends, paths: rescue.stats.paths, frozen, yaw: rt.orientation.yaw };
   };
-  for (const [planId, stage] of [['crawler', 1], ['shellback', 2]] as const) it(`never fires when a long ${planId} pushes head-on into a real mesh rock (re-review N2)`, () => {
+  for (const [planId, stage] of [['crawler', 1], ['shellback', 2]] as const) it(`never fires when a long ${planId} pushes head-on into one real mesh rock (re-review N2)`, () => {
     const p0 = plan(planId)!, s0 = starterFor(p0), g7 = { ...s0, spine: Array.from({ length: 7 }, () => ({ radius: .3, height: .3, lift: 0 })) }, size = SIZES[stage]!;
-    let pushes = 0, rescues = 0;
+    let pushes = 0, rescues = 0, multi = 0, multiRescues = 0;
     for (const seed of [1402777635, 4242]) {
       const q = stageWorldQueries(stage, seed), bounds = stageBounds(stage), t = q.terrain;
       const rocks = stageSolids(stage, seed).solids.filter(x => x.kind === 'rock' && Math.max(Math.abs(x.minX + x.maxX), Math.abs(x.minZ + x.maxZ)) / 2 < 30 * size).slice(0, 8);
@@ -357,27 +390,35 @@ describe('the trap rescue (continuation: crawler freeze)', () => {
           const x0 = cx + Math.cos(ang) * R, z0 = cz + Math.sin(ang) * R, wish = { x: -Math.cos(ang), y: 0, z: -Math.sin(ang) }, rt = newRuntime({ yaw: Math.atan2(wish.x, wish.z), pitch: 0 });
           let pos: Vec3 = { x: x0, y: supportHeight(a, x0, z0, rt.orientation, t) + .01 * L, z: z0 };
           if (!q.overlapHull(a, pos, rt.orientation, { time: 0, bounds }).ok) continue;
-          const rescue = rescuer(a, q, bounds, true);
-          for (let f = 0; f < 300; f++) { const at = pos, ff = f; pos = rescue.frame(pos, rt, wish, f, () => stepPlayer(at, rt, RELEASED, { plan: p0, profile: movement(p0.movement), caps: movementCapabilities(p0), actor: a, queries: q, bounds, size, topSpeedLocal: top, now: ff / 60, dt: 1 / 60, wish, aim: null, actionLock: false })); }
-          pushes++; rescues += rescue.stats.rescues;
+          const rescue = rescuer(a, q, bounds, true), touched = new Set<string>();
+          for (let f = 0; f < 300; f++) {
+            const at = pos, ff = f;
+            pos = rescue.frame(pos, rt, wish, f, () => { const r = stepPlayer(at, rt, RELEASED, { plan: p0, profile: movement(p0.movement), caps: movementCapabilities(p0), actor: a, queries: q, bounds, size, topSpeedLocal: top, now: ff / 60, dt: 1 / 60, wish, aim: null, actionLock: false }); for (const c of r.contacts) if (c.solidId) touched.add(c.solidId); return r; });
+          }
+          // A push that also met a second solid (a rock beside an arch, two rocks) can be a real wedge: counted apart.
+          if (touched.size <= 1) { pushes++; rescues += rescue.stats.rescues; } else { multi++; multiRescues += rescue.stats.rescues; }
         }
       }
     }
-    expect(pushes).toBeGreaterThan(40);
-    expect(rescues, `${rescues} rescues in ${pushes} head-on pushes of 5 s`).toBe(0);
+    console.log(`${planId}: ${pushes} pushes against one solid (${rescues} rescues); ${multi} that met two or more solids (${multiRescues} rescues)`);
+    expect(pushes).toBeGreaterThan(30);
+    expect(rescues, `${rescues} rescues in ${pushes} head-on pushes of 5 s against one solid`).toBe(0);
   }, 120_000);
   it('never fires for a push into one flat wall while facing it', () => {
     const wall = solidOf('rock:wall', 'rock', [rockShape(0, -4, 0, 18, 30, 22, 0)]), q = makeWorldQueries(flat(), { solids: index([wall]) });
     const r = walk(q, { x: -70, y: 0, z: 0 }, { x: 1, y: 0, z: 0 }, 300);
     expect(r.rescues).toBe(0);
   });
-  it('frees a body pushed into a V of two walls, never across them', () => {
+  it('never moves a body pushed into the tip of a V of two walls across them, and the body can back out', () => {
     // Two long walls meet at the origin and open toward −z; the push goes into the tip.
     const V = solidOf('arch:v', 'arch', [{ kind: 'capsule', x0: 0, y0: 0, z0: 0, x1: -40, y1: 0, z1: -30, radius: 1.5 }, { kind: 'capsule', x0: 0, y0: 0, z0: 0, x1: 40, y1: 0, z1: -30, radius: 1.5 }]);
     const q = makeWorldQueries(flat(), { solids: index([V]) });
     const r = walk(q, { x: 0, y: 0, z: -30 }, { x: 0, y: 0, z: 1 }, 600);
     for (const path of r.paths) for (const p of path) expect(p.z, 'the glide stays inside the V').toBeLessThan(0);
-    expect(r.frozen, 'never frozen for more than TRAP_SECONDS and a little').toBeLessThan(60);
+    // Pushing into the tip is pushing into walls: a rescue needs a pose from which the push is free (fix round 3), and there is none
+    // inside the V, so the body stays. Backing out works.
+    const back = walk(q, r.pos, { x: 0, y: 0, z: -1 }, 60, r.yaw, true);
+    expect(r.pos.z - back.pos.z, 'backed out of the V').toBeGreaterThan(.3 * L);
   });
 });
 

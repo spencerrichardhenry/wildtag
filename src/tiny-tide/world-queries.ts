@@ -277,8 +277,9 @@ export function admit(actor: Actor, at: Vec3, o: Orientation, ctx: AdmissionCont
     if (worst > 0) return fail('ground', { x: wx, y: wy, z: wz }, terrainNormal(t, wx, wz));
   }
 
-  // 3b. Decoration solids, against every sample sphere grown by its whole envelope (skipped in space, which has none). The deepest
-  //     contact gives the point (on the solid) and the normal (out of it).
+  // 3b. Decoration solids, against every sample sphere grown by its envelope like the ground rule: sway horizontally, heave vertically
+  //     (fix round 3; SolidIndex.sphereEnvelope). Skipped in space, which has none. The deepest contact gives the point (on the solid)
+  //     and the normal (out of it).
   const solids = extras.solids;
   if (solids && count > 0 && solids.solids.length > 0) {
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, minZ = Infinity, maxZ = -Infinity;
@@ -291,7 +292,7 @@ export function admit(actor: Actor, at: Vec3, o: Orientation, ctx: AdmissionCont
       let hit = false;
       for (let s = 0; s < count; s++) {
         const i = s * STRIDE;
-        if (solids.sphere(at.x + spheres[i]!, at.y + spheres[i + 1]!, at.z + spheres[i + 2]!, spheres[i + 3]! + Math.max(spheres[i + 4]!, spheres[i + 5]!), c)) hit = true;
+        if (solids.sphereEnvelope(at.x + spheres[i]!, at.y + spheres[i + 1]!, at.z + spheres[i + 2]!, spheres[i + 3]!, spheres[i + 4]!, spheres[i + 5]!, c)) hit = true;
       }
       if (hit) return { ok: false, constraint: 'solid', point: vec(c.px, c.py, c.pz), normal: vec(c.nx, c.ny, c.nz), solidId: c.id };
     }
@@ -370,30 +371,34 @@ export function hullExtents(actor: Actor, o: Orientation): { top: number; bottom
 export const STEP_HEIGHT = .15, STEP_LIFT_MAX = .5;
 const stepAt: MutVec3 = { x: 0, y: 0, z: 0 };
 /** The lift over the seabed support (`base`, from supportHeight) that a ground body needs at (x, z) to stand on a low rock: 0 when no
- *  rock refuses it there, or when the refusing solid is an arch or a rock whose top is more than STEP_HEIGHT × L above the seabed at
- *  (x, z) (a wall). The smallest lift admitted against the solids, found in 8 steps and 6 halvings (a lift refused only by another
- *  rule counts as clear: motion admits every pose anyway). */
+ *  rock refuses it there, or when the refusing solid is an arch or a rock whose top is more than STEP_HEIGHT × L above the seabed under
+ *  the contact point (the rock's own foot: fix round 3, so a long body on a slope classifies a rock the same at its head and its
+ *  tail). The smallest lift admitted against the solids, found in STEP_TRIES steps and STEP_HALVINGS halvings: at most
+ *  1 + STEP_TRIES + STEP_HALVINGS = 12 admissions a call (one when no rock is under the body). A lift refused only by another rule
+ *  counts as clear: motion admits every pose anyway. */
+export const STEP_TRIES = 6, STEP_HALVINGS = 5;
 export function stepLift(actor: Actor, x: number, z: number, o: Orientation, q: WorldQueries, base: number, ctx: AdmissionContext): number {
   if (q.terrain.space || !q.solidTop) return 0;
-  const L = actor.bodyLength, eps = .01 * L, max = STEP_LIFT_MAX * L, ground = q.terrain.groundAt(x, z);
+  const L = actor.bodyLength, eps = .01 * L, max = STEP_LIFT_MAX * L;
   stepAt.x = x; stepAt.z = z;
   const solidAt = (lift: number): number => {   // 1: a low rock refuses it, 2: a wall refuses it, 0: clear
     stepAt.y = base + eps + lift;
     const a = q.overlapHull(actor, stepAt, o, ctx);
     if (a.constraint !== 'solid') return 0;
     const top = a.solidId === undefined || a.solidId.startsWith('arch') ? Infinity : q.solidTop!(a.solidId) ?? Infinity;
-    return top - ground <= STEP_HEIGHT * L ? 1 : 2;
+    const foot = a.point ? q.terrain.groundAt(a.point.x, a.point.z) : q.terrain.groundAt(x, z);
+    return top - foot <= STEP_HEIGHT * L ? 1 : 2;
   };
   if (solidAt(0) !== 1) return 0;
   let lo = 0, hi = -1;
-  for (let k = 1; k <= 8; k++) {
-    const lift = max * k / 8, s = solidAt(lift);
+  for (let k = 1; k <= STEP_TRIES; k++) {
+    const lift = max * k / STEP_TRIES, s = solidAt(lift);
     if (s === 2) return 0;
     if (s === 0) { hi = lift; break; }
     lo = lift;
   }
   if (hi < 0) return 0;
-  for (let i = 0; i < 6; i++) { const mid = (lo + hi) / 2; if (solidAt(mid) === 0) hi = mid; else lo = mid; }
+  for (let i = 0; i < STEP_HALVINGS; i++) { const mid = (lo + hi) / 2; if (solidAt(mid) === 0) hi = mid; else lo = mid; }
   return hi;
 }
 

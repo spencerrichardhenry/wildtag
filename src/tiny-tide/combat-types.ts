@@ -64,7 +64,9 @@ export interface WorldQueries {
 }
 export interface LegalityContext { queries: WorldQueries; bounds?: { half: number; maxY?: number } }
 export interface MotionRequest { actorId: ActorId; from: Vec3; displacement: Vec3; orientation: Orientation; turn?: Orientation; hull: readonly Capsule[]; habitatProfileId: string;
-  cause: 'locomotion' | 'dash' | 'knockback' | 'recovery'; traversalPermit?: TraversalPermit | null }
+  cause: 'locomotion' | 'dash' | 'knockback' | 'recovery'; traversalPermit?: TraversalPermit | null;
+  /** When set, a slide after a contact never lifts the body more than this above `from` (a ground body's support-following rise). */
+  riseCap?: number }
 export interface Contact { point: Vec3; normal: Vec3; constraint: Constraint; distanceFraction: number; time: number; solidId?: string }
 export interface MotionResult { status: 'moved' | 'blocked' | 'clamped' | 'invalid-start' | 'needs-recovery'; position: Vec3; orientation: Orientation; contacts: readonly Contact[]; unconsumed: Vec3; time: number }
 export type RecoveryResult = { ok: true; position: Vec3; orientation: Orientation } | { ok: false; reason: string };
