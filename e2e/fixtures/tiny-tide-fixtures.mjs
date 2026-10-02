@@ -23,6 +23,10 @@ export async function pickHazard(page, spec) {
   if (!(await page.evaluate(() => typeof window.pickHazard === 'function').catch(() => false))) await toFixturePage(page);
   return page.evaluate(spec => window.pickHazard(spec), spec);
 }
+export async function forcedStart(page, spec, local) {
+  if (!(await page.evaluate(() => typeof window.forcedStart === 'function').catch(() => false))) await toFixturePage(page);
+  return page.evaluate(([spec, local]) => window.forcedStart(spec, local), [spec, local]);
+}
 export async function damageAfterArmor(page, damage, armor) {
   if (!(await page.evaluate(() => typeof window.damageAfterArmor === 'function').catch(() => false))) await toFixturePage(page);
   return page.evaluate(([d, a]) => window.damageAfterArmor(d, a), [damage, armor]);
@@ -54,17 +58,22 @@ export function watchErrors(page) {
 }
 /** Waits for `n` animation frames. */
 export const frames = (page, n = 2) => page.evaluate(n => new Promise(r => { const step = k => k <= 0 ? r() : requestAnimationFrame(() => step(k - 1)); step(n); }), n);
-/** Polls `predicate(state)` in the page every animation frame until it is true or `seconds` of game time pass; returns the last state. */
-export async function untilGameTime(page, predicate, seconds, label) {
-  const result = await page.evaluate(([src, seconds]) => new Promise(resolve => {
-    const test = new Function('s', `return (${src})(s);`), t0 = window.__tinyTide.time;
-    const tick = () => { const s = window.__tinyTide; if (test(s)) return resolve({ ok: true, s }); if (s.time - t0 > seconds) return resolve({ ok: false, s }); requestAnimationFrame(tick); };
+/** Polls `predicate(state)` in the page every animation frame until it is true or `seconds` of game time pass; returns the last state.
+ *  A real-time cap (`wallSeconds`, default 4 × seconds + 10) ends the wait too, because the game clock stops in some modes. */
+export async function untilGameTime(page, predicate, seconds, label, wallSeconds = seconds * 4 + 10) {
+  const result = await page.evaluate(([src, seconds, wall]) => new Promise(resolve => {
+    const test = new Function('s', `return (${src})(s);`), t0 = window.__tinyTide.time, w0 = performance.now();
+    const tick = () => {
+      const s = window.__tinyTide; if (test(s)) return resolve({ ok: true, s });
+      if (s.time - t0 > seconds) return resolve({ ok: false, s, why: `${seconds} s of game time` });
+      if (performance.now() - w0 > wall * 1000) return resolve({ ok: false, s, why: `${wall} s of real time (game clock stopped?)` });
+      requestAnimationFrame(tick);
+    };
     tick();
-  }), [predicate.toString(), seconds]);
-  if (!result.ok) throw new Error(`${label}: not within ${seconds} s of game time`);
+  }), [predicate.toString(), seconds, wallSeconds]);
+  if (!result.ok) throw new Error(`${label}: not within ${result.why}; mode ${result.s.mode}`);
   return result.s;
 }
-
 /** Waits until `seconds` of game time have passed. */
 export async function waitGameTime(page, seconds) {
   const t0 = (await state(page)).time;

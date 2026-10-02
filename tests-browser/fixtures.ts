@@ -177,8 +177,19 @@ export function pickHazard(h: HazardSpec): HazardPick | null {
   return null;
 }
 
-declare global { interface Window { makeFixture: typeof makeFixture; pickHazard: typeof pickHazard; damageAfterArmor: typeof damageAfterArmor } }
+/** The pose the game's `forcedSpawn` start computes for a fixture: `recoverPlayer` from a stage-local point with the start anchor's
+ *  orientation, `20 × L` and the anchor fallback (main.ts `begin`). Also the anchor. Positions are physical. */
+export function forcedStart(spec: FixtureSpec, local: Vec3): { start: Vec3 | null; anchor: Vec3 | null } {
+  const run = makeFixture(spec).run!, plan = currentPlan(run), size = SIZES[run.stage]!, legal = legality(run.stage);
+  const actor = playerActor(plan, run.genome, run.stage, growthOf(run)), anchor = startAnchor(actor, run.stage, legal);
+  if (!anchor.ok) return { start: null, anchor: null };
+  const rec = recoverPlayer(actor, { x: local.x * size, y: local.y * size, z: local.z * size }, anchor.orientation, { ...legal, time: 0 }, anchor, 20 * actor.bodyLength);
+  return { start: rec.ok ? rec.position : null, anchor: anchor.position };
+}
+
+declare global { interface Window { makeFixture: typeof makeFixture; pickHazard: typeof pickHazard; damageAfterArmor: typeof damageAfterArmor; forcedStart: typeof forcedStart } }
 window.makeFixture = makeFixture;
 window.pickHazard = pickHazard;
 window.damageAfterArmor = damageAfterArmor;
+window.forcedStart = forcedStart;
 document.body.dataset.ready = 'true';

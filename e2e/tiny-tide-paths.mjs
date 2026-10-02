@@ -2,7 +2,7 @@
 // Fixtures come from the dev-only fixture page (the game's own modules). Run one or more checks: node e2e/tiny-tide-paths.mjs 3 7b
 import assert from 'node:assert/strict';
 import { mkdirSync } from 'node:fs';
-import { control, damageAfterArmor, eatOnce, frames, KEYS, launch, makeFixture, openGame, pickHazard, start, state, storageOf, untilGameTime, waitGameTime, watchErrors } from './fixtures/tiny-tide-fixtures.mjs';
+import { control, damageAfterArmor, forcedStart, eatOnce, frames, KEYS, launch, makeFixture, openGame, pickHazard, start, state, storageOf, untilGameTime, waitGameTime, watchErrors } from './fixtures/tiny-tide-fixtures.mjs';
 
 const out = '.codex-drafts/tiny-tide-qa'; mkdirSync(out, { recursive: true });
 const only = process.argv.slice(2);
@@ -34,6 +34,8 @@ async function choosePath(page, id) {
 async function openEdit(page) {
   await page.locator('#edit').click(); await page.locator('#editor').waitFor(); await frames(page, 3);
 }
+/** Fails a check whose in-page wait hit its real-time cap (the game clock stops in stuck, paused and editing). */
+const noWallTimeout = (r, label) => { if (r.wall) assert.fail(`${label}: the real-time cap tripped; mode ${r.s?.mode}`); };
 const view = page => page.locator('#editor .ed-view');
 const data = (page, name) => view(page).getAttribute(`data-${name}`);
 const selectedUid = async page => (await data(page, 'selected'))?.split('|')[0] ?? '';
@@ -194,7 +196,7 @@ check('5', 'Swimmer surface limit', async () => {
   await control(page, ['KeyE']);
   const result = await page.evaluate(() => new Promise(resolve => {
     let top = -Infinity, rose = window.__tinyTide.time, stopped = null, sawContact = false;
-    const t0 = window.__tinyTide.time;
+    const t0 = window.__tinyTide.time, w0 = performance.now();
     const tick = () => {
       const s = window.__tinyTide;
       if (s.player.y > top + 1e-6) { top = s.player.y; rose = s.time; }
@@ -202,11 +204,13 @@ check('5', 'Swimmer surface limit', async () => {
       if (stopped !== null && s.contactNow && s.lastContact === 'surface-top') sawContact = true;
       if (stopped !== null && s.time - stopped >= 2) return resolve({ ok: true, s, sawContact, top });
       if (s.time - t0 > 40) return resolve({ ok: false, s, sawContact, top });
+      if (performance.now() - w0 > 120000) return resolve({ ok: false, wall: true, s, sawContact, top });
       requestAnimationFrame(tick);
     };
     tick();
   }));
   await control(page, []);
+  noWallTimeout(result, 'check 5 (rise)');
   assert.ok(result.ok, 'the swimmer stops rising within 40 s of game time');
   assert.notEqual(result.s.zone, 'air', 'a Swimmer never reaches the air');
   assert.ok(result.top < result.s.world.surface, 'the body stays below the surface');
@@ -236,18 +240,31 @@ check('6', 'Crawler', async () => {
 
 check('7', 'A Crawler placed high recovers onto the seabed', async () => {
   const { page, errors } = await newPage();
-  await play(page, { path: ['crawler'], ready: true }, 'forcedSpawn=0,30,0');
-  // Recovery may choose the highest legal pose under the floor-gap ceiling; a grounded body then settles onto its support.
-  // Every frame is legal, and the body is on the seabed once settled (bounded: 1 s of game time).
+  const spec = { path: ['crawler'], ready: true }, high = { x: 0, y: 30, z: 0 };
+  // The pose the game must start from: recoverPlayer from (0, 30, 0), as the fixture page computes it with the game's modules.
+  const expected = await forcedStart(page, spec, high);
+  assert.ok(expected.start && expected.anchor, 'fixture: a recovered start and an anchor exist');
+  assert.ok(Math.hypot(expected.start.x - expected.anchor.x, expected.start.y - expected.anchor.y, expected.start.z - expected.anchor.z) > 1e-6, 'fixture: the recovered start differs from the anchor');
+  // qaHoldStart keeps the installed pose until a press, so the first pose is read exactly.
+  await play(page, spec, `forcedSpawn=${high.x},${high.y},${high.z}&qaHoldStart=1`);
+  const first = await state(page);
+  assert.equal(first.holdingStart, true);
+  assert.deepEqual(first.physical, expected.start, 'the start is exactly recoverPlayer from (0, 30, 0)');
+  assert.equal(first.legal, true, 'the recovered start is legal');
+  // A grounded body then settles onto its support: every frame is legal, and it is on the seabed (bounded: 1 s game, 10 s real).
+  await page.keyboard.press('ShiftLeft');   // a harmless first press ends the hold
   const r = await page.evaluate(() => new Promise(resolve => {
-    const t0 = window.__tinyTide.time, frames = []; const tick = () => {
-      const s = window.__tinyTide; frames.push({ zone: s.zone, legal: s.legal, mode: s.mode, y: s.player.y });
-      if ((s.zone === 'seabed' && s.legal) || s.time - t0 > 1) return resolve({ s, frames }); requestAnimationFrame(tick);
+    const t0 = window.__tinyTide.time, w0 = performance.now(), frames = []; const tick = () => {
+      const s = window.__tinyTide; frames.push({ zone: s.zone, legal: s.legal, mode: s.mode });
+      if (s.zone === 'seabed' && s.legal) return resolve({ s, frames });
+      if (s.time - t0 > 1) return resolve({ s, frames });
+      if (performance.now() - w0 > 10000) return resolve({ s, frames, wall: true });
+      requestAnimationFrame(tick);
     }; tick();
   }));
-  assert.ok(r.frames.every(f => f.legal === true && f.mode === 'playing'), 'the position is legal on every frame from the start');
-  assert.ok(r.frames[0].y < 30 - 1, `the spawn was recovered from 30 local units (y ${r.frames[0].y.toFixed(2)})`);
-  assert.equal(r.s.zone, 'seabed', `zone is seabed (start zone ${r.frames[0].zone}, ${r.frames.length} frames)`);
+  noWallTimeout(r, 'check 7 (settle)');
+  assert.ok(r.frames.every(f => f.legal === true && f.mode === 'playing'), 'the position is legal on every frame');
+  assert.equal(r.s.zone, 'seabed', `zone is seabed (start zone ${first.zone}, ${r.frames.length} frames)`);
   assert.deepEqual(errors, []);
 });
 
@@ -424,15 +441,17 @@ check('13', 'Hazard integration and invulnerability', async () => {
   const first = await state(page);
   assert.ok(Math.abs(first.invulnerableUntil - first.time - 2) < .5 && first.invulnerableUntil - first.time <= 2, `the default start grace is 2 s (until ${first.invulnerableUntil}, now ${first.time})`);
   const r = await page.evaluate(() => new Promise(resolve => {
-    const samples = [], t0 = window.__tinyTide.time;
+    const samples = [], t0 = window.__tinyTide.time, w0 = performance.now();
     const tick = () => {
       const s = window.__tinyTide;
       samples.push({ time: s.time, health: s.health, max: s.maxHealth, accepted: s.acceptedHits, rejected: s.rejectedHits, until: s.invulnerableUntil, mode: s.mode });
       if (s.acceptedHits >= 2 || s.time - t0 > 10) return resolve(samples);
+      if (performance.now() - w0 > 40000) return resolve({ wall: true, s, samples });
       requestAnimationFrame(tick);
     };
     tick();
   }));
+  noWallTimeout(r, 'check 13 (hazard)');
   const grace = first.invulnerableUntil, during = r.filter(x => x.time < grace), after = r.filter(x => x.time >= grace);
   assert.ok(during.at(-1).rejected >= 1, 'the crab’s events are rejected during the grace');
   assert.ok(during.every(x => x.health === x.max && x.accepted === 0), 'health stays at maximum during the grace');
@@ -453,7 +472,8 @@ check('14', 'Pose agreement', async () => {
   }));
   await control(page, []);
   for (const a of samples) {
-    assert.ok(a && a.sockets >= 4, `every socket is sampled (${a?.sockets})`);
+    assert.ok(a, 'poseAgreement() returns a result');
+    assert.equal(a.sockets, 4, 'every socket is sampled: bite, two pinches, slap');
     assert.ok(a.positionError < 1e-3 * a.bodyLength, `position error ${a.positionError} < 1e-3 × body length ${a.bodyLength}`);
     assert.ok(a.angleError < .01, `forward angle error ${a.angleError} < .01 rad`);
     assert.equal(a.reflectionsAgree, true, 'the same reflection sign');
@@ -470,16 +490,18 @@ check('15', 'Faint during a Breach', async () => {
   await frames(page, 5);
   assert.equal((await state(page)).time, s0.time, 'the game clock holds');
   const watching = page.evaluate(() => new Promise(resolve => {
-    let t0 = null; const tick = () => {
+    let t0 = null; const w0 = performance.now(); const tick = () => {
       const s = window.__tinyTide;
       if (!s.holdingStart && t0 === null) t0 = s.time;
       if (s.faintLog.length) return resolve({ s, saved: localStorage.getItem(s.saveKey) });
       if (t0 !== null && s.time - t0 > 3) return resolve({ s, timeout: true });
+      if (performance.now() - w0 > 20000) return resolve({ s, wall: true });
       requestAnimationFrame(tick);
     }; tick();
   }));
   await page.keyboard.press('KeyE');
   const w = await watching;
+  noWallTimeout(w, 'check 15 (Breach faint)');
   assert.ok(!w.timeout, 'a faint within 3 s of game time');
   const f = w.s.faintLog[0];
   if (!f.hadPermit || !f.hadArc) assert.fail('non-Breach faint');
