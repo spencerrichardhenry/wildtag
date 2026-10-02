@@ -8,7 +8,8 @@ import { speciesActor } from './mount';
 import { habitat, movement, pursuit } from './profiles';
 import { HAZARDS } from './registries';
 import type { Species } from './species';
-import { makeTerrain, makeWorldQueries, supportHeight } from './world-queries';
+import { stageSolids } from './reef';
+import { stageWorldQueries, supportHeight } from './world-queries';
 
 export { speciesActor };
 
@@ -48,8 +49,11 @@ const INSTALL_RETRY = 2;
 
 const pursuitState = () => ({ lastKnown: null, lastKnownHull: null, lastSeenAt: 0, reachable: false, reachableSince: null, blockedSince: null, returnUntil: 0, hazardReadyAt: 0 });
 
+/** A spawn point inside a reef solid of its tier, grown by the body radius (owner playtest P4), is rejected. */
+const inReef = (seed: number) => (tier: number, x: number, y: number, z: number) => stageSolids(tier, seed).solidAt(x, y, z, .7 * SIZES[tier]!) !== null;
+
 export function makeEntities(seed: number): Entity[] {
-  return populate(seed).map(spawn => ({
+  return populate(seed, inReef(seed)).map(spawn => ({
     id: spawn.id, spec: spawn.spec, x: spawn.x, y: spawn.y, z: spawn.z, hx: spawn.x, hy: spawn.y, hz: spawn.z,
     groundOffset: spawn.y - seabedHeight(spawn.x, spawn.z), heading: spawn.phase, phase: spawn.phase,
     hp: spawn.spec.hp, eaten: false, respawn: -1, mode: 'calm', modeTime: 0, active: false, ...pursuitState(),
@@ -141,7 +145,7 @@ export class Ecosystem {
     this.biomes = SIZES.map((_, tier) => makeBiomes(seed, tier));
     this.rand = random(seed ^ 0x51ed);
     if (opts.queries) this.queries = SIZES.map((_, tier) => opts.queries!(tier));
-    else { const sea = makeWorldQueries(makeTerrain(0)), space = makeWorldQueries(makeTerrain(4)); this.queries = SIZES.map((_, tier) => tier === 4 ? space : sea); }
+    else this.queries = SIZES.map((_, tier) => stageWorldQueries(tier, seed));
     this.bounds = SIZES.map(size => ({ half: WORLD_HALF * size }));
     for (const e of this.entities) { this.actors.set(e, speciesActor(e)); owners.set(e, this); this.install(e); }
   }
@@ -343,7 +347,7 @@ export class Ecosystem {
       if (Math.hypot(e.hx - ctx.player.x, e.hz - ctx.player.z) < away) { e.respawn = 0; return; }
       Object.assign(e, { x: e.hx, y: e.hy, z: e.hz }, fresh); this.install(e); return;
     }
-    const point = spawnPoint(e.spec, this.biomes[e.spec.tier]!, this.rand, { x: ctx.player.x, z: ctx.player.z, radius: away });
+    const tier = e.spec.tier, point = spawnPoint(e.spec, this.biomes[tier]!, this.rand, { x: ctx.player.x, z: ctx.player.z, radius: away }, (x, y, z) => inReef(this.seed)(tier, x, y, z));
     Object.assign(e, { x: point.x, y: point.y, z: point.z, hx: point.x, hy: point.y, hz: point.z, groundOffset: point.y - seabedHeight(point.x, point.z) }, fresh);
     this.install(e);
   }

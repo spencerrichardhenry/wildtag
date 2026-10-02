@@ -39,6 +39,4 @@ export function batch(group: T.Group): T.Group {
   return result;
 }
 export function foodModel(kind: FoodKind, id = 0): T.Group { return asset(kind === 'planet' ? `planet_${String(id).padStart(2, '0')}` : kind); }
-export function coral(seed: number) { return asset(`reef_coral_${seed % 4}`); }
-export function kelp(seed: number) { return asset(seed % 3 === 0 ? 'reef_grass' : 'reef_kelp'); }
 export { asset as sceneryAsset };

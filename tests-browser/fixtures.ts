@@ -6,7 +6,7 @@ import { adaptToPlan, cloneGenome, derive, effectiveStats, nextUid, starterGenom
 import { COAST_READY, eligibleChildren, plan as planById, type BodyPlan } from '../src/tiny-tide/plans';
 import { quoteDesign } from '../src/tiny-tide/economy';
 import { PLAYER_HALF, SIZES } from '../src/tiny-tide/biomes';
-import { makeTerrain, makeWorldQueries } from '../src/tiny-tide/world-queries';
+import { stageWorldQueries } from '../src/tiny-tide/world-queries';
 import { startAnchor } from '../src/tiny-tide/motion';
 import { playerActor } from '../src/tiny-tide/mount';
 import { Ecosystem, entityRadius } from '../src/tiny-tide/ecosystem';
@@ -20,19 +20,19 @@ const SAVE_KEY = 'tiny-tide-adventure-v4';
 const LINES: Record<'swimmer' | 'crawler', string[]> = { swimmer: ['swimmer', 'darter', 'sky_drifter', 'star_swimmer'], crawler: ['crawler', 'shellback', 'colossus', 'star_crawler'] };
 
 interface Legality { queries: WorldQueries; bounds: { half: number; maxY?: number } }
-const legalities = new Map<number, Legality>();
-/** The player's world queries and bounds for a stage, as in the game (main.ts `legality`). */
-function legality(stage: number): Legality {
-  let l = legalities.get(stage);
+const legalities = new Map<string, Legality>();
+/** The player's world queries (with the world seed's reef solids) and bounds for a stage, as in the game (main.ts `legality`). */
+function legality(stage: number, seed: number): Legality {
+  let l = legalities.get(`${seed}:${stage}`);
   if (!l) {
     const size = SIZES[stage]!;
-    l = { queries: makeWorldQueries(makeTerrain(stage)), bounds: { half: PLAYER_HALF * size, maxY: stage >= 3 ? 30 * size : undefined } };
-    legalities.set(stage, l);
+    l = { queries: stageWorldQueries(stage, seed), bounds: { half: PLAYER_HALF * size, maxY: stage >= 3 ? 30 * size : undefined } };
+    legalities.set(`${seed}:${stage}`, l);
   }
   return l;
 }
 /** The game's build (main.ts `BUILD`). A coast build (kept-save fixtures) has no anchor check: this world has no coast to stand on. */
-const buildOf = (coast: boolean): Build => coast ? { coast } : { coast, anchorCheck: (g, p) => [1, 1.38].every(growth => startAnchor(playerActor(p, g, p.size, growth), p.size, legality(p.size)).ok) };
+const buildOf = (coast: boolean, seed: number): Build => coast ? { coast } : { coast, anchorCheck: (g, p) => [1, 1.38].every(growth => startAnchor(playerActor(p, g, p.size, growth), p.size, legality(p.size, seed)).ok) };
 
 interface PartIn { id: string; t?: number; angle?: number; scale?: number; mirror?: boolean; roll?: number }
 export interface FixtureSpec {
@@ -85,7 +85,7 @@ function legacyFixture(kind: 'v1' | 'v2', seed: number, fields: Record<string, u
 export function makeFixture(spec: FixtureSpec = {}): Fixture {
   const seed = spec.seed ?? 1501;
   if (spec.legacy) return legacyFixture(spec.legacy, seed, spec.legacyFields);
-  const catalog = spec.bindClaw ? QA_GRANT_CATALOG : PARTS, build = buildOf(!!spec.coast);
+  const catalog = spec.bindClaw ? QA_GRANT_CATALOG : PARTS, build = buildOf(!!spec.coast, seed);
   const run = freshRun(seed);
   run.unlocked = [...(spec.unlocked ?? [])];
   const path = spec.path ?? LINES[spec.line ?? 'swimmer'].slice(0, spec.stage ?? 0);
@@ -151,12 +151,13 @@ export interface HazardPick { seed: number; entityId: number; home: Vec3; start:
  *  `minLeadSeconds` at the entity's speed (separation ≥ contact distance + speed × lead), checked with the game's admission and
  *  recovery. Positions are stage-local. The player is the fixture's (default: `makeFixture({ stage })`). */
 export function pickHazard(h: HazardSpec): HazardPick | null {
-  const size = SIZES[h.stage]!, legal = legality(h.stage), margin = (PLAYER_HALF - 10) * size;
+  const size = SIZES[h.stage]!, margin = (PLAYER_HALF - 10) * size;
   const fx = makeFixture(h.fixture ?? { stage: h.stage }).run!, plan = currentPlan(fx), actor = playerActor(plan, fx.genome, h.stage, growthOf(fx));
-  const o = { yaw: 0, pitch: 0 }, anchor = startAnchor(actor, h.stage, legal), L = actor.bodyLength;
+  const o = { yaw: 0, pitch: 0 }, L = actor.bodyLength;
   const local = (v: Vec3): Vec3 => ({ x: v.x / size, y: v.y / size, z: v.z / size });
   for (let seed = 1; seed <= 50; seed++) {
-    const eco = new Ecosystem(seed);
+    const eco = new Ecosystem(seed), legal = legality(h.stage, seed);
+    let anchor: ReturnType<typeof startAnchor> | null = null;
     for (const e of eco.entities) {
       if (e.spec.key !== h.key || e.eaten || Math.abs(e.hx) > margin || Math.abs(e.hz) > margin) continue;
       const home = { x: e.hx, y: e.hy, z: e.hz };
@@ -168,6 +169,7 @@ export function pickHazard(h: HazardSpec): HazardPick | null {
         if (gap < lead) continue;
         if (!legal.queries.overlapHull(actor, at, o, { time: 0, permit: null, bounds: legal.bounds }).ok) continue;
         // forcedSpawn recovers the start; an admitted start must come back unchanged.
+        anchor ??= startAnchor(actor, h.stage, legal);
         const rec = recoverPlayer(actor, at, o, { ...legal, time: 0 }, anchor, 20 * L);
         if (!rec.ok || Math.hypot(rec.position.x - at.x, rec.position.y - at.y, rec.position.z - at.z) > 1e-9) continue;
         return { seed, entityId: e.id, home: local(home), start: local(at), separation: gap / size, lead: lead / size };
@@ -180,7 +182,7 @@ export function pickHazard(h: HazardSpec): HazardPick | null {
 /** The pose the game's `forcedSpawn` start computes for a fixture: `recoverPlayer` from a stage-local point with the start anchor's
  *  orientation, `20 × L` and the anchor fallback (main.ts `begin`). Also the anchor. Positions are physical. */
 export function forcedStart(spec: FixtureSpec, local: Vec3): { start: Vec3 | null; anchor: Vec3 | null } {
-  const run = makeFixture(spec).run!, plan = currentPlan(run), size = SIZES[run.stage]!, legal = legality(run.stage);
+  const run = makeFixture(spec).run!, plan = currentPlan(run), size = SIZES[run.stage]!, legal = legality(run.stage, run.seed);
   const actor = playerActor(plan, run.genome, run.stage, growthOf(run)), anchor = startAnchor(actor, run.stage, legal);
   if (!anchor.ok) return { start: null, anchor: null };
   const rec = recoverPlayer(actor, { x: local.x * size, y: local.y * size, z: local.z * size }, anchor.orientation, { ...legal, time: 0 }, anchor, 20 * actor.bodyLength);

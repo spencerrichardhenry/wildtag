@@ -1,6 +1,7 @@
 import * as T from 'three';
-import { batch, coral, foodModel, kelp, material, sceneryAsset } from './models';
+import { batch, foodModel, material, sceneryAsset } from './models';
 import { biomeAt, PLAYER_HALF, random, seabedHeight, SIZES, WATER_LEVEL, type Biome } from './biomes';
+import { REEF_LAYERS, reefLayer } from './reef';
 import { EDGE_FADE_END, EDGE_SOFT_START } from './edge';
 import { CreatureModel } from './creature';
 import { SEABED_RINGS, seabedRingGeometry, seabedRingVisible, type SeabedRing } from './seabed-mesh';
@@ -175,7 +176,7 @@ export class TideWorld {
     this.stars = new T.Points(sg, new T.PointsMaterial({ color: '#e4deff', size: .28, transparent: true, opacity: 0, fog: false, depthWrite: false })); this.scene.add(this.stars);
     this.eco = new Ecosystem(71829);
     this.createUniverse();
-    this.buildReef(rand);
+    this.buildReef(this.eco.seed);
     this.scenery.traverse(obj => this.fadeable(obj));
     this.build(0, { seed: 71829, eatenPlanets: [] }); this.resize();
   }
@@ -190,27 +191,18 @@ export class TideWorld {
     }
     obj.material = this.sceneryMaterialMap.get(obj.material)!;
   }
-  /** Reef details follow the run's biomes: kelp forests, coral gardens, rocky flats and open sand. */
-  private buildReef(rand: () => number) {
+  /** Reef details follow the run's biomes: kelp forests, coral gardens, rocky flats and open sand. The placement is pure and seeded
+   *  (reef.ts `placeReef`); the same rocks and arches are the solids of the gameplay queries. */
+  private buildReef(seed: number) {
     for (const lod of this.lods) { lod.group.traverse(o => { if (o instanceof T.Mesh) o.geometry.dispose(); }); }
     this.reef.clear(); this.lods = [];
     // Reef details at several physical sizes are present together, before any evolution.
-    [1, 5, 20].forEach((size, tier) => {
-      const raw = new T.Group(), biomes = this.eco.biomes[tier]!, tierSize = SIZES[tier]!;
-      for (let i = 0; i < 70; i++) {
-        const a = rand() * Math.PI * 2, r = (7 + rand() * 47) * size, x = Math.cos(a) * r, z = Math.sin(a) * r, y = seabedHeight(x, z);
-        const decor = biomeAt(biomes, x / tierSize, z / tierSize).decor;
-        if (decor === 'sand' && rand() < .65) continue;
-        const decoration = decor === 'coral' || (decor !== 'kelp' && i % 3 === 0) ? coral(i) : kelp(i); decoration.scale.setScalar(size * (.8 + rand())); decoration.position.set(x, y, z); raw.add(decoration);
-        const rock = sceneryAsset(`reef_rock_${i % 2}`), heavy = decor === 'rock' ? 1.7 : 1; rock.position.set(x, y - .2 * size, z); rock.scale.set(size * (.8 + rand()) * heavy, size * (.7 + rand() * .4) * heavy, size * (1 + rand()) * heavy); rock.rotation.y = a; raw.add(rock);
-        if (i % 7 === 0 || (decor === 'rock' && i % 3 === 0)) {
-          const arch = sceneryAsset('reef_arch'); arch.position.set(x + size, y, z); arch.scale.setScalar(size * .7); arch.rotation.y = a; raw.add(arch);
-        }
-      }
-      if (size === 1) for (let i = 0; i < 42; i++) {
-        const x = (rand() - .5) * 85, z = (rand() - .5) * 85, y = seabedHeight(x, z);
-        const decoration = sceneryAsset(i % 3 === 0 ? 'reef_starfish' : 'reef_shell'); decoration.position.set(x, y + .03, z); decoration.rotation.y = rand() * Math.PI * 2; raw.add(decoration);
-      }
+    REEF_LAYERS.forEach((size, layer) => {
+      const raw = new T.Group(), reef = reefLayer(layer, seed);
+      for (const p of reef.plants) { const o = sceneryAsset(p.asset); o.scale.setScalar(p.scale); o.position.set(p.x, p.y, p.z); raw.add(o); }
+      for (const r of reef.rocks) { const o = sceneryAsset(r.asset); o.position.set(r.x, r.y, r.z); o.scale.set(r.sx, r.sy, r.sz); o.rotation.y = r.yaw; raw.add(o); }
+      for (const a of reef.arches) { const o = sceneryAsset('reef_arch'); o.position.set(a.x, a.y, a.z); o.scale.setScalar(a.scale); o.rotation.y = a.yaw; raw.add(o); }
+      for (const t of reef.trinkets) { const o = sceneryAsset(t.asset); o.position.set(t.x, t.y, t.z); o.rotation.y = t.yaw; raw.add(o); }
       // Small spatial batches let the camera discard reef sections behind it.
       // One enormous batch would draw the whole ocean for a phone-sized view.
       const chunks = new Map<string, T.Group>();
@@ -278,7 +270,7 @@ export class TideWorld {
   /** Rebuilds the world for a run. A new seed makes a new layout; evolution never rebuilds it. */
   build(stage: number, run: { seed: number; eatenPlanets: readonly number[]; genome?: Genome }) {
     if (run.seed !== this.eco.seed) {
-      this.disposeUniverse(); this.eco = new Ecosystem(run.seed); this.createUniverse(); this.buildReef(random(run.seed ^ 0x2f6b));
+      this.disposeUniverse(); this.eco = new Ecosystem(run.seed); this.createUniverse(); this.buildReef(run.seed);
     }
     this.eco.reset(run.eatenPlanets);
     this.stage = stage; this.scale = SIZES[stage]!; this.toScale = this.scale; this.fromScale = this.scale; this.transitioning = false; this.transitionProgress = 0;

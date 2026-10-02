@@ -45,6 +45,8 @@ export const GROWTH_LIFT_MAX = .5, GROWTH_LIFT_STEP = .005;
 /** After a growth rescale: a pose for the grown hull that keeps the motion. The position itself when the grown hull is admitted;
  *  else the smallest lift, in steps of GROWTH_LIFT_STEP × L up to GROWTH_LIFT_MAX × L, along the refusal's normal (the support
  *  normal on the seabed; +y when the refusal has no normal) that admits it, with the runtime's orientation and permit.
+ *  The search stops (null) at the first step refused by a different rule or a different solid than the first refusal, so the lift
+ *  never carries the body through a thin solid it meets on the way (owner playtest P4).
  *  `rt` is only read: velocities, orientation, permit and arc stay as they are. null → the caller recovers instead. */
 export function growthPose(actor: Actor, position: Vec3, rt: Pick<CombatRuntime, 'orientation' | 'permit'>, ctx: LegalityContext & { time: number }): Vec3 | null {
   const o = rt.orientation, actx = { time: ctx.time, permit: rt.permit, bounds: ctx.bounds };
@@ -53,7 +55,9 @@ export function growthPose(actor: Actor, position: Vec3, rt: Pick<CombatRuntime,
   const n = first.normal ?? { x: 0, y: 1, z: 0 }, step = GROWTH_LIFT_STEP * actor.bodyLength, steps = Math.round(GROWTH_LIFT_MAX / GROWTH_LIFT_STEP);
   for (let i = 1; i <= steps; i++) {
     const p = { x: position.x + n.x * step * i, y: position.y + n.y * step * i, z: position.z + n.z * step * i };
-    if (ctx.queries.overlapHull(actor, p, o, actx).ok) return p;
+    const a = ctx.queries.overlapHull(actor, p, o, actx);
+    if (a.ok) return p;
+    if (a.constraint !== first.constraint || a.solidId !== first.solidId) return null;
   }
   return null;
 }

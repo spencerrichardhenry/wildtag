@@ -78,8 +78,9 @@ export function spawnHeight(spec: Species, x: number, z: number, rand: () => num
     default: return ground + .15 * size;
   }
 }
-/** A physical position for one creature of a species, biased toward its biomes. */
-export function spawnPoint(spec: Species, biomes: readonly Biome[], rand: () => number, avoid?: { x: number; z: number; radius: number }) {
+/** A physical position for one creature of a species, biased toward its biomes. `blocked` (physical position) rejects a point, for
+ *  example one inside a reef solid (owner playtest P4); the last fallback is not checked (installation recovers it). */
+export function spawnPoint(spec: Species, biomes: readonly Biome[], rand: () => number, avoid?: { x: number; z: number; radius: number }, blocked?: (x: number, y: number, z: number) => boolean) {
   const size = SIZES[spec.tier]!, best = Math.max(1, ...biomes.map(b => b.weights[spec.kind] ?? 1));
   for (let attempt = 0; attempt < 60; attempt++) {
     const x = (rand() * 2 - 1) * SPAWN_HALF, z = (rand() * 2 - 1) * SPAWN_HALF;
@@ -87,19 +88,23 @@ export function spawnPoint(spec: Species, biomes: readonly Biome[], rand: () => 
     if (avoid && Math.hypot(x * size - avoid.x, z * size - avoid.z) < avoid.radius) continue;
     const weight = biomeAt(biomes, x, z).weights[spec.kind] ?? 1;
     if (attempt < 59 && rand() * best > weight) continue;
-    return { x: x * size, y: spawnHeight(spec, x * size, z * size, rand), z: z * size };
+    const y = spawnHeight(spec, x * size, z * size, rand);
+    if (blocked && blocked(x * size, y, z * size)) continue;
+    return { x: x * size, y, z: z * size };
   }
   return { x: SPAWN_HALF * size * .8, y: spawnHeight(spec, 0, 0, rand), z: 0 };
 }
 export interface Spawn { id: number; spec: Species; x: number; y: number; z: number; phase: number }
-/** The opening population of every tier. The ids are stable for a seed. */
-export function populate(seed: number): Spawn[] {
+/** The opening population of every tier. The ids are stable for a seed. A point that `blocked(tier, x, y, z)` rejects (a reef solid,
+ *  owner playtest P4) is replaced by a spawnPoint search with its own RNG, so every other spawn of the seed stays where it was. */
+export function populate(seed: number, blocked?: (tier: number, x: number, y: number, z: number) => boolean): Spawn[] {
   const out: Spawn[] = []; let id = 0;
   for (let tier = 0; tier < SIZES.length; tier++) {
-    const rand = random(seed * 7 + tier * 119 + 8721), biomes = makeBiomes(seed, tier);
+    const rand = random(seed * 7 + tier * 119 + 8721), biomes = makeBiomes(seed, tier), block = (x: number, y: number, z: number) => !!blocked?.(tier, x, y, z);
     const firsts = new Set<string>();
     for (const spec of tierSpecies(tier)) for (let i = 0; i < spec.count; i++) {
-      const point = spec.kind === 'planet' ? planetPoint(i, rand) : spawnPoint(spec, biomes, rand);
+      let point = spec.kind === 'planet' ? planetPoint(i, rand) : spawnPoint(spec, biomes, rand);
+      if (spec.kind !== 'planet' && block(point.x, point.y, point.z)) point = spawnPoint(spec, biomes, random(seed * 977 + id * 31 + 5), undefined, block);
       // A few landmarks are placed where the opening camera can see them.
       if (!firsts.has(spec.key)) {
         firsts.add(spec.key);

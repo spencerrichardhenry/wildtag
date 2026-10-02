@@ -11,7 +11,7 @@ import type { Diet } from './parts';
 import type { BodyPlan } from './plans';
 import { BREACH_RISE, breachPermit, movement, movementCapabilities } from './profiles';
 import { inReach, mealDna, dietCanEat, STAGES } from './state';
-import { hullExtents, makeTerrain, makeWorldQueries, supportHeight } from './world-queries';
+import { hullExtents, stageWorldQueries, supportHeight } from './world-queries';
 
 export type Traversal = { kind: 'none' } | { kind: 'active'; permit: TraversalPermit; now: number } | { kind: 'hypothetical-breach'; now: number };
 export interface FoodPoint { x: number; y: number; z: number; radius: number }
@@ -88,7 +88,7 @@ export function reachableFoodDna(plan: BodyPlan, diet: Diet, seed: number, opts:
   const actor = playerActor(plan, starter, size, 1), mode = movement(plan.movement).mode;
   const bite: BiteRule = { stage: size, growth: 1, reach: derive(effectiveStats(starter, plan)).reach };
   const ctx: LegalityContext & { traversal: Traversal } = {
-    queries: makeWorldQueries(makeTerrain(size)), bounds: { half: PLAYER_HALF * SIZES[size]! },
+    queries: stageWorldQueries(size, seed), bounds: { half: PLAYER_HALF * SIZES[size]! },
     traversal: caps.breach ? { kind: 'hypothetical-breach', now: 0 } : { kind: 'none' },
   };
   let total = 0;

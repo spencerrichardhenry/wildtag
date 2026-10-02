@@ -141,6 +141,7 @@ export function blockHint(plan: BodyPlan, contact: Contact): string {
     case 'bounds-x': case 'bounds-z': return EDGE_HINT;
     case 'bounds-y': return "That's as high as you can go for now.";
     case 'ground': return 'Something solid is in the way.';
+    case 'solid': return 'A rock is in the way.';
     case 'surface-top': return `${many} can't leave the water.`;
     case 'air': return `${many} can't fly.`;
     case 'land-band': return `${many} can't go on land.`;

@@ -20,7 +20,8 @@ import { basicRequested, readIntent, RELEASED } from './input';
 import { blockHint, stepPlayer } from './player-motion';
 import { beginRespawn, canChooseNextPlan, evolutionDestination, growthPose, reconcileAfterCommit, recoverPlayer, resetRuntime, resolveHazards, resolveRespawn } from './lifecycle';
 import { habitat, movement, movementCapabilities } from './profiles';
-import { admissionClock, makeTerrain, makeWorldQueries, supportHeight, zoneLabel } from './world-queries';
+import { admissionClock, stageWorldQueries, supportHeight, zoneLabel } from './world-queries';
+import { stageSolids } from './reef';
 import { orientHull } from './orientation';
 import { startAnchor } from './motion';
 import { bodyLengthOf, hullFitOf, hullOffsets, massFor, playerActor } from './mount';
@@ -124,14 +125,17 @@ function qaRejection(): SubmitOutcome | null {
   qaRejectSubmit = false; return { ok: false, reason: 'QA rejection' };
 }
 interface Legality { queries: WorldQueries; bounds: { half: number; maxY?: number } }
-const legalities = new Map<number, Legality>();
-/** The player's world queries and bounds for a stage (physical units). `maxY` replaces the old sky clamp. */
-function legality(stage: number): Legality {
-  let l = legalities.get(stage);
+const legalities = new Map<string, Legality>();
+/** The player's world queries (terrain and the run's reef solids) and bounds for a stage (physical units). `maxY` replaces the old
+ *  sky clamp. The world seed defaults to the current run's. */
+function legality(stage: number, seed = run.seed): Legality {
+  const key = `${seed}:${stage}`;
+  let l = legalities.get(key);
   if (!l) {
     const size = SIZES[stage]!;
-    l = { queries: makeWorldQueries(makeTerrain(stage)), bounds: { half: PLAYER_HALF * size, maxY: stage >= 3 ? 30 * size : undefined } };
-    legalities.set(stage, l);
+    l = { queries: stageWorldQueries(stage, seed), bounds: { half: PLAYER_HALF * size, maxY: stage >= 3 ? 30 * size : undefined } };
+    if (legalities.size >= 16) legalities.clear();
+    legalities.set(key, l);
   }
   return l;
 }
@@ -188,7 +192,7 @@ let sinceHit = 99, regenClock = 0, wrongDietClock = 0, readyToasted = false, las
 let rt = newRuntime();
 /** The player's authoritative physical position. The rendered root follows it every frame. */
 let physical: Vec3 = { x: 0, y: 0, z: 0 };
-let genomeRevision = 0, acceptedHits = 0, rejectedHits = 0, contactNow = false, lastContact: Constraint | null = null, edgeNow = false, edgeHinted = false;
+let genomeRevision = 0, acceptedHits = 0, rejectedHits = 0, contactNow = false, lastContact: Constraint | null = null, lastContactSolid: string | null = null, edgeNow = false, edgeHinted = false;
 const faintLog: { time: number; hadPermit: boolean; hadArc: boolean }[] = [];
 let dialogReturn: 'menu' | 'playing' | 'paused' = 'menu';
 const modal = el<HTMLDialogElement>('modal');
@@ -404,7 +408,7 @@ function begin(fresh = false) {
   refreshDerived(); run.health = Math.min(run.health, derived.maxHealth);
   world.build(run.stage, run); el('evolution-banner').hidden = true; el('faint').hidden = true; mode = 'playing'; clearInput(); cooldown = 0; sinceHit = 99; readyToasted = evolveReady(run); lastBiome = '';
   // A fresh runtime for every new run or load. The start grace lives in the runtime.
-  rt = newRuntime(); genomeRevision++; hintClock = 0; contactNow = false; lastContact = null; edgeNow = false; edgeHinted = false; startGracePending = false;
+  rt = newRuntime(); genomeRevision++; hintClock = 0; contactNow = false; lastContact = null; lastContactSolid = null; edgeNow = false; edgeHinted = false; startGracePending = false;
   faintLog.length = 0; acceptedHits = 0; rejectedHits = 0;
   el('home').hidden = true; el('game-ui').hidden = false; el('pause').hidden = false; el('edit').hidden = false; el('corner-note').hidden = true; el('mode-label').textContent = 'NIBBLE. GROW. REPEAT.';
   document.body.classList.add('is-playing'); toast(STAGES[run.stage]!.description);
@@ -736,7 +740,7 @@ function frame(now: number) {
     else if (!recover(actor, time + dt, r.position)) { rt.orientation = poseBefore; enterStuck(); }
     const contact = r.contacts[0];
     contactNow = !!contact;
-    if (contact) { lastContact = contact.constraint; if (hintClock <= 0) { toast(blockHint(plan, contact)); hintClock = 6; } }
+    if (contact) { lastContact = contact.constraint; lastContactSolid = contact.solidId ?? null; if (hintClock <= 0) { toast(blockHint(plan, contact)); hintClock = 6; } }
     // The soft edge: the edge hint shows once per entry into the push zone, rate-limited with the block hints, and
     // only when no other toast is on screen (so a one-shot message is never replaced).
     edgeNow = inEdgeZone(physical, legal.bounds.half);
@@ -794,6 +798,16 @@ function frame(now: number) {
 }
 /** Read-only: the player's zone at its physical position. */
 function zoneNow() { return zoneLabel(legality(run.stage).queries.sampleEnvironment(physical), bodyLengthOf(run.genome) * SIZES[run.stage]! * growthOf(run)); }
+/** Read-only: the reef solids of the current stage nearest the player (QA), in stage-local units: the bounds centre, the horizontal
+ *  half extent, the top and bottom, the seabed under the centre and a rock's smallest horizontal semi-axis. */
+function solidsNear(count = 8) {
+  const size = SIZES[run.stage]!, p = physical;
+  return stageSolids(run.stage, run.seed).solids.map(s => ({ id: s.id, kind: s.kind, x: (s.minX + s.maxX) / 2 / size, z: (s.minZ + s.maxZ) / 2 / size,
+    half: Math.max(s.maxX - s.minX, s.maxZ - s.minZ) / 2 / size, top: s.maxY / size, bottom: s.minY / size, ground: world.groundAt((s.minX + s.maxX) / 2 / size, (s.minZ + s.maxZ) / 2 / size),
+    // A rock's smallest horizontal semi-axis: a centre closer than this to the rock's centre is inside it.
+    inner: s.shapes[0]!.kind === 'ellipsoid' ? Math.min(s.shapes[0]!.a, s.shapes[0]!.c) / size : 0,
+    distance: Math.hypot((s.minX + s.maxX) / 2 - p.x, (s.minZ + s.maxZ) / 2 - p.z) / size })).sort((a, b) => a.distance - b.distance).slice(0, count);
+}
 /** Read-only: relevant-tier entities with a contact hazard, in local units. */
 function hazardSources() {
   return world.eco.entities.filter(e => e.active && !e.eaten && e.spec.contactHazardId).map(e => ({ id: e.id, key: e.spec.key, x: e.x / world.scale, y: e.y / world.scale, z: e.z / world.scale, mode: e.mode }));
@@ -830,7 +844,7 @@ if (QA) {
   Object.defineProperty(window, '__tinyTide', { get: () => ({ mode,
     plan: currentPlan(run).id, plans: [...run.plans], zone: zoneNow(), velocity: copy(rt.controlledVelocity), externalVelocity: copy(rt.externalVelocity),
     orientation: { ...rt.orientation }, permit: rt.permit ? { ...rt.permit } : null, arc: rt.arc ? { ...rt.arc } : null, breachReadyAt: rt.breachReadyAt, invulnerableUntil: rt.invulnerableUntil,
-    pendingRespawn: run.pendingRespawn, caps: capsOf(), physical: copy(physical), legal: mode === 'menu' ? null : admitted(playerActor(currentPlan(run), run.genome, run.stage, growthOf(run))), contactNow, lastContact: lastContact === null ? null : `${lastContact}`, edge: { inZone: edgeNow, hinted: edgeHinted, half: PLAYER_HALF, softStart: EDGE_SOFT_START * PLAYER_HALF }, hazardSources: hazardSources(), growth: growthOf(run), acceptedHits, rejectedHits,
+    pendingRespawn: run.pendingRespawn, caps: capsOf(), physical: copy(physical), legal: mode === 'menu' ? null : admitted(playerActor(currentPlan(run), run.genome, run.stage, growthOf(run))), contactNow, lastContact: lastContact === null ? null : `${lastContact}`, lastContactSolid, solidsNear: mode === 'menu' ? [] : solidsNear(), edge: { inZone: edgeNow, hinted: edgeHinted, half: PLAYER_HALF, softStart: EDGE_SOFT_START * PLAYER_HALF }, hazardSources: hazardSources(), growth: growthOf(run), acceptedHits, rejectedHits,
     faintLog: faintLog.map(f => ({ ...f })), stage: run.stage, dna: dnaOf(run), stageDna: run.stageDna, goal: STAGES[run.stage]!.goal, health: run.health, maxHealth: derived.maxHealth, deaths: run.deaths, diet: dietOf(run.genome), genome: structuredClone(run.genome), name: run.name, unlocked: [...run.unlocked], evolveReady: evolveReady(run), bites: run.bites, totalDna: run.totalDna, elapsed: run.elapsed, completed: run.completed, eatenPlanets: [...run.eatenPlanets], player: { x: world.player.position.x, y: world.player.position.y, z: world.player.position.z }, foods: world.edibleFoods.map(f => ({ ...f.data, tag: f.entity.spec.tag, label: f.entity.spec.label, mode: f.entity.mode, hp: f.entity.hp, approachable: approachable(f.entity) })), threats: world.threats.map(f => ({ ...f.data, label: f.entity.spec.label, mode: f.entity.mode })), landmarks: world.foods.filter(f => f.model.visible && f.tier > run.stage).map(f => ({ tier: f.tier, kind: f.data.kind, x: f.data.x, y: f.data.y, z: f.data.z })), world: world.diagnostics, assets: assetDiagnostics(), saveKey: writeKey, loadedKey, time, holdingStart, editorProjection, poseAgreement, admission: admissionStats.map(a => ({ frames: a.frames, msPerFrame: a.frames ? a.ms / a.frames : 0, callsPerFrame: a.frames ? a.calls / a.frames : 0, worstMs: a.worst })), render: { calls: world.renderer.info.render.calls, triangles: world.renderer.info.render.triangles, geometries: world.renderer.info.memory.geometries } }) });
 }
 requestAnimationFrame(frame);

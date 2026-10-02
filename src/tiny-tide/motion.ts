@@ -100,7 +100,9 @@ export function resolveMotion(req: MotionRequest, ctx: LegalityContext & { actor
       let n: Vec3;
       if (failed.normal) n = { x: failed.normal.x, y: failed.normal.y, z: failed.normal.z };
       else n = { x: -vx / vLen, y: -vy / vLen, z: -vz / vLen };   // −step/|step|; the step is V/N
-      contacts.push({ point: { x: P.x, y: P.y, z: P.z }, normal: n, constraint: failed.constraint!, distanceFraction: dLen > 0 ? travelled / dLen : 0, time: t });
+      const contact: Contact = { point: { x: P.x, y: P.y, z: P.z }, normal: n, constraint: failed.constraint!, distanceFraction: dLen > 0 ? travelled / dLen : 0, time: t };
+      if (failed.solidId !== undefined) contact.solidId = failed.solidId;
+      contacts.push(contact);
 
       const stuck = k === 1 && f === 0;   // this leg did not move the body
       if (stuck && skinned && skinFace && dot3(n, skinFace) > 1 - 1e-6) {

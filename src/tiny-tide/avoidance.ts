@@ -12,8 +12,9 @@ import { orientHull } from './orientation';
 import { plan as planById, type BodyPlan } from './plans';
 import { movement, movementCapabilities } from './profiles';
 import { stepPlayer } from './player-motion';
+import { EDGE_SOFT_START } from './edge';
 import { STAGES } from './state';
-import { makeTerrain, makeWorldQueries, supportHeight } from './world-queries';
+import { stageWorldQueries, supportHeight } from './world-queries';
 
 export interface Encounter { seed: number; entityId: number; hunterKey: string; planId: string; start: Vec3; hunterStart: Vec3; separation: number }
 export interface EscapeResult { ok: boolean; reason: 'gave-up' | 'no-hit' | 'hit' | 'not-acquired' | 'stuck'; seconds: number }
@@ -22,14 +23,14 @@ const DT = 1 / 60, ESCAPE_SECONDS = 8;
 const DEFAULT_SEEDS = Array.from({ length: 40 }, (_, i) => i + 1);
 
 interface Legality { queries: WorldQueries; bounds: { half: number; maxY?: number } }
-const legalities = new Map<number, Legality>();
-/** The player's world queries and bounds for a stage, as in the game (main.ts `legality`). */
-function legality(stage: number): Legality {
-  let l = legalities.get(stage);
+const legalities = new Map<string, Legality>();
+/** The player's world queries (with the seed's reef solids) and bounds for a stage, as in the game (main.ts `legality`). */
+function legality(stage: number, seed: number): Legality {
+  let l = legalities.get(`${seed}:${stage}`);
   if (!l) {
     const size = SIZES[stage]!;
-    l = { queries: makeWorldQueries(makeTerrain(stage)), bounds: { half: PLAYER_HALF * size, maxY: stage >= 3 ? 30 * size : undefined } };
-    legalities.set(stage, l);
+    l = { queries: stageWorldQueries(stage, seed), bounds: { half: PLAYER_HALF * size, maxY: stage >= 3 ? 30 * size : undefined } };
+    legalities.set(`${seed}:${stage}`, l);
   }
   return l;
 }
@@ -56,10 +57,19 @@ function acquires(eco: Ecosystem, hunter: Entity, pl: Player, start: Vec3, o: Or
   return hunter.mode === 'hunt' && !hunterEvent(events, hunter);
 }
 
+/** An encounter starts outside the edge's push zone (edge.ts, owner playtest P2): the whole hull is inside the soft start. The reef
+ *  solids (owner playtest P4) move some starts, and a start already in the current is not a fair open-water escape. */
+function insideSoftEdge(actor: Actor, start: Vec3, half: number): boolean {
+  let reach = 0;
+  for (const c of actor.hull) reach = Math.max(reach, Math.hypot(c.start.x, c.start.z) + c.radius + (c.sway ?? 0), Math.hypot(c.end.x, c.end.z) + c.radius + (c.sway ?? 0));
+  return Math.max(Math.abs(start.x), Math.abs(start.z)) + reach <= EDGE_SOFT_START * half;
+}
+
 /** Fixture construction (G4-3, R4-08): encounters where a fresh hunter of `hunterKey` acquires a fresh starter of `planId`. */
 export function findEncounters(planId: string, hunterKey: string, count: number, seeds: readonly number[] = DEFAULT_SEEDS): Encounter[] {
-  const pl = playerFor(planId), stage = pl.plan.size, legal = legality(stage), L = pl.actor.bodyLength, out: Encounter[] = [];
+  const pl = playerFor(planId), stage = pl.plan.size, L = pl.actor.bodyLength, out: Encounter[] = [];
   for (const seed of seeds) {
+    const legal = legality(stage, seed);
     // A fresh, never stepped ecosystem: its hunters stand where every fresh ecosystem of this seed has them.
     const layout = new Ecosystem(seed);
     for (const h of layout.entities) {
@@ -75,6 +85,7 @@ export function findEncounters(planId: string, hunterKey: string, count: number,
         const start = rec.position, ro = rec.orientation;
         if (distance(start, hunter) > n) continue;
         if (touches(hunter, entityRadius(h), worldHull(pl.actor, start, ro))) continue;
+        if (!insideSoftEdge(pl.actor, start, legal.bounds.half)) continue;
         // Each candidate is judged on its own fresh ecosystem.
         const eco = new Ecosystem(seed), fresh = eco.entities.find(e => e.id === h.id)!;
         if (!acquires(eco, fresh, pl, start, ro)) continue;
@@ -88,7 +99,7 @@ export function findEncounters(planId: string, hunterKey: string, count: number,
 
 /** Runs straight away from the hunter for eight seconds with the real player step and the real hunter rules. */
 export function simulateEscape(e: Encounter, hunter: { speedScale?: number; policy?: PursuitPolicy } = {}): EscapeResult {
-  const pl = playerFor(e.planId), p = pl.plan, stage = p.size, size = SIZES[stage]!, legal = legality(stage), actor = pl.actor;
+  const pl = playerFor(e.planId), p = pl.plan, stage = p.size, size = SIZES[stage]!, legal = legality(stage, e.seed), actor = pl.actor;
   const caps = movementCapabilities(p), profile = movement(p.movement), t = legal.queries.terrain, L = actor.bodyLength;
   const policy = hunter.policy;
   const eco = new Ecosystem(e.seed, policy ? { pursuitFor: x => x.id === e.entityId ? policy : undefined } : {});

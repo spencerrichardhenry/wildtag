@@ -46,10 +46,11 @@ export type HullFit = 'conservative' | 'tight';
 export interface Actor { id: ActorId; hull: readonly Capsule[]; habitat: HabitatProfile; bodyLength: number; fit?: HullFit }   // hull in body space, physical scale, not oriented
 /** slopeBound bounds |∇groundAt|; curvatureBound (default 0, for planar terrains) bounds the spectral norm of its Hessian. */
 export interface Terrain { groundAt(x: number, z: number): number; surface: number; space: boolean; slopeBound: number; curvatureBound?: number }
-export type Constraint = 'ground' | 'surface-top' | 'floor-gap' | 'depth' | 'water' | 'land-band' | 'air' | 'space' | 'bounds-x' | 'bounds-z' | 'bounds-y' | 'refuge';
+export type Constraint = 'ground' | 'surface-top' | 'floor-gap' | 'depth' | 'water' | 'land-band' | 'air' | 'space' | 'bounds-x' | 'bounds-z' | 'bounds-y' | 'refuge' | 'solid';
 export interface AdmissionContext { time: number; permit?: TraversalPermit | null; bounds?: { half: number; maxY?: number } }
-/** On failure, `normal` is the unit direction back into the admitted region at `point` (motion uses it for contacts). */
-export interface Admission { ok: boolean; constraint: Constraint | null; point: Vec3 | null; normal: Vec3 | null }
+/** On failure, `normal` is the unit direction back into the admitted region at `point` (motion uses it for contacts).
+ *  `solidId`: the decoration solid (reef.ts) of a 'solid' refusal. */
+export interface Admission { ok: boolean; constraint: Constraint | null; point: Vec3 | null; normal: Vec3 | null; solidId?: string }
 export interface WorldQueries {
   terrain: Terrain;
   sampleEnvironment(p: Vec3): EnvironmentSample;
@@ -62,7 +63,7 @@ export interface WorldQueries {
 export interface LegalityContext { queries: WorldQueries; bounds?: { half: number; maxY?: number } }
 export interface MotionRequest { actorId: ActorId; from: Vec3; displacement: Vec3; orientation: Orientation; turn?: Orientation; hull: readonly Capsule[]; habitatProfileId: string;
   cause: 'locomotion' | 'dash' | 'knockback' | 'recovery'; traversalPermit?: TraversalPermit | null }
-export interface Contact { point: Vec3; normal: Vec3; constraint: Constraint; distanceFraction: number; time: number }
+export interface Contact { point: Vec3; normal: Vec3; constraint: Constraint; distanceFraction: number; time: number; solidId?: string }
 export interface MotionResult { status: 'moved' | 'blocked' | 'clamped' | 'invalid-start' | 'needs-recovery'; position: Vec3; orientation: Orientation; contacts: readonly Contact[]; unconsumed: Vec3; time: number }
 export type RecoveryResult = { ok: true; position: Vec3; orientation: Orientation } | { ok: false; reason: string };
 export interface ActionState { instanceId: string; definitionId: string; grantId: string; source: EmitterSource; phase: 'windup' | 'active' | 'recovery' | 'interrupted'; startedAt: number; aim: Vec3; committedPose: CombatPose | null; hitCounts: Map<string, number>; lastHitAt: Map<string, number> }

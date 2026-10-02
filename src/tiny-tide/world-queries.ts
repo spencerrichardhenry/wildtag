@@ -7,6 +7,8 @@ import { seabedHeight, WATER_LEVEL } from './biomes';
 import type { Actor, Admission, AdmissionContext, Capsule, Constraint, EnvironmentSample, MutVec3, Orientation, Terrain, Vec3, WorldQueries } from './combat-types';
 import { orientedHeave, orientedSway, rotateInto } from './orientation';
 import { LAND_BAND } from './profiles';
+import { stageSolids } from './reef';
+import { newContact, type SolidIndex } from './solids';
 
 /** Bounds |∇ seabedHeight|: 2.4 × (.075 + .055) + 4.5 × .018 × √2 + 13 × (.006 + .009) = .6216, rounded up. */
 export const SEABED_SLOPE_BOUND = .63;
@@ -24,6 +26,8 @@ export interface WorldExtras {
   /** Must answer for the whole posed hull (exact or conservative volume test). */
   refugeOverlap?: (world: readonly Capsule[]) => { id: string; normal: Vec3 } | null;
   refugeAccess?: (actor: Actor, id: string) => boolean;
+  /** Decoration solids (rocks and arches, reef.ts): admission refuses a hull that enters one ('solid'). */
+  solids?: SolidIndex;
 }
 
 /** QA timing of every overlapHull call made through makeWorldQueries: main.ts turns it on in QA builds and reads and resets it
@@ -45,6 +49,12 @@ export function makeWorldQueries(t: Terrain, extras: WorldExtras = {}): WorldQue
     refugeAccess: (actor, id) => extras.refugeAccess ? extras.refugeAccess(actor, id) : true,
     overlapHull: (actor, at, o, ctx) => admissionClock.on ? timedAdmit(actor, at, o, ctx, t, extras) : admit(actor, at, o, ctx, t, extras),
   };
+}
+
+/** The world queries of a stage for a world seed: its terrain and the reef solids its bodies collide with (reef.ts `stageSolids`).
+ *  Every gameplay user (player, ecosystem, food access, avoidance, fixtures) builds its queries here. */
+export function stageWorldQueries(stage: number, seed: number, extras: Omit<WorldExtras, 'solids'> = {}): WorldQueries {
+  return makeWorldQueries(makeTerrain(stage), { ...extras, solids: stageSolids(stage, seed) });
 }
 
 // ---- terrain helpers ----
@@ -207,9 +217,11 @@ function tightPoint(i: number, j: number, known: number): void {
 // ---- admission ----
 
 const vec = (x: number, y: number, z: number): Vec3 => ({ x, y, z });
+/** Scratch contact of the solid rule. */
+const solidContact = newContact();
 const fail = (constraint: Constraint, point: Vec3, normal: Vec3 | null): Admission => ({ ok: false, constraint, point, normal });
 
-/** The body of overlapHull: the first failing rule, in the order bounds, ground, media, refuge. */
+/** The body of overlapHull: the first failing rule, in the order bounds, ground, solids, media, refuge. */
 export function admit(actor: Actor, at: Vec3, o: Orientation, ctx: AdmissionContext, t: Terrain, extras: WorldExtras = {}): Admission {
   const hab = actor.habitat, L = actor.bodyLength;
   if (hab.isStaticProp) return { ok: true, constraint: null, point: null, normal: null };
@@ -249,6 +261,26 @@ export function admit(actor: Actor, at: Vec3, o: Orientation, ctx: AdmissionCont
       if (scan.short > worst) { worst = scan.short; wx = scan.gx; wy = scan.gy; wz = scan.gz; }
     }
     if (worst > 0) return fail('ground', { x: wx, y: wy, z: wz }, terrainNormal(t, wx, wz));
+  }
+
+  // 3b. Decoration solids, against every sample sphere grown by its whole envelope (skipped in space, which has none). The deepest
+  //     contact gives the point (on the solid) and the normal (out of it).
+  const solids = extras.solids;
+  if (solids && count > 0 && solids.solids.length > 0) {
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, minZ = Infinity, maxZ = -Infinity;
+    for (let s = 0; s < count; s++) {
+      const i = s * STRIDE, R = spheres[i + 3]! + Math.max(spheres[i + 4]!, spheres[i + 5]!), x = at.x + spheres[i]!, y = at.y + spheres[i + 1]!, z = at.z + spheres[i + 2]!;
+      minX = Math.min(minX, x - R); maxX = Math.max(maxX, x + R); minY = Math.min(minY, y - R); maxY = Math.max(maxY, y + R); minZ = Math.min(minZ, z - R); maxZ = Math.max(maxZ, z + R);
+    }
+    if (solids.gather(minX, maxX, minY, maxY, minZ, maxZ) > 0) {
+      const c = solidContact; c.depth = 0;
+      let hit = false;
+      for (let s = 0; s < count; s++) {
+        const i = s * STRIDE;
+        if (solids.sphere(at.x + spheres[i]!, at.y + spheres[i + 1]!, at.z + spheres[i + 2]!, spheres[i + 3]! + Math.max(spheres[i + 4]!, spheres[i + 5]!), c)) hit = true;
+      }
+      if (hit) return { ok: false, constraint: 'solid', point: vec(c.px, c.py, c.pz), normal: vec(c.nx, c.ny, c.nz), solidId: c.id };
+    }
   }
 
   // 4. Body floor gap, from the lowest sample sphere.
