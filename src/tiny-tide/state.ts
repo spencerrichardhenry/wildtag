@@ -316,18 +316,18 @@ function migrate(old: LegacyRunV2): { run: Run; notes: string[] } {
   return { run, notes };
 }
 /** Reads any save. Null means no save or unreadable data. */
-export function parseSaveWithNotes(raw: string | null, build: Build): Loaded | null {
+export function parseSaveWithNotes(raw: string | null, build: Build, catalog: readonly PartSpec[] = PARTS): Loaded | null {
   if (!raw) return null;
   let v: unknown; try { v = JSON.parse(raw); } catch { return null; }
   if (!isObject(v)) return null;
   if (v.version === 4) {
     const run = readV4(v); if (!run) return null;
-    const issues = validateRun(run, build);
+    const issues = validateRun(run, build, catalog);
     if (issues.length === 1 && issues[0] === 'needs coast') return { status: 'kept', message: COAST_KEPT };
     return issues.length ? null : { status: 'ok', run, notes: run.notices };
   }
   const old = v.version === 2 ? readLegacyV2(v) : v.version === undefined ? readLegacyV1(v) : null; if (!old) return null;
-  try { const { run, notes } = migrate(old); return validateRun(run, build).length ? null : { status: 'ok', run, notes }; } catch { return null; }
+  try { const { run, notes } = migrate(old); return validateRun(run, build, catalog).length ? null : { status: 'ok', run, notes }; } catch { return null; }
 }
 /** The run from a save, or null (tests). */
 export function parseSave(raw: string | null, build: Build = { coast: false }): Run | null {

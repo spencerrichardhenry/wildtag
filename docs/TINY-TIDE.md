@@ -87,10 +87,33 @@ and time. A fresh adventure replaces the save and makes a new world.
 npm run build
 npm test -- --run tests/tiny-tide.test.ts
 python3 scripts/tiny-tide/blender/check_assets.py
-node e2e/tiny-tide.mjs
+node e2e/tiny-tide.mjs                     # swimmer line; TIDE_LINE=crawler for the crawler line
+node e2e/tiny-tide-paths.mjs               # 18 checks; pass check ids (for example 3 7b) to run some
 node e2e/tiny-tide-mobile.mjs
 node e2e/tiny-tide-replay.mjs
 ```
+
+The browser tests need the dev server (`npm run dev`, port 5199). Their save
+fixtures come from the development-only page `tests-browser/fixtures.html`,
+which builds runs with the game's own modules (`makeFixture(spec)`) and finds
+hazard encounters (`pickHazard(spec)`). The tests write a fixture into
+`localStorage` before they open the game.
+
+QA-only URL parameters work in development or with `?qa`. The game reads each
+one once, at load. None of them changes a running game from outside.
+
+| Parameter | Effect |
+| --- | --- |
+| `qaStartGrace=0` | No start grace (no invulnerability at the start of a run or load). |
+| `forcedSpawn=x,y,z` | The first start of the page load searches from this stage-local point instead of the start anchor. The spawn is still recovered to a legal pose. A pending respawn ignores it. |
+| `qaRejectSubmit=1` | The first editor submit returns the failure "QA rejection". |
+| `qaHoldStart=1` | After the first start, the simulation and the game clock stay still until the first key or pointer press in play. |
+| `qaGrantCatalog=1` | The Pincer gets one synthetic active grant (`src/tiny-tide/qa-catalog.ts`). Saves that bind it load, and the editor shows the abilities a design would lose. |
+
+Read-only diagnostics on `window.__tinyTide` include `editorProjection(target)`
+(the screen point of a visible part, by uid, or of a body point `{ t, angle }`
+in the open editor) and `poseAgreement()` (rendered socket transforms against
+`sampleCombatPose`).
 
 The unit tests cover parts, genomes, stats, diets, DNA, evolution, health,
 seeded worlds, creature behavior (hunting, fleeing, provoking, stealth,

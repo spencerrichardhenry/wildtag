@@ -27,6 +27,12 @@ import { designDelta } from './design-delta';
 import { TideAudio } from './audio';
 import { TideWorld, type FoodObject } from './world';
 import { loadAssets, assetDiagnostics } from './assets';
+import { editorProjection } from './editor';
+import { QA_GRANT_CATALOG } from './qa-catalog';
+import { PARTS } from './parts';
+import { emittersOf } from './design-delta';
+import { restPivotToPart } from './rig';
+import { sampleCombatPose } from './mount';
 
 const svg = (body: string, cls = '') => `<svg class="${cls}" viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
 const species = [
@@ -90,8 +96,29 @@ catch {
 }
 const SAVE_KEY = 'tiny-tide-adventure-v4';
 const QA = import.meta.env.DEV || new URLSearchParams(location.search).has('qa');
-/** QA only, read once at load: `?qaStartGrace=0` removes the start grace. */
-const START_GRACE = QA && new URLSearchParams(location.search).get('qaStartGrace') === '0' ? 0 : 2;
+// QA-only URL parameters (development or `?qa`). Each is read once here, at load. None changes a running game from outside.
+const qaParams = new URLSearchParams(QA ? location.search : '');
+/** `?qaStartGrace=0` removes the start grace. */
+const START_GRACE = qaParams.get('qaStartGrace') === '0' ? 0 : 2;
+/** `?forcedSpawn=x,y,z` (stage-local units): the first start of this page load searches for a legal pose from there instead of the
+ *  start anchor. The spawn is still recovered to a legal pose (else the start anchor is used). A pending respawn ignores it. */
+let forcedSpawn: Vec3 | null = (() => {
+  const v = qaParams.get('forcedSpawn')?.split(',').map(Number);
+  return v && v.length === 3 && v.every(Number.isFinite) ? { x: v[0]!, y: v[1]!, z: v[2]! } : null;
+})();
+/** `?qaRejectSubmit=1`: the first editor submit (edit or evolve) of this page load returns `{ ok: false, reason: 'QA rejection' }`. */
+let qaRejectSubmit = qaParams.get('qaRejectSubmit') === '1';
+/** `?qaHoldStart=1`: after the first start, the simulation (player, ecosystem, game clock) does not advance until the first
+ *  real key or pointer press in play. */
+let qaHoldStart = qaParams.get('qaHoldStart') === '1';
+/** `?qaGrantCatalog=1`: the part catalog gets one synthetic active grant on the Pincer (qa-catalog.ts), so saves that bind it load
+ *  and the editor's lost-abilities preview can be seen. */
+const CATALOG = qaParams.get('qaGrantCatalog') === '1' ? QA_GRANT_CATALOG : PARTS;
+/** The first QA rejection, if `?qaRejectSubmit=1` asked for one. */
+function qaRejection(): SubmitOutcome | null {
+  if (!qaRejectSubmit) return null;
+  qaRejectSubmit = false; return { ok: false, reason: 'QA rejection' };
+}
 interface Legality { queries: WorldQueries; bounds: { half: number; maxY?: number } }
 const legalities = new Map<number, Legality>();
 /** The player's world queries and bounds for a stage (physical units). `maxY` replaces the old sky clamp. */
@@ -125,7 +152,7 @@ try {
   for (const key of V4_KEYS) {
     const raw = localStorage.getItem(key); if (raw === null) continue;
     present.add(key);
-    const loaded = parseSaveWithNotes(raw, BUILD);
+    const loaded = parseSaveWithNotes(raw, BUILD, CATALOG);
     if (loaded?.status === 'kept') { keptMessage ??= loaded.message; blocked.add(key); }
     else if (loaded?.status === 'ok') { if (!loadedKey) { saved = loaded.run; loadedKey = key; } }
     else blocked.add(key);   // Unreadable: keep the bytes, they may be recoverable.
@@ -133,7 +160,7 @@ try {
   // A v4 key that exists but cannot load never falls back to an older legacy run.
   if (present.size === 0) {
     for (const key of LEGACY_KEYS) {
-      const loaded = parseSaveWithNotes(localStorage.getItem(key), BUILD);
+      const loaded = parseSaveWithNotes(localStorage.getItem(key), BUILD, CATALOG);
       if (loaded?.status === 'ok') { saved = loaded.run; loadedKey = key; break; }
     }
   }
@@ -305,7 +332,9 @@ function viewOriginal() {
   const original = saved?.archive[0]; if (!original) return;
   const paint = original.genome.paint, swatch = (label: string, color: string) => `<span class="paint-swatch"><i style="background:${escapeHtml(color)}"></i>${label}</span>`;
   dialogReturn = 'menu';
-  showDialog(`<img class="archive-preview" width="160" height="160" alt="${escapeHtml(original.name)} preview" src="${renderPreview(original.genome, 160)}"><div class="eyebrow">YOUR ORIGINAL DESIGN</div><h2 id="modal-title">${escapeHtml(original.name)}</h2><p>${escapeHtml(original.reason)}</p><div class="archive-paint">${swatch('Base', paint.base)}${swatch('Belly', paint.belly)}${swatch('Accent', paint.accent)}<span class="paint-swatch">${escapeHtml(paint.pattern)}</span></div><button id="copy-design" class="primary">Copy design</button><button id="close-original" class="text-button">Close</button>`);
+  // A WebGL failure in the preview still opens the archive (without the picture).
+  let preview = ''; try { preview = renderPreview(original.genome, 160); } catch { /* no preview */ }
+  showDialog(`${preview ? `<img class="archive-preview" width="160" height="160" alt="${escapeHtml(original.name)} preview" src="${preview}">` : ''}<div class="eyebrow">YOUR ORIGINAL DESIGN</div><h2 id="modal-title">${escapeHtml(original.name)}</h2><p>${escapeHtml(original.reason)}</p><div class="archive-paint">${swatch('Base', paint.base)}${swatch('Belly', paint.belly)}${swatch('Accent', paint.accent)}<span class="paint-swatch">${escapeHtml(paint.pattern)}</span></div><button id="copy-design" class="primary">Copy design</button><button id="close-original" class="text-button">Close</button>`);
   el('close-original').onclick = closeDialog;
   el('copy-design').onclick = async () => {
     const button = el('copy-design');
@@ -372,12 +401,20 @@ function begin(fresh = false) {
     // A save made during a faint resolves once, before play starts.
     if (!tryRespawn()) { mode = 'fainted'; respawnClock = 1; respawnToasted = false; el('faint').hidden = false; }
   } else {
-    const anchor = anchorFor(actor);
-    if (anchor.ok) { rt = newRuntime(anchor.orientation); installPose(anchor, actor, true); applyStartGrace(); }
+    const anchor = anchorFor(actor), forced = forcedSpawn; forcedSpawn = null;
+    // QA: a forced spawn is recovered to a legal pose like any other; without one it falls back to the anchor.
+    const start: RecoveryResult = forced && anchor.ok ? recoverPlayer(actor, { x: forced.x * SIZES[run.stage]!, y: forced.y * SIZES[run.stage]!, z: forced.z * SIZES[run.stage]! }, anchor.orientation,
+      { ...legality(run.stage), time }, anchor, 20 * actor.bodyLength) : anchor;
+    if (start.ok) { rt = newRuntime(start.orientation); installPose(start, actor, true); applyStartGrace(); }
     else { enterStuck(); startGracePending = true; }
   }
   syncUI(); save();
+  if (qaHoldStart) { qaHoldStart = false; holdingStart = true; }
 }
+/** QA (`?qaHoldStart=1`): true from the first start until the first real key or pointer press in play. */
+let holdingStart = false;
+addEventListener('keydown', () => { if (mode === 'playing') holdingStart = false; }, { capture: true });
+addEventListener('pointerdown', () => { if (mode === 'playing') holdingStart = false; }, { capture: true });
 function showDialog(content: string, closable = true) { clearInput(); el('modal-content').innerHTML = content; el('close-modal').hidden = !closable; if (!modal.open) modal.showModal(); }
 function closeDialog() { modal.close(); if (mode === 'paused') mode = dialogReturn === 'playing' ? 'playing' : 'menu'; clearInput(); syncUI(); }
 function pause() {
@@ -420,18 +457,18 @@ async function chooseEvolution() {
     // The diet is free while evolving; the ledger prices the draft against the committed design.
     const result = await openEditor({ genome: a.ok ? a.genome : run.genome, original: run.genome, changes: a.ok ? a.changes : [], name: run.name, plan: chosen.plan, unlocked: run.unlocked,
       economy: run.economy, mode: 'evolve', nextSerial: Math.max(run.nextPartSerial, a.ok ? a.nextSerial : 0), build: BUILD, loadout: run.loadout,
-      onSubmit: async r => submitEvolution(chosen.plan, r) });
+      onSubmit: async r => qaRejection() ?? submitEvolution(chosen.plan, r), catalog: CATALOG });
     if (result) return;
   }
 }
 /** Prepares, places and commits an evolution with no await in between (Prepared's economy is trusted at commit). */
 function submitEvolution(next: BodyPlan, r: EditorResult): SubmitOutcome {
-  const prepared = prepareEvolution(run, next.id, r.genome, r.name, BUILD, r.nextSerial);
+  const prepared = prepareEvolution(run, next.id, r.genome, r.name, BUILD, r.nextSerial, CATALOG);
   if (!('planId' in prepared)) return { ok: false, reason: prepared.reason };
   const nextActor = playerActor(next, prepared.genome, next.size, 1), nextLegality = legality(next.size), anchor = startAnchor(nextActor, next.size, nextLegality);
   const destination = evolutionDestination(nextActor, physical, { ...nextLegality, orientation: { yaw: rt.orientation.yaw, pitch: 0 }, time }, anchor.ok ? anchor.position : physical);
   if (!destination.ok) return { ok: false, reason: "This body can't fit anywhere here." };
-  commitEvolution(run, prepared); resetRuntime(rt, destination.orientation); genomeRevision++; refreshDerived();
+  commitEvolution(run, prepared, CATALOG); resetRuntime(rt, destination.orientation); genomeRevision++; refreshDerived();
   physical = { ...destination.position }; startTransformation(destination.position);
   return { ok: true };
 }
@@ -439,13 +476,14 @@ function submitEvolution(next: BodyPlan, r: EditorResult): SubmitOutcome {
 async function editDesign() {
   let committed = false;
   await openEditor({ genome: run.genome, original: run.genome, changes: [], name: run.name, plan: currentPlan(run), unlocked: run.unlocked, economy: run.economy, mode: 'edit',
-    diet: run.diet, nextSerial: run.nextPartSerial, build: BUILD, loadout: run.loadout,
+    diet: run.diet, nextSerial: run.nextPartSerial, build: BUILD, loadout: run.loadout, catalog: CATALOG,
     onSubmit: async r => {
+      const rejected = qaRejection(); if (rejected) return rejected;
       const before = run.genome, oldLoadout = structuredClone(run.loadout);
-      const applied = applyDesign(run, r.genome, r.name, BUILD, r.nextSerial);
+      const applied = applyDesign(run, r.genome, r.name, BUILD, r.nextSerial, CATALOG);
       if (!applied.ok) return { ok: false, reason: applied.reason };
       // The simulation clock is stopped while editing, so `time` is the commit time.
-      reconcileAfterCommit(rt, designDelta(before, run.genome, oldLoadout), run.genome, 'player', time); genomeRevision++; refreshDerived(); committed = true;
+      reconcileAfterCommit(rt, designDelta(before, run.genome, oldLoadout, CATALOG), run.genome, 'player', time); genomeRevision++; refreshDerived(); committed = true;
       if (JSON.stringify(before) !== JSON.stringify(run.genome)) { world.setCreature(run.genome); world.burst(world.player.position.x, world.player.position.y, world.player.position.z, '#f4e2b9', 30); audio.found(); }
       return { ok: true };
     } });
@@ -647,7 +685,8 @@ function frame(now: number) {
   requestAnimationFrame(frame);
   const dt = Math.min((now - last) / 1000, .05); last = now;
   // The game clock runs in these modes only (not while paused, editing, stuck or won).
-  const active = mode === 'playing' || mode === 'menu' || mode === 'evolving' || mode === 'fainted';
+  const held = holdingStart && mode === 'playing';
+  const active = !held && (mode === 'playing' || mode === 'menu' || mode === 'evolving' || mode === 'fainted');
   let moving = false;
   const growth = growthOf(run), stage = run.stage, plan = currentPlan(run), caps = movementCapabilities(plan);
   const actor = mode === 'menu' ? null : playerActorCached();
@@ -656,7 +695,7 @@ function frame(now: number) {
     hullRescaled = false;
     if (mode === 'playing') checkPose(actor); else settleOffset(actor);
   }
-  if (mode === 'playing' && actor) {
+  if (mode === 'playing' && actor && !held) {
     run.elapsed += dt; cooldown = Math.max(0, cooldown - dt); chompPulse = Math.max(0, chompPulse - dt * 5);
     wrongDietClock = Math.max(0, wrongDietClock - dt); hintClock = Math.max(0, hintClock - dt); sinceHit += dt;
     // Hearts come back slowly once the creature is out of danger.
@@ -696,7 +735,7 @@ function frame(now: number) {
     stuckRetry -= dt;
     if (stuckRetry <= 0) { stuckRetry = 1; if (recover(actor, time)) { if (startGracePending) { startGracePending = false; applyStartGrace(); } mode = 'playing'; el('toast').classList.remove('show'); syncUI(); } }
   }
-  if ((mode === 'playing' || mode === 'evolving' || mode === 'fainted') && actor) {
+  if ((mode === 'playing' || mode === 'evolving' || mode === 'fainted') && actor && !held) {
     const events = world.eco.step({ stage, dt, now: time, player: physical, playerHull: worldHull(actor), perceivable: rt.perceivable && mode !== 'fainted', stealthFactor: derived.stealthFactor });
     const accepted = resolveHazards(events, { mode, pendingRespawn: run.pendingRespawn, rt, now: time, mass: massFor(plan, run.genome, actor.bodyLength), resistance: plan.physics.knockbackResistance });
     rejectedHits += events.length - accepted.length;
@@ -736,13 +775,39 @@ function zoneNow() { return zoneLabel(legality(run.stage).queries.sampleEnvironm
 function hazardSources() {
   return world.eco.entities.filter(e => e.active && !e.eaten && e.spec.contactHazardId).map(e => ({ id: e.id, key: e.spec.key, x: e.x / world.scale, y: e.y / world.scale, z: e.z / world.scale, mode: e.mode }));
 }
+/** Read-only (QA): for every socket of the player, the rendered transform (part object × pivot node relative to the part ×
+ *  inverse rest pivot × socket) against `sampleCombatPose` with the same world matrix and the same rig pose (the last rendered tick). */
+function poseAgreement() {
+  const creature = world.creature; if (!creature) return null;
+  const g = creature.genome, world4 = creature.group.matrixWorld, scale = world4.getMaxScaleOnAxis(), bodyLength = bodyLengthOf(g) * scale;
+  const pose = sampleCombatPose({ actorId: 'player', genome: g, plan: currentPlan(run), world: world4, rig: creature.rigPose as Parameters<typeof sampleCombatPose>[0]['rig'], physicalLength: bodyLength });
+  const M = new T.Matrix4(), inv = new T.Matrix4(), linear = new T.Matrix3(), emitted = new T.Matrix4();
+  let positionError = 0, angleError = 0, reflectionsAgree = true, sockets = 0;
+  for (const [i, source] of emittersOf(g).entries()) {
+    const placed = g.parts.find(p => p.uid === source.partUid)!, socket = PARTS.find(s => s.id === placed.id)!.sockets.find(s => s.id === source.socketId)!;
+    const attached = creature.parts.find(a => a.placed.uid === source.partUid && a.copy === source.copy); if (!attached) return null;
+    M.copy(attached.object.matrixWorld);
+    if (socket.pivot) {
+      const node = attached.pivots.find(p => p.kind === socket.pivot!.kind && p.index === socket.pivot!.index)?.node; if (!node) return null;
+      M.multiply(inv.copy(attached.object.matrixWorld).invert().multiply(node.matrixWorld)).multiply(inv.copy(restPivotToPart(placed.id, `${socket.pivot.kind}:${socket.pivot.index}`)).invert());
+    }
+    const origin = new T.Vector3(socket.origin.x, socket.origin.y, socket.origin.z).applyMatrix4(M);
+    const forward = new T.Vector3(socket.forward.x, socket.forward.y, socket.forward.z).applyMatrix3(linear.setFromMatrix4(M)).normalize();
+    const e = pose.emitters[i]!; emitted.fromArray(e.localToWorld);
+    positionError = Math.max(positionError, origin.distanceTo(new T.Vector3(e.origin.x, e.origin.y, e.origin.z)));
+    angleError = Math.max(angleError, forward.angleTo(new T.Vector3(e.forward.x, e.forward.y, e.forward.z)));
+    if (Math.sign(linear.setFromMatrix4(M).determinant()) !== Math.sign(linear.setFromMatrix4(emitted).determinant())) reflectionsAgree = false;
+    sockets++;
+  }
+  return { sockets, positionError, angleError, reflectionsAgree, bodyLength, time };
+}
 // Read-only diagnostics allow browser verification to steer with real controls.
 if (QA) {
   const copy = (v: Vec3) => ({ x: v.x, y: v.y, z: v.z });
   Object.defineProperty(window, '__tinyTide', { get: () => ({ mode,
     plan: currentPlan(run).id, plans: [...run.plans], zone: zoneNow(), velocity: copy(rt.controlledVelocity), externalVelocity: copy(rt.externalVelocity),
     orientation: { ...rt.orientation }, permit: rt.permit ? { ...rt.permit } : null, arc: rt.arc ? { ...rt.arc } : null, breachReadyAt: rt.breachReadyAt, invulnerableUntil: rt.invulnerableUntil,
-    pendingRespawn: run.pendingRespawn, caps: capsOf(), contactNow, lastContact: lastContact === null ? null : `${lastContact}`, hazardSources: hazardSources(), growth: growthOf(run), acceptedHits, rejectedHits,
-    faintLog: faintLog.map(f => ({ ...f })), stage: run.stage, dna: dnaOf(run), stageDna: run.stageDna, goal: STAGES[run.stage]!.goal, health: run.health, maxHealth: derived.maxHealth, deaths: run.deaths, diet: dietOf(run.genome), genome: structuredClone(run.genome), name: run.name, unlocked: [...run.unlocked], evolveReady: evolveReady(run), bites: run.bites, totalDna: run.totalDna, elapsed: run.elapsed, completed: run.completed, eatenPlanets: [...run.eatenPlanets], player: { x: world.player.position.x, y: world.player.position.y, z: world.player.position.z }, foods: world.edibleFoods.map(f => ({ ...f.data, tag: f.entity.spec.tag, label: f.entity.spec.label, mode: f.entity.mode, hp: f.entity.hp, approachable: approachable(f.entity) })), threats: world.threats.map(f => ({ ...f.data, label: f.entity.spec.label, mode: f.entity.mode })), landmarks: world.foods.filter(f => f.model.visible && f.tier > run.stage).map(f => ({ tier: f.tier, kind: f.data.kind, x: f.data.x, y: f.data.y, z: f.data.z })), world: world.diagnostics, assets: assetDiagnostics(), saveKey: writeKey, loadedKey, time, render: { calls: world.renderer.info.render.calls, triangles: world.renderer.info.render.triangles, geometries: world.renderer.info.memory.geometries } }) });
+    pendingRespawn: run.pendingRespawn, caps: capsOf(), physical: copy(physical), legal: mode === 'menu' ? null : admitted(playerActor(currentPlan(run), run.genome, run.stage, growthOf(run))), contactNow, lastContact: lastContact === null ? null : `${lastContact}`, hazardSources: hazardSources(), growth: growthOf(run), acceptedHits, rejectedHits,
+    faintLog: faintLog.map(f => ({ ...f })), stage: run.stage, dna: dnaOf(run), stageDna: run.stageDna, goal: STAGES[run.stage]!.goal, health: run.health, maxHealth: derived.maxHealth, deaths: run.deaths, diet: dietOf(run.genome), genome: structuredClone(run.genome), name: run.name, unlocked: [...run.unlocked], evolveReady: evolveReady(run), bites: run.bites, totalDna: run.totalDna, elapsed: run.elapsed, completed: run.completed, eatenPlanets: [...run.eatenPlanets], player: { x: world.player.position.x, y: world.player.position.y, z: world.player.position.z }, foods: world.edibleFoods.map(f => ({ ...f.data, tag: f.entity.spec.tag, label: f.entity.spec.label, mode: f.entity.mode, hp: f.entity.hp, approachable: approachable(f.entity) })), threats: world.threats.map(f => ({ ...f.data, label: f.entity.spec.label, mode: f.entity.mode })), landmarks: world.foods.filter(f => f.model.visible && f.tier > run.stage).map(f => ({ tier: f.tier, kind: f.data.kind, x: f.data.x, y: f.data.y, z: f.data.z })), world: world.diagnostics, assets: assetDiagnostics(), saveKey: writeKey, loadedKey, time, holdingStart, editorProjection, poseAgreement, render: { calls: world.renderer.info.render.calls, triangles: world.renderer.info.render.triangles, geometries: world.renderer.info.memory.geometries } }) });
 }
 requestAnimationFrame(frame);

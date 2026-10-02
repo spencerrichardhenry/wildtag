@@ -262,6 +262,8 @@ export class CreatureModel {
       pivot.node.rotation.set(r.x + o.x, r.y + o.y, r.z + o.z);
     }
   }
+  /** Read-only: the rig pose of the last `animate` (gameplay samples the same pose). Do not modify it. */
+  get rigPose(): Readonly<RigPose> { return this.pose; }
   /** The body length in creature units, for camera framing. */
   get length() { return this.layout.front - this.layout.rear; }
   dispose() {

@@ -4,7 +4,7 @@
 import * as T from 'three';
 import './editor.css';
 import { asset } from './assets';
-import { CreatureModel, locate, profile, zAt } from './creature';
+import { CreatureModel, locate, profile, surface, zAt } from './creature';
 import { adaptToPlan, badMirror, cloneGenome, derive, effectiveStats, instanceCount, isUnlocked, nextUid, PART_LIMITS, PATTERNS, partCost, partSlots, problems, SCALE_RANGE, SPINE_RANGE, type GenomeProblem, type Genome, type PlacedPart } from './genome';
 import { quoteDesign, walletTotal, type Economy, type Quote } from './economy';
 import { designDelta } from './design-delta';
@@ -83,6 +83,12 @@ function renderThumbnails() {
 export function openEditor(options: EditorOptions): Promise<EditorResult | null> {
   return new Promise(resolve => new Editor(options, resolve));
 }
+/** The open editor, for the read-only QA projection. */
+let openNow: Editor | null = null;
+/** Read-only (QA): the client position in the open editor of a part's anchor (the centre of its bounds, or else one of its
+ *  vertices, where a ray from the camera hits that part first), or of a body surface point `{ t, angle }` (only where the ray
+ *  hits the body there first); `depth` is the distance to the camera. Null when the point is not visible. */
+export function editorProjection(target: string | { t: number; angle: number }): { x: number; y: number; depth: number } | null { return openNow?.project(target) ?? null; }
 
 /** Slots used per region: the sum of `partSlots` of the parts whose `t` lies in it. Like `problems()`, it skips
  *  unknown parts, banned kinds and kinds the region does not allow. */
@@ -219,6 +225,38 @@ class Editor {
     const loop = () => { if (this.closed) return; this.frame = requestAnimationFrame(loop); this.draw(); };
     loop();
     this.root.querySelector<HTMLButtonElement>('.ed-done')!.focus();
+    openNow = this;
+  }
+  /** Read-only (QA): see `editorProjection`. */
+  project(target: string | { t: number; angle: number }): { x: number; y: number; depth: number } | null {
+    let point: T.Vector3 | undefined;
+    if (typeof target === 'string') {
+      const candidates: T.Vector3[] = [], v = new T.Vector3();
+      for (const a of this.model.parts.filter(x => x.placed.uid === target)) {
+        candidates.push(new T.Box3().setFromObject(a.object).getCenter(new T.Vector3()));
+        a.object.traverse(node => {
+          if (!(node instanceof T.Mesh)) return;
+          const position = node.geometry.getAttribute('position'), step = Math.max(1, Math.floor(position.count / 40));
+          for (let i = 0; i < position.count; i += step) candidates.push(v.fromBufferAttribute(position, i).applyMatrix4(node.matrixWorld).clone());
+        });
+      }
+      // The first candidate that a ray from the camera reaches on this part before anything else.
+      point = candidates.find(c => {
+        const hit = new T.Raycaster(this.camera.position, c.clone().sub(this.camera.position).normalize()).intersectObject(this.model.group, true)
+          .find(h => { let n: T.Object3D | null = h.object; while (n && !n.userData.ghost && n.userData.partUid === undefined) n = n.parent; return !n?.userData.ghost && (n?.visible ?? true); });
+        let node: T.Object3D | null = hit?.object ?? null; while (node && node.userData.partUid === undefined) node = node.parent;
+        return node?.userData.partUid === target && hit!.distance < c.distanceTo(this.camera.position) + .05;
+      });
+    } else {
+      // A body point counts only where a ray from the camera reaches the body there first (parts and the ghost may cover it).
+      const c = surface(this.draft, this.model.layout, target.t, target.angle).position.clone().applyMatrix4(this.model.group.matrixWorld);
+      const hits = new T.Raycaster(this.camera.position, c.clone().sub(this.camera.position).normalize()).intersectObject(this.model.group, true);
+      // The animated body moves a little from the rest surface: the visible hit point near it is returned.
+      if (hits[0]?.object === this.model.body && hits[0].point.distanceTo(c) < .25) point = hits[0].point;
+    }
+    if (!point) return null;
+    const depth = point.distanceTo(this.camera.position), ndc = point.clone().project(this.camera), rect = this.canvas.getBoundingClientRect();
+    return { x: rect.left + (ndc.x + 1) / 2 * rect.width, y: rect.top + (1 - ndc.y) / 2 * rect.height, depth };
   }
 
   // ----- the ledger and the rules -----
@@ -301,7 +339,7 @@ class Editor {
   }
   private close(result: EditorResult | null) {
     if (this.closed) return;
-    this.closed = true; cancelAnimationFrame(this.frame);
+    this.closed = true; cancelAnimationFrame(this.frame); if (openNow === this) openNow = null;
     removeEventListener('resize', this.onResize); removeEventListener('keydown', this.onKey);
     this.model.dispose();
     this.handleGeometry.dispose(); for (const m of this.handleMaterials) m.dispose();
@@ -362,7 +400,7 @@ class Editor {
     const gesture: Gesture = this.owner;
     const data: Record<string, string> = {
       'data-created-geometries': String(c.createdGeometries), 'data-disposed-geometries': String(c.disposedGeometries),
-      'data-created-materials': String(c.createdMaterials), 'data-disposed-materials': String(c.disposedMaterials), 'data-rebuilds': String(c.rebuilds),
+      'data-created-materials': String(c.createdMaterials), 'data-disposed-materials': String(c.disposedMaterials), 'data-rebuilds': String(c.rebuilds), 'data-missing-pivots': String(this.model.missingPivots),
       'data-yaw': this.yaw.toFixed(4), 'data-zoom': this.zoom.toFixed(4), 'data-gesture': gesture, 'data-selected': sel ? `${sel.uid}|${sel.t}|${sel.angle}` : '',
     };
     for (const name in data) if (this.viewData.get(name) !== data[name]) { this.viewData.set(name, data[name]!); this.canvas.setAttribute(name, data[name]!); }
