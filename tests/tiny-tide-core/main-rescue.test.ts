@@ -18,6 +18,11 @@ describe('main.ts cancels a pending rescue on every other install', () => {
       expect(body, `${m[1]} sets the pose without cancelling a rescue`).toMatch(/cancelRescue\(\)/);
     });
     expect(writers.sort()).toEqual(['begin', 'checkGrownPose', 'frame', 'installPose', 'submitEvolution']);
+    // Fix round 4 (re-review 3 m4): every write of the pose is one of those (`physical = ` inside those function bodies, none in an
+    // arrow function or a statement outside them), and the pose is never changed field by field.
+    const inWriters = starts.reduce((n, m, i) => writers.includes(m[1]!) ? n + (src.slice(m.index!, starts[i + 1]?.index ?? src.length).match(/\bphysical = /g)?.length ?? 0) : n, 0);
+    expect(src.match(/\bphysical = /g)?.length, 'every `physical = ` is in a checked function').toBe(inWriters);
+    expect(src, 'no field-by-field pose write').not.toMatch(/\bphysical\.[xyz]\s*(?:[-+*/]?=)(?!=)/);
     // checkPose installs through recover → installPose, and cancels first itself.
     expect(src.slice(src.indexOf('function checkPose('), src.indexOf('function checkPose(') + 120)).toMatch(/cancelRescue\(\)/);
   });

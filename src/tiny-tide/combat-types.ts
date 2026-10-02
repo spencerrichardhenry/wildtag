@@ -29,7 +29,11 @@ export interface MovementProfile { id: string; mode: MovementMode; speedMultipli
 export interface PursuitPolicy { id: string; memorySeconds: number; blockedWaitSeconds: number; reacquireSeconds: number; leashBodyLengths: number; giveUpBodyLengths: number }
 export interface SpeciesCombatFields { movementProfileId: string; habitatProfileId: string; hullProfileId: string; attackMountProfileId: string; attackIds: readonly string[]; contactHazardId?: string; pursuitId: string }
 export interface EnvironmentSample { medium: Medium; groundHeight: number; surfaceHeight: number | null; waterDepth: number; groundClearance: number; groundNormal: Vec3; coverIds: readonly string[]; refugeId: string | null }
-/** sway: horizontal and heave: vertical animation envelope; the occupied volume is the capsule swept by any such offset.
+/** sway: horizontal and heave: vertical animation envelope. The swept volume is the capsule moved by any such offset. Against the
+ *  solids, admission holds each sample sphere r as the ellipsoid of semi-axes r + sway (horizontal) and r + heave (vertical)
+ *  (solids.ts sphereEnvelope), which covers less than the swept volume toward the diagonals: by less than (1 − 1/√2)(sway + heave)
+ *  (largest ratio found numerically over r, sway, heave in (0, 1]: .248), and by .012–.071 L for the starter bodies, about 63° below
+ *  the horizontal (fix round 4; re-review 3 m2).
  *  radii (optional): a tapered capsule. Its cross-section in each plane of constant body z between the ends is the disc around the
  *  axis point with a radius that goes linearly from radii[0] at start to radii[1] at end, plus a ball of that radius on each end (both
  *  ≤ radius). Admission's tight sample spheres use it; every other user may treat it as the capsule of `radius`, which holds it. */
