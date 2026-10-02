@@ -45,7 +45,6 @@ const KNOWN_LIMITS = [
   "Shellback's Shell plate adds armor that today's hazards cannot use: Shellback already has armor 4 or more (2 from parts, +2 plan), so every hit already costs the 1-point minimum.",
   'The shopping lists are reference builds, not optimal ones.',
   'The bot is the journey bot, not a person. It eats the nearest approachable food of its diet and does not flee hunters.',
-  'Known open bug (not fixed here): a Swimmer that pushes into a seabed slope stops instead of sliding. The bot rises (or Breaches) when it touches the ground, as the journey bot does.',
   'Wall time depends on machine load. Compare the calibration runs (one at a time) with the same runs in the parallel batch.',
 ];
 const MAX_RUN_MINUTES = 90;
@@ -221,11 +220,7 @@ async function child(r, outFile = `${RUNS_DIR}/${runId(r)}.json`) {
       let up = false;
       if (s.caps.breach && s.arc === null && ((f.kind === 'bird' && distance < 2.5) || (f.y - s.player.y > 1.6 && distance < 3))) { await page.keyboard.press('KeyE'); up = true; }
       if (s.caps.rise && !s.caps.breach && f.y - s.player.y > .8) { desired.push('KeyE'); up = true; }
-      // Workaround for the known slope bug: blocked by the seabed (a slope stops a swimmer; it does not slide), rise over it.
-      const blocked = s.contactNow && s.lastContact === 'ground';
-      if (blocked && s.caps.breach && s.arc === null && s.time >= s.breachReadyAt) await page.keyboard.press('KeyE');
-      if (blocked && s.caps.rise && !s.caps.breach && !desired.includes('KeyE')) desired.push('KeyE');
-      if (!blocked && s.caps.dive && s.arc === null && s.player.y - f.y > .8) { desired.push('KeyQ'); up = true; }
+      if (s.caps.dive && s.arc === null && s.player.y - f.y > .8) { desired.push('KeyQ'); up = true; }
       if (up) vertical.add(`${s.stage}:${f.id}`);
       await control(page, desired); await page.waitForTimeout(130);
       if (loops % 300 === 0) console.log('progress', { stage: s.stage, plan: s.plan, stageDna: s.stageDna, goal: s.goal, dna: s.dna, active: Math.round(s.elapsed), wallMin: ((Date.now() - t0) / 60000).toFixed(1) });

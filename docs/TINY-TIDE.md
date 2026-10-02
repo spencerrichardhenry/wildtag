@@ -162,9 +162,6 @@ point just above the ground at the origin (in space, `(0, 3 × size, 0)`). A
 design is valid for a plan only if an anchor exists at growth 1 and at growth
 1.38. Respawn uses the anchor, with 3 s of grace.
 
-Known open bug: a Swimmer that pushes into a seabed slope stops instead of
-sliding along it. Rise to get over the slope.
-
 ## Avoidance
 
 Hunters perceive the player within their notice distance (times the stealth
@@ -320,9 +317,12 @@ Known limits: the bot eats the nearest food and does not flee, so it is
 faster than a new player. A single Spike at size 1 gives no mitigation (armor
 1 removes `floor(1 / 2) = 0`). Shellback's Shell plate adds armor that today's
 hazards cannot use (every hit already costs the 1-point minimum). The shopping
-lists are reference builds, not optimal ones. The bot rises when a Swimmer
-touches the seabed, because of the open slope bug. The study proposes no
-tuning; the owner decides.
+lists are reference builds, not optimal ones. The study proposes no tuning;
+the owner decides.
+
+The baseline above was measured before the seabed slide fix: at that time a
+Swimmer stopped on a seabed slope, and the bot rose (or Breached) on every
+seabed contact. The bot no longer does this, so a new run can differ.
 
 ## Verification
 

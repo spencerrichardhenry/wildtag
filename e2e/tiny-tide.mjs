@@ -152,11 +152,7 @@ try {
       // Breach only when the plan can Breach; Rise and Dive only when it can rise (a Breach plan's E tap is a Breach).
       if (s.caps.breach && s.arc === null && ((f.kind === 'bird' && distance < 2.5) || (f.y - s.player.y > 1.6 && distance < 3))) await page.keyboard.press('KeyE');
       if (s.caps.rise && !s.caps.breach && f.y - s.player.y > .8) desired.push('KeyE');
-      // Blocked by the seabed (a slope stops a swimmer; it does not slide): rise over it, as a player would.
-      const blocked = s.contactNow && s.lastContact === 'ground';
-      if (blocked && s.caps.breach && s.arc === null && s.time >= s.breachReadyAt) await page.keyboard.press('KeyE');
-      if (blocked && s.caps.rise && !s.caps.breach && !desired.includes('KeyE')) desired.push('KeyE');
-      if (!blocked && s.caps.dive && s.arc === null && s.player.y - f.y > .8) desired.push('KeyQ');
+      if (s.caps.dive && s.arc === null && s.player.y - f.y > .8) desired.push('KeyQ');
       await control(desired); await page.waitForTimeout(130);
       const after = await state(); for (const food of s.foods) if (!after.foods.find(o => o.id === food.id) && after.stage === s.stage) eatenKinds.add(`${food.tier}:${food.kind}`);
       if (loops % 150 === 0) console.log('Progress', s.mode, s.stage, s.stageDna, '/', s.goal, 'player', s.player, 'target', f.kind, [f.x, f.y, f.z]);
