@@ -194,8 +194,16 @@ solid (`solidId`).
   push (refused by any rule) while a solid is touched. A head-on push into
   one rock is not a trap (tested: 0 rescues in 101 such pushes). The game then
   searches for the nearest admitted pose within 1.5 L that faces the push
-  (`UnstickSearch`, about 40 admissions a frame), from which the push is free
-  for .5 L (`RESCUE_FREE`). A trap within 1 L of the last rescue's start in the
+  (`UnstickSearch`), from which the push is free for .5 L (`RESCUE_FREE`).
+  The free run is checked as the walking body makes it (fix round 4): facing
+  the push, at the walking height over the seabed (support + .01 L), lifted
+  onto a low rock as `stepLift` does, and ended by a wall. Before, the check
+  kept the candidate's height over a seabed that fell away, passed over a tall
+  rock that the walking body met, and a held push into such a pocket got a
+  rescue about every 2 s. The run goes the free distance past the trap point's
+  line across the push, so a candidate behind the trap is checked over the
+  trap too, and a run that passes back over the trap point (within .25 L) is
+  not a rescue. A trap within 1 L of the last rescue's start in the
   last 10 s (the player pushes into the same pocket again) needs a free run of
   2 L (`RESCUE_FREE_REPEAT`): the next rescue gets the body past the pocket, or
   there is none. A search that finds nothing is not repeated at that spot for
@@ -208,6 +216,15 @@ solid (`solidId`).
   there is no rescue: the body stays, admitted, against the walls, and the
   player can back out. Every other install (respawn, recovery, evolution, an
   edit, a growth step, a new run) cancels a pending rescue (`cancelRescue`).
+  The search runs in slices with a hard budget: a played frame spends at
+  most 60 admissions on the player's step and the search together
+  (`FRAME_ADMISSIONS`); the search gets what the step left (`rescueBudget`)
+  and goes on next frame where it stopped, inside a candidate too.
+  A body held still against walls is cheap: a leg that starts at a contact is
+  first tested at the bisection's finest step (1/256 of a slot); refused
+  there, the eight bisections would end at the same point with the same
+  refusal, so they are skipped. A blocked frame at rest went from 43 to 12–15
+  admissions.
   The QA diagnostics count rescues (`trapRescues`, `rescueLog`). Measured after fix round 3: 0 in four
   swimmer journeys; 0–3 in twelve crawler journeys and 17 in one (seed
   763919134). Before the repeat rule, one crawler journey had 126.
@@ -570,6 +587,7 @@ seabed contact. The bot no longer does this, so a new run can differ.
 npx tsc -b
 npx tsc -p tsconfig.tests.json
 npx vitest run tests/tiny-tide.test.ts tests/tiny-tide-core
+TIDE_SLOW=1 npx vitest run tests/tiny-tide-core/solids.test.ts   # the slow tier: before a merge (long)
 npm run build                              # the chunk-size warning is expected
 python3 scripts/tiny-tide/blender/check_assets.py   # PASS: 86 self-contained Blender GLBs; fails on a stale part-rig.json
 node e2e/tiny-tide.mjs                     # swimmer line; TIDE_LINE=crawler for the crawler line (long: run in the background)
@@ -578,6 +596,14 @@ node e2e/tiny-tide-mobile.mjs              # also the phone triangle budget (1.6
 node e2e/tiny-tide-replay.mjs
 node e2e/tiny-tide-pacing.mjs              # the pacing study (a diagnostic, not a gate; long: run in the background)
 ```
+
+The default run keeps a smoke version of each long movement property test in
+`solids.test.ts` (one seed, the starter body, fewer solids). `TIDE_SLOW=1`
+runs them in full: the escape from every nearby solid (3 seeds, 3 bodies,
+up to 24 solids), the head-on pushes (2 seeds, starter and 7-segment bodies),
+the Colossus walks (3 and 7 segments, 5 foods) and the pocket holds (every
+pocket of two solids near the start, 3 seeds, starter and 7-segment bodies).
+Run the slow tier before a merge.
 
 The browser tests need the dev server (`npm run dev`, port 5199). Their save
 fixtures come from the development-only page `tests-browser/fixtures.html`,
@@ -604,7 +630,9 @@ in the open editor) and `poseAgreement()` (rendered socket transforms against
 `solidOverlap` (the reef solid the player's hull overlaps, from the admission's
 solid rule alone, or null) and `admission` (per stage: played frames, the
 admission time and calls per frame in total and per caller — player, ecosystem
-and food guide — and the player's contacts per frame; the journey prints it).
+and food guide — the player's worst calls in one frame (`player.worstCalls`),
+the worst rescue slice (`rescueWorstCalls`) and the player's contacts per
+frame; the journey prints it).
 The admission clock counts only calls made inside a played frame: it resets
 when a frame starts, so the editor's anchor checks and a start's admissions
 are not counted (final review M8).

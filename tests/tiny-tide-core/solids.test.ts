@@ -18,6 +18,10 @@ import { STAGES } from '../../src/tiny-tide/state';
 import { admissionCount, makeTerrain, makeWorldQueries, stageBounds, stageWorldQueries, supportHeight } from '../../src/tiny-tide/world-queries';
 import { REEF_SEEDS } from './glb';
 
+/** The slow tier (fix round 4): TIDE_SLOW=1 runs the long property tests in full (all seeds, long bodies, more solids); without it
+ *  each runs a smoke version (one seed, the starter body, fewer solids). See docs/TINY-TIDE.md "Verification". */
+const SLOW = Boolean(process.env.TIDE_SLOW);
+const tier = SLOW ? 'slow tier' : 'smoke';
 const flat = (surface = WATER_LEVEL): Terrain => ({ groundAt: () => 0, surface, space: false, slopeBound: 0 });
 const O = { yaw: 0, pitch: 0 };
 const index = (solids: Solid[], cell = 8) => new SolidIndex(solids, cell);
@@ -208,17 +212,17 @@ describe('a ground creature touching a rock or an arch can always move away from
     const g = starterFor(plan(planId)!);
     return [g, { ...g, spine: Array.from({ length: 7 }, () => ({ radius: .3, height: .3, lift: 0 })) }, { ...g, spine: [{ radius: 1.1, height: .6, lift: 0 }, { radius: 1.2, height: .7, lift: 0 }, { radius: 1, height: .6, lift: 0 }] }];
   };
-  for (const [planId, stage] of [['crawler', 1], ['shellback', 2], ['burrower', 2]] as const) it(`${planId} (stage ${stage}): from a contact with every nearby solid, 2.5 s of input away from it frees the body (≥ .3 L from the contact), or it stops in a corner it can back out of`, () => {
+  for (const [planId, stage] of [['crawler', 1], ['shellback', 2], ['burrower', 2]] as const) it(`${planId} (stage ${stage}, ${tier}): from a contact with every nearby solid, 2.5 s of input away from it frees the body (≥ .3 L from the contact), or it stops in a corner it can back out of`, () => {
     const p0 = plan(planId)!, size = SIZES[stage]!, caps = movementCapabilities(p0), profile = movement(p0.movement), fails: string[] = [];
     let cases = 0, unstuck = 0;
     const slower: string[] = [], corners: string[] = [];
-    for (const seed of [1402777635, 4242, 99]) {
+    for (const seed of SLOW ? [1402777635, 4242, 99] : [1402777635]) {
       const q = stageWorldQueries(stage, seed), t = q.terrain, bounds = stageBounds(stage);
       const near = stageSolids(stage, seed).solids.filter(s => Math.max(Math.abs(s.minX + s.maxX), Math.abs(s.minZ + s.maxZ)) / 2 < 30 * size);
-      for (const g of bodies(planId)) {
+      for (const g of SLOW ? bodies(planId) : bodies(planId).slice(0, 1)) {
         const a = playerActor(p0, g, stage, 1.2), L = a.bodyLength, top = STAGES[stage]!.speed * derive(effectiveStats(g, p0)).speedFactor;
         const step = (pos: Vec3, rt: ReturnType<typeof newRuntime>, wish: Vec3, f: number) => stepPlayer(pos, rt, RELEASED, { plan: p0, profile, caps, actor: a, queries: q, bounds, size, topSpeedLocal: top, now: f / 60, dt: 1 / 60, wish, aim: null, actionLock: false });
-        for (const solid of near.slice(0, planId === 'crawler' ? 24 : 10)) for (let k = 0; k < 6; k++) {   // stage 1: most rocks are low steps, so more of them
+        for (const solid of near.slice(0, planId === 'crawler' ? 24 : SLOW ? 10 : 6)) for (let k = 0; k < 6; k++) {   // stage 1: most rocks are low steps, so more of them
           // Walk toward the solid's centre from 2 L outside its bounds until it stops the body.
           const cx = (solid.minX + solid.maxX) / 2, cz = (solid.minZ + solid.maxZ) / 2, ang = k * Math.PI / 3, R = Math.max(solid.maxX - solid.minX, solid.maxZ - solid.minZ) / 2 + 2 * L;
           const x0 = cx + Math.cos(ang) * R, z0 = cz + Math.sin(ang) * R, o = { yaw: Math.atan2(cx - x0, cz - z0), pitch: 0 }, rt = newRuntime(o);
@@ -254,9 +258,9 @@ describe('a ground creature touching a rock or an arch can always move away from
     }
     console.log(`${planId}: ${cases} contact cases, ${unstuck} trap rescues; out around another solid (under .3 L along the normal): ${slower.join(', ') || 'none'}; stopped in a corner and backed out: ${corners.join(', ') || 'none'}`);
     // Fewer cases since bodies step over low rocks (fix round 2) and the belly sits low over them (round 3): most stage-1 rocks.
-    expect(cases, 'contact cases').toBeGreaterThanOrEqual(10);
+    expect(cases, 'contact cases').toBeGreaterThanOrEqual(SLOW ? 10 : 2);
     expect(fails, `${fails.length} of ${cases}`).toEqual([]);
-  }, 900_000);   // 2–6 min alone (the crawler case tests 24 solids); the full suite runs files in parallel
+  }, SLOW ? 900_000 : 120_000);   // slow tier: 2–6 min alone (the crawler case tests 24 solids)
 });
 
 describe('ground plans step over low rocks (owner decision, fix round 2)', () => {
@@ -354,10 +358,10 @@ describe('the Colossus reaches its food among the stage-3 rocks (re-review N1)',
     }
     return best;
   };
-  for (const segments of [3, 7]) it(`a ${segments}-segment Colossus (growth 1.2) gets as close with the solids as without, on all 5 walks`, () => {
+  for (const segments of SLOW ? [3, 7] : [3]) it(`a ${segments}-segment Colossus (growth 1.2, ${tier}) gets as close with the solids as without, on ${SLOW ? 'all 5' : 'the 2 nearest'} walks`, () => {
     const s0 = starterFor(p0), g = segments === s0.spine.length ? s0 : { ...s0, spine: Array.from({ length: segments }, (_, i) => s0.spine[Math.min(i, s0.spine.length - 1)]!) };
     const a = playerActor(p0, g, stage, 1.2), solid = stageWorldQueries(stage, seed), bare = makeWorldQueries(makeTerrain(stage)), rows: string[] = [];
-    for (const f of foods) {
+    for (const f of SLOW ? foods : foods.slice(0, 2)) {
       const target = { x: f.x, y: 0, z: f.z }, withSolids = walk(a, solid, target, g), without = walk(a, bare, target, g);
       rows.push(`${f.spec.key} at ${(Math.hypot(f.x, f.z) / size).toFixed(1)}: closest ${withSolids.toFixed(2)} with solids, ${without.toFixed(2)} without`);
       expect(withSolids, rows.at(-1)).toBeLessThanOrEqual(without + .5);
@@ -386,13 +390,13 @@ describe('the trap rescue (continuation: crawler freeze)', () => {
     expect(rescue.stats.recov).toBe(0);
     return { pos, rescues: rescue.stats.rescues, rescued: rescue.stats.ends, paths: rescue.stats.paths, frozen, yaw: rt.orientation.yaw };
   };
-  for (const [planId, stage] of [['crawler', 1], ['shellback', 2]] as const) it(`never fires when a long ${planId} pushes head-on into one real mesh rock (re-review N2)`, () => {
+  for (const [planId, stage] of [['crawler', 1], ['shellback', 2]] as const) it(`never fires when a ${SLOW ? 'starter or long' : 'starter'} ${planId} pushes head-on into one real mesh rock (re-review N2, ${tier})`, () => {
     const p0 = plan(planId)!, s0 = starterFor(p0), g7 = { ...s0, spine: Array.from({ length: 7 }, () => ({ radius: .3, height: .3, lift: 0 })) }, size = SIZES[stage]!;
     let pushes = 0, rescues = 0, multi = 0, multiRescues = 0;
-    for (const seed of [1402777635, 4242]) {
+    for (const seed of SLOW ? [1402777635, 4242] : [1402777635]) {
       const q = stageWorldQueries(stage, seed), bounds = stageBounds(stage), t = q.terrain;
       const rocks = stageSolids(stage, seed).solids.filter(x => x.kind === 'rock' && Math.max(Math.abs(x.minX + x.maxX), Math.abs(x.minZ + x.maxZ)) / 2 < 30 * size).slice(0, 8);
-      for (const g of [s0, g7]) {
+      for (const g of SLOW ? [s0, g7] : [s0]) {
         const a = playerActor(p0, g, stage, 1.2), L = a.bodyLength, top = STAGES[stage]!.speed * derive(effectiveStats(g, p0)).speedFactor;
         for (const rock of rocks) for (let k = 0; k < 4; k++) {
           const cx = (rock.minX + rock.maxX) / 2, cz = (rock.minZ + rock.maxZ) / 2, ang = k * Math.PI / 2 + .3, R = Math.max(rock.maxX - rock.minX, rock.maxZ - rock.minZ) / 2 + 1.5 * L;
@@ -410,7 +414,7 @@ describe('the trap rescue (continuation: crawler freeze)', () => {
       }
     }
     console.log(`${planId}: ${pushes} pushes against one solid (${rescues} rescues); ${multi} that met two or more solids (${multiRescues} rescues)`);
-    expect(pushes).toBeGreaterThan(30);
+    expect(pushes).toBeGreaterThan(SLOW ? 30 : 8);
     expect(rescues, `${rescues} rescues in ${pushes} head-on pushes of 5 s against one solid`).toBe(0);
   }, 120_000);
   it('a trap at the spot of a rescue in the last 10 s needs a free run of 2 L, so the next rescue gets past the pocket (fix round 3)', () => {
@@ -458,6 +462,34 @@ describe('the trap rescue (continuation: crawler freeze)', () => {
     expect({ refused: r.refused, recov: r.recov }).toEqual({ refused: 0, recov: 0 });
     expect(r.rescues, `rescues to ${r.ends.map(e => `(${(e.x / r.L).toFixed(2)}, ${(e.z / r.L).toFixed(2)})`).join(' ')}`).toBeLessThanOrEqual(1);
   }, 60_000);
+  // The long variants (slow tier): every pocket of two solids near the start, from 4 approaches, held 10 s, starter and 7-segment
+  // bodies (the reviewer's probe, re-review 3 item 4): at most 1 rescue per hold, every pose admitted, no frame with a rescue slice
+  // over FRAME_ADMISSIONS.
+  for (const [planId, stage] of [['crawler', 1], ['shellback', 2], ['burrower', 2]] as const) it.runIf(SLOW)(`a ${planId} holding one push for 10 s into each pocket of two solids near the start gets at most 1 rescue (slow tier)`, () => {
+    const rows: string[] = [], size = SIZES[stage]!;
+    let holds = 0, rescues = 0;
+    for (const seed of [763919134, 358833899, 1944398416]) {
+      const solids = stageSolids(stage, seed).solids.filter(s => Math.max(Math.abs(s.minX + s.maxX), Math.abs(s.minZ + s.maxZ)) / 2 < 40 * size);
+      const c = (s: Solid) => ({ x: (s.minX + s.maxX) / 2, z: (s.minZ + s.maxZ) / 2, r: Math.max(s.maxX - s.minX, s.maxZ - s.minZ) / 2 });
+      for (const segments of [0, 7]) {
+        const L = playerActor(plan(planId)!, starterFor(plan(planId)!), stage, 1.2).bodyLength, pairs: [Solid, Solid][] = [];
+        for (let i = 0; i < solids.length; i++) for (let j = i + 1; j < solids.length; j++) {
+          const A = c(solids[i]!), B = c(solids[j]!);
+          if (Math.hypot(A.x - B.x, A.z - B.z) - A.r - B.r < 1.2 * L) pairs.push([solids[i]!, solids[j]!]);
+        }
+        for (const [s1, s2] of pairs.slice(0, 8)) for (let k = 0; k < 4; k++) {
+          const r = pocketHold(planId, stage, seed, s1.id, s2.id, k, 600, segments, true);
+          if (!r) continue;
+          holds++; rescues += r.rescues;
+          const row = `seed ${seed} ${s1.id}/${s2.id}/${k} ${segments || 'starter'}: ${r.rescues} rescues, worst frame with a slice ${r.worstFrame}`;
+          if (r.rescues > 1 || r.refused > 0 || r.recov > 0 || r.worstFrame > FRAME_ADMISSIONS) rows.push(`${row}, refused ${r.refused}, recoveries ${r.recov}`);
+        }
+      }
+    }
+    console.log(`${planId}: ${holds} holds, ${rescues} rescues`);
+    expect(holds).toBeGreaterThan(50);
+    expect(rows).toEqual([]);
+  }, 1_800_000);
   // Fix round 4: a body held against the walls of a pocket stayed still for 43 admissions a frame (4 contacts × 8 bisections), and
   // a rescue slice came on top of that (up to 110 in one frame).
   it('a body at rest against the walls of a pocket spends at most 16 admissions on a step, and a frame with a rescue slice at most FRAME_ADMISSIONS', () => {
