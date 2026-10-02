@@ -145,8 +145,9 @@ hold Rise / E or Dive / Q, and forward follows the camera pitch. Each movement
 profile sets speed, acceleration, braking and turn rates.
 
 **Breach.** Darter and Bulk (size 2, free water) Breach instead of Rise: tap
-Rise / E. A Breach is a 1.8 s arc (`BREACH_SECONDS`) that rises 3.8 stage
-units above the surface and ends 1.3 stage units under it (`BREACH_END_DEPTH`).
+Rise / E. A Breach is a 1.8 s arc (`BREACH_SECONDS`) that rises 3.8 × the
+size scale above the surface (`BREACH_RISE × size`) and ends 1.3 × the size
+scale under it (`BREACH_END_DEPTH × size`).
 An air permit lasts 1.9 s. The cooldown is 2.3 s (`BREACH_COOLDOWN`). When the
 permit ends, the game checks the landing and recovers the pose if needed.
 
@@ -295,10 +296,24 @@ play) per size, `none` / `sensible`, over 3 seeds. All 24 runs finished.
 | Burrower | 38 / 39 | 44 / 38 | 28 / 22 | 33 / 29 | 26 / 27 | 170 | 155 | 1.10 |
 
 Watch bands (not gates): first evolution 45–120 s; sizes 1–3 each 60–240 s.
-With this bot, Darter sizes 0–2 and Bulk size 2 are inside the bands; Bulk
-sizes 0 and 1 are inside with `sensible` and just below with `none` (43 s and
-59 s). Size 3 is below the band on every branch. The Crawler line is below the
-band at every size. A wall-time calibration run is 1.09–1.12 × its active time alone
+With this bot, Darter sizes 0–2 and Bulk size 2 are inside the bands. Bulk
+size 1 is inside with `sensible` and just below with `none` (59 s). Bulk size 0
+is 43 s with `none` and 49 s with `sensible`; no purchase happens at size 0, so
+that difference is noise. Size 3 is below the band on every branch. The Crawler
+line is below the band at every size.
+
+The runs are not deterministic: frame timing changes the simulation, so the
+same seed and policy gave 192 s and 249 s of total active time (Darter, seed
+11, `none`). The ranges are wide; for example, Bulk size 1 with `sensible` was
+40–182 s. With 3 seeds, the T_none / T_sensible ratios (0.84–1.10) are inside
+this noise and do not show an effect of the purchases. `pacing.md` gives the
+min–max of every mean.
+
+Two columns are derived, not observed. "Vertical meals" counts the meals of a
+target for which the bot itself used Rise, Breach or Dive because of the
+target's height. "Damage" and "armor prevented" are approximate: each accepted
+hit takes the raw damage of the hazard source nearest the player, and
+`damageAfterArmor(raw, armor)` gives the damage after armor. A wall-time calibration run is 1.09–1.12 × its active time alone
 and 1.16–1.27 × in the parallel batch.
 
 Known limits: the bot eats the nearest food and does not flee, so it is

@@ -1,22 +1,25 @@
 // Tiny Tide pacing study (spec §12). A diagnostic, not a gate: it reports numbers and proposes nothing.
 //
 //   node e2e/tiny-tide-pacing.mjs                       all 24 runs, 4 at a time, then 4 calibration runs one at a time
-//   node e2e/tiny-tide-pacing.mjs --runs darter:11:none,bulk:12:sensible   only these runs (no calibration)
+//   node e2e/tiny-tide-pacing.mjs --runs darter:11:none,bulk:12:sensible   only these runs (no calibration); a separate
+//                                                       output: pacing-subset.json, pacing-subset.md, pacing-runs-subset/
 //   node e2e/tiny-tide-pacing.mjs --parallel 2 --no-calibrate
 //   node e2e/tiny-tide-pacing.mjs --summarize           rebuild pacing.json and the tables from the saved run files
-//   node e2e/tiny-tide-pacing.mjs --run darter:11:none  one run in this process (the study starts runs like this)
+//   node e2e/tiny-tide-pacing.mjs --summarize --subset  the same for the --runs output
+//   node e2e/tiny-tide-pacing.mjs --run darter:11:none --out file.json   one run in this process (the study starts runs like this)
+//   node e2e/tiny-tide-pacing.mjs --help
+// A study first deletes the old run files of the directory it writes. The process exits with code 1 when a run did not finish.
 //
 // Each run is the journey bot (e2e/tiny-tide.mjs) from a fresh fixture save at the seed: Snapper at size 1, Beak at size 2,
 // in both policies. `sensible` also buys a fixed shopping list once per item, when affordable and free of problems.
 // A read-only sampler reads `window.__tinyTide` on every animation frame and integrates the game clock per size and mode.
 // Output: .codex-drafts/tiny-tide-qa/pacing.json, pacing.md (the tables) and pacing-runs/<run>.json (+ .log).
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, createWriteStream } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, createWriteStream, unlinkSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { control, launch, makeFixture, openGame, start, state, watchErrors } from './fixtures/tiny-tide-fixtures.mjs';
 
-const OUT = '.codex-drafts/tiny-tide-qa', RUNS_DIR = `${OUT}/pacing-runs`;
 const BRANCHES = {
   darter: ['swimmer', 'darter', 'sky_drifter', 'star_swimmer'],
   bulk: ['swimmer', 'bulk', 'sky_drifter', 'star_swimmer'],
@@ -48,6 +51,19 @@ const KNOWN_LIMITS = [
 const MAX_RUN_MINUTES = 90;
 
 const args = process.argv.slice(2), arg = name => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : undefined; };
+if (args.includes('--help') || args.includes('-h')) {
+  console.log(readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n').filter((l, i, all) => all.slice(0, i + 1).every(x => x.startsWith('//'))).map(l => l.slice(3)).join('\n'));
+  process.exit(0);
+}
+const VALUE_FLAGS = ['--runs', '--parallel', '--run', '--out'], SWITCHES = ['--no-calibrate', '--summarize', '--subset', '--serial'];
+for (let i = 0; i < args.length; i++) {
+  if (VALUE_FLAGS.includes(args[i])) { if (args[i + 1] === undefined || args[i + 1].startsWith('--')) { console.error(`${args[i]} needs a value (see --help)`); process.exit(2); } i++; }
+  else if (!SWITCHES.includes(args[i])) { console.error(`Unknown argument "${args[i]}" (see --help)`); process.exit(2); }
+}
+if (arg('--parallel') !== undefined && !(Number.isInteger(Number(arg('--parallel'))) && Number(arg('--parallel')) > 0)) { console.error('--parallel needs a positive integer'); process.exit(2); }
+/** A `--runs` subset writes its own files, so it never mixes with or overwrites the full study. */
+const SUBSET = !!arg('--runs') || args.includes('--subset');
+const OUT = '.codex-drafts/tiny-tide-qa', RUNS_DIR = `${OUT}/pacing-runs${SUBSET ? '-subset' : ''}`, REPORT = `${OUT}/pacing${SUBSET ? '-subset' : ''}`;
 const parseRun = text => { const [branch, seed, policy] = text.split(':'); if (!BRANCHES[branch] || !POLICIES.includes(policy) || !Number.isInteger(Number(seed))) throw new Error(`bad run "${text}" (branch:seed:policy)`); return { branch, seed: Number(seed), policy }; };
 const runId = (r, serial = false) => `${r.branch}-${r.seed}-${r.policy}${serial ? '-serial' : ''}`;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -60,6 +76,8 @@ else await study();
 
 async function study() {
   mkdirSync(RUNS_DIR, { recursive: true });
+  // Old run files (earlier studies, trials, failed runs) would otherwise enter the summary.
+  for (const f of readdirSync(RUNS_DIR)) if (/\.(json|log)$/.test(f)) unlinkSync(`${RUNS_DIR}/${f}`);
   const parallel = Number(arg('--parallel') ?? 4);
   const runs = arg('--runs') ? arg('--runs').split(',').map(parseRun)
     : Object.keys(BRANCHES).flatMap(branch => SEEDS.flatMap(seed => POLICIES.map(policy => ({ branch, seed, policy }))));
@@ -369,13 +387,17 @@ function summarize() {
     definitions: {
       active: 'game seconds in mode playing (run.elapsed advances in this mode only)', editorWall: 'real seconds in mode editing (path screen, evolve editor and purchase edits; the game clock stops)',
       wall: 'real seconds in all modes at this size', travel: 'active seconds with no food of the diet in bite reach (inReach with the effective reach)', feeding: 'active seconds with a food of the diet in bite reach',
-      contact: 'active seconds with contactNow true (a contact on the current frame)', damage: 'hearts lost to accepted hits (damageAfterArmor)', armorPrevented: 'raw hazard damage minus damage after armor',
-      forageExtra: 'mealDna − dnaFor (the plan foraging bonus)', verticalMeals: 'meals of a target for which the bot used Rise, Breach or Dive because of its height',
+      contact: 'active seconds with contactNow true (a contact on the current frame)', damage: 'approximate hearts lost to accepted hits: derived, not observed — damageAfterArmor(raw, armor) with the raw damage of the hazard source nearest the player',
+      armorPrevented: 'approximate: derived, not observed — raw damage of the nearest hazard source minus damageAfterArmor(raw, armor)',
+      meals: 'a meal is a food that disappears on the frame the bite count rises (nearest to the player first, as many as the bite increase); a food that disappears on a later frame is not counted',
+      forageExtra: 'mealDna − dnaFor (the plan foraging bonus)', verticalMeals: "meals of a target for which the bot itself used Rise, Breach or Dive because of the target's height (not a game measure)",
       mandatoryNet: 'wallet before the path screen minus wallet after the evolution (Snapper/Beak, Fix for me, refunds)', T: 'mean total active seconds of completed runs' },
     runs: rows, calibration: calibrationRows, branches };
-  writeFileSync(`${OUT}/pacing.json`, JSON.stringify(report, null, 2));
-  const md = tables(report); writeFileSync(`${OUT}/pacing.md`, md);
+  writeFileSync(`${REPORT}.json`, JSON.stringify(report, null, 2));
+  const md = tables(report); writeFileSync(`${REPORT}.md`, md);
   console.log(md);
+  const unfinished = [...rows, ...calib].filter(r => !r.completed);
+  if (unfinished.length) { console.error(`${unfinished.length} run(s) did not finish: ${unfinished.map(r => r.id).join(', ')}`); process.exitCode = 1; }
 }
 function bandOf(x, [lo, hi]) { return x === null ? '—' : x < lo ? 'below' : x > hi ? 'above' : 'in'; }
 function tables(report) {
