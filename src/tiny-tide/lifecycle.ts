@@ -112,42 +112,59 @@ export function trapDue(w: TrapWatch, at: Vec3, push: Vec3, L: number, isWedged:
   w.armed = false;
   return true;
 }
-/** The nearest admitted pose within TRAP_REACH body lengths, level, facing the push or (when that fits nowhere) another of 8 yaws, in
- *  place first (a turn the sweep refused), then on rings of .125 L nearest the push direction first, at the body's height and (ground
- *  plans) at the support height there. The body's own pose (in place, its own yaw) is not a result. A pose whose centre line from the
- *  body's centre passes through a solid is skipped, so the body never jumps through a rock or an arch leg. */
-export function unstickPose(actor: Actor, at: Vec3, yaw: number, current: Orientation, ctx: LegalityContext & { time: number; ground: boolean }): RecoveryResult {
-  const q = ctx.queries, L = actor.bodyLength, actx = { time: ctx.time, permit: null, bounds: ctx.bounds };
-  const probe: Actor = { id: actor.id, hull: [{ start: { x: 0, y: 0, z: 0 }, end: { x: 0, y: 0, z: 0 }, radius: 1e-3 * L }], habitat: actor.habitat, bodyLength: L };
-  const clear = (p: Vec3) => {
-    for (let k = 1; k <= 8; k++) {
-      const c = { x: at.x + (p.x - at.x) * k / 8, y: at.y + (p.y - at.y) * k / 8, z: at.z + (p.z - at.z) * k / 8 };
-      if (q.overlapHull(probe, c, current, { time: ctx.time }).constraint === 'solid') return false;
+/** The search for the nearest admitted pose within TRAP_REACH body lengths, level, facing the push or (when that fits nowhere) 45° or
+ *  90° off it or its own yaw: in place first (a turn the sweep refused), then on rings of UNSTICK_RING L nearest the push direction first, at the body's
+ *  height and (ground plans) at the support height there. The body's own pose (in place, its own yaw) is not a result. A pose whose
+ *  centre line from the body's centre passes through a solid is skipped, so the body never jumps through a rock or an arch leg.
+ *  The search runs in slices (`step(budget)` tests at most `budget` candidates), so a frame never pays for all of it. */
+export class UnstickSearch {
+  private ring = 0; private angle = 0; private yawIndex = 0; private done = false;
+  private readonly yaws: number[]; private readonly probe: Actor;
+  constructor(private readonly actor: Actor, readonly at: Vec3, private readonly yaw: number, private readonly current: Orientation,
+    private readonly ctx: LegalityContext & { time: number; ground: boolean }) {
+    this.yaws = [yaw, yaw + Math.PI / 4, yaw - Math.PI / 4, yaw + Math.PI / 2, yaw - Math.PI / 2, current.yaw];
+    this.probe = { id: actor.id, hull: [{ start: { x: 0, y: 0, z: 0 }, end: { x: 0, y: 0, z: 0 }, radius: 1e-3 * actor.bodyLength }], habitat: actor.habitat, bodyLength: actor.bodyLength };
+  }
+  /** A pose, null while the search goes on, or a failure when every candidate is refused. */
+  step(budget: number): RecoveryResult | null {
+    const rings = Math.floor(TRAP_REACH / UNSTICK_RING + 1e-9);
+    for (let n = 0; n < budget && !this.done; n++) {
+      const r = this.ring * UNSTICK_RING * this.actor.bodyLength, a = this.yaw + (this.angle % 2 === 0 ? 1 : -1) * Math.ceil(this.angle / 2) * Math.PI / 8;
+      const found = this.test(this.at.x + Math.sin(a) * r, this.at.z + Math.cos(a) * r, this.yaws[this.yawIndex]!, this.ring === 0);
+      if (found) { this.done = true; return found; }
+      // Next: yaw, then angle (one in place), then ring.
+      if (++this.yawIndex < this.yaws.length) continue;
+      this.yawIndex = 0;
+      if (this.ring > 0 && ++this.angle < 16) continue;
+      this.angle = 0;
+      if (++this.ring > rings) this.done = true;
     }
-    return true;
-  };
-  const yaws = [yaw, ...[1, 2, 3].flatMap(k => [yaw + k * Math.PI / 4, yaw - k * Math.PI / 4]), yaw + Math.PI];
-  const tryAt = (x: number, z: number, inPlace: boolean): RecoveryResult | null => {
-    for (const y0 of yaws) {
-      const o: Orientation = { yaw: y0, pitch: 0 };
-      if (inPlace && Math.abs(Math.sin((y0 - current.yaw) / 2)) < 1e-6) continue;
-      const ys = [at.y];
-      if (ctx.ground && !q.terrain.space) ys.unshift(supportHeight(actor, x, z, o, q.terrain) + .01 * L);
-      for (const y of ys) { const p = { x, y, z }; if (q.overlapHull(actor, p, o, actx).ok && clear(p)) return { ok: true, position: p, orientation: o }; }
+    return this.done ? { ok: false, reason: 'no free pose near the trap' } : null;
+  }
+  private test(x: number, z: number, y0: number, inPlace: boolean): RecoveryResult | null {
+    const q = this.ctx.queries, L = this.actor.bodyLength, o: Orientation = { yaw: y0, pitch: 0 }, at = this.at;
+    if (inPlace && Math.abs(Math.sin((y0 - this.current.yaw) / 2)) < 1e-6) return null;
+    const ys = [at.y];
+    if (this.ctx.ground && !q.terrain.space) ys.unshift(supportHeight(this.actor, x, z, o, q.terrain) + .01 * L);
+    for (const y of ys) {
+      const p = { x, y, z };
+      if (!q.overlapHull(this.actor, p, o, { time: this.ctx.time, permit: null, bounds: this.ctx.bounds }).ok) continue;
+      let clear = true;
+      for (let k = 1; k <= 8 && clear; k++) {
+        const c = { x: at.x + (x - at.x) * k / 8, y: at.y + (y - at.y) * k / 8, z: at.z + (z - at.z) * k / 8 };
+        if (q.overlapHull(this.probe, c, this.current, { time: this.ctx.time }).constraint === 'solid') clear = false;
+      }
+      if (clear) return { ok: true, position: p, orientation: o };
     }
     return null;
-  };
-  const here = tryAt(at.x, at.z, true);
-  if (here) return here;
-  for (let k = 1; k * .125 <= TRAP_REACH + 1e-9; k++) {
-    const r = k * .125 * L;
-    for (let j = 0; j < 16; j++) {
-      const a = yaw + (j % 2 === 0 ? 1 : -1) * Math.ceil(j / 2) * Math.PI / 8, p = tryAt(at.x + Math.sin(a) * r, at.z + Math.cos(a) * r, false);
-      if (p) return p;
-    }
   }
-  return { ok: false, reason: 'no free pose near the trap' };
 }
+/** The whole search at once (tests). */
+export const unstickPose = (actor: Actor, at: Vec3, yaw: number, current: Orientation, ctx: LegalityContext & { time: number; ground: boolean }): RecoveryResult =>
+  new UnstickSearch(actor, at, yaw, current, ctx).step(Infinity)!;
+/** Candidates a frame may test (each costs a support height, one or two admissions, and up to 8 point tests when admitted: about
+ *  .4 ms for a long Crawler near small rocks), and the ring spacing in body lengths. */
+export const UNSTICK_BUDGET = 3, UNSTICK_RING = .25;
 
 const sameEmitter = (a: PartEmitterSource, b: { partUid: string; copy: number; socketId: string }) => a.partUid === b.partUid && a.copy === b.copy && a.socketId === b.socketId;
 

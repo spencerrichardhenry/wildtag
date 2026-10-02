@@ -5,7 +5,7 @@ import { newRuntime, type Actor, type Terrain, type Vec3 } from '../../src/tiny-
 import { Ecosystem, speciesActor } from '../../src/tiny-tide/ecosystem';
 import { derive, effectiveStats, starterFor } from '../../src/tiny-tide/genome';
 import { RELEASED } from '../../src/tiny-tide/input';
-import { growthPose, newTrapWatch, trapDue, unstickPose, wedged } from '../../src/tiny-tide/lifecycle';
+import { growthPose, newTrapWatch, TRAP_MOVE, trapDue, UNSTICK_BUDGET, UnstickSearch, unstickPose, wedged } from '../../src/tiny-tide/lifecycle';
 import { startAnchor } from '../../src/tiny-tide/motion';
 import { playerActor } from '../../src/tiny-tide/mount';
 import { PLANS, plan } from '../../src/tiny-tide/plans';
@@ -172,7 +172,7 @@ describe('a tap-to-walk target behind a rock (owner ruling M12: rocks stay walls
 });
 
 describe('a ground creature touching a rock or an arch can always move away from it (continuation: crawler freeze)', () => {
-  /** 2 s: a slide away, or a slide into a wedge, the trap rescue (TRAP_SECONDS .75 s) and walking on. */
+  /** 2 s: a slide away, or a slide into a wedge, the trap rescue (TRAP_SECONDS .75 s, then the search in slices) and walking on. */
   const AWAY_FRAMES = 120;
   /** The crawler bodies of the test: the starter, a long thin spine and a short wide one (the journey edits within these ranges). */
   const bodies = (planId: string) => {
@@ -204,14 +204,16 @@ describe('a ground creature touching a rock or an arch can always move away from
           cases++;
           // Then input along the contact normal's horizontal part (away from the solid), with the game's trap rescue (main.ts).
           const hl = Math.hypot(normal.x, normal.z), away = { x: normal.x / hl, y: 0, z: normal.z / hl }, from = pos, watch = newTrapWatch();
-          let recov = 0, failedRescues = 0;
+          let recov = 0, failedRescues = 0, search: UnstickSearch | null = null;
           for (let e = 0; e < AWAY_FRAMES; e++, f++) {
             const r = step(pos, rt, away, f);
             if (r.needsRecovery) { recov++; continue; }
             pos = r.position;
-            if (trapDue(watch, pos, away, L, wedged(r.contacts, rt.orientation.yaw, away), 1 / 60)) {
-              const u = unstickPose(a, pos, Math.atan2(away.x, away.z), rt.orientation, { queries: q, bounds, time: (f + 1) / 60, ground: caps.ground });
-              if (u.ok) { pos = u.position; rt.orientation = { ...u.orientation }; rt.controlledVelocity = { x: 0, y: 0, z: 0 }; unstuck++; } else failedRescues++;
+            // As main.ts: the search runs UNSTICK_BUDGET candidates a frame.
+            if (!search && trapDue(watch, pos, away, L, wedged(r.contacts, rt.orientation.yaw, away), 1 / 60)) search = new UnstickSearch(a, { ...pos }, Math.atan2(away.x, away.z), { ...rt.orientation }, { queries: q, bounds, time: (f + 1) / 60, ground: caps.ground });
+            if (search) {
+              const u = Math.hypot(pos.x - search.at.x, pos.z - search.at.z) > TRAP_MOVE * L ? { ok: false as const, reason: 'moved' } : search.step(UNSTICK_BUDGET);
+              if (u) { search = null; if (u.ok) { pos = u.position; rt.orientation = { ...u.orientation }; rt.controlledVelocity = { x: 0, y: 0, z: 0 }; unstuck++; } else if (u.reason !== 'moved') failedRescues++; }
             }
           }
           // Free again: ≥ .3 L from the contact spot. (Straight along the first normal is not always free: in a cluster of solids the
