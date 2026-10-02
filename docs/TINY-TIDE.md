@@ -70,8 +70,9 @@ insignificant. The camera remains near the player, and the visible world
 changes from seafloor to open water, surface, sky and space.
 
 The creature body is generated at runtime from its genome as a skinned mesh
-with one bone for each spine segment. All parts, food, scenery and planets
-are original Blender GLBs, except the far seabed.
+with one bone for each spine segment. Parts and the body move with procedural
+animation. All parts, food, scenery and planets are original Blender GLBs,
+except the far seabed.
 
 **Seabed.** The drawn seabed agrees with the collision ground (`seabedHeight`)
 to within .02 L everywhere the player can reach at each stage (L = the starter
@@ -81,7 +82,12 @@ sampled from `seabedHeight` once at load, in the reef's material: spacing 4 out
 to 232, 8 out to 928, 24 out to 3200 and 48 out to 3712 physical units. Each
 ring starts on the last loop of the ring inside it, so there are no cracks. A
 ring is drawn only at scales where it can be seen (its inside is within the
-edge fade). Measured maximum error: stage 1, .010 L; stage 2, .009 L; stage 3,
+edge fade). At the Big size (scale above 32) the two fine rings would be
+under 1/4 local unit per quad, so they are hidden and one coarse ring
+(spacing 24) covers the same area, joined to the reef and to the 24 ring with
+the same vertices. Stage 3 draws 178 052 seabed triangles (291 580 before);
+the phone check measures .86M, 1.26M, 1.51M and 1.24M triangles per frame at
+stages 0 to 3 (stage 3 was 1.35M) and asserts a budget of 1.6M. Measured maximum error: stage 1, .010 L; stage 2, .009 L; stage 3,
 .016 L. The old Blender rings (`seabed_1`, `seabed_2`) were off by up to .09 L
 at stage 1 and .21 L at stage 2, and did not reach the stage-3 bound. They are
 still in the asset library, but the game no longer loads them.
@@ -109,19 +115,33 @@ Counts per seed (plants / rocks / arches, layers 0, 1, 2; before → after):
 4242: 51/51/9, 60/60/13, 64/64/11 → 40/39/5, 56/51/12, 54/50/10.
 Before, every plant stood in its own rock.
 
-**Collision with the reef.** Rocks and arches are solids (`solids.ts`):
+**Collision with the reef.** Rocks and arches are solids (`solids.ts`). The
+collider is the visible mesh itself (final review I2): the stone and the moss
+of each GLB (`reef-colliders.json`, written by
+`node scripts/tiny-tide/reef-colliders.mjs`; a unit test fails while it differs
+from the GLBs). Each closed piece (the stone, each moss patch) is one triangle
+mesh with a grid of its triangles. A sphere test measures the exact distance
+to the scaled, turned mesh, and a ray-parity test says whether the centre is
+inside it.
 
-- A rock is an ellipsoid: the Blender rock's ellipsoid (radii 1, .66, .83 at
-  height .15) times `ROCK_FIT` 1.05. Every rock vertex is within .04 asset
-  units of it, and it is within .14 of the mesh.
-- An arch is 15 capsules along its tube (the legs and the top span). The tube
-  is inside them, the moss within .04 and the thin crown coral within .06.
-  They are within .2 of the mesh. The opening stays open.
+- Measured with a probe of .1 L against the three largest rocks and two arches
+  of every colliding layer and stage (two seeds), the gap between the collider and the
+  visible rock is 0 (it was up to .50 L for a layer-1 rock at stage 0, .36 L
+  for a layer-2 rock at stage 1 and .18 L at stage 2). The lower half of a
+  rock above the seabed is measured too. No stone or moss vertex is outside
+  the collider.
+- The arch's thin crown coral has no collision, like all coral: its tips stand
+  at most .25 L outside the collider (a layer-1 arch at stage 0).
+- Placement still keeps the old footprints apart (the rock's ellipsoid times
+  `ROCK_FIT` 1.05, the arch's 15 capsules), so the reef layout did not change.
 - Coral, kelp, grass, shells and starfish have no collision.
 
-A layer collides with the bodies of a stage when its size is at least the
-stage's size (stage 0: all layers; stage 1: layers 1 and 2; stage 2: layer
-2; stages 3 and 4: none). Smaller layers are pebbles at that size.
+A layer collides with the bodies of a stage when its rocks are tall enough to
+meet them: 4 × the layer size is at least the stage size (final review I3).
+Stage 0: layers 0, 1 and 2; stage 1: layers 0, 1 and 2; stage 2: layers 1 and
+2; stage 3: layer 2; stage 4 (space): none. The tallest rocks of such a layer
+stand .14 to .18 L above the seabed. A layer that does not collide at a stage
+is either not drawn there or its tallest rock stands under .05 L (a pebble).
 `stageWorldQueries(stage, seed)` (`world-queries.ts`) builds the world queries
 from the terrain and these solids. The player, the ecosystem, food access, the
 avoidance test and the browser fixtures all use it.
@@ -130,21 +150,27 @@ Admission refuses a hull that enters a solid, with the constraint `solid`. This
 rule comes after the ground rule. Each sample sphere, grown by its whole
 envelope, is tested against the solids in a uniform grid (cell 4 × the stage
 size), so the cost does not grow with the number of solids. The deepest contact
-gives the point and the normal, which is the exact outward normal of the
-ellipsoid or capsule. So the contact skin and the crease projection of motion
-slide a body around a rock. The admission also names the solid (`solidId`).
+gives the point and the normal, which points from the nearest point of the
+mesh to the sphere's centre (outward). So the contact skin and the crease
+projection of motion slide a body around a rock. The admission also names the
+solid (`solidId`).
 
-- Ground plans treat rocks as walls. Their support height is the seabed
-  only, so they walk around rocks and do not climb them.
+- Ground plans treat rocks as walls (owner ruling M12). Their support height
+  is the seabed only, so they walk around rocks and do not climb them. A
+  tap-to-walk target is dropped after 1 s with no progress toward it
+  (`TAP_STALL_SECONDS`), so a target behind a rock does not hold the body
+  against the rock.
 - A growth lift stops at the first step that a different rule or a different
-  solid refuses, so it never carries a body through a thin solid.
+  solid refuses, so it never carries a body through a thin solid. In a crease
+  (for example the seabed and a rock base) the two refusal normals are across
+  each other; the lift is then tried once more along their sum (final review
+  M6), so a bite at the foot of a rock keeps the motion.
 - Spawns never use a solid. A spawn point inside a solid (grown by the body
   radius) is rejected. The opening population replaces such a point with its
   own RNG, so the other spawns of the seed do not move. Every entity is then
   installed on an admitted pose, so food, homes and creatures are never inside
   a solid.
 
-Parts and the body move with procedural animation.
 The models preload once before play; editing and evolving make no network
 requests. Water, caustics, light shafts, particles and sound remain runtime effects.
 
@@ -219,7 +245,15 @@ second-order margin from the terrain's curvature bound
 (`SEABED_CURVATURE_BOUND` = .026). Measured at rest on a flat seabed, the
 visible gap between the belly and the sand is .03 L. It was .13 L before.
 When sliding along slopes it is at most .058 L. It was .21 to .30 L before.
-Combat poses and hurtboxes still use the conservative hull.
+These numbers are for the starter bodies. On 13 edited bodies (final review
+M15: flat, tall and strongly lifted spines) the sliding gap reaches .19 L,
+because a round hull piece holds the larger of a segment's radius and height;
+the body still never goes below the seabed. A tighter fit for such bodies needs
+non-round hull pieces (not done).
+The ecosystem uses the same admission hull for its contact hazards (the touch
+test, hazard events and the hunter's remembered target), so for the swim plans
+that is the tight hull. Only combat poses (`sampleCombatPose`) build the
+conservative hull.
 
 **World edge.** The world bound is a square at ±50 stage-local units
 (`PLAYER_HALF`). It is not felt as a wall. From 0.8 × the bound (40 units,
@@ -244,9 +278,14 @@ past 44 units is not approachable. Every creature can bite at 44 units: the
 slowest possible creature settles at about 42 units, and the smallest bite
 reaches 2.2 units further.
 
-**Hints.** When a move hits a border, a toast says why (at most one each 6 s).
-The world-edge hint also shows once each time the creature enters the edge's
-push zone, but only when no other toast is on screen:
+**Hints.** When a move is really blocked, a toast says why (final review I1):
+the move is `blocked` and less than 25 % of it is done (`BLOCK_HINT_PROGRESS`),
+frame after frame for .3 s (`BLOCK_HINT_SECONDS`). A slide along a border, the
+seabed or a rock is not a block and shows no hint. One hint shows per block,
+at most one each 6 s, and only when no other toast is on screen, so a one-shot
+message ("Ready to evolve!", "New part found") is never replaced; the hint
+waits until that toast is gone. The world-edge hint also shows once each time
+the creature enters the edge's push zone, with the same rule:
 
 | Border | Hint |
 | --- | --- |
@@ -265,8 +304,11 @@ on their support height. Swim, fly and space plans move in three dimensions:
 hold Rise / E or Dive / Q, and forward follows the camera pitch. Each movement
 profile sets speed, acceleration, braking and turn rates.
 
-**Breach.** Darter and Bulk (size 2, free water) Breach instead of Rise: tap
-Rise / E. A Breach is a 1.8 s arc (`BREACH_SECONDS`) that rises 3.8 × the
+**Breach.** Darter and Bulk (size 2, free water) Breach: tap Rise / E within
+2 body lengths under the surface (`BREACH_REACH`, measured from the body's
+origin; owner ruling M9). Deeper, a tap or a hold of Rise is a normal Rise, so
+a tap on the seabed never starts an uncontrolled arc. A tap during the
+cooldown is a Rise too. A Breach is a 1.8 s arc (`BREACH_SECONDS`) that rises 3.8 × the
 size scale above the surface (`BREACH_RISE × size`). It ends 1.3 × the size
 scale under the surface (`BREACH_END_DEPTH × size`), or deeper when the
 body needs it: the arc's end height (`breachEndY`, fixed when the arc starts)
@@ -278,10 +320,17 @@ admitted in the water ends the air permit at once. Otherwise the permit lasts
 needed. The cooldown is 2.3 s (`BREACH_COOLDOWN`).
 
 **Recovery.** When a pose stops being legal (for example, after a design
-change, a growth step or the end of a Breach), the game looks for the nearest
-legal pose: the current orientation, then level, then the start anchor. If all
-fail, the game enters a stuck state and tries again each second. It never
-installs an unchecked pose.
+change, a transformation, or a step that ends a permit in the air), the game
+looks for the nearest legal pose: the current orientation, then level, then
+the start anchor. Recovery installs the pose with no permit or arc and zero
+velocities. If all fail, the game enters a stuck state and tries again each
+second; while stuck it keeps the last installed pose with the orientation,
+permit and arc it was admitted with (final review M10). It never installs an
+unchecked pose. Two cases keep the motion and do not use recovery: a growth
+step first tries the smallest lift of the grown body (up to .5 L, along the
+refusal's normal, or along two normals in a crease) with both velocities
+kept, and only when no lift is admitted does it recover; the end of a Breach
+lands in the water by its end height (`breachEndY`) with no recovery.
 
 **Start anchors.** Each size has a start anchor: the nearest legal pose to a
 point just above the ground at the origin (in space, `(0, 3 × size, 0)`). A
@@ -298,7 +347,18 @@ blocked wait 3 s, reacquire 2 s, leash 30 and give-up 12 body lengths). A test
 player step: a player that flees at the notice distance must escape. An
 encounter starts with the whole hull inside the soft edge (owner playtest P4:
 the reef moves some starts, and a start already in the edge current is not an
-open-water escape).
+open-water escape), with the orientation its start pose was admitted with.
+
+Hunters and the edge (owner ruling M11): hunters (species that hunt or fight
+back) roam inside 42 tier-local units (`SPAWN_HALF` + `HUNTER_MARGIN`), and they
+do not chase into the player's push zone. A hunter whose target is past the
+soft start (40 units of the player's stage) gives up and goes home, and it does
+not acquire a target there. So the edge current, which holds a fleeing player
+at about 43 units, never holds it for a hunter. The avoidance test also runs
+edge encounters: the player starts at x = 38, the hunter .95 of its notice
+distance further in, and the player flees outward into the current. A Speck
+against the Peach crab was caught at 1.9 s before this rule; every edge
+encounter now ends with the hunter giving up (.5 to 1.1 s).
 
 To pass that test, Task C5 slowed two hunters (`src/tiny-tide/species.ts`):
 
@@ -462,8 +522,8 @@ npx vitest run tests/tiny-tide.test.ts tests/tiny-tide-core
 npm run build                              # the chunk-size warning is expected
 python3 scripts/tiny-tide/blender/check_assets.py   # PASS: 86 self-contained Blender GLBs; fails on a stale part-rig.json
 node e2e/tiny-tide.mjs                     # swimmer line; TIDE_LINE=crawler for the crawler line (long: run in the background)
-node e2e/tiny-tide-paths.mjs               # 18 checks with 5b, 5c, 7b and 12b; pass check ids (for example 3 5c) to run some
-node e2e/tiny-tide-mobile.mjs
+node e2e/tiny-tide-paths.mjs               # 18 checks with 5b, 5c, 5d, 7b, 7c and 12b; pass check ids (for example 3 5c) to run some
+node e2e/tiny-tide-mobile.mjs              # also the phone triangle budget (1.6M per frame) at stages 0–3
 node e2e/tiny-tide-replay.mjs
 node e2e/tiny-tide-pacing.mjs              # the pacing study (a diagnostic, not a gate; long: run in the background)
 ```
@@ -489,10 +549,14 @@ Read-only diagnostics on `window.__tinyTide` include `editorProjection(target)`
 (the screen point of a visible part, by uid, or of a body point `{ t, angle }`
 in the open editor) and `poseAgreement()` (rendered socket transforms against
 `sampleCombatPose`)), `lastContactSolid` (the solid of the last 'solid' contact),
-`solidsNear` (the nearest reef solids of the stage, in local units) and
-`admission` (per stage: played frames and the admission time per frame, for
-every `overlapHull` call of the player, the ecosystem and the food guide; the
-journey prints it).
+`solidsNear` (the nearest reef solids of the stage, in local units),
+`solidOverlap` (the reef solid the player's hull overlaps, from the admission's
+solid rule alone, or null) and `admission` (per stage: played frames, the
+admission time and calls per frame in total and per caller — player, ecosystem
+and food guide — and the player's contacts per frame; the journey prints it).
+The admission clock counts only calls made inside a played frame: it resets
+when a frame starts, so the editor's anchor checks and a start's admissions
+are not counted (final review M8).
 
 The unit tests cover parts, genomes, stats, diets, DNA, evolution, health,
 seeded worlds, creature behavior (hunting, fleeing, provoking, stealth,

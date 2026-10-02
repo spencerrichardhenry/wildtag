@@ -197,7 +197,9 @@ interface HabitatProfile {
 > `r'/6` with a second-order (curvature) margin instead of the slope margin.
 > The body stops within .06 L of the seabed; the tail may clip a little into it.
 > Every other plan keeps the conservative rules below. See docs/TINY-TIDE.md,
-> "Hull fit".
+> "Hull fit". The ecosystem's contact hazards (touch, hazard events and the
+> remembered target hull) use the same admission hull: for the swim plans, the
+> tight hull. Only `sampleCombatPose` builds the conservative hull for them.
 
 A body is a list of capsules, oriented and placed in physical space. With
 `L` = body length:
@@ -587,7 +589,8 @@ numbers, unit axes, integer counts, references, rig chains without cycles,
   Admission treats the occupied volume as the capsule swept by any such
   offset, so grounded bodies do not float by the horizontal wave.
   (Owner override P3: the swim plans' admission hull is the tight hull of
-  `bodyHull(genome, 'tight')`; see "Admission of a body".)
+  `bodyHull(genome, 'tight')`; see "Admission of a body". The ecosystem's
+  contact hazards use that admission hull too.)
 - Hurtboxes are the posed capsules (bones applied) for the current tick.
 - `massFor(plan, genome, physicalLength)` = `massPerBodyLength × length`.
 
