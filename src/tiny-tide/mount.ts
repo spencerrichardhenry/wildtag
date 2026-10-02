@@ -1,14 +1,15 @@
 // Part mounts (shared with the renderer), the occupancy hull with its animation envelope, combat poses on the shared rig,
 // mass, and the player and species actors (spec §8 "Rig, sockets and pose", "Hull and physics").
 import * as T from 'three';
-import { layout, partFrame, PART_SCALE, SPACING, surface, type Layout } from './body-geometry';
+import { layout, partFrame, PART_SCALE, profile, SPACING, surface, type Layout } from './body-geometry';
 import { SIZES } from './biomes';
-import type { Actor, Capsule, CombatPose, Emitter, Vec3 } from './combat-types';
+import type { Actor, Capsule, CombatPose, Emitter, HullFit, Vec3 } from './combat-types';
 import { emittersOf } from './design-delta';
 import type { Genome, PlacedPart } from './genome';
 import { part } from './parts';
 import type { BodyPlan } from './plans';
-import { habitat } from './profiles';
+import { habitat, movement } from './profiles';
+import { tightSampleCount, tightSampleRadius } from './world-queries';
 import { boneMatricesInto, CHOMP_PITCH, pivotToPart, restPivotToPart, SWIM_AMP_MAX, type RigPose } from './rig';
 import type { Species } from './species';
 
@@ -45,29 +46,86 @@ function cubicRange([a0, a1, a2, a3]: readonly number[]): { min: number; max: nu
   return { min, max };
 }
 
-/** Rest hull capsules with their bone sets, before the envelope. */
-function restCapsules(g: Genome, l: Layout): { c: { start: Vec3; end: Vec3; radius: number }; bones: number[] }[] {
-  const s = g.spine, n = s.length, at = (j: number) => s[Math.max(0, Math.min(n - 1, j))]!, out: { c: { start: Vec3; end: Vec3; radius: number }; bones: number[] }[] = [];
+/** The tight hull splits each spine segment into these tapered pieces (fractions of the segment). */
+const TIGHT_PIECES: readonly (readonly [number, number])[] = [[0, 1 / 3], [1 / 3, 2 / 3], [2 / 3, 1]];
+type RestCapsule = { start: Vec3; end: Vec3; radius: number; radii?: [number, number] };
+/** Rest hull capsules with their bone sets, before the envelope.
+ *  Conservative: caps reach a full radius past the tips, and each segment has one radius (the largest of its cross-section).
+ *  Tight: caps are spheres on the end bones that just hold the tip (its half-length is at most max(radius, height)), and each
+ *  segment is split into TIGHT_PIECES tapered pieces. A piece's axis is the chord of the lift cubic over its range; its radius goes
+ *  linearly from max(radius, height) at its start to the same at its end, plus how far the radius and height cubics rise above that
+ *  line and how far the lift cubic leaves the chord. */
+function restCapsules(g: Genome, l: Layout, fit: HullFit = 'conservative'): { c: RestCapsule; bones: number[] }[] {
+  const s = g.spine, n = s.length, at = (j: number) => s[Math.max(0, Math.min(n - 1, j))]!, out: { c: RestCapsule; bones: number[] }[] = [];
   const o = (i: number): Vec3 => ({ x: 0, y: s[i]!.lift, z: l.z[i]! });
-  out.push({ c: { start: o(0), end: { x: 0, y: s[0]!.lift, z: l.front }, radius: Math.max(s[0]!.radius, s[0]!.height) }, bones: [0] });
+  const cap = (i: number, tip: number) => fit === 'tight'
+    ? { start: o(i), end: o(i), radius: Math.max(s[i]!.radius, s[i]!.height, Math.abs(tip - l.z[i]!)) }
+    : { start: o(i), end: { x: 0, y: s[i]!.lift, z: tip }, radius: Math.max(s[i]!.radius, s[i]!.height) };
+  out.push({ c: cap(0, l.front), bones: [0] });
   for (let k = 0; k < n - 1; k++) {
     const cubic = (key: 'radius' | 'height' | 'lift') => catmullCoeffs(at(k - 1)[key], at(k)[key], at(k + 1)[key], at(k + 2)[key]);
     const lift = cubic('lift'), b = s[k]!.lift, c = s[k + 1]!.lift;
-    const dev = cubicRange([lift[0] - b, lift[1] - (c - b), lift[2], lift[3]]);
-    const radius = Math.max(.05, cubicRange(cubic('radius')).max, cubicRange(cubic('height')).max) + Math.max(Math.abs(dev.min), Math.abs(dev.max));
+    const dev = cubicRange([lift[0] - b, lift[1] - (c - b), lift[2], lift[3]]), liftDev = Math.max(Math.abs(dev.min), Math.abs(dev.max));
+    if (fit === 'tight') {
+      // Each piece is fitted to the cubics on its own range: f ∈ [a, b] is remapped to [0, 1] (the Catmull-Rom cubics are in f).
+      const R = cubic('radius'), H = cubic('height'), Y = cubic('lift'), z = (f: number) => l.z[k]! + (l.z[k + 1]! - l.z[k]!) * f;
+      const sub = (q: readonly number[], a: number, b: number): [number, number, number, number] => {
+        // q(a + (b − a) u) as a cubic in u.
+        const d = b - a, [q0, q1, q2, q3] = q as [number, number, number, number];
+        return [q0 + q1 * a + q2 * a * a + q3 * a ** 3, (q1 + 2 * q2 * a + 3 * q3 * a * a) * d, (q2 + 3 * q3 * a) * d * d, q3 * d ** 3];
+      };
+      const val = (q: readonly number[], f: number) => q[0]! + f * (q[1]! + f * (q[2]! + f * q[3]!));
+      for (const [a, b] of TIGHT_PIECES) {
+        const r0 = Math.max(.05, val(R, a), val(H, a)), r1 = Math.max(.05, val(R, b), val(H, b)), y0 = val(Y, a), y1 = val(Y, b);
+        const above = (q: [number, number, number, number]) => cubicRange([q[0] - r0, q[1] - (r1 - r0), q[2], q[3]]).max;
+        const ys = sub(Y, a, b), yd = cubicRange([ys[0] - y0, ys[1] - (y1 - y0), ys[2], ys[3]]), dev = Math.max(Math.abs(yd.min), Math.abs(yd.max));
+        const rise = Math.max(0, above(sub(R, a, b)), above(sub(H, a, b))), radii: [number, number] = [r0 + rise + dev, r1 + rise + dev];
+        out.push({ c: { start: { x: 0, y: y0, z: z(a) }, end: { x: 0, y: y1, z: z(b) }, radius: Math.max(radii[0], radii[1]), radii }, bones: [k, k + 1] });
+      }
+      continue;
+    }
+    const radius = Math.max(.05, cubicRange(cubic('radius')).max, cubicRange(cubic('height')).max) + liftDev;
     out.push({ c: { start: o(k), end: o(k + 1), radius }, bones: [k, k + 1] });
   }
-  out.push({ c: { start: o(n - 1), end: { x: 0, y: s[n - 1]!.lift, z: l.rear }, radius: Math.max(s[n - 1]!.radius, s[n - 1]!.height) }, bones: [n - 1] });
+  out.push({ c: cap(n - 1, l.rear), bones: [n - 1] });
   return out;
 }
 
-/** The occupancy hull in body space at unit scale: front cap, one capsule per segment, rear cap; each with sway and heave. */
-export function bodyHull(g: Genome): Capsule[] {
+/** How far the lowest tight sample sphere (world-queries `tightSampleRadius`) is under the visible belly's lowest point (from 64 samples of
+ *  the profile). */
+function bellySlack(g: Genome, l: Layout, capsules: readonly RestCapsule[]): number {
+  let hull = Infinity, belly = Infinity;
+  for (const c of capsules) {
+    const dy = c.end.y - c.start.y, len = Math.hypot(c.end.x - c.start.x, dy, c.end.z - c.start.z), n = tightSampleCount(c, len);
+    for (let k = 0; k <= n; k++) hull = Math.min(hull, c.start.y + dy * (n ? k / n : 0) - tightSampleRadius(c, len, k, n));
+  }
+  for (let k = 0; k <= 64; k++) { const p = profile(g, l, l.front - (l.front - l.rear) * k / 64); belly = Math.min(belly, p.lift - p.h); }
+  return belly - hull;
+}
+
+/** The tight envelope keeps this part of the spine sway of the sample-sphere centres (owner playtest P3: the tail may clip into the
+ *  seabed a little). The full sway made the Bulk's gap on a slope .075 L; half of it keeps every swim plan within .06 L. */
+export const TIGHT_SWAY = .5;
+/** The swim plans get the tight fit (the owner's "tighter fit"); every other plan keeps the conservative one. */
+export const hullFitOf = (p: BodyPlan): HullFit => movement(p.movement).mode === 'swim' ? 'tight' : 'conservative';
+
+/** The occupancy hull in body space at unit scale: front cap, one capsule per segment, rear cap; each with sway and heave.
+ *  Conservative (the default, and every combat pose): sway = spine yaw + chomp, heave = chomp, so the hull holds every animated pose.
+ *  Tight (the swim plans' admission hull; owner playtest P3): tapered segments and sphere caps (restCapsules), sway =
+ *  TIGHT_SWAY × spine yaw, and behind bone 1 a heave only for the part of a bite's dip that the hull's slack under the belly does not cover. */
+export function bodyHull(g: Genome, fit: HullFit = 'conservative'): Capsule[] {
   const l = layout(g), s = g.spine, n = s.length;
   const o = (i: number) => ({ x: 0, y: s[i]!.lift, z: l.z[i]! });
   const theta = (i: number) => i >= 1 && n > 1 ? SWIM_AMP_MAX * i / (n - 1) : 0;
-  return restCapsules(g, l).map(({ c, bones }) => {
-    const horiz = (i: number) => { const p = o(i); return Math.max(Math.hypot(c.start.x - p.x, c.start.z - p.z), Math.hypot(c.end.x - p.x, c.end.z - p.z)) + c.radius; };
+  const rest = restCapsules(g, l, fit), o0 = o(0), o1 = o(1);
+  // A bite turns bone 0 (the head) up by CHOMP_PITCH and bone 1 back: a point between them at distance d from bone 0 drops by
+  // CHOMP_PITCH × d, and everything behind bone 1 drops by CHOMP_PITCH × |bone 1 − bone 0|. The tight hull adds only the part of that
+  // drop that the hull's slack under the belly does not already cover (on a flat seabed, the biting body stays above it).
+  const slack = fit === 'tight' ? bellySlack(g, l, rest.map(r => r.c)) : 0, d01 = Math.hypot(o1.x - o0.x, o1.y - o0.y, o1.z - o0.z);
+  const dist0 = (p: Vec3) => Math.hypot(p.x - o0.x, p.y - o0.y, p.z - o0.z);
+  return rest.map(({ c, bones }) => {
+    // Tight: a rotation moves a ball by its centre's displacement only, so the axis distance is enough (the conservative hull adds the radius).
+    const horiz = (i: number) => { const p = o(i); return Math.max(Math.hypot(c.start.x - p.x, c.start.z - p.z), Math.hypot(c.end.x - p.x, c.end.z - p.z)) + (fit === 'tight' ? 0 : c.radius); };
     const yaw = (j: number) => { let disp = 0; for (let i = j; i >= 1; i--) disp += theta(i) * (horiz(i) + disp); return disp; };
     const chomp = (j: number) => {
       if (j >= 1) { const a = o(0), b = o(1); return CHOMP_PITCH * Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z); }
@@ -75,6 +133,11 @@ export function bodyHull(g: Genome): Capsule[] {
       return CHOMP_PITCH * (Math.max(Math.hypot(c.start.x - a.x, c.start.y - a.y, c.start.z - a.z), Math.hypot(c.end.x - a.x, c.end.y - a.y, c.end.z - a.z)) + c.radius);
     };
     let sway = 0, heave = 0;
+    if (fit === 'tight') {
+      heave = Math.max(0, CHOMP_PITCH * Math.min(d01, Math.max(dist0(c.start), dist0(c.end))) - slack);
+      for (const j of bones) sway = Math.max(sway, TIGHT_SWAY * yaw(j));
+      return { start: c.start, end: c.end, radius: c.radius, ...(c.radii ? { radii: c.radii } : {}), sway, heave };
+    }
     for (const j of bones) { const cj = chomp(j); sway = Math.max(sway, yaw(j) + cj); heave = Math.max(heave, cj); }
     return { start: c.start, end: c.end, radius: c.radius, sway, heave };
   });
@@ -82,16 +145,17 @@ export function bodyHull(g: Genome): Capsule[] {
 
 const scaled = (v: Vec3, k: number): Vec3 => ({ x: v.x * k, y: v.y * k, z: v.z * k });
 /** The hull at a physical scale: positions, radii, sway and heave multiplied by `scale`. */
-export const hullOffsets = (g: Genome, scale: number): Capsule[] =>
-  bodyHull(g).map(c => ({ start: scaled(c.start, scale), end: scaled(c.end, scale), radius: c.radius * scale, sway: (c.sway ?? 0) * scale, heave: (c.heave ?? 0) * scale }));
+export const hullOffsets = (g: Genome, scale: number, fit: HullFit = 'conservative'): Capsule[] =>
+  bodyHull(g, fit).map(c => ({ start: scaled(c.start, scale), end: scaled(c.end, scale), radius: c.radius * scale, ...(c.radii ? { radii: [c.radii[0] * scale, c.radii[1] * scale] as [number, number] } : {}),
+    sway: (c.sway ?? 0) * scale, heave: (c.heave ?? 0) * scale }));
 export const bodyLengthOf = (g: Genome): number => { const l = layout(g); return l.front - l.rear; };
 export const massFor = (plan: BodyPlan, _g: Genome, physicalLength: number): number => plan.physics.massPerBodyLength * physicalLength;
 
 // ---- actors ----
 
 export function playerActor(plan: BodyPlan, genome: Genome, stage: number, growth: number): Actor {
-  const scale = SIZES[stage]! * growth;
-  return { id: 'player', hull: hullOffsets(genome, scale), habitat: habitat(plan.habitat), bodyLength: bodyLengthOf(genome) * scale };
+  const scale = SIZES[stage]! * growth, fit = hullFitOf(plan);
+  return { id: 'player', hull: hullOffsets(genome, scale, fit), habitat: habitat(plan.habitat), bodyLength: bodyLengthOf(genome) * scale, ...(fit === 'tight' ? { fit } : {}) };
 }
 /** One sphere standing on the origin (food models stand on their origin). */
 export function speciesActor(e: { id: number; spec: Pick<Species, 'tier' | 'habitatProfileId'> }): Actor {

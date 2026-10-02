@@ -23,7 +23,7 @@ import { habitat, movement, movementCapabilities } from './profiles';
 import { makeTerrain, makeWorldQueries, supportHeight, zoneLabel } from './world-queries';
 import { orientHull } from './orientation';
 import { startAnchor } from './motion';
-import { bodyLengthOf, hullOffsets, massFor, playerActor } from './mount';
+import { bodyLengthOf, hullFitOf, hullOffsets, massFor, playerActor } from './mount';
 import { designDelta } from './design-delta';
 import { TideAudio } from './audio';
 import { TideWorld, type FoodObject } from './world';
@@ -192,7 +192,7 @@ const modal = el<HTMLDialogElement>('modal');
 world.setCreature(run.genome);
 let derived = derive(effectiveStats(run.genome, currentPlan(run)));
 function refreshDerived() { derived = derive(effectiveStats(run.genome, currentPlan(run))); }
-type MutCapsule = { start: MutVec3; end: MutVec3; radius: number; sway: number; heave: number };
+type MutCapsule = { start: MutVec3; end: MutVec3; radius: number; radii?: [number, number]; sway: number; heave: number };
 let actorCache: { key: string; unit: Capsule[]; unitLength: number; hull: MutCapsule[]; actor: Actor; scale: number } | null = null, hullRescaled = false;
 /** The last rescale changed only the growth (same plan, genome revision and stage). */
 let hullGrew = false;
@@ -201,8 +201,8 @@ let hullGrew = false;
 function playerActorCached(): Actor {
   const plan = currentPlan(run), key = `${plan.id}:${genomeRevision}:${run.stage}`, scale = SIZES[run.stage]! * growthOf(run);
   if (!actorCache || actorCache.key !== key) {
-    const unit = hullOffsets(run.genome, 1), hull = unit.map(() => ({ start: { x: 0, y: 0, z: 0 }, end: { x: 0, y: 0, z: 0 }, radius: 0, sway: 0, heave: 0 }));
-    actorCache = { key, unit, unitLength: bodyLengthOf(run.genome), hull, actor: { id: 'player', hull, habitat: habitat(plan.habitat), bodyLength: 0 }, scale: NaN };
+    const fit = hullFitOf(plan), unit = hullOffsets(run.genome, 1, fit), hull = unit.map((u): MutCapsule => ({ start: { x: 0, y: 0, z: 0 }, end: { x: 0, y: 0, z: 0 }, radius: 0, ...(u.radii ? { radii: [0, 0] as [number, number] } : {}), sway: 0, heave: 0 }));
+    actorCache = { key, unit, unitLength: bodyLengthOf(run.genome), hull, actor: { id: 'player', hull, habitat: habitat(plan.habitat), bodyLength: 0, ...(fit === 'tight' ? { fit } : {}) }, scale: NaN };
   }
   const c = actorCache;
   if (c.scale !== scale) {
@@ -211,6 +211,7 @@ function playerActorCached(): Actor {
       h.start.x = u.start.x * scale; h.start.y = u.start.y * scale; h.start.z = u.start.z * scale;
       h.end.x = u.end.x * scale; h.end.y = u.end.y * scale; h.end.z = u.end.z * scale;
       h.radius = u.radius * scale; h.sway = (u.sway ?? 0) * scale; h.heave = (u.heave ?? 0) * scale;
+      if (h.radii && u.radii) { h.radii[0] = u.radii[0] * scale; h.radii[1] = u.radii[1] * scale; }
     });
     hullGrew = !Number.isNaN(c.scale); c.actor.bodyLength = c.unitLength * scale; c.scale = scale; hullRescaled = true;
   }

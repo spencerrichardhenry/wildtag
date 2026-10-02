@@ -97,7 +97,8 @@ describe('growth at the floor (playtest: a bite stops the body)', () => {
     const actor = playerActor(p, g, stage, 1), L = actor.bodyLength, rt = newRuntime({ yaw: heading, pitch: 0 });
     const top = STAGES[stage]!.speed * derive(effectiveStats(g, p)).speedFactor;
     let pos = { x: 0, y: supportHeight(actor, 0, 0, rt.orientation, terrain) + .02 * L, z: 0 }, touching = false;
-    for (let f = 0; f < 120; f++) {
+    // At least 120 frames, then until a frame ends in seabed contact (the tight swim hull of P3 touches the floor less often).
+    for (let f = 0; f < 240 && !(f >= 120 && touching); f++) {
       const r = stepPlayer(pos, rt, RELEASED, { plan: p, profile: movement(p.movement), caps: movementCapabilities(p), actor, queries, bounds, size, topSpeedLocal: top,
         now: f / 60, dt: 1 / 60, wish: { x: Math.sin(heading), y: 0, z: Math.cos(heading) }, aim: null, actionLock: false });
       pos = r.position; touching = r.contacts.some(c => c.constraint === 'ground');

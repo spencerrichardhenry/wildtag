@@ -29,15 +29,23 @@ export interface MovementProfile { id: string; mode: MovementMode; speedMultipli
 export interface PursuitPolicy { id: string; memorySeconds: number; blockedWaitSeconds: number; reacquireSeconds: number; leashBodyLengths: number; giveUpBodyLengths: number }
 export interface SpeciesCombatFields { movementProfileId: string; habitatProfileId: string; hullProfileId: string; attackMountProfileId: string; attackIds: readonly string[]; contactHazardId?: string; pursuitId: string }
 export interface EnvironmentSample { medium: Medium; groundHeight: number; surfaceHeight: number | null; waterDepth: number; groundClearance: number; groundNormal: Vec3; coverIds: readonly string[]; refugeId: string | null }
-/** sway: horizontal and heave: vertical animation envelope; the occupied volume is the capsule swept by any such offset. */
-export interface Capsule { start: Vec3; end: Vec3; radius: number; sway?: number; heave?: number }
+/** sway: horizontal and heave: vertical animation envelope; the occupied volume is the capsule swept by any such offset.
+ *  radii (optional): a tapered capsule. Its cross-section in each plane of constant body z between the ends is the disc around the
+ *  axis point with a radius that goes linearly from radii[0] at start to radii[1] at end, plus a ball of that radius on each end (both
+ *  ≤ radius). Admission's tight sample spheres use it; every other user may treat it as the capsule of `radius`, which holds it. */
+export interface Capsule { start: Vec3; end: Vec3; radius: number; radii?: readonly [number, number]; sway?: number; heave?: number }
 export type EmitterSource = { kind: 'part'; partUid: PartUid; copy: 0 | 1; socketId: string } | { kind: 'actor'; actorId: ActorId; mountId: string; socketId: string };
 export interface Emitter { source: EmitterSource; origin: Vec3; forward: Vec3; localToWorld: readonly number[] }
 export interface CombatPose { actorId: ActorId; position: Vec3; forward: Vec3; bodyLength: number; mass: number; knockbackResistance: number; hull: readonly Capsule[]; hurtboxes: readonly Capsule[]; emitters: readonly Emitter[] }
 export interface Orientation { yaw: number; pitch: number }
 export interface TraversalPermit { id: string; startsAt: number; expiresAt: number; media: readonly Medium[]; landingRequired: boolean }
-export interface Actor { id: ActorId; hull: readonly Capsule[]; habitat: HabitatProfile; bodyLength: number }   // hull in body space, physical scale, not oriented
-export interface Terrain { groundAt(x: number, z: number): number; surface: number; space: boolean; slopeBound: number }
+/** How admission fits the hull to the terrain. 'conservative' (the default): sample spheres r + s/2 and a first-order ground grid
+ *  (every point of the hull is outside the ground). 'tight' (the swim plans, owner playtest P3): sample spheres that cover the capsule
+ *  exactly and a finer ground grid with a second-order margin, so the body stops close to its visible belly (world-queries.ts). */
+export type HullFit = 'conservative' | 'tight';
+export interface Actor { id: ActorId; hull: readonly Capsule[]; habitat: HabitatProfile; bodyLength: number; fit?: HullFit }   // hull in body space, physical scale, not oriented
+/** slopeBound bounds |∇groundAt|; curvatureBound (default 0, for planar terrains) bounds the spectral norm of its Hessian. */
+export interface Terrain { groundAt(x: number, z: number): number; surface: number; space: boolean; slopeBound: number; curvatureBound?: number }
 export type Constraint = 'ground' | 'surface-top' | 'floor-gap' | 'depth' | 'water' | 'land-band' | 'air' | 'space' | 'bounds-x' | 'bounds-z' | 'bounds-y' | 'refuge';
 export interface AdmissionContext { time: number; permit?: TraversalPermit | null; bounds?: { half: number; maxY?: number } }
 /** On failure, `normal` is the unit direction back into the admitted region at `point` (motion uses it for contacts). */

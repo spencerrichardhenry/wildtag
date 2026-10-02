@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { findRecoveryPose, projectVelocity, resolveMotion } from '../../src/tiny-tide/motion';
 import { makeTerrain, makeWorldQueries, supportHeight } from '../../src/tiny-tide/world-queries';
-import { seabedHeight } from '../../src/tiny-tide/biomes';
+import { SIZES, seabedHeight } from '../../src/tiny-tide/biomes';
 import { starterFor } from '../../src/tiny-tide/genome';
-import { playerActor } from '../../src/tiny-tide/mount';
+import { hullOffsets, playerActor } from '../../src/tiny-tide/mount';
 import { plan } from '../../src/tiny-tide/plans';
 import { orientHull } from '../../src/tiny-tide/orientation';
 import { habitat } from '../../src/tiny-tide/profiles';
@@ -80,12 +80,15 @@ describe('resolveMotion on the curved seabed (playtest stalls)', () => {
       { queries: makeWorldQueries(makeTerrain(stage)), actor: a, interval: { start: 0, end: 1 / 60 }, bounds });
   it('slides a Darter along the seabed from the replayed stall pose', () => {
     // The replay pose of the investigation (probe-stuck, Darter, heading 45°, frame 170): the body touches the seabed, d is tangent.
-    const a = swimActor('darter', 2), o = { yaw: Math.PI / 4, pitch: 0 }, q = makeWorldQueries(makeTerrain(2));
+    // The replay was recorded with the conservative hull (its kinked ground rule caused the stall), so this case keeps that hull. The
+    // swim plans' own tight hull (P3) rests lower and does not touch the seabed at this pose.
+    const g = starterFor(plan('darter')!), a: Actor = { ...swimActor('darter', 2), hull: hullOffsets(g, SIZES[2]!), fit: 'conservative' }, o = { yaw: Math.PI / 4, pitch: 0 }, q = makeWorldQueries(makeTerrain(2));
     const from = { x: 26.59556485410397, y: 21.87451239776108, z: 26.681934445099913 }, d = { x: 1.4145296383723478, y: .2657150390029284, z: 1.4469136184714597 };
     const n = { x: -.1526, y: .9878, z: -.0322 }, dn = d.x * n.x + d.y * n.y + d.z * n.z;   // the replay's contact normal
     const t = { x: d.x - dn * n.x, y: d.y - dn * n.y, z: d.z - dn * n.z }, ideal = Math.hypot(t.x, t.y, t.z);
     expect(q.overlapHull(a, from, o, { time: 0 }).ok).toBe(true);
     const r = move(a, 2, from, d, o), along = ((r.position.x - from.x) * t.x + (r.position.y - from.y) * t.y + (r.position.z - from.z) * t.z) / ideal;
+    expect(r.contacts.some(c => c.constraint === 'ground'), 'the push meets the seabed').toBe(true);
     expect(along / ideal).toBeGreaterThanOrEqual(.9);
     expect(r.status).not.toBe('needs-recovery'); expect(q.overlapHull(a, r.position, o, { time: 1 / 60 }).ok).toBe(true);
   });

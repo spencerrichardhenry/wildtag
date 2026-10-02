@@ -1,16 +1,107 @@
 // tests/tiny-tide-core/hull-fit.test.ts — owner playtest P3: the tighter swim hull and the grown-body Breach landing.
 import { describe, expect, it } from 'vitest';
-import { newRuntime, type CombatInput, type Vec3 } from '../../src/tiny-tide/combat-types';
-import { SIZES, WATER_LEVEL } from '../../src/tiny-tide/biomes';
-import { derive, effectiveStats, starterFor } from '../../src/tiny-tide/genome';
+import { newRuntime, type Actor, type Capsule, type CombatInput, type Terrain, type Vec3 } from '../../src/tiny-tide/combat-types';
+import { random, SIZES, WATER_LEVEL } from '../../src/tiny-tide/biomes';
+import { derive, effectiveStats, starterFor, starterGenome, type Genome } from '../../src/tiny-tide/genome';
 import { RELEASED } from '../../src/tiny-tide/input';
 import { recoverPlayer } from '../../src/tiny-tide/lifecycle';
-import { playerActor } from '../../src/tiny-tide/mount';
+import { bodyHull, hullOffsets, playerActor } from '../../src/tiny-tide/mount';
+import { resolveMotion } from '../../src/tiny-tide/motion';
 import { plan } from '../../src/tiny-tide/plans';
 import { stepPlayer } from '../../src/tiny-tide/player-motion';
 import { movement, movementCapabilities } from '../../src/tiny-tide/profiles';
 import { STAGES } from '../../src/tiny-tide/state';
-import { makeTerrain, makeWorldQueries } from '../../src/tiny-tide/world-queries';
+import { createRigPose, rigPoseInto } from '../../src/tiny-tide/rig';
+import { makeTerrain, makeWorldQueries, supportHeight } from '../../src/tiny-tide/world-queries';
+import { gapOf, skinnedBody, swimPoses } from './body-gap';
+
+/** The owner's tighter fit: the largest visible gap between the body and the seabed, and the tail's allowed clip, in body lengths. */
+const MAX_GAP = .06, TAIL_CLIP = .1;
+const SWIM_CASES = [['swimmer', 1], ['darter', 2], ['bulk', 2]] as const;
+
+describe('swim hull fit (owner playtest P3)', () => {
+  const setup = (id: string, stage: number, growth: number) => {
+    const p0 = plan(id)!, g = starterFor(p0), actor = playerActor(p0, g, stage, growth);
+    return { p0, g, actor, L: actor.bodyLength, size: SIZES[stage]!, scale: SIZES[stage]! * growth, rest: skinnedBody(g) };
+  };
+  const flat: Terrain = { groundAt: () => 0, surface: 1e5, space: false, slopeBound: 0 };
+  const drop = (actor: Actor, t: Terrain, yaw: number) => resolveMotion({ actorId: 'player', from: { x: 0, y: 2 * actor.bodyLength, z: 0 }, displacement: { x: 0, y: -3 * actor.bodyLength, z: 0 },
+    orientation: { yaw, pitch: 0 }, hull: actor.hull, habitatProfileId: actor.habitat.id, cause: 'locomotion' }, { queries: makeWorldQueries(t), actor, interval: { start: 0, end: 1 / 60 } });
+  for (const [id, stage] of SWIM_CASES) for (const growth of [1, 1.38]) {
+    it(`rests a ${id} (growth ${growth}) on a flat seabed with a visible gap of at most ${MAX_GAP} L and the torso above it`, () => {
+      const b = setup(id, stage, growth), chompRig = createRigPose(b.g); rigPoseInto(chompRig, b.g, 0, 0, 1);
+      const chomp = skinnedBody(b.g, chompRig);
+      for (const yaw of [0, .7, 2.1]) {
+        const r = drop(b.actor, flat, yaw), o = { yaw, pitch: 0 }, gap = gapOf(b.rest, b.scale, r.position, o, flat.groundAt);
+        expect(r.contacts.some(c => c.constraint === 'ground'), 'stopped by the seabed').toBe(true);
+        expect(gap.all / b.L, `gap at yaw ${yaw}`).toBeLessThanOrEqual(MAX_GAP); expect(gap.all, 'rest body above the seabed').toBeGreaterThanOrEqual(0);
+        expect(gapOf(chomp, b.scale, r.position, o, flat.groundAt).torso, 'biting torso above the seabed').toBeGreaterThanOrEqual(0);
+      }
+    });
+    it(`slides a ${id} (growth ${growth}) along the seabed slope with a gap of at most ${MAX_GAP} L; the tail clips at most ${TAIL_CLIP} L`, () => {
+      const b = setup(id, stage, growth), t = makeTerrain(stage), q = makeWorldQueries(t), swims = swimPoses(b.g, 8), caps = movementCapabilities(b.p0);
+      const top = STAGES[stage]!.speed * derive(effectiveStats(b.g, b.p0)).speedFactor;
+      let contacts = 0, maxGap = -Infinity, minRest = Infinity, minTorso = Infinity, minTail = Infinity;
+      for (const traversal of ['none', 'dive'] as const) for (const yaw of [Math.PI / 4, -1.05, 3]) {
+        const rt = newRuntime({ yaw, pitch: 0 });
+        let p: Vec3 = { x: 0, y: supportHeight(b.actor, 0, 0, rt.orientation, t) + .02 * b.L, z: 0 };
+        for (let f = 0; f < 240; f++) {
+          const r = stepPlayer(p, rt, { ...RELEASED, traversal }, { plan: b.p0, profile: movement(b.p0.movement), caps, actor: b.actor, queries: q, bounds: { half: 50 * b.size }, size: b.size,
+            topSpeedLocal: top, now: f / 60, dt: 1 / 60, wish: { x: Math.sin(yaw), y: 0, z: Math.cos(yaw) }, aim: null, actionLock: false });
+          expect(r.needsRecovery).toBe(false); p = r.position;
+          if (!r.contacts.some(c => c.constraint === 'ground')) continue;
+          contacts++;
+          const gap = gapOf(b.rest, b.scale, p, rt.orientation, t.groundAt).all / b.L; maxGap = Math.max(maxGap, gap); minRest = Math.min(minRest, gap);
+          for (const m of swims) { const s = gapOf(m, b.scale, p, rt.orientation, t.groundAt); minTorso = Math.min(minTorso, s.torso / b.L); minTail = Math.min(minTail, s.tail / b.L); }
+        }
+      }
+      expect(contacts, 'seabed contacts').toBeGreaterThan(100);
+      expect(maxGap, 'largest gap at a seabed contact').toBeLessThanOrEqual(MAX_GAP); expect(minRest, 'rest body above the seabed').toBeGreaterThanOrEqual(0);
+      expect(minTorso, 'swimming torso above the seabed').toBeGreaterThanOrEqual(0); expect(minTail, 'tail clip').toBeGreaterThanOrEqual(-TAIL_CLIP);
+    });
+  }
+  it('holds every rest-pose body vertex in the tight hull (tapered frusta and end balls), for many genomes', () => {
+    const rand = random(97), pick = (lo: number, hi: number) => lo + (hi - lo) * rand();
+    const genomes: Genome[] = [...SWIM_CASES.map(([id]) => starterFor(plan(id)!)),
+      { ...starterGenome(), spine: [{ radius: 1.2, height: .25, lift: .5 }, { radius: .25, height: 1.2, lift: -.5 }, { radius: 1.2, height: 1.2, lift: 0 }, { radius: .25, height: .25, lift: .5 }] }];
+    for (let i = 0; i < 12; i++) genomes.push({ ...starterGenome(), spine: Array.from({ length: 3 + (i % 6) }, () => ({ radius: pick(.25, 1.2), height: pick(.25, 1.2), lift: pick(-.5, .5) })) });
+    // A tapered capsule's cross-section in the plane of p (constant body z), or its end balls.
+    const inside = (p: { x: number; y: number; z: number }, c: Capsule) => {
+      const [r0, r1] = c.radii ?? [c.radius, c.radius];
+      if (Math.hypot(p.x - c.start.x, p.y - c.start.y, p.z - c.start.z) <= r0 + 1e-9 || Math.hypot(p.x - c.end.x, p.y - c.end.y, p.z - c.end.z) <= r1 + 1e-9) return true;
+      const dz = c.end.z - c.start.z; if (Math.abs(dz) < 1e-12) return false;
+      const f = (p.z - c.start.z) / dz;
+      if (f < 0 || f > 1) return false;
+      return Math.hypot(p.x - (c.start.x + (c.end.x - c.start.x) * f), p.y - (c.start.y + (c.end.y - c.start.y) * f)) <= r0 + (r1 - r0) * f + 1e-9;
+    };
+    for (const g of genomes) {
+      const hull = bodyHull(g, 'tight');
+      for (const v of skinnedBody(g).vertices) expect(hull.some(c => inside(v, c)), `${JSON.stringify(g.spine)} at ${v.toArray().map(x => x.toFixed(3))}`).toBe(true);
+    }
+  });
+  it('never admits a pose with the resting body below the seabed (random poses on the real seabed, any pitch)', () => {
+    const rand = random(41);
+    for (const [id, stage] of SWIM_CASES) {
+      const b = setup(id, stage, 1.38), t = makeTerrain(stage), q = makeWorldQueries(t);
+      let admitted = 0;
+      for (let i = 0; i < 150; i++) {
+        const o = { yaw: rand() * 2 * Math.PI, pitch: (rand() * 2 - 1) * 1.2 }, x = (rand() * 2 - 1) * 40 * b.size, z = (rand() * 2 - 1) * 40 * b.size;
+        const at = { x, y: supportHeight(b.actor, x, z, o, t), z };   // the lowest height the ground rule admits: the hull touches the seabed
+        if (!q.overlapHull(b.actor, at, o, { time: 0 }).ok) continue;
+        admitted++;
+        expect(gapOf(b.rest, b.scale, at, o, t.groundAt).all, `${id} pose ${i}`).toBeGreaterThanOrEqual(0);
+      }
+      expect(admitted, id).toBeGreaterThan(50);
+    }
+  });
+  it('keeps the conservative hull for the crawler and ground plans', () => {
+    for (const id of ['speck', 'crawler', 'shellback', 'burrower', 'colossus']) {
+      const p0 = plan(id)!, g = starterFor(p0), a = playerActor(p0, g, p0.size, 1);
+      expect(a.fit ?? 'conservative', id).toBe('conservative'); expect(a.hull, id).toEqual(hullOffsets(g, SIZES[p0.size]!));
+      expect(hullOffsets(g, 1), id).toEqual(bodyHull(g).map(c => ({ ...c, sway: c.sway ?? 0, heave: c.heave ?? 0 })));
+    }
+  });
+});
 
 describe('grown Breach landings (owner playtest P3)', () => {
   /** Breach arcs at stage 2, as the game runs them: a key-down starts the arc, then E stays held (rise) until the next arc.

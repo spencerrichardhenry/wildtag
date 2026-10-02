@@ -1,6 +1,8 @@
-// World queries over a terrain, and conservative full-body admission (spec §3 "Admission of a body").
-// Admission tests the oriented hull as inflated axis-sample spheres: ground on a square grid with a slope margin,
-// then six extreme points per sphere against the habitat's media, then the whole hull against refuges.
+// World queries over a terrain, and full-body admission (spec §3 "Admission of a body").
+// Admission tests the oriented hull as axis-sample spheres: ground on a square grid with a margin, then six extreme points per
+// sphere against the habitat's media, then the whole hull against refuges. The actor's fit (combat-types `HullFit`) chooses the
+// conservative spheres and grid (the default) or the tight ones (the swim plans; owner playtest P3, overrides spec §3's
+// conservative margin for the swim envelope only).
 import { seabedHeight, WATER_LEVEL } from './biomes';
 import type { Actor, Admission, AdmissionContext, Capsule, Constraint, EnvironmentSample, MutVec3, Orientation, Terrain, Vec3, WorldQueries } from './combat-types';
 import { orientedHeave, orientedSway, rotateInto } from './orientation';
@@ -8,9 +10,12 @@ import { LAND_BAND } from './profiles';
 
 /** Bounds |∇ seabedHeight|: 2.4 × (.075 + .055) + 4.5 × .018 × √2 + 13 × (.006 + .009) = .6216, rounded up. */
 export const SEABED_SLOPE_BOUND = .63;
+/** Bounds the spectral norm of the Hessian of seabedHeight: each term A·sin(ax)·cos(bz) (or sin·sin) has a norm of at most
+ *  A(a² + b²), and 4.5 sin((x + z)c) has 2 × 4.5c². 2.4 × (.075² + .055²) + 9 × .018² + 13 × (.006² + .009²) = .0252, rounded up. */
+export const SEABED_CURVATURE_BOUND = .026;
 
 export function makeTerrain(stage: number): Terrain {
-  return { groundAt: seabedHeight, surface: WATER_LEVEL, space: stage === 4, slopeBound: SEABED_SLOPE_BOUND };
+  return { groundAt: seabedHeight, surface: WATER_LEVEL, space: stage === 4, slopeBound: SEABED_SLOPE_BOUND, curvatureBound: SEABED_CURVATURE_BOUND };
 }
 
 export interface WorldExtras {
@@ -56,14 +61,46 @@ function pushSphere(count: number, x: number, y: number, z: number, r: number, w
   return count + 1;
 }
 
-/** Fills `spheres` with the oriented axis samples of the hull; returns the count. n = max(1, ceil(ℓ / (r/2))), r' = r + s/2. */
-function buildSpheres(hull: readonly Capsule[], o: Orientation): number {
+/** The tight sample spheres of one capsule whose axis is `len` long sit at the axis fractions k/n, k = 0..n, with
+ *  n = max(1, ceil(len / (r/2))) for r the smaller end radius (n = 0: one sphere, for a zero-length capsule), spacing s = len/n. */
+export function tightSampleCount(c: Pick<Capsule, 'start' | 'end' | 'radius' | 'radii'>, len: number): number {
+  if (len === 0) return 0;
+  const rmin = c.radii ? Math.min(c.radii[0], c.radii[1]) : c.radius;
+  return rmin > 0 ? Math.max(1, Math.ceil(len / (rmin / 2))) : 1;
+}
+/** The radius r' of tight sample k of n (body-space capsule). A capsule point p lies in the cross-section (a plane of constant body z)
+ *  of an axis point a at most s/2 along the axis from a sample q, at |p − a| ≤ r⁺ (the larger radius at the half-steps around q; the
+ *  radius is linear along a tapered capsule). |p − q|² = |p − a|² + |a − q|² + 2(p − a)·(a − q), and the last term is at most
+ *  2 r⁺ (s/2) sin τ, where τ is the axis' tilt away from body z (p − a lies in the cross-section). So r' = √(r⁺² + (s/2)² + r⁺ s sin τ). */
+export function tightSampleRadius(c: Pick<Capsule, 'start' | 'end' | 'radius' | 'radii'>, len: number, k: number, n: number): number {
+  const [r0, r1] = c.radii ?? [c.radius, c.radius];
+  if (n === 0) return Math.max(r0, r1);
+  const s = len / n, tilt = Math.hypot(c.end.x - c.start.x, c.end.y - c.start.y) / len;
+  const rplus = r0 + (r1 - r0) * Math.max(0, Math.min(1, (r1 > r0 ? k + .5 : k - .5) / n));
+  return Math.sqrt(rplus * rplus + s * s / 4 + rplus * s * tilt);
+}
+
+/** Fills `spheres` with the oriented axis samples of the hull; returns the count. Conservative: n = max(1, ceil(ℓ / (r/2))) samples
+ *  with spacing s and r' = r + s/2. Tight: tightSampleCount / tightSampleRadius (tapered capsules), one sphere per shared end point. */
+function buildSpheres(hull: readonly Capsule[], o: Orientation, tight = false): number {
   let count = 0;
   for (const c of hull) {
     const bw = c.sway ?? 0, bv = c.heave ?? 0, w = orientedSway(bw, bv, o.pitch), v = orientedHeave(bw, bv, o.pitch), r = c.radius;
     rotateInto(o, c.start, sa); rotateInto(o, c.end, sb);
     const dx = sb.x - sa.x, dy = sb.y - sa.y, dz = sb.z - sa.z, len = Math.hypot(dx, dy, dz);
-    if (len === 0) { count = pushSphere(count, sa.x, sa.y, sa.z, r, w, v); continue; }
+    if (len === 0 && !tight) { count = pushSphere(count, sa.x, sa.y, sa.z, r, w, v); continue; }
+    if (tight) {
+      const n = tightSampleCount(c, len);
+      for (let k = 0; k <= n; k++) {
+        const x = sa.x + dx * (n ? k / n : 0), y = sa.y + dy * (n ? k / n : 0), z = sa.z + dz * (n ? k / n : 0), rp = tightSampleRadius(c, len, k, n);
+        // Consecutive capsules share their end points: one sphere with the larger values holds both samples.
+        const j = (count - 1) * STRIDE;
+        if (count > 0 && spheres[j] === x && spheres[j + 1] === y && spheres[j + 2] === z) {
+          spheres[j + 3] = Math.max(spheres[j + 3]!, rp); spheres[j + 4] = Math.max(spheres[j + 4]!, w); spheres[j + 5] = Math.max(spheres[j + 5]!, v);
+        } else count = pushSphere(count, x, y, z, rp, w, v);
+      }
+      continue;
+    }
     const n = r > 0 ? Math.max(1, Math.ceil(len / (r / 2))) : 1, s = len / n, rp = r + s / 2;
     for (let k = 0; k <= n; k++) count = pushSphere(count, sa.x + dx * k / n, sa.y + dy * k / n, sa.z + dz * k / n, rp, w, v);
   }
@@ -75,8 +112,13 @@ function buildSpheres(hull: readonly Capsule[], o: Orientation): number {
 /** Result of one sphere's grid scan: the largest shortfall `groundAt(g) + m − (base − depth)` and its point, and the footprint bounds. */
 const scan = { short: -Infinity, gx: 0, gz: 0, gy: 0, gmin: Infinity, gmax: -Infinity };
 
-/** Grid of spacing h = r'/2 around (cx, cz), every point with d ≤ r' + w + h/√2; margin m = slopeBound · h/√2. */
-function scanGrid(t: Terrain, cx: number, cz: number, rp: number, w: number, base: number): void {
+/** The tight grid has spacing r'/TIGHT_GRID. */
+export const TIGHT_GRID = 6;
+
+/** Conservative: grid of spacing h = r'/2 around (cx, cz), every point with d ≤ r' + w + h/√2; margin m = slopeBound · h/√2, and the
+ *  depth at e = d − h/√2 − w (a first-order bound for the whole cell of each point). Tight: see scanGridTight. */
+function scanGrid(t: Terrain, cx: number, cz: number, rp: number, w: number, base: number, tight = false, clearOk = false, prune = clearOk): void {
+  if (tight && scanGridTight(t, cx, cz, rp, w, base, clearOk, prune)) return;
   const h = rp / 2, diag = h * Math.SQRT1_2, m = t.slopeBound * diag, reach = rp + w + diag;
   scan.short = -Infinity; scan.gmin = Infinity; scan.gmax = -Infinity;
   const N = h > 0 ? Math.floor(reach / h + 1e-9) : 0, lim = reach * (1 + 1e-12) + 1e-12;
@@ -91,6 +133,66 @@ function scanGrid(t: Terrain, cx: number, cz: number, rp: number, w: number, bas
     if (g > scan.gmax) scan.gmax = g;
   }
   scan.gmin -= m; scan.gmax += m;
+}
+
+/** Tight scan (owner playtest P3). The shortfall F(q) = groundAt(q) + depth(q) − base is evaluated exactly at grid points of spacing
+ *  h = r'/TIGHT_GRID strictly inside the swept footprint (e = d − w < r'). Where the hull touches the ground, F has its maximum at
+ *  an interior point q* (the slope bound S keeps the touching point at e ≤ e_t = r'·S/√(1 + S²)), so ∇F(q*) = 0 and the nearest
+ *  grid point g (|g − q*| ≤ h/√2) misses the maximum by at most κ·(h/√2)²/2, where κ bounds the curvature of F on that segment:
+ *  the sphere's r'²/(r'² − (e_t + h/√2)²)^1.5 plus the terrain's curvature bound. That second-order margin is added to every point.
+ *  The footprint bounds gmin/gmax (for the media rules) widen by S·2h: every footprint point is within 2h of a sampled point.
+ *  Returns false (use the conservative scan) when the slope is too steep for the bound (e_t + h/√2 ≥ .9 r').
+ *  `clearOk`: a sphere that is clear by the slope bound alone (ground(c) + S(r' + w) + m + r' ≤ base) skips the grid; its footprint
+ *  bounds are then ground(c) ∓ (S(r' + w) + m). The caller allows it only where those looser bounds cannot change a media rule. */
+function scanGridTight(t: Terrain, cx: number, cz: number, rp: number, w: number, base: number, clearOk: boolean, prune = clearOk): boolean {
+  const h = rp / TIGHT_GRID, diag = h * Math.SQRT1_2, S = t.slopeBound, eMax = rp * S / Math.sqrt(1 + S * S) + diag;
+  if (eMax >= .9 * rp) return false;
+  const K = t.curvatureBound ?? 0, kappa = rp * rp / Math.pow(rp * rp - eMax * eMax, 1.5) + K, m = kappa * diag * diag / 2, reach = rp + w;
+  if (clearOk) {
+    const g0 = t.groundAt(cx, cz), spread = S * reach + m;
+    if (g0 + spread + rp - base <= 0) { scan.short = g0 + spread + rp - base; scan.gx = cx; scan.gz = cz; scan.gy = g0; scan.gmin = g0 - spread; scan.gmax = g0 + spread; return true; }
+  }
+  scan.short = -Infinity; scan.gmin = Infinity; scan.gmax = -Infinity;
+  T.t = t; T.cx = cx; T.cz = cz; T.h = h; T.rp = rp; T.w = w; T.base = base; T.m = m; T.prune = false;
+  if (prune && t.curvatureBound !== undefined) {
+    // The local model: ground(c + δ) ≤ g0 + ĝ·δ + K h (|δx| + |δz|) + K|δ|²/2, with ĝ the central differences over ±h (each equals the
+    // derivative somewhere within h of c, so it is within K h of the derivative at c). Points whose bound cannot beat the best shortfall
+    // so far are not sampled; rings go outward from the centre, where the depth is largest.
+    const g0 = t.groundAt(cx, cz), gxp = t.groundAt(cx + h, cz), gxm = t.groundAt(cx - h, cz), gzp = t.groundAt(cx, cz + h), gzm = t.groundAt(cx, cz - h);
+    T.prune = true; T.g0 = g0; T.sx = (gxp - gxm) / (2 * h); T.sz = (gzp - gzm) / (2 * h); T.K = K;
+    tightPoint(0, 0, g0); tightPoint(1, 0, gxp); tightPoint(-1, 0, gxm); tightPoint(0, 1, gzp); tightPoint(0, -1, gzm);
+    T.known = true;
+  } else T.known = false;
+  const N = Math.ceil(reach / h);
+  for (let k = 0; k <= N; k++) {
+    if (k === 0) { if (!T.known) tightPoint(0, 0, NaN); continue; }
+    for (let i = -k; i <= k; i++) { tightPoint(i, -k, NaN); tightPoint(i, k, NaN); }
+    for (let j = -k + 1; j <= k - 1; j++) { tightPoint(-k, j, NaN); tightPoint(k, j, NaN); }
+  }
+  scan.gmin -= S * 2 * h; scan.gmax += S * 2 * h;
+  return true;
+}
+/** Scratch state of one tight scan (no allocation per call). */
+const T = { t: null as Terrain | null, cx: 0, cz: 0, h: 0, rp: 0, w: 0, base: 0, m: 0, prune: false, known: false, g0: 0, sx: 0, sz: 0, K: 0 };
+/** One grid point (i, j) of the tight scan; `known` is its ground height when already sampled (else NaN). */
+function tightPoint(i: number, j: number, known: number): void {
+  const d = T.h * Math.sqrt(i * i + j * j), e = Math.max(0, d - T.w);
+  if (e >= T.rp) return;
+  if (T.known && Number.isNaN(known) && ((i === 0 && (j === 0 || j === 1 || j === -1)) || (j === 0 && (i === 1 || i === -1)))) return;   // sampled first
+  const depth = Math.sqrt(T.rp * T.rp - e * e), dx = i * T.h, dz = j * T.h;
+  if (T.prune && Number.isNaN(known)) {
+    const slack = T.K * T.h * (Math.abs(dx) + Math.abs(dz)) + T.K * (dx * dx + dz * dz) / 2, mid = T.g0 + T.sx * dx + T.sz * dz;
+    if (mid + slack + T.m - (T.base - depth) <= scan.short) {
+      // Not sampled: its ground lies within mid ± slack, which bounds the footprint instead.
+      if (mid - slack < scan.gmin) scan.gmin = mid - slack;
+      if (mid + slack > scan.gmax) scan.gmax = mid + slack;
+      return;
+    }
+  }
+  const gx = T.cx + dx, gz = T.cz + dz, g = Number.isNaN(known) ? T.t!.groundAt(gx, gz) : known, short = g + T.m - (T.base - depth);
+  if (short > scan.short) { scan.short = short; scan.gx = gx; scan.gz = gz; scan.gy = g; }
+  if (g < scan.gmin) scan.gmin = g;
+  if (g > scan.gmax) scan.gmax = g;
 }
 
 // ---- admission ----
@@ -123,14 +225,17 @@ export function admit(actor: Actor, at: Vec3, o: Orientation, ctx: AdmissionCont
     }
   }
 
-  const count = buildSpheres(actor.hull, o);
+  const tight = actor.fit === 'tight', count = buildSpheres(actor.hull, o, tight);
 
   // 3. Ground (skipped in space). Also stores each sphere's footprint bounds for the media rules.
   if (!t.space) {
+    // The tight scan may skip a clear sphere when its looser footprint bounds only feed the depth rule (which a null maximum depth
+    // turns off) because the whole sphere is under the surface.
     let worst = 0, wx = 0, wy = 0, wz = 0;
+    const depthFree = hab.maxWaterDepthBodyLengths === null;
     for (let s = 0; s < count; s++) {
-      const i = s * STRIDE;
-      scanGrid(t, at.x + spheres[i]!, at.z + spheres[i + 2]!, spheres[i + 3]!, spheres[i + 4]!, at.y + spheres[i + 1]! - spheres[i + 5]!);
+      const i = s * STRIDE, clearOk = tight && depthFree && at.y + spheres[i + 1]! + spheres[i + 3]! + spheres[i + 5]! < t.surface;
+      scanGrid(t, at.x + spheres[i]!, at.z + spheres[i + 2]!, spheres[i + 3]!, spheres[i + 4]!, at.y + spheres[i + 1]! - spheres[i + 5]!, tight, clearOk);
       spheres[i + 6] = scan.gmin; spheres[i + 7] = scan.gmax;
       if (scan.short > worst) { worst = scan.short; wx = scan.gx; wy = scan.gy; wz = scan.gz; }
     }
@@ -195,7 +300,7 @@ export function admit(actor: Actor, at: Vec3, o: Orientation, ctx: AdmissionCont
 
 /** The largest height above (top) and below (bottom) the origin of any oriented sample sphere, using r' + heave. */
 export function hullExtents(actor: Actor, o: Orientation): { top: number; bottom: number } {
-  const count = buildSpheres(actor.hull, o);
+  const count = buildSpheres(actor.hull, o, actor.fit === 'tight');
   let top = -Infinity, bottom = -Infinity;
   for (let s = 0; s < count; s++) {
     const i = s * STRIDE, y = spheres[i + 1]!, ext = spheres[i + 3]! + spheres[i + 5]!;
@@ -207,11 +312,11 @@ export function hullExtents(actor: Actor, o: Orientation): { top: number; bottom
 /** The lowest origin height at which the ground rule (step 3) passes, plus 1e-9. −Infinity in space. */
 export function supportHeight(actor: Actor, x: number, z: number, o: Orientation, t: Terrain): number {
   if (t.space) return -Infinity;
-  const count = buildSpheres(actor.hull, o);
+  const tight = actor.fit === 'tight', count = buildSpheres(actor.hull, o, tight);
   let need = -Infinity;
   for (let s = 0; s < count; s++) {
     const i = s * STRIDE;
-    scanGrid(t, x + spheres[i]!, z + spheres[i + 2]!, spheres[i + 3]!, spheres[i + 4]!, 0);   // short = max(groundAt(g) + m + depth)
+    scanGrid(t, x + spheres[i]!, z + spheres[i + 2]!, spheres[i + 3]!, spheres[i + 4]!, 0, tight, false, true);   // short = max(groundAt(g) + m + depth)
     need = Math.max(need, scan.short + spheres[i + 5]! - spheres[i + 1]!);
   }
   return need + 1e-9;
