@@ -84,7 +84,67 @@ ring is drawn only at scales where it can be seen (its inside is within the
 edge fade). Measured maximum error: stage 1, .010 L; stage 2, .009 L; stage 3,
 .016 L. The old Blender rings (`seabed_1`, `seabed_2`) were off by up to .09 L
 at stage 1 and .21 L at stage 2, and did not reach the stage-3 bound. They are
-still in the asset library, but the game no longer loads them. Parts and the body move with procedural animation.
+still in the asset library, but the game no longer loads them.
+
+**Reef decoration (owner playtest P4).** `reef.ts` places the reef: a pure,
+seeded function `placeReef(layer, seed)` for each of three layers (physical
+size 1, 5 and 20, with the biomes of tiers 0, 1 and 2). `world.ts` draws
+exactly what it returns. The rules:
+
+- Each try places a plant (coral, kelp or grass) on the seabed at its centre
+  (`seabedHeight`). The plant is skipped when its footprint (its widest reach,
+  checked against the GLBs) meets the footprint of a solid.
+- A rock goes beside the plant, never under or around it. An arch goes on the
+  other side, with its opening facing the plant. A rock or an arch is skipped
+  when its footprint meets a plant or another solid. So no solid footprints
+  overlap.
+- An arch stands with both end caps of its feet at or below the seabed.
+- Shells and starfish are skipped on a solid's footprint.
+- Decoration keeps its old range (7 to 54 layer sizes from the centre); the
+  edge does not limit it. Solids past the soft edge only meet a body that the
+  current pushes inward, and the contact slides.
+
+Counts per seed (plants / rocks / arches, layers 0, 1, 2; before → after):
+99: 46/46/4, 47/47/13, 65/65/14 → 42/43/5, 49/45/11, 54/48/10;
+4242: 51/51/9, 60/60/13, 64/64/11 → 40/39/5, 56/51/12, 54/50/10.
+Before, every plant stood in its own rock.
+
+**Collision with the reef.** Rocks and arches are solids (`solids.ts`):
+
+- A rock is an ellipsoid: the Blender rock's ellipsoid (radii 1, .66, .83 at
+  height .15) times `ROCK_FIT` 1.05. Every rock vertex is within .04 asset
+  units of it, and it is within .14 of the mesh.
+- An arch is 15 capsules along its tube (the legs and the top span). The tube
+  is inside them, the moss within .04 and the thin crown coral within .06.
+  They are within .2 of the mesh. The opening stays open.
+- Coral, kelp, grass, shells and starfish have no collision.
+
+A layer collides with the bodies of a stage when its size is at least the
+stage's size (stage 0: all layers; stage 1: layers 1 and 2; stage 2: layer
+2; stages 3 and 4: none). Smaller layers are pebbles at that size.
+`stageWorldQueries(stage, seed)` (`world-queries.ts`) builds the world queries
+from the terrain and these solids. The player, the ecosystem, food access, the
+avoidance test and the browser fixtures all use it.
+
+Admission refuses a hull that enters a solid, with the constraint `solid`. This
+rule comes after the ground rule. Each sample sphere, grown by its whole
+envelope, is tested against the solids in a uniform grid (cell 4 × the stage
+size), so the cost does not grow with the number of solids. The deepest contact
+gives the point and the normal, which is the exact outward normal of the
+ellipsoid or capsule. So the contact skin and the crease projection of motion
+slide a body around a rock. The admission also names the solid (`solidId`).
+
+- Ground plans treat rocks as walls. Their support height is the seabed
+  only, so they walk around rocks and do not climb them.
+- A growth lift stops at the first step that a different rule or a different
+  solid refuses, so it never carries a body through a thin solid.
+- Spawns never use a solid. A spawn point inside a solid (grown by the body
+  radius) is rejected. The opening population replaces such a point with its
+  own RNG, so the other spawns of the seed do not move. Every entity is then
+  installed on an admitted pose, so food, homes and creatures are never inside
+  a solid.
+
+Parts and the body move with procedural animation.
 The models preload once before play; editing and evolving make no network
 requests. Water, caustics, light shafts, particles and sound remain runtime effects.
 
@@ -193,6 +253,7 @@ push zone, but only when no other toast is on screen:
 | World edge | "That's the edge of the world for now." |
 | Sky limit | "That's as high as you can go for now." |
 | Ground | "Something solid is in the way." |
+| Rock or arch | "A rock is in the way." |
 | Water surface | "<Plan>s can't leave the water." |
 | Air | "<Plan>s can't fly." |
 | Land | "<Plan>s can't go on land." |
@@ -234,7 +295,10 @@ factor), chase while they remember, wait at borders they cannot cross, and give
 up after their memory, leash or give-up distance (`hunter` policy: memory 6 s,
 blocked wait 3 s, reacquire 2 s, leash 30 and give-up 12 body lengths). A test
 (`tests/tiny-tide-core/avoidance.test.ts`) steps the real hunter and the real
-player step: a player that flees at the notice distance must escape.
+player step: a player that flees at the notice distance must escape. An
+encounter starts with the whole hull inside the soft edge (owner playtest P4:
+the reef moves some starts, and a start already in the edge current is not an
+open-water escape).
 
 To pass that test, Task C5 slowed two hunters (`src/tiny-tide/species.ts`):
 
@@ -398,7 +462,7 @@ npx vitest run tests/tiny-tide.test.ts tests/tiny-tide-core
 npm run build                              # the chunk-size warning is expected
 python3 scripts/tiny-tide/blender/check_assets.py   # PASS: 86 self-contained Blender GLBs; fails on a stale part-rig.json
 node e2e/tiny-tide.mjs                     # swimmer line; TIDE_LINE=crawler for the crawler line (long: run in the background)
-node e2e/tiny-tide-paths.mjs               # 18 checks; pass check ids (for example 3 7b) to run some
+node e2e/tiny-tide-paths.mjs               # 18 checks with 5b, 5c, 7b and 12b; pass check ids (for example 3 5c) to run some
 node e2e/tiny-tide-mobile.mjs
 node e2e/tiny-tide-replay.mjs
 node e2e/tiny-tide-pacing.mjs              # the pacing study (a diagnostic, not a gate; long: run in the background)
@@ -424,7 +488,11 @@ one once, at load. None of them changes a running game from outside.
 Read-only diagnostics on `window.__tinyTide` include `editorProjection(target)`
 (the screen point of a visible part, by uid, or of a body point `{ t, angle }`
 in the open editor) and `poseAgreement()` (rendered socket transforms against
-`sampleCombatPose`).
+`sampleCombatPose`)), `lastContactSolid` (the solid of the last 'solid' contact),
+`solidsNear` (the nearest reef solids of the stage, in local units) and
+`admission` (per stage: played frames and the admission time per frame, for
+every `overlapHull` call of the player, the ecosystem and the food guide; the
+journey prints it).
 
 The unit tests cover parts, genomes, stats, diets, DNA, evolution, health,
 seeded worlds, creature behavior (hunting, fleeing, provoking, stealth,
