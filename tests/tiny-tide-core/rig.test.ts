@@ -47,4 +47,25 @@ describe('rig pose', () => {
     const up = new T.Vector3(0, 1, 0).transformDirection(m[2]!); expect(up.y).toBeCloseTo(1);
     const headUp = new T.Vector3(0, 1, 0).transformDirection(m[0]!); expect(headUp.y).toBeCloseTo(Math.cos(.12));
   });
+  it('keeps the tail wave smooth while swim ramps at a late game time', () => {
+    // swim ramps 0 → 1 and 1 → 0 over .3 s at 60 Hz, at time 1000 s. The tail yaw must not change faster per frame than
+    // 1.5 × the largest per-frame change of steady swimming.
+    const g = starterGenome(), tail = g.spine.length - 1, dt = 1 / 60, frames = 18;
+    const stepsOf = (swimAt: (i: number) => number, count: number) => {
+      const pose = createRigPose(g); let t = 1000, last = rigPoseInto(pose, g, t, swimAt(0), 0).boneYaw[tail]!, max = 0;
+      for (let i = 1; i <= count; i++) { t += dt; const y = rigPoseInto(pose, g, t, swimAt(i), 0).boneYaw[tail]!; max = Math.max(max, Math.abs(y - last)); last = y; }
+      return max;
+    };
+    const steady = stepsOf(() => 1, 240);
+    expect(steady).toBeGreaterThan(.01);
+    expect(stepsOf(i => Math.min(1, i / frames), 60)).toBeLessThanOrEqual(steady * 1.5);
+    expect(stepsOf(i => Math.max(0, 1 - i / frames), 60)).toBeLessThanOrEqual(steady * 1.5);
+  });
+  it('keeps one phase per pose: two models at different swim levels do not share it', () => {
+    const g = starterGenome(), a = createRigPose(g), b = createRigPose(g);
+    for (let i = 0; i <= 60; i++) { rigPoseInto(a, g, 5 + i / 60, 1, 0); rigPoseInto(b, g, 5 + i / 60, 0, 0); }
+    const fresh = rigPoseInto(createRigPose(g), g, 6, 0, 0);   // a fresh pose starts at phase = time × speed
+    expect(fresh.boneYaw[2]!).toBeCloseTo(.05 * Math.sin(6 * 2.2 - 1.8) * 2 / 3);
+    expect(b.boneYaw[2]!).toBeCloseTo(fresh.boneYaw[2]!, 9);   // b's phase did not advance with a's swim
+  });
 });

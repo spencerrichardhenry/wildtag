@@ -175,7 +175,8 @@ export class CreatureModel {
     // Keep the genome's part order, so callers can rely on it.
     const order = new Map(g.parts.map((p, i) => [p.uid, i]));
     this.parts.sort((a, b) => order.get(a.placed.uid)! - order.get(b.placed.uid)! || a.copy - b.copy);
-    this.pose = createRigPose(g);
+    const previous = this.pose;
+    this.pose = createRigPose(g); this.pose.phase = previous.phase; this.pose.time = previous.time;   // the wave goes on through an edit
     if (this.ghost) this.setGhost(this.ghost.placed);
   }
   /** Moves the attached copies of `uid` to `placed` (or to the genome's part). Numbers only: no new objects. */

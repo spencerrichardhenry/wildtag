@@ -12,7 +12,8 @@ export const PART_RIG = rigJson as unknown as Record<string, Record<string, RigN
 export const SWIM_AMP_MAX = .22, CHOMP_PITCH = .12;
 
 type Offset = { x: number; y: number; z: number };
-export interface RigPose { genome: Genome; boneYaw: Float64Array; chomp: number; pivots: Map<string, Offset> }
+/** `phase` is the integrated wave phase ∫ speed(swim) dt of this pose (one per model); `time` is the time of its last update. */
+export interface RigPose { genome: Genome; boneYaw: Float64Array; chomp: number; pivots: Map<string, Offset>; phase: number; time: number | null }
 
 type PivotKind = 'jaw' | 'seg' | 'flap' | 'swing';
 interface PivotSlot { placed: PlacedPart; copy: 0 | 1; kind: PivotKind; index: number; offset: Offset }
@@ -29,25 +30,35 @@ export function createRigPose(g: Genome): RigPose {
       list.push({ placed, copy, kind: kind as PivotKind, index: Number(index), offset });
     }
   }
-  const pose: RigPose = { genome: g, boneYaw: new Float64Array(g.spine.length), chomp: 0, pivots };
+  const pose: RigPose = { genome: g, boneYaw: new Float64Array(g.spine.length), chomp: 0, pivots, phase: 0, time: null };
   slots.set(pose, list);
   return pose;
 }
 
-/** Writes the renderer's procedural motion into `out`. `swim` is 0 idle, 1 moving; `chomp` is 0–1. */
+/** The wave speed in rad/s: 2.2 idle, 7.7 at full swim. */
+const waveSpeed = (swim: number) => 2.2 + swim * 5.5;
+
+/** Writes the renderer's procedural motion into `out`. `swim` is 0 idle, 1 moving; `chomp` is 0–1.
+ *  The wave phase is integrated per pose: phase += Δtime × speed(swim). With an absolute `time × speed(swim)`, a change of swim
+ *  would move the phase by time × Δspeed in one frame (many cycles late in a session). The first call starts at time × speed(swim);
+ *  a time that goes back does not move the phase. */
 export function rigPoseInto(out: RigPose, g: Genome, time: number, swim: number, chomp: number): RigPose {
   if (out.genome !== g) throw new Error('rigPoseInto: the pose was created for another genome');
-  const n = g.spine.length, amp = .05 + swim * .17, speed = 2.2 + swim * 5.5;
+  const n = g.spine.length, amp = .05 + swim * .17, speed = waveSpeed(swim);
+  out.phase = out.time === null ? time * speed : out.phase + Math.max(0, time - out.time) * speed;
+  out.time = time;
+  // `wave` replaces time × speed; the flap adds the plain time (its speed is speed + 1).
+  const wave = out.phase;
   out.chomp = chomp; out.boneYaw[0] = 0;
-  for (let i = 1; i < n; i++) out.boneYaw[i] = amp * Math.sin(time * speed - i * .9) * (i / (n - 1));
+  for (let i = 1; i < n; i++) out.boneYaw[i] = amp * Math.sin(wave - i * .9) * (i / (n - 1));
   for (const s of slots.get(out)!) {
     const o = s.offset, phase = s.placed.t * 4 + (s.copy ? Math.PI : 0);
     o.x = 0; o.y = 0; o.z = 0;
     switch (s.kind) {
       case 'jaw': o.x = -chomp * .65; break;
-      case 'seg': o.z = Math.sin(time * speed * .9 - s.index * .8 + phase) * (.1 + swim * .22); break;
-      case 'flap': o.z = Math.sin(time * (speed + 1) + phase) * (.08 + swim * .32); break;
-      case 'swing': o.x = Math.sin(time * speed * 1.4 + phase) * (.06 + swim * .45); break;
+      case 'seg': o.z = Math.sin(wave * .9 - s.index * .8 + phase) * (.1 + swim * .22); break;
+      case 'flap': o.z = Math.sin(wave + time + phase) * (.08 + swim * .32); break;
+      case 'swing': o.x = Math.sin(wave * 1.4 + phase) * (.06 + swim * .45); break;
     }
   }
   return out;
