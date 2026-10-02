@@ -1,10 +1,10 @@
 import { chromium } from 'playwright';
 import { mkdirSync } from 'node:fs';
 import assert from 'node:assert/strict';
+import { GAME, KEYS, frames, makeFixture, openGame, start, writeStorage } from './fixtures/tiny-tide-fixtures.mjs';
 const out = '.codex-drafts/tiny-tide-qa'; mkdirSync(out, {recursive:true});
 const browser=await chromium.launch({channel:'chrome',headless:true,args:['--enable-unsafe-swiftshader']});
 const context=await browser.newContext({viewport:{width:390,height:844},deviceScaleFactor:2,isMobile:true,hasTouch:true});
-await context.addInitScript(()=>{localStorage.setItem('tiny-tide-adventure-v1',JSON.stringify({stage:1,bites:0,total:10,elapsed:20,eatenPlanets:[],completed:false}));});
 const page=await context.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
 page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
 const state=()=>page.evaluate(()=>window.__tinyTide);
@@ -14,7 +14,14 @@ async function assertStops(label){await page.waitForFunction(()=>{const v=window
 /** The controlled speed now and after the next frame. */
 const speedNextFrame=()=>page.evaluate(()=>new Promise(r=>{const v=()=>{const s=window.__tinyTide.velocity;return Math.hypot(s.x,s.y,s.z);};const a=v();requestAnimationFrame(()=>requestAnimationFrame(()=>r([a,v()])));}));
 try {
- await page.goto(process.env.VERIFY_URL||'http://localhost:5199/tiny-tide.html?qa');await page.waitForFunction(()=>window.__tinyTide?.time>.4);await page.locator('#start').click();await page.waitForTimeout(600);
+ // A v1 save (fixture page) migrates; the -v1 bytes stay unchanged.
+ const v1=await makeFixture(page,{legacy:'v1'});await writeStorage(page,{[v1.key]:v1.json});
+ await page.goto(process.env.VERIFY_URL||GAME);await page.waitForFunction(()=>window.__tinyTide?.time>.4);
+ const boot=await state();assert.equal(boot.loadedKey,KEYS.v1,'the v1 save is the resumable run');
+ assert.equal(await page.evaluate(k=>localStorage.getItem(k),KEYS.v1),v1.json,'-v1 stays unchanged');
+ assert.equal(JSON.parse(await page.evaluate(k=>localStorage.getItem(k),KEYS.v4)).version,4,'the migrated run is written to -v4');
+ await page.locator('#start').click();await page.waitForTimeout(600);
+ assert.equal((await state()).plan,'swimmer','the v1 stage-1 save became a Swimmer');
  const cdp=await context.newCDPSession(page);
  const center=async id=>{const b=await page.locator(id).boundingBox();return {x:b.x+b.width/2,y:b.y+b.height/2,radiusX:4,radiusY:4,force:1};};
  const j={...await center('#joystick'),id:1},rise={...await center('#special'),id:2};const before=await state();
@@ -30,5 +37,16 @@ try {
  assert.ok(Math.hypot(diving.x,diving.y,diving.z)>.01,'Dive moves');assert.ok(next===0||next<Math.min(atCancel,Math.hypot(diving.x,diving.y,diving.z)),'Cancelled touch makes the next frame slower (or stops: braking can reach 0 in one frame)');
  const dived=await state();assert.ok(dived.player.y<looked.player.y-1,'Dive descends');await assertStops('Cancelled touch releases Dive');
  for(const viewport of [{width:320,height:568},{width:844,height:390}]) {await page.setViewportSize(viewport);await page.waitForTimeout(200);for(const sel of ['#joystick','#chomp','#special','#dive','#pause','#edit','#hearts']){const b=await page.locator(sel).boundingBox();assert.ok(b && b.x>=0 && b.y>=0 && b.x+b.width<=viewport.width+1 && b.y+b.height<=viewport.height+1,`${sel} fits ${viewport.width}x${viewport.height}`);}await page.screenshot({path:`${out}/mobile-${viewport.width}.png`});}
- assert.deepEqual(errors,[]);console.log('PASSED: genuine multitouch move + rise, swipe camera, stable hover, Dive, touch cancellation, 390/320 portrait and landscape control layout.');
+ // A second phone context: Evolve -> Swimmer -> Undo all shows a visible problem line about legs that fits.
+ const phone=await browser.newContext({viewport:{width:390,height:844},deviceScaleFactor:2,isMobile:true,hasTouch:true});const second=await phone.newPage();
+ second.on('pageerror',e=>errors.push(e.message));second.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
+ const ready=await makeFixture(second,{ready:true});await openGame(second,{storage:{[ready.key]:ready.json}});await start(second);
+ await second.locator('#evolve').waitFor({state:'visible'});await second.locator('#evolve').tap();await second.locator('#path-screen').waitFor();
+ await second.locator('#path-screen [data-plan=swimmer] .path-choose').tap();await second.locator('#editor').waitFor();await frames(second,3);
+ await second.locator('#editor .ed-changes-box summary').tap();await second.locator('#editor .ed-undo-all').tap();await frames(second,3);
+ const line=second.locator('#editor .ed-problem-line');assert.equal(await line.isVisible(),true,'.ed-problem-line is visible');
+ assert.match(await line.textContent(),/\bleg/i,'the problem line mentions legs');
+ const lb=await line.boundingBox();assert.ok(lb&&lb.x>=0&&lb.y>=0&&lb.x+lb.width<=391&&lb.y+lb.height<=845,'the problem line fits the phone');
+ await second.screenshot({path:`${out}/mobile-problem-line.png`});
+ assert.deepEqual(errors,[]);console.log('PASSED: v1 migration (-v1 unchanged), genuine multitouch move + rise, swipe camera, stable hover, Dive, touch cancellation, 390/320 portrait and landscape control layout, phone Evolve → Swimmer → Undo all problem line.');
 } finally {await browser.close();}

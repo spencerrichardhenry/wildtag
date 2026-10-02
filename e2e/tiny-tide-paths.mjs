@@ -1,0 +1,564 @@
+// Tiny Tide C11: paths, editor, gestures, limits, hazards, pose agreement, lifecycle and saves (18 checks).
+// Fixtures come from the dev-only fixture page (the game's own modules). Run one or more checks: node e2e/tiny-tide-paths.mjs 3 7b
+import assert from 'node:assert/strict';
+import { mkdirSync } from 'node:fs';
+import { control, damageAfterArmor, eatOnce, frames, KEYS, launch, makeFixture, openGame, pickHazard, start, state, storageOf, untilGameTime, waitGameTime, watchErrors } from './fixtures/tiny-tide-fixtures.mjs';
+
+const out = '.codex-drafts/tiny-tide-qa'; mkdirSync(out, { recursive: true });
+const only = process.argv.slice(2);
+const browser = await launch();
+const checks = [];
+const check = (id, name, fn) => checks.push({ id, name, fn });
+
+async function newPage(options = {}) {
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, ...options });
+  const page = await context.newPage(), errors = watchErrors(page);
+  return { context, page, errors };
+}
+/** A fixture written to its key, the game opened with `query`, and play started. */
+async function play(page, spec, query = '') {
+  const fx = await makeFixture(page, spec);
+  await openGame(page, { storage: { [fx.key]: fx.json }, query });
+  await start(page);
+  return fx;
+}
+async function openPaths(page) {
+  await page.locator('#evolve').waitFor({ state: 'visible', timeout: 10000 });
+  await page.locator('#evolve').click();
+  await page.locator('#path-screen').waitFor();
+}
+async function choosePath(page, id) {
+  await page.locator(`#path-screen [data-plan=${id}] .path-choose`).click();
+  await page.locator('#editor').waitFor(); await frames(page, 3);
+}
+async function openEdit(page) {
+  await page.locator('#edit').click(); await page.locator('#editor').waitFor(); await frames(page, 3);
+}
+const view = page => page.locator('#editor .ed-view');
+const data = (page, name) => view(page).getAttribute(`data-${name}`);
+const selectedUid = async page => (await data(page, 'selected'))?.split('|')[0] ?? '';
+const complexity = async page => Number((await page.locator('#editor .ed-complexity em').textContent()).split('/')[0]);
+const dnaLeft = async page => Number(await page.locator('#editor .ed-dna-value').textContent());
+const project = (page, target) => page.evaluate(t => window.__tinyTide.editorProjection(t), target);
+/** A body point on the side of the creature that faces the camera. */
+async function side(page, t) {
+  const found = [];
+  for (const angle of [Math.PI / 2, -Math.PI / 2, Math.PI / 3, -Math.PI / 3, 2 * Math.PI / 3, -2 * Math.PI / 3]) { const p = await project(page, { t, angle }); if (p) found.push(p); }
+  assert.ok(found.length, `a visible body side point at t ${t}`);
+  return found.sort((a, b) => a.depth - b.depth)[0];
+}
+/** A visible body point near the rear tip (t ≥ .85, so a tail keeps the drop point), far on screen from `from`. */
+async function rearTarget(page, from) {
+  let best = null;
+  for (const t of [.86, .9, .94]) {
+    const p = await side(page, t), d = Math.hypot(p.x - from.x, p.y - from.y);
+    if (!best || d > best.d) best = { ...p, d };
+  }
+  return best;
+}
+async function selectPart(page, uid) {
+  const p = await project(page, uid); assert.ok(p, `part ${uid} is on screen`);
+  await page.mouse.click(p.x, p.y); await frames(page, 2);
+  assert.equal(await selectedUid(page), uid, `a click at editorProjection(${uid}) selects it`);
+}
+async function showKind(page, kind) { await page.locator(`#editor [data-kind=${kind}]`).click(); }
+/** Arms a card with a real click. */
+async function arm(page, kind, id) { await showKind(page, kind); await page.locator(`#editor .ed-card[data-part=${id}]`).click(); }
+/** Drags a range input's thumb to its maximum with the mouse. */
+async function dragSliderToMax(page, selector) {
+  const input = page.locator(selector), box = await input.boundingBox();
+  const { value, min, max } = await input.evaluate(i => ({ value: Number(i.value), min: Number(i.min), max: Number(i.max) }));
+  const x0 = box.x + 8 + (box.width - 16) * (value - min) / (max - min), y = box.y + box.height / 2;
+  await page.mouse.move(x0, y); await page.mouse.down(); await page.mouse.move(box.x + box.width + 30, y, { steps: 12 }); await page.mouse.up();
+}
+/** A point on the editor canvas that no panel covers, far from the creature. */
+async function emptyCanvasPoint(page) {
+  const centre = await project(page, { t: .5, angle: 0 });
+  return page.evaluate(c => {
+    let best = null;
+    for (let x = 40; x < innerWidth - 40; x += 40) for (let y = 120; y < innerHeight - 40; y += 40) {
+      if (!document.elementFromPoint(x, y)?.classList.contains('ed-view') || !document.elementFromPoint(x + 60, y + 30)?.classList.contains('ed-view')) continue;
+      const d = Math.hypot(x - c.x, y - c.y); if (!best || d > best.d) best = { x, y, d };
+    }
+    return best;
+  }, centre);
+}
+
+// ---------------------------------------------------------------------------------------------------------------------------
+check('1', 'Path screen', async () => {
+  const { page, errors } = await newPage();
+  await play(page, { ready: true });
+  await openPaths(page);
+  const plans = await page.locator('#path-screen .path-card').evaluateAll(cards => cards.map(c => c.dataset.plan));
+  assert.deepEqual([...plans].sort(), ['crawler', 'swimmer'], 'a ready Speck sees exactly the swimmer and crawler cards');
+  const sacrifice = { swimmer: 'Can never grow legs again', crawler: 'Never swims freely or flies' };
+  for (const id of plans) {
+    const card = page.locator(`#path-screen [data-plan=${id}]`);
+    assert.match(await card.locator('.path-silhouette').getAttribute('src'), /^data:image\//, `${id}: silhouette`);
+    const lines = await card.locator('.path-summary > div').evaluateAll(rows => Object.fromEntries(rows.map(r => [r.querySelector('dt').textContent, r.querySelector('dd').textContent])));
+    assert.deepEqual(Object.keys(lines), ['Playstyle:', "This form's cost:", 'Lasting sacrifice:', 'Leads to:'], `${id}: the four card lines`);
+    assert.equal(lines['Lasting sacrifice:'], sacrifice[id], `${id}: lasting sacrifice`);
+    assert.ok(lines['Playstyle:'] && lines["This form's cost:"] && lines['Leads to:'], `${id}: lines are filled`);
+  }
+  await page.locator('#path-screen [data-plan=swimmer] .path-details summary').click();
+  assert.equal(await page.locator('#path-screen [data-plan=swimmer] .path-details').evaluate(d => d.open), true, 'Details opens');
+  await page.waitForTimeout(200);
+  assert.equal(await page.locator('#path-screen').count(), 1, 'opening Details does not select the card');
+  assert.equal(await page.locator('#editor').count(), 0, 'opening Details does not open the editor');
+  await page.locator('#path-screen .path-later').click();
+  await page.locator('#path-screen').waitFor({ state: 'detached' });
+  await page.waitForFunction(() => window.__tinyTide.mode === 'playing');
+  assert.deepEqual(errors, []);
+});
+
+/** A ready Crawler with zero DNA and an extra Little-leg pair (p5). */
+const SHORT_CRAWLER = { path: ['crawler'], ready: true, dna: 0, add: { 1: [{ id: 'leg_little', t: .6, scale: .7 }] } };
+check('2', 'Customize fallback', async () => {
+  const { page, errors } = await newPage();
+  const fx = await play(page, SHORT_CRAWLER);
+  const shell = fx.info.children.find(c => c.id === 'shellback'); assert.ok(shell.quote && !shell.quote.affordable, 'fixture: the Shellback proposal is unaffordable');
+  const extra = fx.info.parts.at(-1).uid;
+  await openPaths(page);
+  assert.equal(await page.locator('#path-screen [data-plan=shellback] .path-banner').textContent(), `Needs changes you choose: short by ${shell.quote.shortfall} DNA`);
+  await choosePath(page, 'shellback');
+  assert.equal(await page.locator('#editor .ed-done').isDisabled(), true, 'Done is disabled while short of DNA');
+  await selectPart(page, extra);
+  await page.locator('#editor .ed-delete').click(); await frames(page, 2);
+  assert.equal(await page.locator('#editor .ed-done').isDisabled(), false, 'removing the extra pair enables Done');
+  await page.locator('#editor .ed-done').click(); await page.locator('#editor').waitFor({ state: 'detached' });
+  await page.waitForFunction(() => window.__tinyTide.mode === 'playing', {}, { timeout: 15000 });
+  assert.deepEqual((await state(page)).plans, ['speck', 'crawler', 'shellback']);
+  assert.deepEqual(errors, []);
+});
+
+check('3', 'Submit failure keeps the editor', async () => {
+  const { page, errors } = await newPage();
+  await play(page, { ready: true }, 'qaRejectSubmit=1');
+  await openPaths(page); await choosePath(page, 'crawler');
+  const count0 = await complexity(page);
+  await arm(page, 'sense', 'antenna');
+  const at = await side(page, .5); await page.mouse.click(at.x, at.y); await frames(page, 2);
+  const count1 = await complexity(page), selected = await data(page, 'selected');
+  assert.equal(count1, count0 + 2, 'an Antenna pair was added');
+  await page.locator('#editor .ed-done').click();
+  await page.locator('#editor .ed-submit-error:not([hidden])').waitFor();
+  assert.equal(await page.locator('#editor').count(), 1, 'the editor stays open');
+  assert.equal(await page.locator('#editor .ed-submit-error').textContent(), 'QA rejection');
+  assert.equal(await complexity(page), count1, 'the part count is unchanged');
+  assert.equal(await data(page, 'selected'), selected, 'data-selected is unchanged');
+  await page.locator('#editor .ed-undo').click(); await frames(page, 2);
+  assert.equal(await complexity(page), count0, 'Undo removes the Antenna pair (the history survived)');
+  await page.locator('#editor .ed-done').click(); await page.locator('#editor').waitFor({ state: 'detached' });
+  await page.waitForFunction(() => window.__tinyTide.mode === 'playing', {}, { timeout: 15000 });
+  assert.deepEqual((await state(page)).plans, ['speck', 'crawler'], 'Done again succeeds');
+
+  // An unaffordable proposal; a size the DNA cannot pay for is refused.
+  const second = await newPage();
+  await play(second.page, SHORT_CRAWLER); await openPaths(second.page); await choosePath(second.page, 'shellback');
+  const p = second.page, dna = await dnaLeft(p);
+  assert.ok(dna < 0, `.ed-dna-value is negative (${dna})`);
+  assert.equal(await p.locator('#editor .ed-done').isDisabled(), true, 'Done is disabled');
+  await selectPart(p, 'p3');
+  const before = { value: await p.locator('#editor .ed-scale').inputValue(), cost: await p.locator('#editor .ed-size-cost').textContent(), selected: await data(p, 'selected'), count: await complexity(p) };
+  await dragSliderToMax(p, '#editor .ed-scale'); await frames(p, 2);
+  assert.equal(await p.locator('#editor .ed-scale').inputValue(), before.value, 'the slider keeps its value');
+  assert.equal(await p.locator('#editor .ed-size-cost').textContent(), before.cost, 'the size cost is unchanged');
+  assert.equal(await data(p, 'selected'), before.selected, 'the part is unchanged');
+  assert.equal(await complexity(p), before.count, 'the slots are unchanged');
+  assert.equal(await dnaLeft(p), dna, '.ed-dna-value is unchanged');
+  assert.match(await p.locator('#editor .ed-hint').textContent(), /Not enough DNA/, 'the hint shows');
+  assert.deepEqual([...errors, ...second.errors], []);
+});
+
+check('4', 'Evolve editor', async () => {
+  const { page, errors } = await newPage();
+  const fx = await play(page, { ready: true });
+  await openPaths(page); await choosePath(page, 'swimmer');
+  const changes = await page.locator('#editor .ed-changes li').allTextContents();
+  assert.ok(changes.some(c => c.includes("Little leg removed: Swimmers can't use it.")), '.ed-changes lists the removed leg');
+  await page.locator('#editor .ed-undo-all').click(); await frames(page, 2);
+  assert.equal(await page.locator('#editor .ed-done').isDisabled(), true, 'Undo all disables Done');
+  await page.locator('#editor .ed-fix').click(); await frames(page, 2);
+  assert.equal(await page.locator('#editor .ed-done').isDisabled(), false, 'Fix for me enables Done');
+  await showKind(page, 'armor');
+  await page.locator('#editor .ed-card[data-part=spike]').focus(); await page.keyboard.press('Enter'); await frames(page, 2);
+  const uid = await selectedUid(page), serial = Number(uid.slice(1));
+  const proposal = fx.info.children.find(c => c.id === 'swimmer').uids, all = [...proposal, ...fx.info.uids].map(u => Number(u.slice(1)));
+  assert.ok(uid && serial > Math.max(...all), `the new part ${uid} has a uid above every proposal uid (${proposal.join(', ')}) and every committed uid`);
+  assert.deepEqual(errors, []);
+});
+
+check('5', 'Swimmer surface limit', async () => {
+  const { page, errors } = await newPage();
+  await play(page, { path: ['swimmer'] });
+  await control(page, ['KeyE']);
+  const result = await page.evaluate(() => new Promise(resolve => {
+    let top = -Infinity, rose = window.__tinyTide.time, stopped = null, sawContact = false;
+    const t0 = window.__tinyTide.time;
+    const tick = () => {
+      const s = window.__tinyTide;
+      if (s.player.y > top + 1e-6) { top = s.player.y; rose = s.time; }
+      if (stopped === null && s.time - rose >= 1) stopped = s.time;
+      if (stopped !== null && s.contactNow && s.lastContact === 'surface-top') sawContact = true;
+      if (stopped !== null && s.time - stopped >= 2) return resolve({ ok: true, s, sawContact, top });
+      if (s.time - t0 > 40) return resolve({ ok: false, s, sawContact, top });
+      requestAnimationFrame(tick);
+    };
+    tick();
+  }));
+  await control(page, []);
+  assert.ok(result.ok, 'the swimmer stops rising within 40 s of game time');
+  assert.notEqual(result.s.zone, 'air', 'a Swimmer never reaches the air');
+  assert.ok(result.top < result.s.world.surface, 'the body stays below the surface');
+  assert.ok(result.sawContact, "lastContact is 'surface-top' on a frame with contactNow");
+  assert.equal(await page.locator('#toast').textContent(), "Swimmers can't leave the water.");
+  // Negative control: a Sky drifter rises above the surface.
+  const sky = await newPage();
+  await play(sky.page, { stage: 3 });
+  await control(sky.page, ['KeyE']);
+  await untilGameTime(sky.page, s => s.player.y > s.world.surface + .5, 30, 'a Sky drifter rises above the surface');
+  await control(sky.page, []);
+  assert.deepEqual([...errors, ...sky.errors], []);
+});
+
+check('6', 'Crawler', async () => {
+  const { page, errors } = await newPage();
+  await play(page, { path: ['crawler'] });
+  const s = await state(page);
+  assert.equal(s.caps.rise, false, 'caps.rise is false');
+  assert.equal(await page.locator('#vertical-controls').isHidden(), true, '#vertical-controls is hidden');
+  await control(page, ['KeyE', 'KeyW']);
+  await waitGameTime(page, 1.5);
+  const after = await state(page); await control(page, []);
+  assert.equal(after.zone, 'seabed', 'the Crawler stays on the seabed');
+  assert.deepEqual(errors, []);
+});
+
+check('7', 'A Crawler placed high recovers onto the seabed', async () => {
+  const { page, errors } = await newPage();
+  await play(page, { path: ['crawler'], ready: true }, 'forcedSpawn=0,30,0');
+  // Recovery may choose the highest legal pose under the floor-gap ceiling; a grounded body then settles onto its support.
+  // Every frame is legal, and the body is on the seabed once settled (bounded: 1 s of game time).
+  const r = await page.evaluate(() => new Promise(resolve => {
+    const t0 = window.__tinyTide.time, frames = []; const tick = () => {
+      const s = window.__tinyTide; frames.push({ zone: s.zone, legal: s.legal, mode: s.mode, y: s.player.y });
+      if ((s.zone === 'seabed' && s.legal) || s.time - t0 > 1) return resolve({ s, frames }); requestAnimationFrame(tick);
+    }; tick();
+  }));
+  assert.ok(r.frames.every(f => f.legal === true && f.mode === 'playing'), 'the position is legal on every frame from the start');
+  assert.ok(r.frames[0].y < 30 - 1, `the spawn was recovered from 30 local units (y ${r.frames[0].y.toFixed(2)})`);
+  assert.equal(r.s.zone, 'seabed', `zone is seabed (start zone ${r.frames[0].zone}, ${r.frames.length} frames)`);
+  assert.deepEqual(errors, []);
+});
+
+check('7b', 'The transformation moves toward the destination', async () => {
+  const { page, errors } = await newPage();
+  await play(page, { ready: true });
+  await openPaths(page); await choosePath(page, 'crawler');
+  const startY = (await state(page)).world.physicalPosition.y;
+  const sampling = page.evaluate(() => new Promise(resolve => {
+    const samples = []; let destination = null, t0 = performance.now();
+    const tick = () => {
+      const s = window.__tinyTide;
+      if (s.mode === 'evolving') { samples.push(s.world.physicalPosition.y); destination = s.physical; }
+      else if (samples.length) return resolve({ samples, destination, end: s });
+      if (performance.now() - t0 > 20000) return resolve({ samples, destination, end: s, timeout: true });
+      requestAnimationFrame(tick);
+    };
+    tick();
+  }));
+  await page.locator('#editor .ed-done').click();
+  const r = await sampling;
+  assert.ok(!r.timeout && r.samples.length > 3, 'frames were sampled while evolving');
+  assert.ok(Math.abs(r.destination.y - startY) > 1e-6, 'the destination differs from the start');
+  const lo = Math.min(startY, r.destination.y), hi = Math.max(startY, r.destination.y);
+  assert.ok(r.samples.some(y => y > lo && y < hi), 'a sample lies strictly between the start and the destination height');
+  const end = r.end.world.physicalPosition;
+  assert.ok(Math.hypot(end.x - r.destination.x, end.y - r.destination.y, end.z - r.destination.z) < 1e-6, 'the body ends exactly at the destination');
+  assert.equal(r.end.zone, 'seabed', 'the destination is on the seabed'); assert.equal(r.end.legal, true, 'and admitted');
+  assert.deepEqual(errors, []);
+});
+
+check('8', 'Diet lock', async () => {
+  const { page, errors } = await newPage();
+  await play(page, { path: ['crawler'], mouth: { 1: 'mouth_snapper' } });
+  await openEdit(page); await showKind(page, 'mouth');
+  for (const id of ['mouth_nibbler', 'mouth_beak']) {
+    const card = page.locator(`#editor .ed-card[data-part=${id}]`);
+    assert.equal(await card.isDisabled(), true, `${id} is disabled`);
+    assert.equal(await card.getAttribute('data-reason'), 'Diet is set until your next evolution.', `${id} says why`);
+  }
+  // At size 2, swapping Snapper for Fangs keeps the mouth's uid.
+  const big = await newPage();
+  const fx = await play(big.page, { path: ['crawler', 'burrower'], mouth: { 1: 'mouth_snapper' } });
+  const mouth = fx.info.parts.find(p => p.id === 'mouth_snapper').uid;
+  await openEdit(big.page); await selectPart(big.page, mouth);
+  await showKind(big.page, 'mouth'); await big.page.locator('#editor .ed-card[data-part=mouth_fangs]').click(); await frames(big.page, 2);
+  assert.equal(await selectedUid(big.page), mouth, 'swapping Snapper for Fangs keeps the data-selected uid');
+  assert.deepEqual([...errors, ...big.errors], []);
+});
+
+check('9', 'Size pricing', async () => {
+  const { page, errors } = await newPage();
+  await play(page, {});
+  await openEdit(page); await selectPart(page, 'p3');
+  await dragSliderToMax(page, '#editor .ed-scale'); await frames(page, 2);
+  assert.equal(await page.locator('#editor .ed-size-cost').textContent(), '14 DNA · 2 slots');
+  assert.deepEqual(errors, []);
+});
+
+check('10', 'Gestures (desktop)', async () => {
+  const { page, errors } = await newPage();
+  await play(page, {});
+  await openEdit(page);
+  const empty = await emptyCanvasPoint(page); assert.ok(empty, 'an empty canvas point exists');
+  const yaw0 = await data(page, 'yaw');
+  await page.mouse.move(empty.x, empty.y); await page.mouse.down(); await page.mouse.move(empty.x + 60, empty.y + 30, { steps: 8 }); await page.mouse.up();
+  await frames(page, 2);
+  assert.equal(await data(page, 'yaw'), yaw0, 'a left drag on empty space does not turn the model');
+  // Leftward, so the view turns toward the rear and the tail stays in sight.
+  await page.mouse.move(empty.x, empty.y); await page.mouse.down({ button: 'right' }); await page.mouse.move(empty.x - 60, empty.y + 10, { steps: 8 }); await page.mouse.up({ button: 'right' });
+  await frames(page, 2);
+  assert.notEqual(await data(page, 'yaw'), yaw0, 'a right drag turns the model');
+  await selectPart(page, 'p3');
+  const attached = await data(page, 'selected'), from = await project(page, 'p3'), to = await rearTarget(page, from);
+  await page.mouse.move(from.x, from.y); await page.mouse.down(); await page.mouse.move(to.x, to.y, { steps: 12 }); await page.mouse.up(); await frames(page, 2);
+  const moved = await data(page, 'selected');
+  assert.equal(moved.split('|')[0], 'p3'); assert.notEqual(moved, attached, 'a left drag on the tail changes its attachment');
+  assert.deepEqual(errors, []);
+});
+
+check('11', 'Gestures (touch, 390x844)', async () => {
+  const { context, page, errors } = await newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+  await play(page, {});
+  await openEdit(page);
+  const cdp = await context.newCDPSession(page);
+  const touch = (type, points) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: points.map(p => ({ x: p.x, y: p.y, id: p.id, radiusX: 4, radiusY: 4, force: 1 })) });
+  const centre = async locator => { const b = await locator.boundingBox(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; };
+  const tap = async (p, id = 1) => { await touch('touchStart', [{ ...p, id }]); await touch('touchEnd', []); await frames(page, 2); };
+  // Arm the Antenna with a tap.
+  await page.locator('#editor [data-kind=sense]').click();
+  const card = page.locator('#editor .ed-card[data-part=antenna]');
+  await card.scrollIntoViewIfNeeded(); await tap(await centre(card));
+  assert.equal(await data(page, 'gesture'), 'none', 'data-gesture is none after the tap');
+  assert.match(await card.getAttribute('class'), /\bactive\b/, 'placement is armed');
+  // Two-finger drags, released in both orders: the view turns, nothing is placed.
+  for (const firstUp of [1, 2]) {
+    const count = await complexity(page), yaw = await data(page, 'yaw'), body = await project(page, { t: .5, angle: 0 });
+    const a = { x: body.x - 60, y: body.y - 40, id: 1 }, b = { x: body.x + 60, y: body.y + 40, id: 2 };
+    await touch('touchStart', [a]); await touch('touchStart', [a, b]);
+    for (let i = 0; i < 6; i++) { a.x -= 8; b.x -= 8; await touch('touchMove', [a, b]); }   // toward the rear view
+    await touch('touchEnd', firstUp === 1 ? [b] : [a]); await frames(page, 1); await touch('touchEnd', []); await frames(page, 2);
+    assert.notEqual(await data(page, 'yaw'), yaw, `two-finger drag turns the view (finger ${firstUp} up first)`);
+    assert.equal(await complexity(page), count, `two-finger drag places nothing (finger ${firstUp} up first)`);
+    assert.equal(await data(page, 'gesture'), 'none');
+  }
+  // One-finger part drag plus a second finger: the part returns to its attachment.
+  await tap(await centre(card));   // disarm
+  assert.doesNotMatch(await card.getAttribute('class'), /\bactive\b/, 'placement is disarmed');
+  const tail = await project(page, 'p3'); await tap(tail);
+  assert.equal(await selectedUid(page), 'p3', 'a tap selects the tail');
+  const attached = await data(page, 'selected'), target = await rearTarget(page, tail);
+  const f = { x: tail.x, y: tail.y, id: 1 };
+  await touch('touchStart', [f]);
+  for (let i = 1; i <= 8; i++) { f.x = tail.x + (target.x - tail.x) * i / 8; f.y = tail.y + (target.y - tail.y) * i / 8; await touch('touchMove', [f]); }
+  await frames(page, 2);
+  assert.notEqual(await data(page, 'selected'), attached, 'the one-finger drag moves the tail');
+  const free = await emptyCanvasPoint(page); assert.ok(free, 'an empty canvas point for the second finger');
+  await touch('touchStart', [f, { x: free.x, y: free.y, id: 2 }]); await frames(page, 2);
+  assert.equal(await data(page, 'selected'), attached, 'a second finger returns the part to its attachment');
+  await touch('touchEnd', []); await frames(page, 2);
+  assert.equal(await data(page, 'selected'), attached, 'still at its attachment after release');
+  // Card drag plus a second finger: nothing is placed.
+  const count = await complexity(page), from = await centre(card), body = await side(page, .5), g = { ...from, id: 1 };
+  await touch('touchStart', [g]);
+  for (let i = 1; i <= 8; i++) { g.x = from.x + (body.x - from.x) * i / 8; g.y = from.y + (body.y - from.y) * i / 8; await touch('touchMove', [g]); }
+  await touch('touchStart', [g, { x: free.x, y: free.y, id: 2 }]); await touch('touchEnd', [{ x: free.x, y: free.y, id: 2 }]); await touch('touchEnd', []); await frames(page, 3);
+  assert.equal(await complexity(page), count, 'a card drag with a second finger places nothing');
+  assert.equal(await data(page, 'gesture'), 'none');
+  assert.deepEqual(errors, []);
+});
+
+check('12', 'Allocation and rig invalidation', async () => {
+  const { page, errors } = await newPage();
+  await play(page, { dna: 200 });
+  await openEdit(page);
+  await arm(page, 'sense', 'antenna');
+  const points = [await side(page, .12), await side(page, .5), await side(page, .9)];
+  for (const p of points) { await page.mouse.move(p.x, p.y, { steps: 3 }); await frames(page, 2); }
+  const counters = () => page.evaluate(() => Object.fromEntries(['created-geometries', 'disposed-geometries', 'created-materials', 'disposed-materials', 'rebuilds'].map(n => [n, document.querySelector('#editor .ed-view').getAttribute(`data-${n}`)])));
+  const before = await counters();
+  for (let i = 0; i < 60; i++) { const p = points[i % 3]; await page.mouse.move(p.x + (i % 7) - 3, p.y + (i % 5) - 2); if (i % 10 === 0) await frames(page, 1); }
+  await frames(page, 3);
+  assert.deepEqual(await counters(), before, 'hovering 60 times creates and disposes nothing');
+  // Rig invalidation: add a Pincer pair, animate, toggle the pair, animate again; no pivot key is missing.
+  await page.keyboard.press('Escape');
+  await arm(page, 'arm', 'claw_pincer');
+  const at = await side(page, .55); await page.mouse.click(at.x, at.y); await frames(page, 6);
+  assert.equal(await selectedUid(page) !== '', true, 'a Pincer was placed');
+  await page.locator('#editor .ed-mirror').click(); await frames(page, 6);
+  await page.locator('#editor .ed-mirror').click(); await frames(page, 6);
+  assert.equal(await data(page, 'missing-pivots'), '0', 'no animated pivot is missing a rig key');
+  assert.deepEqual(errors, []);
+});
+
+check('12b', 'Lost abilities (QA grant catalog)', async () => {
+  const { page, errors } = await newPage();
+  const fx = await play(page, { add: { 0: [{ id: 'claw_pincer', t: .5 }] }, bindClaw: true }, 'qaGrantCatalog=1');
+  const claw = fx.info.parts.find(p => p.id === 'claw_pincer').uid;
+  await openEdit(page);
+  assert.equal(await page.locator('#editor .ed-lost-abilities').isHidden(), true, 'no lost abilities before the change');
+  await selectPart(page, claw);
+  await page.locator('#editor .ed-delete').click(); await frames(page, 2);
+  const lost = page.locator('#editor .ed-lost-abilities');
+  assert.equal(await lost.isVisible(), true, 'removing the bound Pincer shows the lost abilities');
+  assert.match(await lost.textContent(), /Pincer: its ability will be removed \(slot 1\)/);
+  assert.deepEqual(errors, []);
+});
+
+check('13', 'Hazard integration and invulnerability', async () => {
+  const { page, errors } = await newPage();
+  const pick = await pickHazard(page, { stage: 0, key: '1:crab' }); assert.ok(pick, 'pickHazard found a crab');
+  const fx = await makeFixture(page, { seed: pick.seed }), damage = await damageAfterArmor(page, 3, fx.info.armor);
+  await openGame(page, { storage: { [fx.key]: fx.json }, query: `forcedSpawn=${pick.home.x},${pick.home.y},${pick.home.z}` }); await start(page);
+  const first = await state(page);
+  assert.ok(Math.abs(first.invulnerableUntil - first.time - 2) < .5 && first.invulnerableUntil - first.time <= 2, `the default start grace is 2 s (until ${first.invulnerableUntil}, now ${first.time})`);
+  const r = await page.evaluate(() => new Promise(resolve => {
+    const samples = [], t0 = window.__tinyTide.time;
+    const tick = () => {
+      const s = window.__tinyTide;
+      samples.push({ time: s.time, health: s.health, max: s.maxHealth, accepted: s.acceptedHits, rejected: s.rejectedHits, until: s.invulnerableUntil, mode: s.mode });
+      if (s.acceptedHits >= 2 || s.time - t0 > 10) return resolve(samples);
+      requestAnimationFrame(tick);
+    };
+    tick();
+  }));
+  const grace = first.invulnerableUntil, during = r.filter(x => x.time < grace), after = r.filter(x => x.time >= grace);
+  assert.ok(during.at(-1).rejected >= 1, 'the crab’s events are rejected during the grace');
+  assert.ok(during.every(x => x.health === x.max && x.accepted === 0), 'health stays at maximum during the grace');
+  const hit1 = after.findIndex(x => x.accepted >= 1); assert.ok(hit1 >= 0, 'a hit is accepted after the grace (within 10 s)');
+  assert.equal(after[hit1].accepted, 1);
+  assert.equal(after[hit1].health, after[hit1].max - damage, `health drops by damageAfterArmor(3, ${fx.info.armor}) = ${damage}`);
+  const hit2 = after.findIndex(x => x.accepted >= 2); assert.ok(hit2 >= 0, 'a second hit is accepted within 10 s');
+  assert.ok(after[hit2].time - after[hit1].time >= .8 - 1e-9, `the next accepted hit is no sooner than .8 s later (${(after[hit2].time - after[hit1].time).toFixed(3)} s)`);
+  assert.deepEqual(errors, []);
+});
+
+check('14', 'Pose agreement', async () => {
+  const { page, errors } = await newPage();
+  await play(page, { add: { 0: [{ id: 'claw_pincer', t: .5 }] } });
+  await control(page, ['KeyW', 'Space']); await page.waitForTimeout(500);
+  const samples = await page.evaluate(() => new Promise(resolve => {
+    const out = []; const tick = () => { out.push(window.__tinyTide.poseAgreement()); if (out.length >= 5) return resolve(out); requestAnimationFrame(tick); }; tick();
+  }));
+  await control(page, []);
+  for (const a of samples) {
+    assert.ok(a && a.sockets >= 4, `every socket is sampled (${a?.sockets})`);
+    assert.ok(a.positionError < 1e-3 * a.bodyLength, `position error ${a.positionError} < 1e-3 × body length ${a.bodyLength}`);
+    assert.ok(a.angleError < .01, `forward angle error ${a.angleError} < .01 rad`);
+    assert.equal(a.reflectionsAgree, true, 'the same reflection sign');
+  }
+  assert.deepEqual(errors, []);
+});
+
+check('15', 'Faint during a Breach', async () => {
+  const { page, errors } = await newPage();
+  const pick = await pickHazard(page, { stage: 2, key: '2:squid', below: true, minLeadSeconds: .5 }); assert.ok(pick, 'pickHazard found a squid with room below');
+  await play(page, { stage: 2, health: 1, seed: pick.seed }, `qaStartGrace=0&qaHoldStart=1&forcedSpawn=${pick.start.x},${pick.start.y},${pick.start.z}`);
+  const s0 = await state(page);
+  assert.equal(s0.holdingStart, true, 'the simulation holds until the first press');
+  await frames(page, 5);
+  assert.equal((await state(page)).time, s0.time, 'the game clock holds');
+  const watching = page.evaluate(() => new Promise(resolve => {
+    let t0 = null; const tick = () => {
+      const s = window.__tinyTide;
+      if (!s.holdingStart && t0 === null) t0 = s.time;
+      if (s.faintLog.length) return resolve({ s, saved: localStorage.getItem(s.saveKey) });
+      if (t0 !== null && s.time - t0 > 3) return resolve({ s, timeout: true });
+      requestAnimationFrame(tick);
+    }; tick();
+  }));
+  await page.keyboard.press('KeyE');
+  const w = await watching;
+  assert.ok(!w.timeout, 'a faint within 3 s of game time');
+  const f = w.s.faintLog[0];
+  if (!f.hadPermit || !f.hadArc) assert.fail('non-Breach faint');
+  assert.equal(w.s.pendingRespawn, true, 'pendingRespawn is true');
+  const pending = JSON.parse(w.saved); assert.equal(pending.pendingRespawn, true, 'and saved');
+  const s = await untilGameTime(page, x => x.mode === 'playing', 6, 'the respawn timer');
+  assert.equal(s.pendingRespawn, false); assert.equal(s.health, s.maxHealth, 'health is at maximum');
+  assert.deepEqual(s.velocity, { x: 0, y: 0, z: 0 }); assert.deepEqual(s.externalVelocity, { x: 0, y: 0, z: 0 });
+  assert.equal(s.permit, null); assert.equal(s.arc, null); assert.equal(s.legal, true, 'the zone is legal');
+  assert.equal(JSON.parse(await storageOf(page, s.saveKey)).pendingRespawn, false);
+  // Reload while pendingRespawn is true in storage: it resolves once.
+  const again = await newPage();
+  await openGame(again.page, { storage: { [KEYS.v4]: w.saved } }); await start(again.page);
+  const r = await state(again.page);
+  assert.equal(r.pendingRespawn, false); assert.equal(r.deaths, pending.deaths, 'deaths unchanged by the reload');
+  assert.equal(r.dna, pending.economy.wallet.banked + pending.economy.wallet.atRisk, 'DNA unchanged by the reload');
+  assert.equal(r.health, r.maxHealth); assert.equal(r.legal, true);
+  assert.equal(JSON.parse(await storageOf(again.page, KEYS.v4)).pendingRespawn, false, 'the saved flag becomes false');
+  assert.deepEqual([...errors, ...again.errors], []);
+});
+
+check('16', 'Pause keeps the runtime', async () => {
+  const { page, errors } = await newPage();
+  await play(page, { stage: 2 });
+  await control(page, ['KeyW']);
+  await untilGameTime(page, s => Math.hypot(s.velocity.x, s.velocity.y, s.velocity.z) > 0, 5, 'moving');
+  await page.keyboard.press('KeyE');
+  await untilGameTime(page, s => s.arc !== null, 2, 'a Breach starts');
+  await page.locator('#pause').click(); await page.getByRole('dialog').waitFor();
+  const pick = s => ({ time: s.time, velocity: s.velocity, externalVelocity: s.externalVelocity, permit: s.permit, arc: s.arc, breachReadyAt: s.breachReadyAt });
+  const before = pick(await state(page)); await page.waitForTimeout(1000); const after = pick(await state(page));
+  assert.deepEqual(after, before, 'pause keeps the runtime and the clock');
+  await control(page, []);
+  await page.getByRole('button', { name: /Keep munching/ }).click();
+  await untilGameTime(page, s => s.mode === 'playing', 2, 'resume');
+  await page.waitForTimeout(300);
+  assert.ok((await state(page)).time > before.time, 'time advances after resume');
+  assert.deepEqual(errors, []);
+});
+
+check('17', 'Kept coast save', async () => {
+  const { page, errors } = await newPage();
+  const coast = await makeFixture(page, { path: ['shore_walker'], coast: true });
+  await openGame(page, { storage: { [KEYS.v4]: coast.json } });
+  await page.locator('#home-notes .home-note.kept').waitFor();
+  assert.match(await page.locator('#home-notes .home-note.kept').textContent(), /lives on the coast/);
+  await start(page);
+  await eatOnce(page, 'eat once');
+  await page.reload(); await page.waitForFunction(() => window.__tinyTide?.time > .3);
+  assert.equal((await state(page)).loadedKey, KEYS.fresh, 'the fresh run resumes from -v4-fresh');
+  await start(page); assert.ok((await state(page)).bites >= 1, 'the meal was kept');
+  assert.equal(await storageOf(page, KEYS.v4), coast.json, '-v4 still holds the coast fixture');
+  assert.deepEqual(errors, []);
+});
+
+check('18', 'Legacy key untouched', async () => {
+  const { page, errors } = await newPage();
+  const v2 = await makeFixture(page, { legacy: 'v2' });
+  await openGame(page, { storage: { [KEYS.v2]: v2.json } });
+  assert.equal((await state(page)).loadedKey, KEYS.v2);
+  await start(page);
+  await eatOnce(page, 'eat once');
+  await page.reload(); await page.waitForFunction(() => window.__tinyTide?.time > .3);
+  assert.equal(await storageOf(page, KEYS.v2), v2.json, '-v2 bytes are unchanged');
+  const migrated = JSON.parse(await storageOf(page, KEYS.v4));
+  assert.equal(migrated.version, 4); assert.equal(migrated.bites, JSON.parse(v2.json).bites + 1, '-v4 holds the migrated run with the new meal');
+  assert.equal((await state(page)).loadedKey, KEYS.v4);
+  assert.deepEqual(errors, []);
+});
+
+const failures = [];
+try {
+  for (const c of checks) {
+    if (only.length && !only.includes(c.id)) continue;
+    const t0 = Date.now();
+    try { await c.fn(); console.log(`ok   ${c.id}. ${c.name} (${((Date.now() - t0) / 1000).toFixed(1)} s)`); }
+    catch (error) { failures.push(c.id); console.log(`FAIL ${c.id}. ${c.name}: ${error.message}`); }
+    finally { for (const context of browser.contexts()) await context.close(); }
+  }
+} finally { await browser.close(); }
+if (failures.length) { console.log(`FAILED: ${failures.join(', ')}`); process.exit(1); }
+console.log(`PASSED: ${only.length ? `checks ${only.join(', ')}` : 'all 18 checks (with 7b and 12b)'}: path screen, customize fallback, submit failure, evolve editor, swimmer and crawler limits, high spawn recovery, transformation path, diet lock, size pricing, desktop and touch gestures, allocation, lost abilities, hazards and invulnerability, pose agreement, faint during a Breach, pause, kept coast save, legacy keys.`);
