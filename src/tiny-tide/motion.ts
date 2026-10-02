@@ -30,6 +30,17 @@ const ACTX: AdmissionContext = { time: 0, permit: null };
 const FACES: MutVec3[] = [];
 const SLIDE = { x: 0, y: 0, z: 0, ax: 0, ay: 0, az: 0, changed: false };
 const TURN: { yaw: number; pitch: number } = { yaw: 0, pitch: 0 };
+/** Turns `o` toward `target` at `at` in steps of at most `step` radians (yaw and pitch), stopping at the last admitted orientation. The
+ *  last step lands exactly on the target. */
+function turnAt(q: WorldQueries, actor: Actor, at: Vec3, o: { yaw: number; pitch: number }, target: Orientation, time: number, step: number): void {
+  const y0 = o.yaw, p0 = o.pitch, dy = shortestArc(y0, target.yaw), dp = target.pitch - p0;
+  const m = step > 0 ? Math.ceil(Math.max(Math.abs(dy), Math.abs(dp)) / step) : 0;
+  for (let k = 1; k <= m; k++) {
+    TURN.yaw = k === m ? y0 + dy : y0 + dy * k / m; TURN.pitch = k === m ? target.pitch : p0 + dp * k / m;
+    if (!admAt(q, actor, at, TURN, time).ok) break;
+    o.yaw = TURN.yaw; o.pitch = TURN.pitch;
+  }
+}
 /** One admission at a time, through the scratch context. */
 function admAt(q: WorldQueries, actor: Actor, p: Vec3, o: Orientation, time: number): Admission { ACTX.time = time; return q.overlapHull(actor, p, o, ACTX); }
 
@@ -56,16 +67,7 @@ export function resolveMotion(req: MotionRequest, ctx: LegalityContext & { actor
   const minR = HM.minR, extent = HM.extent;
 
   // Turn, at the start time; stop at the last admitted orientation.
-  if (req.turn) {
-    const dy = shortestArc(o.yaw, req.turn.yaw), dp = req.turn.pitch - o.pitch, step = minR / (2 * extent);
-    const m = step > 0 ? Math.ceil(Math.max(Math.abs(dy), Math.abs(dp)) / step) : 0;
-    for (let k = 1; k <= m; k++) {
-      // Fractions come from the step index; the last step lands exactly on the requested pitch.
-      TURN.yaw = req.orientation.yaw + dy * k / m; TURN.pitch = k === m ? req.turn.pitch : req.orientation.pitch + dp * k / m;
-      if (!admAt(q, actor, from, TURN, start).ok) break;
-      o.yaw = TURN.yaw; o.pitch = TURN.pitch;
-    }
-  }
+  if (req.turn) turnAt(q, actor, from, o, req.turn, start, minR / (2 * extent));
 
   // Translation in legs.
   const s = minR / 2, dLen = Math.hypot(d.x, d.y, d.z);
@@ -142,6 +144,10 @@ export function resolveMotion(req: MotionRequest, ctx: LegalityContext & { actor
     break;
   }
 
+  // A turn that a solid cut short at the start is tried again where the move ended (continuation: crawler freeze). A long body wedged
+  // beside a rock can not turn in place, but it can once it has moved; without this it keeps its old facing as long as the wedge
+  // holds it. Every step is admitted at the end time, so the result is checked as before.
+  if (req.turn && (P.x !== from.x || P.y !== from.y || P.z !== from.z) && (o.yaw !== req.turn.yaw || o.pitch !== req.turn.pitch)) turnAt(q, actor, P, o, req.turn, end, minR / (2 * extent));
   const position = { x: P.x, y: P.y, z: P.z };
   const status: MotionResult['status'] = !admAt(q, actor, position, o, end).ok ? 'needs-recovery' : clamped ? 'clamped' : contacts.length > 0 ? 'blocked' : 'moved';
   return { status, position, orientation: o, contacts, unconsumed: { x: remX, y: remY, z: remZ }, time };

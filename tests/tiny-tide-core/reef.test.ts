@@ -56,7 +56,7 @@ describe('reef placement (owner playtest P4)', () => {
       const pts = reef.solids.map(s => footprintPoints(s, size / 8));
       reef.solids.forEach((s, i) => reef.solids.forEach((o, j) => { if (j > i) for (const [x, z] of pts[i]!) expect(footprintClear(o, x, z, 0), `${s.id} overlaps ${o.id}`).toBe(true); }));
       for (const t of reef.trinkets) for (const s of reef.solids) expect(footprintClear(s, t.x, t.z, TRINKET_FOOTPRINT * size)).toBe(true);
-    });
+    }, 20_000);   // 1–4 s alone; the full suite runs files in parallel
   }
 });
 

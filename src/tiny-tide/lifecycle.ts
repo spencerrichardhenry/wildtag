@@ -1,6 +1,7 @@
 // Pure lifecycle transitions: reset, one guarded respawn, recovery, commit reconciliation, damage resolution, evolution.
 import type { Actor, Admission, CombatRuntime, LegalityContext, Orientation, RecoveryResult, Vec3 } from './combat-types';
 import { findRecoveryPose } from './motion';
+import { supportHeight } from './world-queries';
 import { defaultCatalogs, type Catalogs } from './registries';
 import type { DesignDelta, PartEmitterSource } from './design-delta';
 import type { Genome } from './genome';
@@ -77,6 +78,75 @@ export function growthPose(actor: Actor, position: Vec3, rt: Pick<CombatRuntime,
   const sx = n1.x + n2.x, sy = n1.y + n2.y, sz = n1.z + n2.z, len = Math.hypot(sx, sy, sz);
   const two = lift({ x: sx / len, y: sy / len, z: sz / len }, [first, one]);
   return two !== null && !('constraint' in two) ? two : null;
+}
+
+/** A trap (continuation of the final review: a long Crawler wedged between small rocks, whose turn and every slide the solids
+ *  refuse): the player pushes in one direction, but for TRAP_SECONDS the body gains less than TRAP_MOVE body lengths along it, and on
+ *  some frame of that time it is wedged: two contacts whose normals differ by more than WEDGE_ANGLE, or a facing more than WEDGE_ANGLE
+ *  off the push (its turn is refused). A push into one flat wall, facing it, is not a trap. The body then moves to the nearest admitted
+ *  pose that lets it go on (`unstickPose`). */
+export const TRAP_SECONDS = .75, TRAP_MOVE = .05, TRAP_REACH = 1.5, WEDGE_ANGLE = Math.PI / 6;
+export interface TrapWatch { x: number; y: number; z: number; dx: number; dz: number; time: number; wedged: boolean; armed: boolean }
+export const newTrapWatch = (): TrapWatch => ({ x: 0, y: 0, z: 0, dx: 0, dz: 0, time: 0, wedged: false, armed: false });
+/** Is this step wedged? (see TrapWatch) */
+export function wedged(contacts: readonly { normal: Vec3 }[], yaw: number, push: Vec3): boolean {
+  const c = Math.cos(WEDGE_ANGLE);
+  for (let i = 0; i < contacts.length; i++) for (let j = i + 1; j < contacts.length; j++) {
+    const a = contacts[i]!.normal, b = contacts[j]!.normal;
+    if (a.x * b.x + a.y * b.y + a.z * b.z < c) return true;
+  }
+  const pl = Math.hypot(push.x, push.z);
+  return contacts.length > 0 && pl > 1e-9 && (Math.sin(yaw) * push.x + Math.cos(yaw) * push.z) / pl < c;
+}
+/** Call once per played frame with the body's position, the horizontal push (zero when the player asks for nothing) and whether the
+ *  step was wedged. True on the frame the body counts as trapped (the watch then restarts). */
+export function trapDue(w: TrapWatch, at: Vec3, push: Vec3, L: number, isWedged: boolean, dt: number): boolean {
+  const pl = Math.hypot(push.x, push.z);
+  if (pl < .05) { w.armed = false; return false; }
+  const dx = push.x / pl, dz = push.z / pl;
+  if (!w.armed || dx * w.dx + dz * w.dz < .9 || (at.x - w.x) * dx + (at.z - w.z) * dz > TRAP_MOVE * L) {
+    w.armed = true; w.x = at.x; w.y = at.y; w.z = at.z; w.dx = dx; w.dz = dz; w.time = 0; w.wedged = false;
+  }
+  w.time += dt; w.wedged ||= isWedged;
+  if (w.time < TRAP_SECONDS || !w.wedged) return false;
+  w.armed = false;
+  return true;
+}
+/** The nearest admitted pose within TRAP_REACH body lengths, level, facing the push or (when that fits nowhere) another of 8 yaws, in
+ *  place first (a turn the sweep refused), then on rings of .125 L nearest the push direction first, at the body's height and (ground
+ *  plans) at the support height there. The body's own pose (in place, its own yaw) is not a result. A pose whose centre line from the
+ *  body's centre passes through a solid is skipped, so the body never jumps through a rock or an arch leg. */
+export function unstickPose(actor: Actor, at: Vec3, yaw: number, current: Orientation, ctx: LegalityContext & { time: number; ground: boolean }): RecoveryResult {
+  const q = ctx.queries, L = actor.bodyLength, actx = { time: ctx.time, permit: null, bounds: ctx.bounds };
+  const probe: Actor = { id: actor.id, hull: [{ start: { x: 0, y: 0, z: 0 }, end: { x: 0, y: 0, z: 0 }, radius: 1e-3 * L }], habitat: actor.habitat, bodyLength: L };
+  const clear = (p: Vec3) => {
+    for (let k = 1; k <= 8; k++) {
+      const c = { x: at.x + (p.x - at.x) * k / 8, y: at.y + (p.y - at.y) * k / 8, z: at.z + (p.z - at.z) * k / 8 };
+      if (q.overlapHull(probe, c, current, { time: ctx.time }).constraint === 'solid') return false;
+    }
+    return true;
+  };
+  const yaws = [yaw, ...[1, 2, 3].flatMap(k => [yaw + k * Math.PI / 4, yaw - k * Math.PI / 4]), yaw + Math.PI];
+  const tryAt = (x: number, z: number, inPlace: boolean): RecoveryResult | null => {
+    for (const y0 of yaws) {
+      const o: Orientation = { yaw: y0, pitch: 0 };
+      if (inPlace && Math.abs(Math.sin((y0 - current.yaw) / 2)) < 1e-6) continue;
+      const ys = [at.y];
+      if (ctx.ground && !q.terrain.space) ys.unshift(supportHeight(actor, x, z, o, q.terrain) + .01 * L);
+      for (const y of ys) { const p = { x, y, z }; if (q.overlapHull(actor, p, o, actx).ok && clear(p)) return { ok: true, position: p, orientation: o }; }
+    }
+    return null;
+  };
+  const here = tryAt(at.x, at.z, true);
+  if (here) return here;
+  for (let k = 1; k * .125 <= TRAP_REACH + 1e-9; k++) {
+    const r = k * .125 * L;
+    for (let j = 0; j < 16; j++) {
+      const a = yaw + (j % 2 === 0 ? 1 : -1) * Math.ceil(j / 2) * Math.PI / 8, p = tryAt(at.x + Math.sin(a) * r, at.z + Math.cos(a) * r, false);
+      if (p) return p;
+    }
+  }
+  return { ok: false, reason: 'no free pose near the trap' };
 }
 
 const sameEmitter = (a: PartEmitterSource, b: { partUid: string; copy: number; socketId: string }) => a.partUid === b.partUid && a.copy === b.copy && a.socketId === b.socketId;

@@ -19,37 +19,84 @@ export interface Solid { id: string; kind: 'rock' | 'arch'; shapes: readonly Sol
 
 /** A closed, consistently wound triangle mesh in asset units, with a uniform grid: each cell lists the triangles whose bounds meet it. */
 export interface ColliderMesh {
-  /** 9 numbers per triangle (a, b, c), and per triangle its bounding sphere (centre, radius) in `sphere`. */
-  readonly tri: Float64Array; readonly sphere: Float64Array; readonly count: number;
+  /** 9 numbers per triangle (a, b, c), and per triangle its bounds (min x, y, z, max x, y, z) in `box`. */
+  readonly tri: Float64Array; readonly box: Float64Array; readonly count: number;
+  /** Clusters of nearby triangles (by centroid, CLUSTER × CLUSTER × CLUSTER cells): cluster c holds clusterList[clusterStart[c]..
+   *  clusterStart[c + 1]) and its bounds are clusterBox[6c..6c + 6). A sphere test visits the nearest clusters first. */
+  readonly clusterStart: Int32Array; readonly clusterList: Int32Array; readonly clusterBox: Float64Array; readonly clusters: number;
+  /** The mesh's bounds (`lo`, `hi`) and the grid's (`min`, `max`: GRID_PAD cells wider). */
+  readonly lo: readonly [number, number, number]; readonly hi: readonly [number, number, number];
   readonly min: readonly [number, number, number]; readonly max: readonly [number, number, number];
   readonly cell: number; readonly nx: number; readonly ny: number; readonly nz: number;
   /** Cell c lists list[start[c]..start[c + 1]). */
   readonly start: Int32Array; readonly list: Int32Array;
   /** Per triangle: the query stamp that last visited it. */
   readonly stamps: Int32Array; stamp: number;
+  /** Per grid cell: a lower bound of the distance (asset units) from any point of the cell to the surface (`bound`), and the cell's
+   *  side when the whole cell is on one side (1 outside, −1 inside, 0 unknown). A sphere test far from the surface ends here. */
+  readonly bound: Float32Array; readonly side: Int8Array;
 }
+/** Cells of the grid past the mesh on every side. */
+const GRID_PAD = 3;
+/** Cells per cluster side. */
+const CLUSTER = 3;
+/** Scratch of a sphere test: (squared distance, cluster) pairs to visit, nearest first. */
+const CLUSTER_ORDER = new Float64Array(2 * 256);
 /** Builds the mesh and its grid of cell size `cell` (asset units). */
 export function colliderMesh(positions: readonly number[], index: readonly number[], cell: number): ColliderMesh {
-  const count = index.length / 3, tri = new Float64Array(9 * count), sphere = new Float64Array(4 * count);
+  const count = index.length / 3, tri = new Float64Array(9 * count), box = new Float64Array(6 * count);
   const min: [number, number, number] = [Infinity, Infinity, Infinity], max: [number, number, number] = [-Infinity, -Infinity, -Infinity];
   for (let t = 0; t < count; t++) for (let k = 0; k < 3; k++) for (let a = 0; a < 3; a++) {
     const v = positions[3 * index[3 * t + k]! + a]!; tri[9 * t + 3 * k + a] = v; min[a] = Math.min(min[a]!, v); max[a] = Math.max(max[a]!, v);
   }
+  // The grid reaches GRID_PAD cells past the mesh on every side, so the cell bounds also cover points near the mesh's outside.
+  const lo: [number, number, number] = [min[0], min[1], min[2]], hi: [number, number, number] = [max[0], max[1], max[2]];
+  for (let a = 0; a < 3; a++) { min[a] = min[a]! - GRID_PAD * cell; max[a] = max[a]! + GRID_PAD * cell; }
   const nx = Math.max(1, Math.ceil((max[0] - min[0]) / cell)), ny = Math.max(1, Math.ceil((max[1] - min[1]) / cell)), nz = Math.max(1, Math.ceil((max[2] - min[2]) / cell));
   const cellOf = (v: number, a: 0 | 1 | 2, n: number) => Math.max(0, Math.min(n - 1, Math.floor((v - min[a]) / cell)));
   const lists: number[][] = Array.from({ length: nx * ny * nz }, () => []);
   for (let t = 0; t < count; t++) {
     const o = 9 * t, lo = [0, 1, 2].map(a => Math.min(tri[o + a]!, tri[o + 3 + a]!, tri[o + 6 + a]!)), hi = [0, 1, 2].map(a => Math.max(tri[o + a]!, tri[o + 3 + a]!, tri[o + 6 + a]!));
-    const cx = (lo[0]! + hi[0]!) / 2, cy = (lo[1]! + hi[1]!) / 2, cz = (lo[2]! + hi[2]!) / 2;
-    sphere[4 * t] = cx; sphere[4 * t + 1] = cy; sphere[4 * t + 2] = cz;
-    sphere[4 * t + 3] = Math.max(...[0, 1, 2].map(k => Math.hypot(tri[o + 3 * k]! - cx, tri[o + 3 * k + 1]! - cy, tri[o + 3 * k + 2]! - cz)));
+    for (let a = 0; a < 3; a++) { box[6 * t + a] = lo[a]!; box[6 * t + 3 + a] = hi[a]!; }
     for (let i = cellOf(lo[0]!, 0, nx); i <= cellOf(hi[0]!, 0, nx); i++) for (let j = cellOf(lo[1]!, 1, ny); j <= cellOf(hi[1]!, 1, ny); j++) for (let k = cellOf(lo[2]!, 2, nz); k <= cellOf(hi[2]!, 2, nz); k++) lists[(i * ny + j) * nz + k]!.push(t);
   }
   const start = new Int32Array(lists.length + 1);
   lists.forEach((l, c) => { start[c + 1] = start[c]! + l.length; });
   const list = new Int32Array(start[lists.length]!);
   lists.forEach((l, c) => list.set(l, start[c]!));
-  return { tri, sphere, count, min, max, cell, nx, ny, nz, start, list, stamps: new Int32Array(count), stamp: 0 };
+  // Clusters by triangle centroid on a grid of CLUSTER cells, with the union of their triangles' bounds.
+  const cnx = Math.ceil(nx / CLUSTER), cny = Math.ceil(ny / CLUSTER), cnz = Math.ceil(nz / CLUSTER), byCluster = new Map<number, number[]>();
+  for (let t = 0; t < count; t++) {
+    const at = (a: 0 | 1 | 2, n: number) => Math.min(n - 1, Math.floor(cellOf((box[6 * t + a]! + box[6 * t + 3 + a]!) / 2, a, a === 0 ? nx : a === 1 ? ny : nz) / CLUSTER));
+    const key = (at(0, cnx) * cny + at(1, cny)) * cnz + at(2, cnz), l = byCluster.get(key) ?? [];
+    l.push(t); byCluster.set(key, l);
+  }
+  const groups = [...byCluster.values()], clusterStart = new Int32Array(groups.length + 1), clusterList = new Int32Array(count), clusterBox = new Float64Array(6 * groups.length);
+  groups.forEach((g, c) => {
+    clusterStart[c + 1] = clusterStart[c]! + g.length; clusterList.set(g, clusterStart[c]!);
+    for (let a = 0; a < 3; a++) { clusterBox[6 * c + a] = Math.min(...g.map(t => box[6 * t + a]!)); clusterBox[6 * c + 3 + a] = Math.max(...g.map(t => box[6 * t + 3 + a]!)); }
+  });
+  if (groups.length > CLUSTER_ORDER.length / 2) throw new Error('colliderMesh: too many clusters');
+  const mesh: ColliderMesh = { tri, box, clusterStart, clusterList, clusterBox, clusters: groups.length, count, lo, hi, min, max, cell, nx, ny, nz, start, list, stamps: new Int32Array(count), stamp: 0, bound: new Float32Array(nx * ny * nz), side: new Int8Array(nx * ny * nz) };
+  // The exact distance and side at every grid corner (once per mesh), then per cell: the smallest corner distance less the distance
+  // from any point of the cell to its nearest corner (half the cell's diagonal). When that is positive the surface does not cross the
+  // cell, so all its corners share the cell's side.
+  const cx1 = nx + 1, cy1 = ny + 1, cz1 = nz + 1, dist = new Float64Array(cx1 * cy1 * cz1), inside = new Uint8Array(cx1 * cy1 * cz1);
+  for (let i = 0; i < cx1; i++) for (let j = 0; j < cy1; j++) for (let k = 0; k < cz1; k++) {
+    const u = min[0] + i * cell, v = min[1] + j * cell, w = min[2] + k * cell, c = (i * cy1 + j) * cz1 + k;
+    M.px = u; M.py = v; M.pz = w; M.best = Infinity; M.tri = -1;
+    for (let t = 0; t < count; t++) closestOnTriangle(mesh, t, 1, 1, 1);
+    dist[c] = Math.sqrt(M.best); inside[c] = insideMesh(mesh, u, v, w) ? 1 : 0;
+  }
+  const half = cell * Math.sqrt(3) / 2;
+  for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) for (let k = 0; k < nz; k++) {
+    let lo = Infinity, ins = 0;
+    for (let a = 0; a < 2; a++) for (let b = 0; b < 2; b++) for (let e = 0; e < 2; e++) { const c = ((i + a) * cy1 + j + b) * cz1 + k + e; lo = Math.min(lo, dist[c]!); ins += inside[c]!; }
+    const cIdx = (i * ny + j) * nz + k, lb = lo - half;
+    mesh.bound[cIdx] = Math.max(0, lb);
+    mesh.side[cIdx] = lb > 0 && (ins === 0 || ins === 8) ? (ins === 0 ? 1 : -1) : 0;
+  }
+  return mesh;
 }
 /** A placed mesh shape. */
 export function meshShape(mesh: ColliderMesh, x: number, y: number, z: number, sx: number, sy: number, sz: number, yaw: number): MeshShape {
@@ -63,11 +110,11 @@ export function solidOf(id: string, kind: Solid['kind'], shapes: readonly SolidS
     if (s.kind === 'mesh') {
       // The mesh's asset bounds, scaled and turned: the world box of that box's corners.
       const m = s.mesh;
-      for (const u of [m.min[0], m.max[0]]) for (const w of [m.min[2], m.max[2]]) {
+      for (const u of [m.lo[0], m.hi[0]]) for (const w of [m.lo[2], m.hi[2]]) {
         const X = s.x + u * s.sx * s.co + w * s.sz * s.si, Z = s.z - u * s.sx * s.si + w * s.sz * s.co;
         minX = Math.min(minX, X); maxX = Math.max(maxX, X); minZ = Math.min(minZ, Z); maxZ = Math.max(maxZ, Z);
       }
-      minY = Math.min(minY, s.y + m.min[1] * s.sy); maxY = Math.max(maxY, s.y + m.max[1] * s.sy);
+      minY = Math.min(minY, s.y + m.lo[1] * s.sy); maxY = Math.max(maxY, s.y + m.hi[1] * s.sy);
     } else if (s.kind === 'ellipsoid') {
       // A turned ellipsoid's horizontal half extent along world x is √((a cos)² + (c sin)²), and along z √((a sin)² + (c cos)²).
       const co = Math.cos(s.yaw), si = Math.sin(s.yaw), hx = Math.hypot(s.a * co, s.c * si), hz = Math.hypot(s.a * si, s.c * co);
@@ -133,7 +180,7 @@ function closestOnTriangle(m: ColliderMesh, t: number, sx: number, sy: number, s
 /** Is the asset point (u, v, w) inside the closed mesh? The parity of the mesh's crossings with the ray from it along +y. The ray's
  *  (x, z) is moved by a tiny amount, so it never passes exactly through an edge or a vertex. Only the cells of its column are read. */
 function insideMesh(m: ColliderMesh, u: number, v: number, w: number): boolean {
-  if (u < m.min[0] || u > m.max[0] || v < m.min[1] || v > m.max[1] || w < m.min[2] || w > m.max[2]) return false;
+  if (u < m.lo[0] || u > m.hi[0] || v < m.lo[1] || v > m.hi[1] || w < m.lo[2] || w > m.hi[2]) return false;
   const x = u + 1.234567e-7 * m.cell, z = w + 2.345678e-7 * m.cell, T = m.tri;
   const i = Math.max(0, Math.min(m.nx - 1, Math.floor((x - m.min[0]) / m.cell))), k = Math.max(0, Math.min(m.nz - 1, Math.floor((z - m.min[2]) / m.cell)));
   const j0 = Math.max(0, Math.min(m.ny - 1, Math.floor((v - m.min[1]) / m.cell)));
@@ -156,41 +203,62 @@ function insideMesh(m: ColliderMesh, u: number, v: number, w: number): boolean {
   }
   return crossings % 2 === 1;
 }
+/** The squared distance from (u, v, w) to the box b[o..o + 6) scaled by (sx, sy, sz). */
+function boxD2(b: Float64Array, o: number, sx: number, sy: number, sz: number, u: number, v: number, w: number): number {
+  const dx = Math.max(b[o]! * sx - u, 0, u - b[o + 3]! * sx), dy = Math.max(b[o + 1]! * sy - v, 0, v - b[o + 4]! * sy), dz = Math.max(b[o + 2]! * sz - w, 0, w - b[o + 5]! * sz);
+  return dx * dx + dy * dy + dz * dz;
+}
+/** A sphere centre deep inside the mesh (no surface within r), at (u, v, w) in the turned frame: the contact has the given lower bound
+ *  of the depth, the point at the centre and the normal out from the mesh's centre. */
+function deepInside(s: MeshShape, u: number, v: number, w: number, depth: number, out: SolidContact): boolean {
+  if (depth <= out.depth) return false;
+  const m = s.mesh, cx = (m.lo[0] + m.hi[0]) / 2 * s.sx, cy = (m.lo[1] + m.hi[1]) / 2 * s.sy, cz = (m.lo[2] + m.hi[2]) / 2 * s.sz, l = Math.hypot(u - cx, v - cy, w - cz);
+  let nx = 0, ny = 1, nz = 0;
+  if (l > 1e-12) { nx = (u - cx) / l; ny = (v - cy) / l; nz = (w - cz) / l; }
+  out.depth = depth;
+  out.nx = nx * s.co + nz * s.si; out.ny = ny; out.nz = -nx * s.si + nz * s.co;
+  out.px = s.x + u * s.co + w * s.si; out.py = s.y + v; out.pz = s.z - u * s.si + w * s.co;
+  return true;
+}
 /** sphereShape for a mesh: the exact distance to the scaled mesh in its turned frame, the sign from insideMesh. */
 function sphereMesh(s: MeshShape, x: number, y: number, z: number, r: number, out: SolidContact): boolean {
   const m = s.mesh, co = s.co, si = s.si, dx = x - s.x, dy = y - s.y, dz = z - s.z;
   // World to the turned frame (the inverse of rotation.y), then to asset units.
   const u = dx * co - dz * si, v = dy, w = dx * si + dz * co, au = u / s.sx, av = v / s.sy, aw = w / s.sz;
   const ru = r / s.sx, rv = r / s.sy, rw = r / s.sz;
-  if (au + ru < m.min[0] || au - ru > m.max[0] || av + rv < m.min[1] || av - rv > m.max[1] || aw + rw < m.min[2] || aw - rw > m.max[2]) return false;
-  // Every triangle within r lists in a cell that meets the sphere's asset box.
-  const c = m.cell, i0 = Math.max(0, Math.floor((au - ru - m.min[0]) / c)), i1 = Math.min(m.nx - 1, Math.floor((au + ru - m.min[0]) / c));
-  const j0 = Math.max(0, Math.floor((av - rv - m.min[1]) / c)), j1 = Math.min(m.ny - 1, Math.floor((av + rv - m.min[1]) / c));
-  const k0 = Math.max(0, Math.floor((aw - rw - m.min[2]) / c)), k1 = Math.min(m.nz - 1, Math.floor((aw + rw - m.min[2]) / c));
-  if (++m.stamp === 0x7fffffff) { m.stamps.fill(0); m.stamp = 1; }
+  if (au + ru < m.lo[0] || au - ru > m.hi[0] || av + rv < m.lo[1] || av - rv > m.hi[1] || aw + rw < m.lo[2] || aw - rw > m.hi[2]) return false;
+  // The cell bound: a world distance is at least the asset distance times the smallest scale.
+  const ci = Math.floor((au - m.min[0]) / m.cell), cj = Math.floor((av - m.min[1]) / m.cell), ck = Math.floor((aw - m.min[2]) / m.cell);
+  if (ci >= 0 && ci < m.nx && cj >= 0 && cj < m.ny && ck >= 0 && ck < m.nz) {
+    const cIdx = (ci * m.ny + cj) * m.nz + ck, side = m.side[cIdx]!, far = m.bound[cIdx]! * Math.min(s.sx, s.sy, s.sz);
+    if (side === 1 && far >= r) return false;
+    if (side === -1 && far >= r) return deepInside(s, u, v, w, r + far, out);
+  }
+  // Every triangle within r: the clusters whose scaled bounds are within r, nearest first; in each, the triangles whose scaled bounds
+  // are nearer than the best so far. Squared distances in the turned frame (the scale is per axis, so scaled boxes stay boxes).
+  const sx = s.sx, sy = s.sy, sz = s.sz, B = m.clusterBox, T = m.box, O = CLUSTER_ORDER;
   M.px = u; M.py = v; M.pz = w; M.best = r * r; M.tri = -1;
-  const S = m.sphere, sMax = Math.max(s.sx, s.sy, s.sz);
-  for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) for (let k = k0; k <= k1; k++) {
-    const cell = (i * m.ny + j) * m.nz + k;
-    for (let e = m.start[cell]!; e < m.start[cell + 1]!; e++) {
-      const t = m.list[e]!;
-      if (m.stamps[t] === m.stamp) continue;
-      m.stamps[t] = m.stamp;
-      // The triangle's bounding sphere, scaled (its radius by the largest scale): skip it when it is farther than the best so far.
-      const gap = Math.hypot(S[4 * t]! * s.sx - u, S[4 * t + 1]! * s.sy - v, S[4 * t + 2]! * s.sz - w) - S[4 * t + 3]! * sMax;
-      if (gap > 0 && gap * gap >= M.best) continue;
-      closestOnTriangle(m, t, s.sx, s.sy, s.sz);
+  let n = 0;
+  for (let c = 0; c < m.clusters; c++) {
+    const d2 = boxD2(B, 6 * c, sx, sy, sz, u, v, w);
+    if (d2 >= M.best) continue;
+    let k = n++;
+    while (k > 0 && O[2 * (k - 1)]! > d2) { O[2 * k] = O[2 * (k - 1)]!; O[2 * k + 1] = O[2 * (k - 1) + 1]!; k--; }
+    O[2 * k] = d2; O[2 * k + 1] = c;
+  }
+  for (let e = 0; e < n; e++) {
+    if (O[2 * e]! >= M.best) break;
+    const c = O[2 * e + 1]!;
+    for (let q = m.clusterStart[c]!; q < m.clusterStart[c + 1]!; q++) {
+      const t = m.clusterList[q]!;
+      if (boxD2(T, 6 * t, sx, sy, sz, u, v, w) < M.best) closestOnTriangle(m, t, sx, sy, sz);
     }
   }
   const inside = insideMesh(m, au, av, aw);
   if (M.tri < 0 && !inside) return false;
   let depth: number, nx: number, ny: number, nz: number, qx: number, qy: number, qz: number;
-  if (M.tri < 0) {
-    // Deep inside: no surface within r, so the depth is at least 2r. The normal points out from the mesh's centre.
-    depth = 2 * r; qx = u; qy = v; qz = w;
-    const cx = (m.min[0] + m.max[0]) / 2 * s.sx, cy = (m.min[1] + m.max[1]) / 2 * s.sy, cz = (m.min[2] + m.max[2]) / 2 * s.sz, l = Math.hypot(u - cx, v - cy, w - cz);
-    if (l > 1e-12) { nx = (u - cx) / l; ny = (v - cy) / l; nz = (w - cz) / l; } else { nx = 0; ny = 1; nz = 0; }
-  } else {
+  if (M.tri < 0) return deepInside(s, u, v, w, 2 * r, out);   // no surface within r: the depth is at least 2r
+  {
     const d = Math.sqrt(M.best);
     depth = inside ? r + d : r - d; qx = M.qx; qy = M.qy; qz = M.qz;
     if (d > 1e-9 * Math.max(1, r)) { const sign = inside ? -1 : 1; nx = sign * (u - qx) / d; ny = sign * (v - qy) / d; nz = sign * (w - qz) / d; }
