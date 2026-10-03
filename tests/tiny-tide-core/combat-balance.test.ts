@@ -19,6 +19,11 @@ describe('combat probe (smoke)', () => {
     expect(attackSetup('1:clawmother', 'mother-pinch-2')).toMatchObject({ startId: 'mother-pinch', bandSource: 'parent' });
     expect(attackSetup('1:clawmother', 'mother-pinch-rage')).toMatchObject({ startId: 'mother-sweep', phase: 2 });
   });
+  it('merges part files, reading a stored Infinity (null in JSON) back as Infinity', () => {
+    const part = JSON.parse(JSON.stringify({ p8: { maxTokens: 2, minActiveGap: Infinity, minOffScreenWindup: Infinity, windups: 3, offScreen: 0, gapPair: '', pass: true } })) as Partial<ProbeReport>;
+    const p8 = mergeReports([part, { p8: { maxTokens: 1, minActiveGap: .3, minOffScreenWindup: Infinity, windups: 1, offScreen: 0, gapPair: 'a → b', pass: true } }]).p8;
+    expect(p8).toMatchObject({ maxTokens: 2, minActiveGap: .3, minOffScreenWindup: Infinity, windups: 4, pass: true });
+  });
   it('runs one trial of each measure', () => {
     const watch = newWatch();
     const dash = { label: 'dash', stage: 1 as const, line: 'swimmer' as const, mouths: ['mouth_nibbler', 'mouth_nibbler'] as [string, string], add: [{ id: 'fin_side', mirror: true }] };

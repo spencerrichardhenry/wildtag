@@ -651,8 +651,10 @@ function noteRows(o: ProbeOptions, watch: DirectorWatch, flush: (rows: NoteRow[]
   return rows;
 }
 function mergeP8(a: ProbeReport['p8'], b: ProbeReport['p8']): ProbeReport['p8'] {
-  const m = { maxTokens: Math.max(a.maxTokens, b.maxTokens), minActiveGap: Math.min(a.minActiveGap, b.minActiveGap), minOffScreenWindup: Math.min(a.minOffScreenWindup, b.minOffScreenWindup),
-    windups: a.windups + b.windups, offScreen: (a.offScreen ?? 0) + (b.offScreen ?? 0), gapPair: b.minActiveGap < a.minActiveGap ? b.gapPair : a.gapPair, mix: { ...(a.mix ?? {}) } };
+  // A part file stores Infinity as null (JSON): read it back as Infinity, not 0.
+  const inf = (x: number | null | undefined) => typeof x === 'number' ? x : Infinity;
+  const m = { maxTokens: Math.max(a.maxTokens, b.maxTokens), minActiveGap: Math.min(inf(a.minActiveGap), inf(b.minActiveGap)), minOffScreenWindup: Math.min(inf(a.minOffScreenWindup), inf(b.minOffScreenWindup)),
+    windups: a.windups + b.windups, offScreen: (a.offScreen ?? 0) + (b.offScreen ?? 0), gapPair: inf(b.minActiveGap) < inf(a.minActiveGap) ? b.gapPair : a.gapPair, mix: { ...(a.mix ?? {}) } };
   for (const [k, n] of Object.entries(b.mix ?? {})) m.mix[k] = (m.mix[k] ?? 0) + n;
   return { ...m, pass: m.maxTokens <= 2 && m.minActiveGap >= .25 - 1e-6 && m.minOffScreenWindup >= .6 - 1e-6 };
 }
