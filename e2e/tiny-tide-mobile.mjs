@@ -67,11 +67,38 @@ try {
  const ready=await makeFixture(second,{ready:true});await openGame(second,{storage:{[ready.key]:ready.json}});await start(second);
  await second.locator('#evolve').waitFor({state:'visible'});await second.locator('#evolve').tap();await second.locator('#path-screen').waitFor();
  await second.locator('#path-screen [data-plan=swimmer] .path-choose').tap();await second.locator('#editor').waitFor();await frames(second,3);
- await second.locator('#editor .ed-changes-box summary').tap();await second.locator('#editor .ed-undo-all').tap();await frames(second,3);
+ // The phone stats box is a sheet: the Moves button opens it (T21 fix round 1).
+ await second.locator('#editor .ed-moves-open').tap();await second.locator('#editor .ed-changes-box summary').tap();await second.locator('#editor .ed-undo-all').tap();await second.locator('#editor .ed-moves-close').tap();await frames(second,3);
  const line=second.locator('#editor .ed-problem-line');assert.equal(await line.isVisible(),true,'.ed-problem-line is visible');
  assert.match(await line.textContent(),/\bleg/i,'the problem line mentions legs');
  const lb=await line.boundingBox();assert.ok(lb&&lb.x>=0&&lb.y>=0&&lb.x+lb.width<=391&&lb.y+lb.height<=845,'the problem line fits the phone');
  await second.screenshot({path:`${out}/mobile-problem-line.png`});
+ // T21 fix round 1: the phone editor frames the creature in the free band between the overlays (portrait and landscape), the
+ // lost-moves alert stays above the band, and the Moves sheet has slots of at least 44 px that swap by tap then tap.
+ for(const [w,h] of [[320,568],[844,390]]){const pc=await browser.newContext({viewport:{width:w,height:h},deviceScaleFactor:2,isMobile:true,hasTouch:true});const pg=await pc.newPage();
+  pg.on('pageerror',e=>errors.push(e.message));pg.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
+  const fx=await makeFixture(pg,{add:{0:[{id:'claw_pincer',t:.5}]}});await openGame(pg,{storage:{[fx.key]:fx.json}});await start(pg);
+  await pg.locator('#edit').tap();await pg.locator('#editor').waitFor();await frames(pg,30);
+  const framed=async label=>{await frames(pg,30);const f=await pg.evaluate(()=>window.__tinyTide.editorFrame());assert.ok(f&&f.band,`${w}x${h} ${label}: a phone layout with a band`);
+   const b=f.band,x=f.box,cx=(x.left+x.right)/2,cy=(x.top+x.bottom)/2;
+   assert.ok(cx>=b.left&&cx<=b.right&&cy>=b.top&&cy<=b.bottom,`${w}x${h} ${label}: the creature's centre (${cx|0}, ${cy|0}) is in the band ${JSON.stringify(b)}`);
+   assert.ok(x.bottom-x.top>=.4*(b.bottom-b.top),`${w}x${h} ${label}: the creature (${(x.bottom-x.top)|0} px) is at least 40 % of the band height (${(b.bottom-b.top)|0} px)`);
+   assert.ok(b.bottom-b.top>=100,`${w}x${h} ${label}: the band is at least 100 px high (${(b.bottom-b.top)|0})`);return f;};
+  const before=await framed('open');
+  for(const sel of ['.ed-regions','.ed-tabs','.ed-top']){const r=await pg.locator('#editor '+sel).boundingBox();const b=before.band;assert.ok(r.y+r.height<=b.top+1||r.y>=b.bottom-1||r.x+r.width<=b.left+1,`${w}x${h}: ${sel} does not overlap the band`);}
+  // Select the Pincer: the part tool takes the band's lower edge, the creature stays framed. Remove it: the lost-moves alert sits above the band.
+  const uid=fx.info.parts.find(p=>p.id==='claw_pincer').uid,pt=await pg.evaluate(u=>window.__tinyTide.editorProjection(u),uid);await pg.touchscreen.tap(pt.x,pt.y);await framed('a part selected');
+  await pg.locator('#editor .ed-delete').tap();const after=await framed('lost moves');
+  const lost=await pg.locator('#editor .ed-lost-moves').boundingBox();assert.ok(lost&&lost.y+lost.height<=after.band.top+1,`${w}x${h}: the lost-moves alert is above the band`);
+  await pg.locator('#editor .ed-undo').tap();await frames(pg,3);
+  // The Moves sheet: slots of at least 44 px; tap Grab, then tap slot 1.
+  await pg.locator('#editor .ed-moves-open').tap();await frames(pg,3);
+  const slots=await pg.locator('#editor .ed-slot').evaluateAll(els=>els.map(e=>{const r=e.getBoundingClientRect();return Math.min(r.width,r.height);}));
+  assert.ok(slots.length===4&&slots.every(v=>v>=44),`${w}x${h}: the sheet's slots are at least 44 px (${slots})`);
+  await pg.locator('#editor .ed-move-chip[data-kind="grab"]').tap();await pg.locator('#editor .ed-slot[data-slot="0"]').tap();await frames(pg,2);
+  assert.deepEqual(await pg.locator('#editor .ed-slot-bar .ed-slot').evaluateAll(els=>els.map(e=>e.querySelector('.ed-move-chip')?.dataset.kind??null)),['grab','dash',null,null],`${w}x${h}: tap then tap swaps`);
+  await pg.locator('#editor .ed-moves-close').tap();await framed('sheet closed');
+  await pc.close();}
  // Final review M1: the triangle budget of a phone at every stage (a fixture per stage; the Big stage drew the fine seabed rings).
  const tris={};
  for(const stage of [0,1,2,3]){const pc=await browser.newContext({viewport:{width:390,height:844},deviceScaleFactor:2,isMobile:true,hasTouch:true});const pg=await pc.newPage();
@@ -81,5 +108,5 @@ try {
   tris[stage]=most;await pc.close();}
  console.log('Phone triangles per frame (most of 20 samples):',JSON.stringify(tris));
  for(const [stage,count] of Object.entries(tris)) assert.ok(count<=PHONE_TRIANGLE_BUDGET,`stage ${stage}: ${count} triangles within the phone budget ${PHONE_TRIANGLE_BUDGET}`);
- assert.deepEqual(errors,[]);console.log('PASSED: v1 migration (-v1 unchanged), genuine multitouch move + rise, swipe camera, stable hover, Dive, touch cancellation, the basic-button drag aim and touch mode, 390/320 portrait and landscape control layout (slots visible, at least 48 px, no overlap), phone Evolve → Swimmer → Undo all problem line, phone triangle budget at stages 0–3.');
+ assert.deepEqual(errors,[]);console.log('PASSED: v1 migration (-v1 unchanged), genuine multitouch move + rise, swipe camera, stable hover, Dive, touch cancellation, the basic-button drag aim and touch mode, 390/320 portrait and landscape control layout (slots visible, at least 48 px, no overlap), phone Evolve → Swimmer → Undo all problem line, the phone editor creature band at 320x568 and 844x390 (framing, alerts above it, 44 px sheet slots, tap swap), phone triangle budget at stages 0–3.');
 } finally {await browser.close();}

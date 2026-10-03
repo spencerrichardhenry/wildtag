@@ -8,7 +8,7 @@ import { CreatureModel, locate, profile, surface, zAt } from './creature';
 import { adaptToPlan, badMirror, cloneGenome, derive, effectiveStats, instanceCount, isUnlocked, nextUid, PART_LIMITS, PATTERNS, partCost, partSlots, problems, SCALE_RANGE, SPINE_RANGE, type GenomeProblem, type Genome, type PlacedPart } from './genome';
 import { quoteDesign, walletTotal, type Economy, type Quote } from './economy';
 import { designDelta } from './design-delta';
-import type { CombatLoadout, MoveKind, SlotPin, Tuple4 } from './combat-types';
+import { MOVE_PRIORITY, type CombatLoadout, type MoveKind, type SlotPin, type Tuple4 } from './combat-types';
 import { basicLine, grantedKinds, lostMoveText, moveDiff, moveLine, moveNumbers, movesOf, nonMouthBite, placeKinds, partMoveLine, resolveMove, swapPins, TRADEOFF, type GrantedMove, type MoveRef } from './moves';
 import { MOVE_ICONS } from './combat-hud';
 import { regionOf, segmentRule, type BodyPlan, type Region } from './plans';
@@ -93,6 +93,15 @@ let openNow: Editor | null = null;
  *  vertices, where a ray from the camera hits that part first), or of a body surface point `{ t, angle }` (only where the ray
  *  hits the body there first); `depth` is the distance to the camera. Null when the point is not visible. */
 export function editorProjection(target: string | { t: number; angle: number }): { x: number; y: number; depth: number } | null { return openNow?.project(target) ?? null; }
+/** Read-only (QA): the editor layout, the free band where the creature is framed (phone layouts; null on desktop) and the creature's
+ *  projected box (px), or null when no editor is open. */
+export function editorFrame(): EditorFrame | null { return openNow?.frameInfo() ?? null; }
+export interface Box { left: number; top: number; right: number; bottom: number }
+export interface EditorFrame { layout: Layout; band: Box | null; box: Box }
+/** The phone layouts (editor.css uses the same queries): portrait has the bottom panel; landscape has a side panel. */
+type Layout = 'desktop' | 'portrait' | 'landscape';
+const LANDSCAPE_QUERY = '(orientation:landscape) and (max-height:500px)', PORTRAIT_QUERY = '(max-width:900px) and (orientation:portrait), (max-width:900px) and (min-height:501px)';
+const layoutNow = (): Layout => matchMedia(LANDSCAPE_QUERY).matches ? 'landscape' : matchMedia(PORTRAIT_QUERY).matches ? 'portrait' : 'desktop';
 
 /** Slots used per region: the sum of `partSlots` of the parts whose `t` lies in it. Like `problems()`, it skips
  *  unknown parts, banned kinds and kinds the region does not allow. */
@@ -120,6 +129,14 @@ class Editor {
   /** The move whose details are open, and the size slider's comparison (shown while its part is selected; a discrete edit clears it). */
   private detailKind: MoveKind | 'bite' | null = null;
   private sizeDiff: { uid: string; text: string } | null = null;
+  /** Phone layouts: the stats box is a sheet that the Moves button opens. */
+  private sheetOpen = false;
+  /** Phone layouts: the free band (px) the creature is framed in, re-measured when the overlays change. */
+  private band: Box | null = null;
+  private bandDirty = true;
+  private fitBox = new T.Box3(); private fitAge = 0;
+  /** The last HTML or text written to an element, so an unchanged render skips the DOM write. */
+  private written = new Map<Element, string>();
   /** A snapshot taken when a drag or slider gesture starts; it enters the history on the first real change. */
   private pending: Snapshot | null = null;
   private tab: Tab = 'parts';
@@ -178,11 +195,11 @@ class Editor {
         <div class="ed-title"><span class="eyebrow">${evolve ? `EVOLVE · ${esc(plan.name.toUpperCase())} · ${STAGES[plan.size]?.size ?? ''}` : 'CREATURE EDITOR'}</span>
           <input class="ed-name" maxlength="24" aria-label="Creature name" value=""></div>
         <div class="ed-dna" aria-live="polite"><small>DNA LEFT</small><strong class="ed-dna-value"></strong></div>
-        <div class="ed-actions"><button class="ed-undo ghost-button" aria-label="Undo">Undo</button><button class="ed-cancel ghost-button">${evolve ? 'Back' : 'Cancel'}</button><button class="ed-done primary">${evolve ? 'Evolve!' : 'Done'}</button></div>
+        <div class="ed-actions"><button class="ed-moves-open ghost-button" aria-expanded="false" aria-controls="ed-sheet">Moves</button><button class="ed-undo ghost-button" aria-label="Undo">Undo</button><button class="ed-cancel ghost-button">${evolve ? 'Back' : 'Cancel'}</button><button class="ed-done primary">${evolve ? 'Evolve!' : 'Done'}</button></div>
       </header>
       <nav class="ed-tabs" role="tablist">${(['parts', 'body', 'paint'] as Tab[]).map(t => `<button role="tab" data-tab="${t}">${t[0]!.toUpperCase() + t.slice(1)}</button>`).join('')}</nav>
       <div class="ed-panel"></div>
-      <aside class="ed-stats"><div class="ed-stats-body"></div><section class="ed-moves" aria-label="Moves"></section>${evolve ? `
+      <aside class="ed-stats" id="ed-sheet"><div class="ed-sheet-head"><strong>MOVES AND STATS</strong><button class="ed-moves-close ghost-button" aria-label="Close">✕</button></div><div class="ed-stats-body"></div><section class="ed-moves" aria-label="Moves"></section>${evolve ? `
         <section class="ed-evolve" aria-label="Changes for a ${esc(plan.name)}">
           <details class="ed-changes-box"${innerWidth > 900 ? ' open' : ''}><summary>Changes</summary><ul class="ed-changes"></ul></details>
           <div class="ed-evolve-actions"><button class="ed-undo-all ghost-button">Undo all</button><button class="ed-fix ghost-button">Fix for me</button></div>
@@ -213,6 +230,8 @@ class Editor {
     const nameInput = this.root.querySelector<HTMLInputElement>('.ed-name')!; nameInput.value = this.name;
     nameInput.addEventListener('input', () => { this.name = nameInput.value; });
     this.root.querySelector<HTMLButtonElement>('.ed-undo')!.onclick = () => this.undo();
+    this.root.querySelector<HTMLButtonElement>('.ed-moves-open')!.onclick = () => this.setSheet(!this.sheetOpen);
+    this.root.querySelector<HTMLButtonElement>('.ed-moves-close')!.onclick = () => this.setSheet(false);
     this.root.querySelector<HTMLButtonElement>('.ed-cancel')!.onclick = () => { if (!this.submitting) this.close(null); };
     this.root.querySelector<HTMLButtonElement>('.ed-done')!.onclick = () => void this.finish();
     const undoAll = this.root.querySelector<HTMLButtonElement>('.ed-undo-all'), fix = this.root.querySelector<HTMLButtonElement>('.ed-fix');
@@ -308,6 +327,11 @@ class Editor {
   }
   /** Starts a gesture: its snapshot enters the history only if the gesture changes something. */
   private beginGesture() { this.pending = this.snapshot(); }
+  /** Writes `html` into `el` only when it changed since the last write. Returns whether it wrote. */
+  private write(el: HTMLElement, html: string, text = false): boolean {
+    if (this.written.get(el) === html) return false;
+    this.written.set(el, html); if (text) el.textContent = html; else el.innerHTML = html; return true;
+  }
   private snapshot(): Snapshot { return { genome: cloneGenome(this.draft), changes: [...this.changes], pins: [...this.pins] as Tuple4<SlotPin> }; }
   private touchGesture() {
     if (this.pending) { this.history.push(this.pending); if (this.history.length > 60) this.history.shift(); this.pending = null; }
@@ -347,7 +371,7 @@ class Editor {
   private showSubmitError(reason: string | null) {
     const el = this.root.querySelector<HTMLElement>('.ed-submit-error')!;
     if (reason === null && el.hidden) return;
-    el.hidden = reason === null; el.textContent = reason ?? '';
+    el.hidden = reason === null; el.textContent = reason ?? ''; this.bandDirty = true;
   }
   private close(result: EditorResult | null) {
     if (this.closed) return;
@@ -366,6 +390,7 @@ class Editor {
     if (event.key === 'Escape') {
       event.preventDefault(); if (this.submitting) return;
       if (this.pairPrompt) this.showPairPrompt(null);
+      else if (this.sheetOpen) this.setSheet(false);
       else if (this.placing || this.selected !== null) { this.disarm(); this.selected = null; this.render(); }
       else this.close(null);
     }
@@ -380,6 +405,35 @@ class Editor {
   private resize() {
     const width = innerWidth, height = innerHeight; this.renderer.setSize(width, height, false);
     this.camera.aspect = width / height; this.camera.updateProjectionMatrix();
+    // Phone layouts place the tabs, the panel and the alerts under the top bar, whose height depends on the width.
+    this.root.style.setProperty('--top-bottom', `${Math.round(this.root.querySelector<HTMLElement>('.ed-top')!.getBoundingClientRect().bottom)}px`);
+    this.bandDirty = true;
+  }
+  private setSheet(open: boolean) {
+    this.sheetOpen = open; this.root.querySelector('.ed-stats')!.classList.toggle('open', open);
+    this.root.querySelector('.ed-moves-open')!.setAttribute('aria-expanded', String(open)); this.bandDirty = true;
+  }
+  /** The free band on a phone: below the top bar and the alerts, above the region chips, the part tool, the tabs and an open sheet,
+   *  and right of the landscape side panel. */
+  private measureBand(layout: Layout): Box | null {
+    if (layout === 'desktop') return null;
+    const box = (selector: string) => { const e = this.root.querySelector<HTMLElement>(selector); if (!e || e.hidden) return null; const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 ? r : null; };
+    const top = this.root.querySelector<HTMLElement>('.ed-top')!.getBoundingClientRect(), alerts = box('.ed-alerts'), sheet = this.sheetOpen ? box('.ed-stats') : null;
+    const lows = [box('.ed-regions'), box('.ed-tool'), layout === 'portrait' ? box('.ed-tabs') : null, layout === 'portrait' ? box('.ed-panel') : null, layout === 'portrait' ? sheet : null].filter((r): r is DOMRect => !!r);
+    const b: Box = { left: 0, top: Math.max(top.bottom, alerts?.bottom ?? 0) + 4, right: innerWidth, bottom: Math.min(innerHeight, ...lows.map(r => r.top)) - 4 };
+    if (layout === 'landscape') { const panel = box('.ed-panel'); if (panel) b.left = panel.right + 8; if (sheet) b.right = sheet.left - 8; }
+    if (b.bottom - b.top < 40) b.bottom = b.top + 40;
+    return b;
+  }
+  /** Read-only (QA): see `editorFrame`. */
+  frameInfo(): EditorFrame {
+    const box = new T.Box3().setFromObject(this.model.group), rect = this.canvas.getBoundingClientRect(), out: Box = { left: Infinity, top: Infinity, right: -Infinity, bottom: -Infinity };
+    for (let i = 0; i < 8; i++) {
+      const v = new T.Vector3(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z).project(this.camera);
+      const x = rect.left + (v.x + 1) / 2 * rect.width, y = rect.top + (1 - v.y) / 2 * rect.height;
+      out.left = Math.min(out.left, x); out.right = Math.max(out.right, x); out.top = Math.min(out.top, y); out.bottom = Math.max(out.bottom, y);
+    }
+    return { layout: layoutNow(), band: this.band ? { ...this.band } : null, box: out };
   }
   private draw() {
     const model = this.model, g = this.draft;
@@ -398,15 +452,34 @@ class Editor {
       const z = zAt(l, i === 0 ? .25 : .75), p = profile(g, l, z);
       ring.position.set(0, p.lift, z); ring.scale.set(p.r * 1.08 + .02, p.h * 1.08 + .02, 1);
     });
-    // Fit the whole creature in the narrower field of view, so phones see all of it.
-    const radius = model.length / 2 + .6, vertical = T.MathUtils.degToRad(this.camera.fov), horizontal = 2 * Math.atan(Math.tan(vertical / 2) * this.camera.aspect);
-    const distance = radius / Math.sin(Math.min(vertical, horizontal) / 2) * this.zoom;
-    this.camera.position.set(Math.sin(this.yaw) * Math.cos(this.pitch), Math.sin(this.pitch), Math.cos(this.yaw) * Math.cos(this.pitch)).multiplyScalar(distance);
-    this.camera.lookAt(0, 0, 0);
-    // Desktop layouts put the panel on the left; nudge the creature to the free space.
-    const wide = innerWidth > 900; this.camera.setViewOffset(innerWidth, innerHeight, wide ? -innerWidth * .08 : 0, wide ? 0 : innerHeight * .12, innerWidth, innerHeight);
+    const layout = layoutNow(), dir = new T.Vector3(Math.sin(this.yaw) * Math.cos(this.pitch), Math.sin(this.pitch), Math.cos(this.yaw) * Math.cos(this.pitch));
+    if (layout === 'desktop') {
+      this.band = null;
+      // Fit the whole creature in the narrower field of view; the panel is on the left, so nudge the creature to the free space.
+      const radius = model.length / 2 + .6, vertical = T.MathUtils.degToRad(this.camera.fov), horizontal = 2 * Math.atan(Math.tan(vertical / 2) * this.camera.aspect);
+      const distance = radius / Math.sin(Math.min(vertical, horizontal) / 2) * this.zoom;
+      this.camera.position.copy(dir).multiplyScalar(distance); this.camera.lookAt(0, 0, 0);
+      this.camera.setViewOffset(innerWidth, innerHeight, -innerWidth * .08, 0, innerWidth, innerHeight);
+    } else this.frameInBand(layout, dir);
     this.renderer.render(this.scene, this.camera);
     this.syncViewData();
+  }
+  /** Phone layouts: the creature is centred in the free band and fills it (the overlays cover the rest of the canvas). The band and
+   *  the creature's box are re-measured only between gestures (the box every 10 frames), so nothing moves under a finger; a change
+   *  takes effect at once, so a tap and the projection after it agree. */
+  private frameInBand(layout: Layout, dir: T.Vector3) {
+    const idle = this.owner === 'none' || !this.band;
+    if (idle && (this.bandDirty || !this.band)) { this.band = this.measureBand(layout); this.bandDirty = false; }
+    if (idle && (this.fitAge-- <= 0 || this.fitBox.isEmpty())) { this.fitBox.setFromObject(this.model.group); this.fitAge = 10; }
+    const b = this.band!, size = this.fitBox.getSize(new T.Vector3()), centre = this.fitBox.getCenter(new T.Vector3());
+    const goal = { cx: (b.left + b.right) / 2, cy: (b.top + b.bottom) / 2, w: b.right - b.left, h: b.bottom - b.top, target: centre };
+    const f = goal;
+    // Turning does not change the fit: the horizontal extent is the box's diagonal in plan; the vertical one adds the pitch.
+    const W = innerWidth, H = innerHeight, tan = Math.tan(T.MathUtils.degToRad(this.camera.fov) / 2), across = Math.hypot(size.x, size.z) / 2;
+    const up = size.y / 2 * Math.cos(this.pitch) + across * Math.sin(Math.abs(this.pitch)), margin = 1.12;
+    const distance = Math.max(across / (tan * f.w / H), up / (tan * f.h / H)) * margin * this.zoom + across * .5;
+    this.camera.position.copy(dir).multiplyScalar(distance).add(f.target); this.camera.lookAt(f.target);
+    this.camera.setViewOffset(W, H, W / 2 - f.cx, H / 2 - f.cy, W, H);
   }
   /** Read-only test data on `.ed-view`. Attributes are written only when they change. */
   private syncViewData() {
@@ -717,7 +790,7 @@ class Editor {
     if (this.detailKind && (this.detailKind === 'bite' ? !m.basic : !m.byKind[this.detailKind])) this.detailKind = null;
     const partName = (g: GrantedMove) => this.catalog.find(s => s.id === g.partId)?.name ?? '';
     const chip = (g: GrantedMove) => {
-      const kind = g.kind as MoveKind, nums = moveNumbers(g.resolved).slice(0, 2).map(n => n.text).join(' · ');
+      const kind = g.kind as MoveKind, nums = moveLine(g.resolved).split(' · ').slice(1).join(' · ');
       return `<button class="ed-move-chip${this.picked === kind ? ' picked' : ''}" data-kind="${kind}" aria-pressed="${this.picked === kind}" aria-label="${esc(g.resolved.label)} from ${esc(partName(g))}: ${esc(moveLine(g.resolved))}">${MOVE_ICONS[kind]}<b>${esc(g.resolved.label)}</b><span>${esc(partName(g))}</span><small>${esc(nums)}</small></button>`;
     };
     const basic = m.basic ? `<button class="ed-basic${this.detailKind === 'bite' ? ' open' : ''}" aria-expanded="${this.detailKind === 'bite'}">${esc(basicLine(m.basic.resolved, partName(m.basic)))}</button>` : '';
@@ -731,12 +804,17 @@ class Editor {
       const at = (sc: number) => ref ? moveNumbers(resolveMove(ref, sc, opts)).map(n => n.text) : [], small = at(SCALE_RANGE[0]), big = at(SCALE_RANGE[1]);
       details = `<div class="ed-move-details"><b>${esc(moveLine(d.resolved))}</b><table><tr><th></th><th>Now</th><th>Size ${f1(SCALE_RANGE[0])}</th><th>Size ${f1(SCALE_RANGE[1])}</th></tr>${moveNumbers(d.resolved).map((n, i) => `<tr><th>${esc(n.label)}</th><td>${esc(n.text)}</td><td>${esc(small[i] ?? '')}</td><td>${esc(big[i] ?? '')}</td></tr>`).join('')}</table><p>${esc(TRADEOFF[d.kind])}</p></div>`;
     }
-    const tip = this.picked ? 'Tap a slot or press 1–4 to put it there.' : place.slots.some(Boolean) ? 'Drag a move to a slot, or tap it, then tap a slot.' : 'No slot moves yet. Fins, legs, claws, spikes and shells give moves.';
-    box.innerHTML = `<div class="eyebrow">MOVES</div>${basic}<div class="ed-slot-bar">${slots}</div>${inactive}${this.sizeDiff && this.sizeDiff.uid === this.selected ? `<p class="ed-move-diff" aria-live="polite">${esc(this.sizeDiff.text)}</p>` : ''}${details}<p class="ed-move-tip">${tip}</p>`;
+    const touch = matchMedia('(pointer:coarse)').matches;
+    const tip = this.picked ? `Tap a slot${touch ? '' : ' or press 1–4'} to put it there.` : place.slots.some(Boolean) ? (touch ? 'Tap a move, then tap a slot to swap.' : 'Drag a move to a slot, or tap it, then tap a slot.') : 'No slot moves yet. Fins, legs, claws, spikes and shells give moves.';
+    // The mini icons of the slots for the phone Moves button.
+    this.write(this.root.querySelector<HTMLElement>('.ed-moves-open')!, `<span class="ed-mini" aria-hidden="true">${place.slots.map(k => k ? MOVE_ICONS[k] : '<i></i>').join('')}</span><b>Moves</b><small>${instanceCount(this.draft)}/${this.limit}</small>`);
+    // An unchanged panel keeps its DOM and listeners (renderStatsOnly runs on every drag move).
+    if (!this.write(box, `<div class="eyebrow">MOVES</div>${basic}<div class="ed-slot-bar">${slots}</div>${inactive}${this.sizeDiff && this.sizeDiff.uid === this.selected ? `<p class="ed-move-diff" aria-live="polite">${esc(this.sizeDiff.text)}</p>` : ''}${details}<p class="ed-move-tip">${tip}</p>`)) return;
     let drag: { kind: MoveKind; x: number; y: number; id: number } | null = null;
     box.querySelectorAll<HTMLButtonElement>('.ed-move-chip').forEach(b => {
       const kind = b.dataset.kind as MoveKind, slotOf = b.closest<HTMLElement>('.ed-slot');
-      b.addEventListener('pointerdown', e => { delete b.dataset.dragged; drag = { kind, x: e.clientX, y: e.clientY, id: e.pointerId }; try { b.setPointerCapture(e.pointerId); } catch { /* the pointer already ended */ } });
+      // Drag is for a mouse or a pen; on touch the chip is tapped (the sheet scrolls under a finger).
+      b.addEventListener('pointerdown', e => { delete b.dataset.dragged; if (e.pointerType === 'touch') return; drag = { kind, x: e.clientX, y: e.clientY, id: e.pointerId }; try { b.setPointerCapture(e.pointerId); } catch { /* the pointer already ended */ } });
       b.addEventListener('pointerup', e => {
         const d0 = drag; drag = null; if (!d0 || d0.id !== e.pointerId || Math.hypot(e.clientX - d0.x, e.clientY - d0.y) < CARD_DRAG_SLOP) return;
         b.dataset.dragged = '1';
@@ -749,9 +827,6 @@ class Editor {
         // A tap on a slotted chip while another kind is picked puts the picked kind there.
         if (this.picked && this.picked !== kind && slotOf && !this.submitting) { this.swap(this.picked, Number(slotOf.dataset.slot)); return; }
         this.picked = this.picked === kind ? null : kind; this.detailKind = this.picked ?? this.detailKind; this.renderMoves();
-        // The phone layout hides the details: the hint gives the move line and what to do next.
-        const g = movesOf(this.draft, this.catalog).byKind[kind];
-        if (this.picked && g && innerWidth <= 900) this.hint(`${moveLine(g.resolved)}. Tap a slot to put it there.`);
       };
     });
     box.querySelectorAll<HTMLElement>('.ed-slot').forEach(sl => {
@@ -768,11 +843,24 @@ class Editor {
     this.pushHistory(); this.pins = next; this.showSubmitError(null); this.renderStatsOnly();
     this.hint(`${movesOf(this.draft, this.catalog).byKind[kind]?.resolved.label ?? kind} is in slot ${slot + 1}.`);
   }
+  /** Live move numbers (spec §12.2): the slot's move as "old → new" from the gesture's start. The slot uses the kind's representative
+   *  part; when that is another part, the line names it. */
+  private slotDiff(uid: string, start: Genome): { uid: string; text: string } | null {
+    const now = movesOf(this.draft, this.catalog), then = movesOf(start, this.catalog);
+    const kind = now.basic?.partUid === uid ? 'bite' : MOVE_PRIORITY.find(k => now.candidates[k]?.some(g => g.partUid === uid));
+    if (!kind) return null;
+    const pick = (m: typeof now) => kind === 'bite' ? m.basic : m.byKind[kind], after = pick(now), before = pick(then);
+    if (!after) return null;
+    const text = before ? moveDiff(before.resolved, after.resolved) : '', label = after.resolved.label;
+    if (after.partUid !== uid) return { uid, text: `${label} uses your ${this.catalog.find(s => s.id === after.partId)?.name ?? 'other part'}${text ? `: ${text}` : '; its numbers do not change.'}` };
+    return { uid, text: text ? `${label}: ${text}` : `${label}: no number changes at this size.` };
+  }
   private sizeCost(p: PlacedPart) { const slots = partSlots(p); return `${partCost(p)} DNA · ${slots} slot${slots === 1 ? '' : 's'}`; }
   private renderTool() {
     const tool = this.root.querySelector<HTMLElement>('.ed-tool')!;
     const placed = this.placedBy(this.selected);
-    tool.hidden = !placed || this.tab !== 'parts'; if (!placed || tool.hidden) return;
+    tool.hidden = !placed || this.tab !== 'parts'; this.root.classList.toggle('tool-on', !tool.hidden); this.bandDirty = true;
+    if (!placed || tool.hidden) return;
     const spec = part(placed.id)!, uid = placed.uid;
     const refund = this.quote().net - this.quote(this.with(g => { g.parts = g.parts.filter(p => p.uid !== uid); })).net;
     tool.innerHTML = `<strong>${esc(spec.name)}</strong>
@@ -790,11 +878,9 @@ class Editor {
       // A size the region or the DNA can't take keeps the old value.
       const why = this.refusal(this.with(g => { g.parts.find(p => p.uid === uid)!.scale = value; }));
       if (why) { scale.value = String(current.scale); cost.textContent = this.sizeCost(current); this.hint(why); return; }
-      // Live move numbers (spec §12.2): the part's move as "old → new" from the gesture's start.
-      const before = this.pending?.genome.parts.find(p => p.uid === uid)?.scale ?? this.history.at(-1)?.genome.parts.find(p => p.uid === uid)?.scale ?? current.scale;
-      const ref = moveRefOf(spec), opts = { mirrored: current.mirror, nonMouthBite: spec.kind === 'mouth' ? nonMouthBite(this.draft, this.catalog) : 0 };
-      this.sizeDiff = ref ? { uid, text: moveDiff(resolveMove(ref, before, opts), resolveMove(ref, value, opts)) || 'No move number changes at this size.' } : null;
+      const start = this.pending?.genome ?? this.history.at(-1)?.genome ?? this.draft;
       this.touchGesture(); current.scale = value; cost.textContent = this.sizeCost(current);
+      this.sizeDiff = this.slotDiff(uid, start);
       this.model.updatePart(uid); this.renderStatsOnly();
     };
     roll.oninput = () => {
@@ -870,15 +956,16 @@ class Editor {
     this.root.querySelector('.ed-dna-value')!.textContent = String(Math.floor(left));
     this.root.querySelector('.ed-dna')!.classList.toggle('low', left < 0);
     const mouth = this.mouth(), diet = (mouth && part(mouth.id)?.diet) || 'omnivore';
-    this.root.querySelector<HTMLElement>('.ed-stats-body')!.innerHTML = `<div class="ed-diet"><span>DIET${this.options.diet ? ' <b aria-label="locked">🔒</b>' : ''}</span><strong>${diet}</strong></div>
+    this.write(this.root.querySelector<HTMLElement>('.ed-stats-body')!, `<div class="ed-diet"><span>DIET${this.options.diet ? ' <b aria-label="locked">🔒</b>' : ''}</span><strong>${diet}</strong></div>
       ${STAT_ROWS.map(([key, label, max]) => `<div class="ed-stat"><span>${label}</span><i><b style="width:${Math.max(0, Math.min(100, stats[key] / max * 100))}%"></b></i><em>${stats[key]}</em></div>`).join('')}
       <div class="ed-stat"><span>Hearts</span><em>${derived.maxHealth}</em></div>
       <div class="ed-complexity"><span>COMPLEXITY</span><i><b style="width:${Math.min(100, count / this.limit * 100)}%"></b></i><em>${count} / ${this.limit}</em></div>
-      ${issues.length ? `<ul class="ed-problems" aria-label="Problems">${issues.map(i => `<li class="ed-problem">${esc(i.message)}</li>`).join('')}</ul>` : ''}`;
+      ${issues.length ? `<ul class="ed-problems" aria-label="Problems">${issues.map(i => `<li class="ed-problem">${esc(i.message)}</li>`).join('')}</ul>` : ''}`);
     this.badSegments = new Set(issues.flatMap(i => i.code === 'segment' && i.segment !== undefined ? [i.segment] : []));
     this.root.querySelectorAll<HTMLElement>('.ed-panel [data-v]').forEach(chip => chip.classList.toggle('problem', this.badSegments.has(Number(chip.dataset.v))));
     const line = this.root.querySelector<HTMLElement>('.ed-problem-line')!;
-    line.hidden = !issues.length; line.textContent = issues[0]?.message ?? '';
+    if (line.hidden !== !issues.length) { line.hidden = !issues.length; this.bandDirty = true; }
+    if (this.write(line, issues[0]?.message ?? '', true)) this.bandDirty = true;
     // Region chips: Σ partSlots per region.
     const used = this.regionUse(this.draft);
     this.root.querySelectorAll<HTMLElement>('.ed-region').forEach(chip => {
@@ -887,14 +974,12 @@ class Editor {
     });
     // Moves this design would lose (spec §12.2), by move name.
     const lostKinds = designDelta(this.original, this.draft, this.options.loadout, this.catalog).lostKinds, lost = this.root.querySelector<HTMLElement>('.ed-lost-moves')!;
-    lost.hidden = !lostKinds.length;
-    lost.textContent = lostKinds.length ? `You lose: ${lostKinds.map(k => lostMoveText(k, this.catalog)).join(', ')}` : '';
+    if (lost.hidden !== !lostKinds.length) { lost.hidden = !lostKinds.length; this.bandDirty = true; }
+    if (this.write(lost, lostKinds.length ? `You lose: ${lostKinds.map(k => lostMoveText(k, this.catalog)).join(', ')}` : '', true)) this.bandDirty = true;
     this.renderMoves();
-    // The phone layout puts the alerts under the stats box, whose height changes with the moves row.
-    this.root.style.setProperty('--stats-bottom', `${Math.round(this.root.querySelector<HTMLElement>('.ed-stats')!.getBoundingClientRect().bottom)}px`);
     const changes = this.root.querySelector<HTMLElement>('.ed-changes');
     if (changes) {
-      changes.innerHTML = (this.changes.length ? this.changes : ['No changes from your design.']).map(c => `<li><span aria-hidden="true">• </span>${esc(c)}</li>`).join('');
+      this.write(changes, (this.changes.length ? this.changes : ['No changes from your design.']).map(c => `<li><span aria-hidden="true">• </span>${esc(c)}</li>`).join(''));
       this.root.querySelector('.ed-changes-box summary')!.textContent = `Changes (${this.changes.length})`;
       this.root.querySelector<HTMLButtonElement>('.ed-undo-all')!.disabled = this.submitting || (JSON.stringify(this.draft) === JSON.stringify(this.original) && this.pins.join() === this.options.loadout.slots.join());
       const fix = this.root.querySelector<HTMLButtonElement>('.ed-fix')!;

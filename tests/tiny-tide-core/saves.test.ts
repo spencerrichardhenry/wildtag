@@ -52,6 +52,8 @@ describe('v4 saves', () => {
     expect(load([null, null, null, null, 'dash'])).toEqual({ slots: [null, null, null, null] }); // a long list is cut to four
     const repaired = parseSave(JSON.stringify({ ...r, loadout: { slots: ['sweep', null, null, null] } }), build)!;
     expect(validateRun(repaired, build)).toEqual([]);
+    // Only the pins change: the design, the name and the ledger survive the repair.
+    expect(repaired.genome).toEqual(r.genome); expect(repaired.name).toBe(r.name); expect(repaired.economy).toEqual(r.economy); expect(repaired.nextPartSerial).toBe(r.nextPartSerial);
   });
   it('loads a pre-3a v4 save (T15-era format) as a valid run with four empty pins, and never writes the old key back', () => {
     // A save as the build before slot pins wrote it: a crawler with half-heart health and the two-slot `loadout.active`.

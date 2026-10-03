@@ -1,4 +1,4 @@
-// Tiny Tide C11: paths, editor, gestures, limits, soft world edge, solid reef rocks, block hints, hazards, pose agreement, lifecycle and saves (18 checks, with 5b, 5c, 5d, 7b, 7c, 10b, 12b, 12c and 13b).
+// Tiny Tide C11: paths, editor, gestures, limits, soft world edge, solid reef rocks, block hints, hazards, pose agreement, lifecycle and saves (18 checks, with 5b, 5c, 5d, 7b, 7c, 10b, 12b, 12c, 12d and 13b).
 // Fixtures come from the dev-only fixture page (the game's own modules). Run one or more checks: node e2e/tiny-tide-paths.mjs 3 7b
 import assert from 'node:assert/strict';
 import { mkdirSync } from 'node:fs';
@@ -581,8 +581,10 @@ check('11', 'Gestures (touch, 390x844)', async () => {
   // One-finger part drag plus a second finger: the part returns to its attachment.
   await tap(await centre(card));   // disarm
   assert.doesNotMatch(await card.getAttribute('class'), /\bactive\b/, 'placement is disarmed');
-  const tail = await project(page, 'p3'); await tap(tail);
+  await tap(await project(page, 'p3'));
   assert.equal(await selectedUid(page), 'p3', 'a tap selects the tail');
+  // The phone editor frames the creature above the part tool (T21 fix round 1): project the tail again after the selection.
+  const tail = await project(page, 'p3');
   const attached = await data(page, 'selected'), target = await rearTarget(page, tail);
   const f = { x: tail.x, y: tail.y, id: 1 };
   await touch('touchStart', [f]);
@@ -654,7 +656,7 @@ check('12c', 'Moves panel: details, swap by tap, key and drag, undo, save', asyn
   // The size slider shows the part's move numbers as "old → new" (spec §12.2).
   await selectPart(page, fx.info.parts.find(p => p.id === 'claw_pincer').uid);
   await page.locator('#editor .ed-scale').fill('1.4');
-  assert.match(await page.locator('#editor .ed-move-diff').textContent(), /^Damage \d+ → \d+ · Range \.\d\d → \.\d\d L · Wind-up \.\d\d → \.\d\d s/, 'live size numbers');
+  assert.match(await page.locator('#editor .ed-move-diff').textContent(), /^Grab: Damage \d+ → \d+ · Range \.\d\d → \.\d\d L · Wind-up \.\d\d → \.\d\d s/, 'live size numbers');
   await page.locator('#editor .ed-undo').click(); await page.keyboard.press('Escape');
   const chips = () => page.locator('#editor .ed-slot-bar .ed-slot').evaluateAll(els => els.map(e => e.querySelector('.ed-move-chip')?.dataset.kind ?? null));
   assert.deepEqual(await chips(), ['dash', 'grab', null, null], 'priority order with no pins');
@@ -680,6 +682,22 @@ check('12c', 'Moves panel: details, swap by tap, key and drag, undo, save', asyn
   await page.locator('#editor .ed-done').click(); await page.locator('#editor').waitFor({ state: 'detached' });
   const s = await state(page), saved = JSON.parse(await storageOf(page, s.saveKey));
   assert.deepEqual(saved.loadout, { slots: [null, null, 'grab', 'dash'] }, 'Done saves the pins');
+  assert.deepEqual(errors, []);
+});
+
+check('12d', 'Undo all restores the committed pins (evolve editor)', async () => {
+  const { page, errors } = await newPage();
+  await play(page, { ready: true, add: { 0: [{ id: 'claw_pincer', t: .5 }] }, pins: [null, 'grab', null, null] });
+  await openPaths(page); await choosePath(page, 'crawler');
+  const chips = () => page.locator('#editor .ed-slot-bar .ed-slot').evaluateAll(els => els.map(e => e.querySelector('.ed-move-chip')?.dataset.kind ?? null));
+  const start = await chips(); assert.equal(start[1], 'grab', 'the committed Grab pin shows in slot 2');
+  await page.locator('#editor .ed-move-chip[data-kind="grab"]').click(); await page.keyboard.press('4');
+  assert.equal((await chips())[3], 'grab', 'key 4 moves Grab');
+  assert.equal(await page.locator('#editor .ed-undo-all').isDisabled(), false, 'a pin change enables Undo all');
+  await page.locator('#editor .ed-undo-all').click(); await frames(page, 2);
+  assert.deepEqual(await chips(), start, 'Undo all restores the committed pins');
+  await page.locator('#editor .ed-undo').click(); await frames(page, 2);
+  assert.equal((await chips())[3], 'grab', 'Undo after Undo all brings the pin change back');
   assert.deepEqual(errors, []);
 });
 
@@ -866,4 +884,4 @@ try {
   }
 } finally { await browser.close(); }
 if (failures.length) { console.log(`FAILED: ${failures.join(', ')}`); process.exit(1); }
-console.log(`PASSED: ${only.length ? `checks ${only.join(', ')}` : 'all 18 checks (with 5b, 5c, 5d, 7b, 7c, 10b, 12b, 12c and 13b)'}: path screen, customize fallback, submit failure, evolve editor, swimmer and crawler limits, soft world edge, solid reef rocks, block hints, high spawn recovery, bite at the floor, transformation path, diet lock, size pricing, desktop and touch gestures, chorded mouse buttons, allocation, lost moves, the moves panel and swap, hazards and invulnerability, pose agreement, faint during a Breach, pause, kept coast save, legacy keys.`);
+console.log(`PASSED: ${only.length ? `checks ${only.join(', ')}` : 'all 18 checks (with 5b, 5c, 5d, 7b, 7c, 10b, 12b, 12c, 12d and 13b)'}: path screen, customize fallback, submit failure, evolve editor, swimmer and crawler limits, soft world edge, solid reef rocks, block hints, high spawn recovery, bite at the floor, transformation path, diet lock, size pricing, desktop and touch gestures, chorded mouse buttons, allocation, lost moves, the moves panel and swap, hazards and invulnerability, pose agreement, faint during a Breach, pause, kept coast save, legacy keys.`);
