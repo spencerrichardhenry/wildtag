@@ -11,6 +11,7 @@ import { startAnchor } from '../src/tiny-tide/motion';
 import { playerActor } from '../src/tiny-tide/mount';
 import { Ecosystem, entityRadius } from '../src/tiny-tide/ecosystem';
 import { recoverPlayer } from '../src/tiny-tide/lifecycle';
+import { BREACH_REACH } from '../src/tiny-tide/player-motion';
 import { orientHull } from '../src/tiny-tide/orientation';
 import { PARTS, part } from '../src/tiny-tide/parts';
 import { QA_GRANT, QA_GRANT_CATALOG, QA_GRANT_PART } from '../src/tiny-tide/qa-catalog';
@@ -143,7 +144,9 @@ function contactGap(e: Vec3, R: number, actor: Actor, at: Vec3): number {
   return best;
 }
 
-export interface HazardSpec { stage: number; key: string; below?: boolean; minLeadSeconds?: number; fixture?: FixtureSpec }
+/** `touching` (T18, check 15 on the ray): a start straight above the home (or at it) whose hull already touches the entity's contact
+ *  sphere, within BREACH_REACH × L of the surface (a Breach can start there). The ray lives just above the seabed, so no start fits below it. */
+export interface HazardSpec { stage: number; key: string; below?: boolean; touching?: boolean; minLeadSeconds?: number; fixture?: FixtureSpec }
 export interface HazardPick { seed: number; entityId: number; home: Vec3; start: Vec3; separation?: number; lead?: number }
 /** Scans seeds 1–50 with an installed Ecosystem for the first live entity of `key` whose home is inside the playable square with a
  *  10-unit margin. With `below`, the entity also needs a legal player start straight below it whose no-input lead-in is at least
@@ -156,10 +159,28 @@ export function pickHazard(h: HazardSpec): HazardPick | null {
   const local = (v: Vec3): Vec3 => ({ x: v.x / size, y: v.y / size, z: v.z / size });
   for (let seed = 1; seed <= 50; seed++) {
     const eco = new Ecosystem(seed), legal = legality(h.stage, seed);
-    let anchor: ReturnType<typeof startAnchor> | null = null;
+    let anchor: ReturnType<typeof startAnchor> | null = null, settled = false;
     for (const e of eco.entities) {
       if (e.spec.key !== h.key || e.eaten || Math.abs(e.hx) > margin || Math.abs(e.hz) > margin) continue;
       const home = { x: e.hx, y: e.hy, z: e.hz };
+      if (h.touching) {
+        // The entity where it stands once its tier is active: one ecosystem step settles it (a ground mover drops onto the seabed, below
+        // a placed landmark height), as the game's first frame after the held start does.
+        if (!settled) { eco.step({ stage: h.stage, dt: 1 / 60, now: 0, player: { x: 0, y: 1e6, z: 0 }, playerHull: [], perceivable: false, stealthFactor: 1, unlocked: [] }); settled = true; }
+        if (e.eaten) continue;
+        const R = entityRadius(e), surface = legal.queries.terrain.surface, at0 = { x: e.x, y: e.y, z: e.z };
+        for (let k = 0; k < 400; k++) {
+          const at = { x: at0.x, y: at0.y + k * .02 * L, z: at0.z }, gap = contactGap(at0, R, actor, at);
+          if (gap > -.3 * R) break;   // well inside the contact sphere: the first frame's rise and drift keep the contact
+          if (surface - at.y > BREACH_REACH * L) continue;
+          if (!legal.queries.overlapHull(actor, at, o, { time: 0, permit: null, bounds: legal.bounds }).ok) continue;
+          anchor ??= startAnchor(actor, h.stage, legal);
+          const rec = recoverPlayer(actor, at, o, { ...legal, time: 0 }, anchor, 20 * L);
+          if (!rec.ok || Math.hypot(rec.position.x - at.x, rec.position.y - at.y, rec.position.z - at.z) > 1e-9) continue;
+          return { seed, entityId: e.id, home: local(at0), start: local(at), separation: gap / size };
+        }
+        continue;
+      }
       if (!h.below) return { seed, entityId: e.id, home: local(home), start: local(home) };
       const R = entityRadius(e), lead = e.spec.speed * SIZES[e.spec.tier]! * (h.minLeadSeconds ?? 0);
       // The highest start straight below the home that keeps the lead-in and is admitted.

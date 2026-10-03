@@ -29,7 +29,7 @@ export const ABILITIES: Record<string, AbilitySpec> = PLAYER_ABILITIES;
 export { EVASIONS, GUARDS };
 const hazard = (id: string, damage: number, cadenceSeconds: number): ContactHazard => ({ id, damage, cadenceSeconds, invulnerabilitySeconds: .8, impulse: 0 });
 /** Contact hazards; damage in half-hearts (spec §4.2, D19: today's damage in hearts, doubled). */
-export const HAZARDS: Record<string, ContactHazard> = Object.fromEntries([hazard('jelly-sting', 2, 1.8), hazard('ray-sting', 2, 1.8), hazard('squid-grab', 4, 1.4), hazard('plane-buzz', 4, 1.4)].map(h => [h.id, h]));
+export const HAZARDS: Record<string, ContactHazard> = Object.fromEntries([hazard('jelly-sting', 2, 1.8), hazard('ray-sting', 2, 1.8), hazard('plane-buzz', 4, 1.4)].map(h => [h.id, h]));
 export const defaultCatalogs = (): Catalogs => structuredClone({ habitats: HABITATS, movements: MOVEMENTS, pursuits: PURSUITS, hulls: HULLS, mounts: MOUNTS, poses: POSES, telegraphs: TELEGRAPHS,
   effects: EFFECTS, evasions: EVASIONS, guards: GUARDS, attacks: ATTACKS, abilities: ABILITIES, hazards: HAZARDS, behaviours: BEHAVIOURS, parts: [...PARTS], species: [...SPECIES], plans: [...PLANS], rig: PART_RIG });
 

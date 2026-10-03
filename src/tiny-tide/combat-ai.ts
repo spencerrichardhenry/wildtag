@@ -232,6 +232,10 @@ function hunter(b: SpeciesBehaviour, s: AiState, i: AiInput, choices: readonly A
   }
   if (s.name !== 'approach') set(s, 'approach', now);
   const chase: MoveIntent = { kind: 'toward', point: pull(i.player.position), speedFactor: speed * (i.pursuit === 'angry' ? 1.15 : 1) };
+  // Inside the smallest band (the squid: every band starts at .2 L or more) no attack fits, so pressing in would sit on the player for good
+  // (T18 live look): back out to the strafe ring (d .4 L) instead.
+  const nearest = Math.min(...choices.map(c => c.band[0]));
+  if (i.player.targetable && nearest > 0 && i.player.d < nearest) return out(strafe(b, s, i, pull));
   if (now >= s.gapUntil && i.player.targetable) {
     const wait = waitUntil(s, i);
     // Waiting on a token with the player in reach: reposition until the retry time instead of pressing in and re-asking.

@@ -1,9 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { Ecosystem, engage, HUNTER_MARGIN, provoke, speciesActor, type Entity, type EntityMotion } from '../../src/tiny-tide/ecosystem';
+import { denOf, Ecosystem, engage, HUNTER_MARGIN, makeEntities, provoke, speciesActor, type Entity, type EntityMotion } from '../../src/tiny-tide/ecosystem';
+import { canApproachFood } from '../../src/tiny-tide/food-access';
+import { derive, effectiveStats, starterFor } from '../../src/tiny-tide/genome';
+import { playerActor } from '../../src/tiny-tide/mount';
+import { PLANS } from '../../src/tiny-tide/plans';
+import { movement, PURSUITS } from '../../src/tiny-tide/profiles';
+import { stageBounds, stageWorldQueries } from '../../src/tiny-tide/world-queries';
 import { HAZARDS } from '../../src/tiny-tide/registries';
 import { makeTerrain, makeWorldQueries } from '../../src/tiny-tide/world-queries';
 import { habitat } from '../../src/tiny-tide/profiles';
-import { SIZES, SPAWN_HALF, WATER_LEVEL, WORLD_HALF } from '../../src/tiny-tide/biomes';
+import { seabedHeight, SIZES, SPAWN_HALF, WATER_LEVEL, WORLD_HALF } from '../../src/tiny-tide/biomes';
 import { FOOD_MODEL_KINDS, SPECIES } from '../../src/tiny-tide/species';
 import type { Terrain, Vec3 } from '../../src/tiny-tide/combat-types';
 
@@ -268,5 +274,56 @@ describe('combat species in the ecosystem (T16)', () => {
     eco.step(ctx(still, .4, { perceivable: false, playerHull: [] })); expect(crab.x).toBeCloseTo(x2, 6); expect(frozen.external.x).toBe(20);
     const target = { x: crab.x + 3, y: crab.y, z: crab.z + 2 }; crab.combat = motion({ snap: target });
     eco.step(ctx(still, .5, { perceivable: false, playerHull: [] })); expect(Math.hypot(crab.x - target.x, crab.z - target.z)).toBeLessThan(1); expect(legal(crab)).toBe(true);
+  });
+});
+
+// T18: the size-1 species (spec §11.2–11.3, D26, D36), their placement and the review R14 reachability.
+describe('size-1 combat species (T18)', () => {
+  it('has the sardine, puffer and eel rows; the squid is a combat species without a hazard; the ambusher pursuit', () => {
+    const row = (key: string) => SPECIES.find(s => s.key === key)!;
+    expect(row('1:sardine')).toMatchObject({ tier: 1, behavior: 'school', hp: 4, model: 'fish', behaviourId: 'sardine', fights: false });
+    expect(row('1:puffer')).toMatchObject({ tier: 1, hp: 10, model: 'fish', behaviourId: 'puffer', attackIds: ['puffer-burst'], fights: true, pursuitId: 'retaliate' });
+    expect(row('2:eel')).toMatchObject({ tier: 2, hp: 22, model: 'worm', behaviourId: 'eel', attackIds: ['eel-ambush', 'eel-bite', 'eel-wrap'], hunts: [1], pursuitId: 'ambusher' });
+    expect(row('2:squid')).toMatchObject({ hp: 26, hunts: [1, 2], behaviourId: 'squid', attackIds: ['squid-ink', 'squid-grab', 'squid-lunge'] });
+    expect(row('2:squid').contactHazardId).toBeUndefined(); expect(HAZARDS['squid-grab']).toBeUndefined();
+    expect(PURSUITS.ambusher).toMatchObject({ id: 'ambusher', memorySeconds: 3, blockedWaitSeconds: 1, reacquireSeconds: 4, leashBodyLengths: 1.5, giveUpBodyLengths: 3 });
+  });
+  it('spawns sardines in groups of 4 within 2 L, and eels at dens beside reef solids', () => {
+    for (const seed of [1, 2]) {
+      const eco = new Ecosystem(seed), sardines = makeEntities(seed).filter(e => e.spec.key === '1:sardine'), L = SIZES[1]! * 1.4 * .55;
+      expect(sardines.length).toBe(12);
+      for (let k = 0; k < sardines.length; k++) { const lead = sardines[k - k % 4]!; expect(Math.hypot(sardines[k]!.x - lead.x, sardines[k]!.z - lead.z), `seed ${seed} sardine ${k}`).toBeLessThanOrEqual(2 * L + 1e-9); }
+      const eels = eco.entities.filter(e => e.spec.key === '2:eel' && !e.eaten); expect(eels.length).toBe(4);
+      for (const eel of eels) {
+        const den = denOf(seed, eel), Le = SIZES[2]! * 1.4;
+        expect(Math.hypot(eel.hx - den.x, eel.hz - den.z), `seed ${seed} eel ${eel.id}`).toBeLessThanOrEqual(4 * Le);   // installed within 4 L of its den
+      }
+      expect(eco.installFailures).toBe(0);
+    }
+  });
+  it('R14(2): puffers spawn 1–3 tier units above the seabed; sardines 1.5–3 (plus the school spread), reachable from the seabed', () => {
+    for (const seed of [1, 2, 3]) for (const e of makeEntities(seed)) {
+      const above = (e.y - seabedHeight(e.x, e.z)) / SIZES[1]!;
+      if (e.spec.key === '1:puffer') { expect(above, `seed ${seed} puffer ${e.id}`).toBeGreaterThanOrEqual(1 - 1e-9); expect(above).toBeLessThanOrEqual(3 + 1e-9); }
+    }
+  });
+  it('R14: every visible size-1 line can reach a sardine and a puffer (seeds 1–3, a fresh starter, the real bite rule)', () => {
+    for (const p of PLANS.filter(q => q.size === 1 && !q.needs)) for (const seed of [1, 2, 3]) {
+      const starter = starterFor(p), actor = playerActor(p, starter, 1, 1), mode = movement(p.movement).mode;
+      const bite = { stage: 1, growth: 1, reach: derive(effectiveStats(starter, p)).reach }, c = { queries: stageWorldQueries(1, seed), bounds: stageBounds(1) };
+      const eco = new Ecosystem(seed);
+      for (const key of ['1:sardine', '1:puffer']) {
+        const n = eco.entities.filter(e => e.spec.key === key && !e.eaten && canApproachFood(actor, mode, { x: e.x, y: e.y, z: e.z, radius: 0 }, bite, c)).length;
+        expect(n, `${p.id} seed ${seed} ${key}`).toBeGreaterThan(0);
+      }
+    }
+  });
+  it('an eaten eel comes back at its den', () => {
+    const eco = new Ecosystem(2), eel = eco.entities.find(e => e.spec.key === '2:eel' && !e.eaten)!, den = denOf(2, eel), far = { x: 0, y: 900, z: 0 };
+    eco.step(ctx(far, 0, { stage: 2, perceivable: false, playerHull: [] }));
+    eco.consume(eel); eel.hx = eel.hz = 0; let now = .1;
+    while (eel.eaten && now < 60) { eco.step(ctx(far, now, { stage: 2, perceivable: false, playerHull: [] })); now += .1; }
+    expect(eel.eaten).toBe(false);
+    expect(Math.hypot(eel.hx - den.x, eel.hz - den.z)).toBeLessThanOrEqual(4 * SIZES[2]! * 1.4);
   });
 });

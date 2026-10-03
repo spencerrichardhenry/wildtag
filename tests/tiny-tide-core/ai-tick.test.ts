@@ -175,6 +175,52 @@ describe('the AI tick (spec §11.2)', () => {
   });
 });
 
+// T18: the size-1 species in the AI tick (spec §11.2–11.3): schools flee together, and the real squid, eel and puffer attack.
+/** An entity's origin `d` ahead of the Speck, its hull centre level with the Speck's centre (the origin is .35 × S × bodyScale below it). */
+const aheadOf = (spec: Species, d: number, x = 0) => ({ x, y: 1 - .35 * SIZES[spec.tier]! * (spec.bodyScale ?? 1), z: d });
+describe('the AI tick: size-1 species (T18)', () => {
+  it('a sardine school flees on the same tick in one direction (schoolFlee per school); another school stays calm', () => {
+    const SARDINE = species(1, 'sardine'), s = fighter();
+    const school = [aheadOf(SARDINE, 20), aheadOf(SARDINE, 31), aheadOf(SARDINE, 34), aheadOf(SARDINE, 30, 9)].map((p, k) => entity(k + 1, SARDINE, p));
+    const other = [aheadOf(SARDINE, -90), aheadOf(SARDINE, -94), aheadOf(SARDINE, -92, 5), aheadOf(SARDINE, -96, -4)].map((p, k) => entity(k + 11, SARDINE, p));
+    const all = [...school, ...other], ai = (e: Entity) => s.combat.stateOf(e)!.ai!;
+    let now = 0, fled = -1;
+    for (let i = 0; i < 60 && fled < 0; i++, now += DT) { s.combat.aiTick(ctx(s, all, now)); if (ai(school[0]!).name === 'flee') fled = now; }
+    expect(fled).toBeGreaterThan(0);
+    // Only the first member is within the flee distance (7 × 4 = 28); the others are pulled along on the same tick, with intent away.
+    for (const e of school) { expect(ai(e).name, `e${e.id}`).toBe('flee'); expect(ai(e).since).toBe(fled); expect(e.combat!.intent.kind, `e${e.id}`).toBe('away'); }
+    const dir = ai(school[0]!).fleeDir!; for (const e of school) expect(ai(e).fleeDir).toEqual(dir);
+    expect(dir.z).toBeGreaterThan(0);   // away from the player, from the school's centroid
+    for (const e of other) { expect(ai(e).name).not.toBe('flee'); expect(e.combat!.intent.kind).not.toBe('away'); }
+  });
+  it('a resting sardine swims toward its school centre (schoolCentre reaches the AI)', () => {
+    const SARDINE = species(1, 'sardine'), s = fighter(), a = entity(1, SARDINE, aheadOf(SARDINE, 60)), b = entity(2, SARDINE, aheadOf(SARDINE, 70, 6));
+    s.combat.aiTick(ctx(s, [a, b], 0)); const st = s.combat.stateOf(a)!.ai!; st.name = 'rest'; st.since = 0;
+    s.combat.aiTick(ctx(s, [a, b], DT, { player: { ...playerBody(s, playerActorCached(s)), rt: { ...s.rt, targetable: false } } }));
+    const intent = a.combat!.intent; expect(intent.kind).toBe('toward');
+    if (intent.kind === 'toward') { expect(intent.point.z).toBeGreaterThan(60); expect(intent.point.x).toBeGreaterThan(0); }
+  });
+  it('the real squid\'s ink inks a still player in its band (status inked, the speed factor of the ink effect)', () => {
+    const SQUID = species(2, 'squid'), s = fighter(), squid = entity(1, SQUID, aheadOf(SQUID, 5.6 + .5 * 22.4)), c = s.combat.stateOf(squid)!;
+    const body = playerBody(s, playerActorCached(s)), a = s.combat.startSpecies(c, 'squid-ink', SPECIES_ATTACKS['squid-ink']!, { x: 0, y: 0, z: -1 }, 'player', 0, { ...AT_PLAYER, targetAt: body.centre });
+    expect(typeof a).not.toBe('string');
+    const statuses: (string | null)[] = []; let now = 0;
+    for (let i = 0; i < 90; i++, now += DT) statuses.push(...tick(s, [squid], now).r.events.filter(e => e.targetId === 'player').map(e => e.status));
+    expect(statuses).toContain('inked'); expect(s.rt.status).toMatchObject({ id: 'inked', speedFactor: .7 });
+  });
+  for (const [kind, stage, d] of [['squid', 1, 19], ['eel', 1, 1], ['puffer', 1, 1]] as const) {
+    it(`the real ${kind} starts its attacks at a size-${stage} player`, () => {
+      const spec = species(kind === 'puffer' ? 1 : 2, kind), s = fighter(), e = entity(1, spec, aheadOf(spec, d + (kind === 'puffer' ? 4 : kind === 'eel' ? 22 : 0)));
+      if (kind === 'squid') e.mode = 'hunt';   // the ecosystem's pursuit has acquired the player (the hunter attacks while engaged)
+      const calls = recordStarts(s); run(s, [e], 0, 6, { stage });
+      const started = calls.map(c => c.result).filter((r): r is ActionState => typeof r !== 'string').map(a => a.definitionId);
+      expect(started.length, `${kind}: ${calls.map(c => String(typeof c.result === 'string' ? c.result : c.result.definitionId))}`).toBeGreaterThan(0);
+      for (const id of started) expect(spec.attackIds).toContain(id);
+      if (kind === 'eel') { expect(started[0]).toBe('eel-ambush'); expect(e.mode).toBe('hunt'); }
+    });
+  }
+});
+
 /** A flat stage-0 world whose ecosystem only holds `entities` (it never moves them). */
 function flatWorld(entities: Entity[]): SimWorld {
   const eco = { entities, consume: (e: Entity) => { e.eaten = true; }, planetIndex: () => 0, step: () => [], giveUpAll: () => undefined, givingUp: () => false, lineOfSight: () => true } as unknown as Ecosystem;

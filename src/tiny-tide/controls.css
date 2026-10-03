@@ -73,3 +73,4 @@
 #alpha-bar .alpha-pips{display:flex;gap:6px}
 #alpha-bar .alpha-pips i{width:8px;height:8px;border-radius:50%;background:#ffffff33}
 #alpha-bar .alpha-pips i.on{background:#ff6b57}
+#game-ui.inked::before{content:'';position:fixed;inset:0;box-shadow:inset 0 0 140px 70px #120a1ed9;pointer-events:none;z-index:0}

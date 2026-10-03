@@ -26,14 +26,14 @@ const TYPES: readonly (readonly BiomeType[])[] = [
    { name: 'Copepod cloud', weights: { copepod: 4, drifter: 2 }, decor: 'sand', tint: '#2b7f93' },
    { name: 'Wormy sands', weights: { worm: 4, plant: .5, spiny_snail: 2 }, decor: 'sand', tint: '#3b7f86' },
    { name: 'Grape garden', weights: { seagrape: 3, kelp_snack: 2, drifter: 1 }, decor: 'coral', tint: '#2e7a8c' }],
-  [{ name: 'Coral garden', weights: { seagrape: 2, shrimp: 2 }, decor: 'coral', tint: '#2a7e8e' },
-   { name: 'Jelly drift', weights: { jellyfish: 4 }, decor: 'sand', tint: '#30708f' },
+  [{ name: 'Coral garden', weights: { seagrape: 2, shrimp: 2, sardine: 2, puffer: 1 }, decor: 'coral', tint: '#2a7e8e' },
+   { name: 'Jelly drift', weights: { jellyfish: 4, puffer: 1 }, decor: 'sand', tint: '#30708f' },
    { name: 'Crab flats', weights: { crab: 4, snail: 2 }, decor: 'rock', tint: '#3a7a80' },
-   { name: 'Lettuce beds', weights: { lettuce: 4 }, decor: 'kelp', tint: '#2f8577' }],
+   { name: 'Lettuce beds', weights: { lettuce: 4, sardine: 1 }, decor: 'kelp', tint: '#2f8577' }],
   [{ name: 'Kelp forest', weights: { kelp_snack: 4, fish: 1.5 }, decor: 'kelp', tint: '#2a7a6c' },
    { name: 'Open blue', weights: { fish: 3, bird: 2 }, decor: 'sand', tint: '#246f92' },
-   { name: 'Squid deep', weights: { squid: 4 }, decor: 'rock', tint: '#22587a' },
-   { name: 'Ray shallows', weights: { ray: 4, plant: 2 }, decor: 'coral', tint: '#2f8790' }],
+   { name: 'Squid deep', weights: { squid: 4, eel: 1 }, decor: 'rock', tint: '#22587a' },
+   { name: 'Ray shallows', weights: { ray: 4, plant: 2, eel: 1 }, decor: 'coral', tint: '#2f8790' }],
   [{ name: 'Island chain', weights: { tree: 3, lighthouse: 3 }, decor: 'sand', tint: '#88bbcb' },
    { name: 'Shipping lane', weights: { boat: 4 }, decor: 'sand', tint: '#80b4c9' },
    { name: 'Sky road', weights: { plane: 3, balloon: 3 }, decor: 'sand', tint: '#93c2d6' }],
@@ -67,6 +67,9 @@ export function spawnHeight(spec: Species, x: number, z: number, rand: () => num
     case 'spiny_snail': return ground + 1;
     case 'worm': return ground + .1;
     case 'shrimp': return Math.max(ground + 3, 5 + rand() * 13);
+    // Review R14(2): low enough that a size-1 crawler on the seabed can bite them (tier units above the seabed).
+    case 'puffer': return ground + (1 + 2 * rand()) * size;
+    case 'sardine': return ground + (1.25 + 1.25 * rand()) * size;
     case 'crab': case 'snail': return ground + 1;
     case 'jellyfish': return 12 + rand() * 24;
     case 'ray': return ground + 6;

@@ -721,8 +721,11 @@ check('14', 'Pose agreement', async () => {
 
 check('15', 'Faint during a Breach', async () => {
   const { page, errors } = await newPage();
-  const pick = await pickHazard(page, { stage: 2, key: '2:squid', below: true, minLeadSeconds: .5 }); assert.ok(pick, 'pickHazard found a squid with room below');
-  await play(page, { stage: 2, health: 1, seed: pick.seed }, `qaStartGrace=0&qaHoldStart=1&forcedSpawn=${pick.start.x},${pick.start.y},${pick.start.z}`);
+  // T18: the squid is a combat species now (no contact hazard); the ray's sting is the stage-2 hazard. The ray hugs the seabed (no room
+  // below it), so the Darter starts above it, already touching it, within Breach reach of the surface: the Breach starts on the first
+  // simulated frame and the sting lands during it. A sting after armor is at least one half-heart, so health .5 always faints.
+  const pick = await pickHazard(page, { stage: 2, key: '2:ray', touching: true }); assert.ok(pick, 'pickHazard found a ray to touch within Breach reach');
+  await play(page, { stage: 2, health: .5, seed: pick.seed }, `qaStartGrace=0&qaHoldStart=1&forcedSpawn=${pick.start.x},${pick.start.y},${pick.start.z}`);
   const s0 = await state(page);
   assert.equal(s0.holdingStart, true, 'the simulation holds until the first press');
   await frames(page, 5);

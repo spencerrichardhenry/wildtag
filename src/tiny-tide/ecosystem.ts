@@ -1,7 +1,7 @@
 // Creature behavior for every tier. Positions are physical units (stage 0 units).
 // Active tiers (|tier − stage| ≤ 1) move through the motion resolver, perceive, pursue (spec §10) and emit contact hazards.
 // Every entry path (construction, reset, respawn, becoming relevant) installs an entity on a legal pose.
-import { makeBiomes, PLAYER_HALF, populate, seabedHeight, SIZES, SPAWN_HALF, spawnPoint, WORLD_HALF, random, type Biome } from './biomes';
+import { makeBiomes, PLAYER_HALF, populate, seabedHeight, SIZES, SPAWN_HALF, spawnPoint, WORLD_HALF, random, type Biome, type Spawn } from './biomes';
 import { EDGE_SOFT_START } from './edge';
 import type { Actor, AdmissionContext, Capsule, ContactHazard, LegalityContext, MotionRequest, MovementMode, MutVec3, Orientation, PursuitPolicy, Vec3, WorldQueries } from './combat-types';
 import { findRecoveryPose, projectVelocity, resolveMotion } from './motion';
@@ -99,8 +99,31 @@ export function lairOf(seed: number, e: { id: number; spec: Species }): Vec3 {
   const d = lair.resetOutsideFactor * radius + 5 * longestPlayerAt(a.size) + (1 + rand()) * S, x = Math.sin(angle) * d, z = Math.cos(angle) * d;
   return { x, y: seabedHeight(x, z) + .35 * SIZES[e.spec.tier]! * (e.spec.bodyScale ?? 1), z };
 }
+/** A school member's place (spec §11.3): a school spawns as a group of `school.groupSize` within 2 L of the group's first member (its
+ *  leader). The members of a species are grouped in spawn order. */
+function schoolPlace(spawns: readonly Spawn[], spawn: Spawn, seed: number): Vec3 {
+  const school = BEHAVIOURS[spawn.spec.behaviourId ?? '']?.school; if (!school) return spawn;
+  const mates = spawns.filter(s => s.spec === spawn.spec), k = mates.indexOf(spawn), leader = mates[k - k % school.groupSize]!;
+  if (leader === spawn) return spawn;
+  const rand = random(seed * 97 + spawn.id * 13 + 1), L = speciesActor(spawn).bodyLength, a = rand() * 2 * Math.PI, r = 2 * L * Math.sqrt(rand());
+  const x = leader.x + Math.sin(a) * r, z = leader.z + Math.cos(a) * r;
+  // The member keeps the leader's height above the seabed (± .5 L), so a school stays as reachable as its leader (review R14(2)).
+  return { x, y: seabedHeight(x, z) + (leader.y - seabedHeight(leader.x, leader.z)) + (rand() - .5) * L, z };
+}
+/** An eel's den (spec §11.3): .5 L outside the footprint of a seeded reef solid of its tier (one inside the spawn square), on the seabed;
+ *  installation then finds the nearest admitted pose (≤ 4 L). Without such a solid, its normal spawn. The eel respawns here. */
+export function denOf(seed: number, spawn: { id: number; spec: Species; x: number; y: number; z: number }): Vec3 {
+  const S = SIZES[spawn.spec.tier]!, half = SPAWN_HALF * S;
+  const solids = stageSolids(spawn.spec.tier, seed).solids.filter(s => Math.max(Math.abs(s.minX), Math.abs(s.maxX), Math.abs(s.minZ), Math.abs(s.maxZ)) < half);
+  if (!solids.length) return { x: spawn.x, y: spawn.y, z: spawn.z };
+  const rand = random(seed * 53 + spawn.id * 7 + 2), s = solids[Math.floor(rand() * solids.length)]!, a = rand() * 2 * Math.PI, L = speciesActor(spawn).bodyLength;
+  const cx = (s.minX + s.maxX) / 2, cz = (s.minZ + s.maxZ) / 2, r = Math.max(s.maxX - s.minX, s.maxZ - s.minZ) / 2 + .5 * L, x = cx + Math.sin(a) * r, z = cz + Math.cos(a) * r;
+  return { x, y: seabedHeight(x, z) + .35 * S * (spawn.spec.bodyScale ?? 1), z };
+}
+const hasDen = (spec: Species) => !!BEHAVIOURS[spec.behaviourId ?? '']?.den;
 export function makeEntities(seed: number): Entity[] {
-  return populate(seed, inReef(seed)).map(spawn => spawn.spec.alpha ? { ...spawn, ...lairOf(seed, spawn) } : spawn).map(spawn => ({
+  const spawns = populate(seed, inReef(seed));
+  return spawns.map(spawn => spawn.spec.alpha ? { ...spawn, ...lairOf(seed, spawn) } : hasDen(spawn.spec) ? { ...spawn, ...denOf(seed, spawn) } : { ...spawn, ...schoolPlace(spawns, spawn, seed) }).map(spawn => ({
     id: spawn.id, spec: spawn.spec, x: spawn.x, y: spawn.y, z: spawn.z, hx: spawn.x, hy: spawn.y, hz: spawn.z,
     groundOffset: spawn.y - seabedHeight(spawn.x, spawn.z), heading: spawn.phase, phase: spawn.phase,
     hp: spawn.spec.hp, eaten: false, respawn: -1, mode: 'calm', modeTime: 0, active: false, ...pursuitState(),
@@ -489,7 +512,9 @@ export class Ecosystem {
       if (Math.hypot(e.hx - ctx.player.x, e.hz - ctx.player.z) < away) { e.respawn = 0; return; }
       Object.assign(e, { x: e.hx, y: e.hy, z: e.hz }, fresh); this.install(e); return;
     }
-    const tier = e.spec.tier, point = spawnPoint(e.spec, this.biomes[tier]!, this.rand, { x: ctx.player.x, z: ctx.player.z, radius: away }, (x, y, z) => inReef(this.seed)(tier, x, y, z));
+    // An eel comes back to its den (spec §11.3); everything else to a fresh point out of sight.
+    const tier = e.spec.tier, point = hasDen(e.spec) ? denOf(this.seed, e)
+      : spawnPoint(e.spec, this.biomes[tier]!, this.rand, { x: ctx.player.x, z: ctx.player.z, radius: away }, (x, y, z) => inReef(this.seed)(tier, x, y, z));
     Object.assign(e, { x: point.x, y: point.y, z: point.z, hx: point.x, hy: point.y, hz: point.z, groundOffset: point.y - seabedHeight(point.x, point.z) }, fresh);
     this.install(e);
   }

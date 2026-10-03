@@ -1,8 +1,8 @@
 import type { SpeciesCombatFields } from './combat-types';
 // Everything that lives (or floats, or sails) in the Tiny Tide universe.
 export type FoodKind = 'plant' | 'kelp_snack' | 'seagrape' | 'lettuce' | 'copepod' | 'worm' | 'shrimp' | 'crab' | 'jellyfish' | 'snail' | 'fish' | 'squid' | 'ray' | 'bird' | 'tree' | 'boat' | 'plane' | 'balloon' | 'lighthouse' | 'planet'
-  /** Combat species of sizes 0 and 1 (spec §11.3); each draws an existing GLB through `model`. */
-  | 'drifter' | 'spiny_snail' | 'clawmother';
+  /** Combat species of sizes 0, 1 and 2 (spec §11.3); each draws an existing GLB through `model`. */
+  | 'drifter' | 'spiny_snail' | 'clawmother' | 'sardine' | 'puffer' | 'eel';
 export type FoodTag = 'plant' | 'meat' | 'any';
 export type Behavior = 'still' | 'drift' | 'graze' | 'school' | 'skittish' | 'flyer';
 export interface Species extends SpeciesCombatFields {
@@ -47,7 +47,7 @@ export const SPECIES: readonly Species[] = [
   s(2, 'kelp_snack', 'plant', 'Kelp frond', 'still', 10, 16),
   s(2, 'plant', 'plant', 'Sprout grove', 'still', 9, 16),
   s(2, 'fish', 'meat', 'Silver tuna', 'school', 13, 20, { speed: 3 }),
-  s(2, 'squid', 'meat', 'Berry squid', 'skittish', 8, 30, { hp: 4, speed: 1.1, hunts: [1, 2], fights: true, contactHazardId: 'squid-grab', pursuitId: 'hunter' }),
+  s(2, 'squid', 'meat', 'Berry squid', 'skittish', 8, 30, { hp: 26, speed: 1.1, hunts: [1, 2], fights: true, pursuitId: 'hunter', behaviourId: 'squid', attackIds: ['squid-ink', 'squid-grab', 'squid-lunge'] }),
   s(2, 'ray', 'meat', 'Little ray', 'graze', 8, 22, { hp: 2, stingsStages: [1, 2], contactHazardId: 'ray-sting', pursuitId: 'retaliate', speed: 1.4, fights: true }),
   s(2, 'bird', 'meat', 'Seagull', 'flyer', 8, 20, { speed: 2 }),
   s(3, 'tree', 'any', 'Palm tree', 'still', 9, 16, { habitatProfileId: 'sp-prop' }),
@@ -61,6 +61,10 @@ export const SPECIES: readonly Species[] = [
   s(0, 'spiny_snail', 'meat', 'Spiny snail', 'graze', 6, 16, { hp: 6, speed: .5, model: 'snail', tint: '#c9a3e6', behaviourId: 'spiny-snail', attackIds: ['snail-poke'], fights: true, pursuitId: 'retaliate' }),
   s(1, 'clawmother', 'meat', 'Old Clawmother', 'graze', 1, 0, { hp: 80, speed: 1.0, model: 'crab', tint: '#9c3b2e', bodyScale: 1.8, behaviourId: 'clawmother', hunts: [0], fights: true, pursuitId: 'hunter',
     attackIds: ['mother-pinch', 'mother-pinch-2', 'mother-lunge', 'mother-emerge', 'mother-sweep', 'mother-pinch-rage'], alpha: { size: 0, rewardPartId: 'claw_mother', rewardDna: 40 } }),
+  // Size-1 combat species (T18, spec §11.3, D26, D36): sardine schools of 4, the puffer, and the Moray eel at its den beside a reef solid.
+  s(1, 'sardine', 'meat', 'Sunny sardine', 'school', 12, 15, { hp: 4, speed: 3.2, model: 'fish', tint: '#ffd36e', bodyScale: .55, behaviourId: 'sardine' }),
+  s(1, 'puffer', 'meat', 'Puffer', 'drift', 6, 20, { hp: 10, speed: .9, model: 'fish', tint: '#f2c94c', bodyScale: .75, behaviourId: 'puffer', attackIds: ['puffer-burst'], fights: true, pursuitId: 'retaliate' }),
+  s(2, 'eel', 'meat', 'Moray eel', 'skittish', 4, 28, { hp: 22, speed: 1.4, model: 'worm', tint: '#3d6b4f', behaviourId: 'eel', attackIds: ['eel-ambush', 'eel-bite', 'eel-wrap'], hunts: [1], fights: true, pursuitId: 'ambusher' }),
 ];
 /** The index of the first row appended by combat sub-project 3a: earlier rows keep the reef-fallback RNG of their spawns (populate). */
 export const APPENDED_FROM = SPECIES.findIndex(spec => spec.key === '0:drifter');

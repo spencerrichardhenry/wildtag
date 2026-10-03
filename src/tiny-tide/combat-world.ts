@@ -5,7 +5,7 @@ import * as T from 'three';
 import { advanceClock, bufferedPress, bufferPress, canStart, dashSpeed, endHold, endNow, holdingAction, liveActions, lungeSpeed, newPoise, startAction, sweepEnded, tickAction, windupLength, type PoiseMeter, type StartRefusal } from './action-engine';
 import { BEHAVIOURS, hostileSizes, SPECIES_ATTACKS, type SpeciesBehaviour } from './bestiary';
 import { SIZES } from './biomes';
-import { aiLandedHit, aiRefused, aiStarted, aiStep, newAiState, ROAR_SECONDS, type AiState } from './combat-ai';
+import { aiLandedHit, aiRefused, aiStarted, aiStep, newAiState, ROAR_SECONDS, schoolFlee, type AiState } from './combat-ai';
 import { actionShapes, aimFrame, closestOnSegment, crossingOk, hurtboxesHit, nearestTargets, obstructionClear, shapeCentroid, telegraphDescriptor, truncateCapsule, worldShape, type TelegraphDescriptor } from './combat-shapes';
 import { newRuntime, type ActionPhase, type TelegraphProfile, type ActionState, type ActiveSlot, type ActorId, type AttackSpec, type CombatInput, type CombatPose, type CombatRuntime, type EmitterSource, type MovementMode, type ResolvedMove, type Vec3, type WorldQueries, type WorldShape } from './combat-types';
 import { engage, provoke, type Entity, type EntityMotion } from './ecosystem';
@@ -87,6 +87,12 @@ export interface CombatTick {
 /** The player's world matrix: T(position) · Ry(yaw) · Rx(−pitch) · S(scale), the renderer's convention (orientation.ts). */
 export function playerMatrix(position: Vec3, o: { yaw: number; pitch: number }, scale: number): T.Matrix4 {
   return orientationMatrix(o, new T.Matrix4()).scale(new T.Vector3(scale, scale, scale)).setPosition(position.x, position.y, position.z);
+}
+interface SchoolMember { entity: Entity; state: AiState; position: Vec3; L: number }
+/** The centroid of the school members within `reach` of `at` (the member itself included). */
+function schoolCentre(members: readonly SchoolMember[], at: Vec3, reach: number): Vec3 | undefined {
+  const near = members.filter(m => Math.hypot(m.position.x - at.x, m.position.y - at.y, m.position.z - at.z) <= reach); if (!near.length) return undefined;
+  return near.reduce((a, m) => ({ x: a.x + m.position.x / near.length, y: a.y + m.position.y / near.length, z: a.z + m.position.z / near.length }), { x: 0, y: 0, z: 0 });
 }
 const horizontal = (v: Vec3): Vec3 => { const l = Math.hypot(v.x, v.z); return l > 1e-9 ? { x: v.x / l, y: 0, z: v.z / l } : { x: 0, y: 0, z: 1 }; };
 const NO_MOVE: Vec3 = Object.freeze({ x: 0, y: 0, z: 0 });
@@ -475,13 +481,21 @@ export class CombatWorld {
    *  and its motion for the step (`entity.combat`). The player's damage this tick provokes fighters. */
   aiTick(ctx: AiTickContext): AiTickResult {
     const res: AiTickResult = { engagements: [], roars: [], markers: [] }, p = ctx.player, now = ctx.now;
+    // prey-school (spec §11.2): the live members of each schooling species, with their hull centres (one pose sample each, reused below).
+    const schools = new Map<string, SchoolMember[]>(), poses = new Map<Entity, CombatPose>();
+    for (const e of ctx.entities) {
+      if (e.eaten || !e.active || !e.spec.behaviourId) continue;
+      const c = this.stateOf(e); if (!c?.behaviour.school) continue;
+      const pose = speciesCombatPose(e, now); poses.set(e, pose);
+      const list = schools.get(e.spec.key) ?? []; list.push({ entity: e, state: c.ai ??= newAiState(ctx.runSeed, e.id, now), position: pose.hull[0]!.start, L: pose.bodyLength }); schools.set(e.spec.key, list);
+    }
     for (const e of ctx.entities) {
       if (!e.spec.behaviourId) continue;
       if (e.eaten || !e.active) { e.combat = null; continue; }
       const c = this.stateOf(e); if (!c) { e.combat = null; continue; }
       const ai = c.ai ??= newAiState(ctx.runSeed, e.id, now), hit = ctx.hitBy.has(e.id);
       if (hit && e.spec.fights) provoke(e, p.position, now, p.pose.hull);
-      const pose = speciesCombatPose(e, now), centre = pose.hull[0]!.start, r = pose.hull[0]!.radius, L = pose.bodyLength;
+      const pose = poses.get(e) ?? speciesCombatPose(e, now), centre = pose.hull[0]!.start, r = pose.hull[0]!.radius, L = pose.bodyLength;
       let dHurt = Infinity;
       for (const h of p.pose.hurtboxes) { const q = closestOnSegment(centre, h.start, h.end); dHurt = Math.min(dHurt, Math.hypot(q.x - centre.x, q.y - centre.y, q.z - centre.z) - h.radius); }
       const tierSize = SIZES[e.spec.tier]!, stageSize = SIZES[Math.min(ctx.stage, SIZES.length - 1)]!, engaged = e.mode === 'hunt' || e.mode === 'angry';
@@ -496,6 +510,7 @@ export class CombatWorld {
         ready: id => (c.rt.cooldowns.get(`${c.id}:root:${id}`) ?? -Infinity) <= c.rt.actionClock + 1e-9,
         inLair: ai.home && c.behaviour.lair ? Math.hypot(p.centre.x - ai.home.x, p.centre.z - ai.home.z) <= c.behaviour.lair.radiusBodyLengths * L : undefined,
         tokenRetryAt: c.tokenRetryAt,
+        schoolCentre: c.behaviour.school ? schoolCentre(schools.get(e.spec.key) ?? [], centre, 2 * c.behaviour.school.radiusBodyLengths * L) : undefined,
       });
       // An alpha has no ecosystem pursuit (its lair is its leash): its mode mirrors the AI, engaged ('angry') unless idle or resetting.
       if (e.spec.alpha) { const mode = ai.name === 'idle' || ai.name === 'reset' ? 'calm' : 'angry'; if (e.mode !== mode) { e.mode = mode; e.modeTime = 0; } }
@@ -525,6 +540,17 @@ export class CombatWorld {
         lunge: lunging ? { x: lunging.aim.x * speed, y: lunging.aim.y * speed, z: lunging.aim.z * speed } : null, external: c.rt.externalVelocity, frozen: now < c.rt.hitStopUntil,
         held: claw ? { x: claw.x - centre.x, y: claw.y - centre.y, z: claw.z - centre.z } : null, snap, moved: 0 };
       e.combat = motion;
+    }
+    // prey-school (spec §11.2): one member's flee takes every near idle member along on the same tick, in one direction. schoolFlee groups by
+    // the school radius around each starter, so it runs per school; every member that flees from this tick moves along the shared direction now.
+    for (const members of schools.values()) {
+      const f = this.behaviours[members[0]!.entity.spec.behaviourId!]!, school = f.school!, speedFactor = f.flee?.speedFactor ?? 1;
+      schoolFlee(members, p.centre, school.radiusBodyLengths, now);
+      for (const m of members) {
+        const d = m.state.fleeDir, motion = m.entity.combat;
+        if (!d || !motion || m.state.name !== 'flee' || m.state.since !== now) continue;   // the starter too: the school's shared direction
+        motion.intent = { kind: 'away', point: { x: m.position.x - d.x, y: m.position.y - d.y, z: m.position.z - d.z }, speedFactor }; motion.face = null;
+      }
     }
     return res;
   }

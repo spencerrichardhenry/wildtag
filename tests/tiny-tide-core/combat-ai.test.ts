@@ -141,6 +141,20 @@ describe('combat AI: hunters', () => {
     const run = (seed: number, id: number) => drive(BEHAVIOURS.crab!, newAiState(seed, id), 30, () => crabAt()).filter(l => l.out.attack).map(l => `${l.t.toFixed(3)} ${l.out.attack!.attackId}`);
     expect(run(1, 6)).toEqual(run(1, 6)); expect(run(1, 7)).not.toEqual(run(1, 6)); expect(run(2, 6)).not.toEqual(run(1, 6));
   });
+  it('a hunter whose bands all start above 0 (the squid) backs out of a player inside its smallest band, then attacks (T18 live look)', () => {
+    // Live look: a squid on top of a still Speck (d = 0) chased into it for minutes without an attack (every squid band starts at .2 L or more).
+    const s = newAiState(1, 7), L = 22.4, me = at(0, 0), p = at(0, 2), d = (q: Vec3) => Math.max(0, Math.hypot(q.x - p.x, q.z - p.z) - .3 * L) / L;
+    const one = (pos: Vec3, t: number) => aiStep(BEHAVIOURS.squid!, s, base({ now: t, pursuit: 'hunt', self: { ...base().self, position: pos, L }, player: { position: p, d: d(pos), visible: true, targetable: true } }));
+    one(me, 0); one(me, .5);   // notice, then approach
+    const o = one(me, .6);
+    expect(o.attack).toBeFalsy();
+    expect(o.intent.kind).toBe('toward');
+    if (o.intent.kind === 'toward') expect(Math.hypot(o.intent.point.x - p.x, o.intent.point.z - p.z)).toBeGreaterThan(Math.hypot(me.x - p.x, me.z - p.z));   // away from the player
+    // In the band again it attacks.
+    const far = at(0, 2 - (.3 + .5) * L);
+    let attacked = false; for (let t = .7; t < 3 && !attacked; t += DT) attacked = !!one(far, t).attack;
+    expect(attacked).toBe(true);
+  });
   it('chooseAttack refuses a choice below its band', () => {
     expect(chooseAttack(BEHAVIOURS.crab!.attacks, .47, false, () => true, () => .01)!.attackId).toBe('crab-sweep');   // the lunge starts at .5
     expect(chooseAttack(BEHAVIOURS.crab!.attacks, .3, false, id => id !== 'crab-pinch', () => .01)!.attackId).toBe('crab-sweep');   // not ready

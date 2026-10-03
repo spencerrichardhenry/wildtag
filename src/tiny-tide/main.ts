@@ -25,7 +25,7 @@ import { canChooseNextPlan, evolutionDestination, reconcileAfterCommit } from '.
 import { admitted as simAdmitted, checkPose, playerActorCached as simActor, refreshDerived as simRefreshDerived, simBegin, simEvolve, simFrame, simOwnedState, simSuspend, type GameMode, type SimEvent, type SimState, type SimWorld } from './sim';
 import type { ChompResult } from './feeding';
 import { PLAYER_ID, type CombatTick, type TelegraphView } from './combat-world';
-import { damageText, FLASH_SECONDS, IMPACT_COLOURS, IMPACT_PARTICLES, shakeForPlayerHit, shakeForPlayerStrike } from './combat-profiles';
+import { damageText, EFFECTS, FLASH_SECONDS, IMPACT_COLOURS, IMPACT_PARTICLES, shakeForPlayerHit, shakeForPlayerStrike } from './combat-profiles';
 import { movement, movementCapabilities } from './profiles';
 import { admissionClock, makeWorldQueries, resetAdmissionClock, stageBounds, stageWorldQueries, zoneLabel } from './world-queries';
 import { ROCK_FIT, stageSolids } from './reef';
@@ -604,6 +604,7 @@ function presentCombat(t: CombatTick) {
     if (text && pos.visible) { const cls = floaterClass(e.attackerId, e.targetId); floater(text, pos.x, pos.y, `${toPlayer ? 'hurt' : 'hit'} ${cls}`, FLOATER_COLOURS[cls]); }
     const colour = e.outcome === 'countered' ? IMPACT_COLOURS.counter : e.outcome === 'blocked' || e.outcome === 'guard-broken' ? IMPACT_COLOURS.block : toPlayer ? IMPACT_COLOURS.hurt : IMPACT_COLOURS.hit;
     if (e.outcome !== 'evaded' && e.outcome !== 'immune' ) world.impact(local.x, local.y, local.z, colour, IMPACT_PARTICLES);
+    if (e.status === 'inked') world.impact(local.x, local.y, local.z, EFFECTS.ink!.particles, 24);   // the ink cloud (pooled particles)
     if (e.outcome === 'hit') { if (toPlayer) audio.hurt(); else audio.hit(); }
     else if (e.outcome === 'blocked') audio.block(); else if (e.outcome === 'guard-broken') audio.guardBreak(); else if (e.outcome === 'countered') audio.counter();
     else if (e.outcome === 'grabbed') audio.grab(); else if (e.outcome === 'evaded') audio.dash();
@@ -675,6 +676,8 @@ function presentCombatView() {
   const alpha = shownAlpha = playing ? alphaView(sim.combat.entities.values(), sim.physical) : null;
   if (alpha) alphaBar.root.style.top = `${baseBand() + 8}px`;
   alphaBar.sync(alpha);
+  // Inked (spec §11.5): darker screen edges while the status lasts.
+  el('game-ui').classList.toggle('inked', playing && rt.status !== null && time < rt.status.until);
   arrowed = arrowMemory.update(telegraphViews);
   audio.windupTones(new Map(telegraphViews.filter(v => v.phase === 'windup' && v.targetsPlayer).map(v => [v.actionId, v.fill])));
   const bars: HpBar[] = [], arrows: EdgeArrow[] = [];
