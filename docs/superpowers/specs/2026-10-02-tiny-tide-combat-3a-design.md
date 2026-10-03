@@ -1277,7 +1277,7 @@ hull centre for `centre` attacks (§5.10, plan review R2). Shape numbers in `L_e
 | `mother-pinch` | cone .40, half 35° | .55 | .30 | 1.5 | .10 | .45 | 1.4 | 3 | 4 | .35 | yes | yes | no | [0, .4] 3; chain → `mother-pinch-2` after .2 s |
 | `mother-pinch-2` | cone .40, half 35° | .55 | .30 | 1.5 | .10 | .90 | 1.4 | 3 | 4 | .35 | yes | yes | no | chain only |
 | `mother-lunge` | capsule (0,0,0)–(0,0,1.0) r .20; lunge .9 | .65 | .40 | 1.5 | .22 | .80 | 4.0 | 4 | 8 | .40 | yes | yes | no | [.4, 1.0] 1 |
-| `mother-emerge` | capsule start = end r .35, at the player's position at windup start (`fixed-at-start`) | .70 | 0 | 0 | .15 | 1.10 | 2.0 | 4 | 10 (up) | .40 | **no** | yes | no | burrow pattern |
+| `mother-emerge` | capsule start = end r .35, at the player's position at windup start (`fixed-at-start`, `origin: 'target'`, R4) | .70 | 0 | 0 | .15 | 1.10 | 2.0 | 4 | 10 | .40 | **no** | yes | no | burrow pattern |
 | `mother-sweep` | cone .60, half 75° | .60 | .35 | 1.5 | .14 | .40 | 3.0 | 3 | 9 | .35 | yes | yes | no | [0, .6] 2; chain → `mother-pinch-rage` after .1 s |
 | `mother-pinch-rage` | cone .40, half 35° | .55 | .30 | 1.5 | .10 | .80 | 1.4 | 3 | 4 | .35 | yes | yes | no | chain only |
 | `puffer-burst` | capsule start = end r 1.6 (`centre`) | .55 | 0 | 0 | .15 | 1.20 | 3.0 | 3 | 7 | .35 | yes | yes | no | [0, 1.6] 1 |
@@ -1290,7 +1290,7 @@ hull centre for `centre` attacks (§5.10, plan review R2). Shape numbers in `L_e
 | `tyrant-bite` | cone .40, half 35° | .60 | .35 | 1.5 | .10 | .60 | 1.5 | 3 | 4 | .35 | yes | yes | no | [0, .4] 3 |
 | `tyrant-den-lunge` | capsule (0,0,0)–(0,0,1.2) r .14; lunge 1.1 | .70 | .45 | 1.5 | .25 | .90 | 4.0 | 4 | 8 | .40 | yes | yes | no | [.4, 1.2] 2 |
 | `tyrant-charge` | capsule (0,0,0)–(0,0,1.6) r .16; lunge 1.5 (`fixed-at-start`) | .65 | 0 | 0 | .30 | .50 | 2.0 | 4 | 10 | .40 | yes | yes | no | laps pattern |
-| `tyrant-whirl` | capsule start = end r .55 (`centre`); max 2 hits per target, repeat .30 s | .80 | 0 | 0 | .60 | 1.20 | 5.0 | 3 | 8 | .35 | **no** | **no** | no | [0, .6] 2 |
+| `tyrant-whirl` | capsule start = end r .55 (`centre`); max 2 hits per target, repeat .30 s | .80 | 0 | 0 | .60 | 1.20 | 5.0 | 3 | 8 | .35 | **no** | **no** | no | [0, .55] 2 (V21: the ball's reach is .55) |
 
 `inked` status (`effect ink`): 1.5 s, player speed × 0.7, darker screen edges,
 auto-aim off. A blocked ink applies no status.
@@ -1321,6 +1321,8 @@ shows on the seabed.
 | 1 Lair bites | 66 % | normal, within 0.6 × lair radius | `tyrant-bite` (3), `tyrant-den-lunge` (2) | × 1.0 | 1.0 s |
 | 2 Charge laps | 33 % | laps | `tyrant-charge` every half lap, 2 charges, then a 1.5 s rest | × 1.4 on the lap (radius 0.8 × lair) | 0.6 s |
 | 3 Whirl | 0 | normal | `tyrant-whirl` (2), `tyrant-bite` (2) | × 1.2 | 0.8 s |
+
+`lairFraction` (the BehaviourPhase field): phase 1 keeps the Tyrant within `lairFraction` (.6) × the lair radius; other phases leave it unset.
 
 The charge aims through the player's position at windup start, so its
 telegraph is fixed for the whole wind-up.

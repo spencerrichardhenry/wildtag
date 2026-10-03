@@ -527,8 +527,8 @@ describe('telegraphs (spec §9.1)', () => {
  *  world's shape code), and at every active tick each sampled boundary point of the hit volume lies inside the telegraph volume. Runs over
  *  every registered species attack (SPECIES_ATTACKS) and the fixture attacks, with moving attackers and a lunge that advances. */
 describe('telegraph = hit volume for every species attack (plan review R11)', () => {
-  /** T13 sets this to true when it registers the species attacks: the test then fails if none are registered. */
-  const REQUIRE_REGISTERED = false;
+  /** T13 set this to true when it registered the species attacks: the test then fails if none are registered. */
+  const REQUIRE_REGISTERED = true;
   const LUNGE: AttackSpec = { ...POKE, id: 'fx-lunge', shape: { kind: 'capsule', start: { x: 0, y: 0, z: 0 }, end: { x: 0, y: 0, z: 1.4 }, radius: .22 }, lunge: { distanceBodyLengths: 1.2 },
     windupSeconds: .6, aimLockAtSeconds: .35, activeSeconds: .3, interruptible: false };
   const WIDE: AttackSpec = { ...POKE, id: 'fx-wide', shape: { kind: 'cone', range: .9, halfAngle: 100 * Math.PI / 180 }, telegraphProfileId: 'amber-spin' };
