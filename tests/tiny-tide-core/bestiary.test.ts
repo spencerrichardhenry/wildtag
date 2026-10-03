@@ -11,9 +11,9 @@ const ROWS: [string, number, number, number, number, number, number, number, num
   ['mother-pinch', .55, .30, 1.5, .10, .45, 1.4, 3, 4, .35, true, true, false], ['mother-pinch-2', .55, .30, 1.5, .10, .90, 1.4, 3, 4, .35, true, true, false],
   ['mother-lunge', .65, .40, 1.5, .22, .80, 4.0, 4, 8, .40, true, true, false], ['mother-emerge', .70, 0, 0, .15, 1.10, 2.0, 4, 10, .40, false, true, false],
   ['mother-sweep', .60, .35, 1.5, .14, .40, 3.0, 3, 9, .35, true, true, false], ['mother-pinch-rage', .55, .30, 1.5, .10, .80, 1.4, 3, 4, .35, true, true, false],
-  ['puffer-burst', .55, 0, 0, .15, 1.20, 3.0, 3, 7, .35, true, true, false], ['squid-ink', .45, .25, 2.0, .30, .60, 6.0, 1, 0, 0, true, false, true],
+  ['puffer-burst', .55, 0, 0, .15, 1.20, 3.0, 3, 7, .35, true, true, false], ['squid-ink', .48, .25, 2.0, .30, .60, 6.0, 1, 0, 0, true, false, true],
   ['squid-grab', .55, .30, 1.8, .12, .70, 4.5, 2, 0, 0, false, true, true], ['squid-lunge', .45, .25, 1.8, .22, .80, 3.5, 3, 6, .35, true, true, true],
-  ['eel-ambush', .45, .25, 2.0, .20, .70, 5.0, 3, 6, .35, true, true, true], ['eel-bite', .45, .20, 2.2, .10, .50, 1.5, 2, 3, .30, true, true, true],
+  ['eel-ambush', .45, .25, 2.0, .20, .70, 5.0, 3, 3, .35, true, true, true], ['eel-bite', .48, .20, 2.2, .10, .50, 1.5, 2, 3, .30, true, true, true],
   ['eel-wrap', .60, .35, 2.0, .12, .80, 6.0, 1, 0, 0, false, true, true], ['tyrant-bite', .60, .35, 1.5, .10, .60, 1.5, 3, 4, .35, true, true, false],
   ['tyrant-den-lunge', .70, .45, 1.5, .25, .90, 4.0, 4, 8, .40, true, true, false], ['tyrant-charge', .65, 0, 0, .30, .50, 2.0, 4, 10, .40, true, true, false],
   ['tyrant-whirl', .80, 0, 0, .60, 1.20, 5.0, 3, 8, .35, false, false, false],
@@ -126,5 +126,17 @@ describe('bestiary data pinned to spec §11', () => {
     expect(list(rt[1]!.attacks)).toEqual([]);
     expect(list(rt[2]!.attacks)).toEqual([['tyrant-whirl', [0, .3], 2, U, U, U], ['tyrant-bite', [0, .4], 2, U, U, U]]);
     expect(rt.map(p => p.patternAttackId)).toEqual([undefined, 'tyrant-charge', undefined]);
+  });
+});
+
+// Final review I7 (controller ruling): eel-bite and squid-ink had a Brace reaction cliff (threshold .33 s: 100 % blocked at .25 s, 0 % at .35 s).
+// Their wind-ups go .45 → .48 s; the aim lock stays at least .2 s before the active phase.
+describe('Brace room on the .45 s hunter attacks (final review I7)', () => {
+  it('eel-bite and squid-ink wind up for .48 s with the lock at least .2 s before active', () => {
+    for (const id of ['eel-bite', 'squid-ink']) {
+      const a = SPECIES_ATTACKS[id]!;
+      expect(a.windupSeconds, id).toBeCloseTo(.48, 9);
+      expect(a.windupSeconds - a.aimLockAtSeconds, id).toBeGreaterThanOrEqual(.2 - 1e-9);
+    }
   });
 });

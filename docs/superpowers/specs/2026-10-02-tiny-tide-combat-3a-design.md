@@ -1203,13 +1203,15 @@ pursuit policy is `retaliate` (memory only).
 
 | State | Rule | Next |
 | --- | --- | --- |
-| `den` | `hold` at the den; only the head shows; targetable | `ambush` when the player is within `den.triggerBodyLengths` (0.9 L_e) of the den and visible |
+| `den` | `hold` at the den; only the head shows; targetable | `ambush` when the player's centre is within `den.triggerBodyLengths` (0.9 L_e) + 0.5 L_e (a hull allowance) of the den, so 1.4 L_e, and visible (review M9) |
 | `ambush` | `eel-ambush` (token) | `out` |
 | `out` | As `hunter` `approach`/`attack`/`reposition`, for `den.outSeconds` (4 s) after its last hit lands | `retreat` |
 | `retreat` | `toward(den, 1.0)` | `den` |
 
 Pursuit policy `ambusher`: memory 3 s, blocked wait 1 s, reacquire 4 s, leash
-1.5 L, give-up 3 L. The den is its home: the leash is measured from the den,
+3 L, give-up 4 L (final review I4: with 1.5 L and 3 L the 1.2 L ambush lunge
+and its knock used up the leash, and the eel swam home without a Bite or a
+Wrap). The den is its home: the leash is measured from the den,
 and a reinstall during a fight does not move the den. For every pursuit, the
 leash and give-up distances leave out the displacement that knockback and
 body separation gave the body during the engagement, so a Bite's knockback
@@ -1325,7 +1327,7 @@ hull centre for `centre` attacks (§5.10, plan review R2). Shape numbers in `L_e
 | `squid-ink` | cone .90, half 30°; status `inked` | .45 | .25 | 2.0 | .30 | .60 | 6.0 | 1 | 0 | 0 | yes | **no** | yes | [.3, .9] 1 |
 | `squid-grab` | capsule (0,0,.1)–(0,0,.75) r .12; hold 1.0 s, size factor 1.2, start 2, squeeze 1 every .5 s | .55 | .30 | 1.8 | .12 | .70 | 4.5 | 2 | 0 | 0 | **no** | yes | yes | [.2, .75] 2 |
 | `squid-lunge` | capsule (0,0,0)–(0,0,1.1) r .18; lunge 1.0 | .45 | .25 | 1.8 | .22 | .80 | 3.5 | 3 | 6 | .35 | yes | yes | windup | [.6, 1.2] 2 |
-| `eel-ambush` | capsule (0,0,0)–(0,0,1.3) r .15; lunge 1.2 | .45 | .25 | 2.0 | .20 | .70 | 5.0 | 3 | 6 | .35 | yes | yes | windup | den only |
+| `eel-ambush` | capsule (0,0,0)–(0,0,1.3) r .15; lunge 1.2 | .45 | .25 | 2.0 | .20 | .70 | 5.0 | 3 | 3 (I4; was 6) | .35 | yes | yes | windup | den only |
 | `eel-bite` | cone .45, half 35° | .45 (T23 ruling: was .40; avoidable by a move at a .35 s reaction) | .20 | 2.2 | .10 | .50 | 1.5 | 2 | 3 | .30 | yes | yes | yes | [0, .45] 3 |
 | `eel-wrap` | capsule (0,0,0)–(0,0,.6) r .20; hold 1.2 s, size factor 1.2, start 1, squeeze 1 every .4 s | .60 | .35 | 2.0 | .12 | .80 | 6.0 | 1 | 0 | 0 | **no** | yes | yes | [0, .6] 1 |
 | `tyrant-bite` | cone .40, half 35° | .60 | .35 | 1.5 | .10 | .60 | 1.5 | 3 | 4 | .35 | yes | yes | no | [0, .4] 3 |

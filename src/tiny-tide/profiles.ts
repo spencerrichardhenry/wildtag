@@ -32,8 +32,9 @@ const policy = (id: string, memorySeconds: number, blockedWaitSeconds: number, r
   ({ id, memorySeconds, blockedWaitSeconds, reacquireSeconds, leashBodyLengths, giveUpBodyLengths });
 export const PURSUITS: Record<string, PursuitPolicy> = {
   none: policy('none', 0, 0, 0, 0, 0), hunter: policy('hunter', 6, 3, 2, 30, 12), retaliate: policy('retaliate', 4, 2, 3, 15, 8),
-  /** The Moray eel (spec §11.2): its den is its home; a short memory and leash. */
-  ambusher: policy('ambusher', 3, 1, 4, 1.5, 3),
+  /** The Moray eel (spec §11.2): its den is its home; a short memory and leash. Final review I4: leash 3 L, give-up 4 L (were 1.5 and 3: the
+   *  ambush lunge of 1.2 L and its knock used up the leash, so the eel swam home and never bit or wrapped after the ambush). */
+  ambusher: policy('ambusher', 3, 1, 4, 3, 4),
 };
 
 const ids = (...names: string[]): Record<string, { id: string }> => Object.fromEntries(names.map(id => [id, { id }]));

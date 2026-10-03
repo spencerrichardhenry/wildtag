@@ -723,8 +723,8 @@ HP is enemy HP. DNA is the meal value. "Hits" are in half-hearts.
 | 1 | Sunny sardine | prey, flees in schools of 4 | 4 | 15 | none |
 | 1 | Puffer | prey, bursts when you come close | 10 | 20 | burst .55 s, 3 (ball, reach 1.35 L) |
 | 1 | Peach crab | fights back | 20 | 24 | as above |
-| 1 | Berry squid | hunter | 26 | 30 | ink .45 s, 1 (blinds); grab .55 s, 2 (red); lunge .45 s, 3 |
-| 1 | Moray eel | ambush hunter from a den | 22 | 28 | ambush .45 s, 3; bite .45 s, 2; wrap .60 s, 1 (red) |
+| 1 | Berry squid | hunter | 26 | 30 | ink .48 s, 1 (blinds); grab .55 s, 2 (red); lunge .45 s, 3 |
+| 1 | Moray eel | ambush hunter from a den | 22 | 28 | ambush .45 s, 3; bite .48 s, 2; wrap .60 s, 1 (red) |
 | 1 | Reef Tyrant | alpha | 110 | 60 reward | see below |
 
 Prey that fights starts a fight only when hit or cornered, then backs off.

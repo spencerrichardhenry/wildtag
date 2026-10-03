@@ -287,7 +287,7 @@ describe('size-1 combat species (T18)', () => {
     expect(row('2:eel')).toMatchObject({ tier: 2, hp: 22, model: 'worm', behaviourId: 'eel', attackIds: ['eel-ambush', 'eel-bite', 'eel-wrap'], hunts: [1], pursuitId: 'ambusher' });
     expect(row('2:squid')).toMatchObject({ hp: 26, hunts: [1, 2], behaviourId: 'squid', attackIds: ['squid-ink', 'squid-grab', 'squid-lunge'] });
     expect(row('2:squid').contactHazardId).toBeUndefined(); expect(HAZARDS['squid-grab']).toBeUndefined();
-    expect(PURSUITS.ambusher).toMatchObject({ id: 'ambusher', memorySeconds: 3, blockedWaitSeconds: 1, reacquireSeconds: 4, leashBodyLengths: 1.5, giveUpBodyLengths: 3 });
+    expect(PURSUITS.ambusher).toMatchObject({ id: 'ambusher', memorySeconds: 3, blockedWaitSeconds: 1, reacquireSeconds: 4, leashBodyLengths: 3, giveUpBodyLengths: 4 });   // final review I4 (were 1.5 and 3)
   });
   it('spawns sardines in groups of 4 within 2 L, and eels at dens beside reef solids (installed positions)', () => {
     for (const seed of [1, 2, 3, 4, 5]) {
@@ -335,16 +335,16 @@ describe('size-1 combat species (T18)', () => {
       let best = 0, dir = { x: 1, z: 0 };
       for (let k = 0; k < 8; k++) { const a = k / 8 * 2 * Math.PI, x = den.x + Math.sin(a) * 2.2 * L, z = den.z + Math.cos(a) * 2.2 * L, open = (eco.lineOfSight(eel, { x, y: eel.y + .35 * SIZES[2]!, z }) ? 1 : 0) + (Math.max(Math.abs(x), Math.abs(z)) < 36 * SIZES[1]! ? 2 : 0); if (open > best) { best = open; dir = { x: Math.sin(a), z: Math.cos(a) }; } }
       let now = dt, gaveUp = false, trace = '';
-      for (let i = 0; i < (knock ? 10 : 30); i++, now += dt) {
-        eel.combat = knock ? { intent: { kind: 'hold' }, face: null, lunge: null, external: { x: dir.x * 2.2 * L, y: 0, z: dir.z * 2.2 * L }, frozen: false, held: null, snap: null, moved: 0 }
+      for (let i = 0; i < (knock ? 10 : 60) && !(gaveUp && !knock); i++, now += dt) {   // the leash is 3 L (final review I4): a knock past it, a walk past it
+        eel.combat = knock ? { intent: { kind: 'hold' }, face: null, lunge: null, external: { x: dir.x * 3.5 * L, y: 0, z: dir.z * 3.5 * L }, frozen: false, held: null, snap: null, moved: 0 }
           : { intent: { kind: 'toward', point: { x: den.x + dir.x * 5 * L, y: eel.y, z: den.z + dir.z * 5 * L }, speedFactor: 1 }, face: null, lunge: null, external: { x: 0, y: 0, z: 0 }, frozen: false, held: null, snap: null, moved: 0 };
         eco.step(ctx(near(), now, { stage: 1 })); if (!gaveUp && eel.mode === 'return') trace = `tick ${i} out ${(Math.hypot(eel.x - den.x, eel.z - den.z) / L).toFixed(2)} knock ${JSON.stringify(eel.knock)} pos ${eel.x.toFixed(0)},${eel.z.toFixed(0)}`; gaveUp ||= eel.mode === 'return';
       }
       return { gaveUp, out: Math.hypot(eel.x - den.x, eel.z - den.z) / L, trace };
     };
     const knocked = run(true), walked = run(false);
-    expect(knocked.out).toBeGreaterThan(1.6); expect(knocked.gaveUp, knocked.trace).toBe(false);
-    expect(walked.out).toBeGreaterThan(1.6); expect(walked.gaveUp).toBe(true);
+    expect(knocked.out).toBeGreaterThan(3.1); expect(knocked.gaveUp, knocked.trace).toBe(false);
+    expect(walked.out).toBeGreaterThan(3); expect(walked.gaveUp, `walked out ${walked.out.toFixed(2)} L`).toBe(true);
   });
   it('review I2(b), D37: a species back to calm within 8 s of its last damage heals only after 8 s without damage', () => {
     const eco = new Ecosystem(7), crab = crabOf(eco), far = { x: 0, y: 900, z: 0 };
