@@ -21,8 +21,8 @@ export interface CombatSocket { id: string; pivot?: PivotRef; origin: Vec3; forw
 export interface AttackGrant { id: string; attackId: string; socketIds: readonly string[] }
 export interface ActiveGrant { id: string; abilityId: string; socketIds: readonly string[]; mirrorPolicy: 'shared-cast' }
 export interface PartCombatFields { traits: readonly CombatTrait[]; sockets: readonly CombatSocket[]; basicAttacks: readonly AttackGrant[]; activeGrants: readonly ActiveGrant[] }
-export interface AbilityBinding { partUid: PartUid; grantId: string }
-export interface CombatLoadout { active: [AbilityBinding | null, AbilityBinding | null] }
+/** The slot pins (spec §7.2, D2): four entries, each a pinned move kind or null. Replaces `{ active: [AbilityBinding | null × 2] }`. */
+export interface CombatLoadout { slots: Tuple4<SlotPin> }
 /** Shape numbers are in attacker body lengths (L_a), in the aim frame (z = aim). A capsule with start = end is a sphere. */
 export type AttackShape = { kind: 'cone'; range: number; halfAngle: number } | { kind: 'capsule'; start: Vec3; end: Vec3; radius: number };
 /** value = base × (1 + k × (scale − 1)); one k per parameter key (moves.ts `resolveMove` names the key syntax). */

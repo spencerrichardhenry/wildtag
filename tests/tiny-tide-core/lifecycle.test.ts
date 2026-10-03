@@ -50,15 +50,15 @@ describe('lifecycle', () => {
   });
   const cats = { ...defaultCatalogs(), parts: grant, attacks: { pinch: { ...syntheticAttack, cooldownSeconds: 1 } } };
   it('cancels actions of removed and changed emitters, and keeps cooldowns whose grant survives', () => {
-    const rt = busy(), kept = claw({ mirror: false }); reconcileAfterCommit(rt, designDelta(claw(), kept, { active: [null, null] }, grant), kept, 'player', 0, cats);
+    const rt = busy(), kept = claw({ mirror: false }); reconcileAfterCommit(rt, designDelta(claw(), kept, { slots: [null, null, null, null] }, grant), kept, 'player', 0, cats);
     expect(rt.actions).toEqual([]); expect([...rt.cooldowns.keys()]).toEqual(['player:p5:snap']);   // copy 1 removed, copy 0 changed; the grant still exists
-    const rt2 = busy(), swapped = claw({ id: 'spike', mirror: false }); reconcileAfterCommit(rt2, designDelta(claw(), swapped, { active: [null, null] }, grant), swapped, 'player', 0, cats);
+    const rt2 = busy(), swapped = claw({ id: 'spike', mirror: false }); reconcileAfterCommit(rt2, designDelta(claw(), swapped, { slots: [null, null, null, null] }, grant), swapped, 'player', 0, cats);
     expect(rt2.cooldowns.size).toBe(0);   // same uid, catalog replacement without the grant
-    const rt3 = busy(); reconcileAfterCommit(rt3, designDelta(claw(), claw(), { active: [null, null] }, grant), claw(), 'player', 0, cats); expect(rt3.actions).toHaveLength(2);
+    const rt3 = busy(); reconcileAfterCommit(rt3, designDelta(claw(), claw(), { slots: [null, null, null, null] }, grant), claw(), 'player', 0, cats); expect(rt3.actions).toHaveLength(2);
   });
   it('reserves the cooldown of an interrupted action whose grant survives', () => {
     const rt = newRuntime(); rt.actions.push(action('p5', 0)); const moved = claw({ t: .5 });
-    reconcileAfterCommit(rt, designDelta(claw(), moved, { active: [null, null] }, grant), moved, 'player', 10, cats);
+    reconcileAfterCommit(rt, designDelta(claw(), moved, { slots: [null, null, null, null] }, grant), moved, 'player', 10, cats);
     expect(rt.actions).toEqual([]); expect(rt.cooldowns.get('player:p5:snap')).toBe(11);   // 10 + cooldown 1, though the map was empty
   });
   it('recovers a pitched long body by levelling it, and never returns an unchecked anchor', () => {

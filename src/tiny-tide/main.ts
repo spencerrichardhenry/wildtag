@@ -36,7 +36,6 @@ import { TideAudio } from './audio';
 import { TideWorld } from './world';
 import { loadAssets, assetDiagnostics } from './assets';
 import { editorProjection } from './editor';
-import { QA_GRANT_CATALOG } from './qa-catalog';
 import { PARTS } from './parts';
 import { emittersOf } from './design-delta';
 import { restPivotToPart } from './rig';
@@ -132,9 +131,8 @@ let qaRejectSubmit = qaParams.get('qaRejectSubmit') === '1';
 /** `?qaHoldStart=1`: after the first start, the simulation (player, ecosystem, game clock) does not advance until the first
  *  real key or pointer press in play. */
 let qaHoldStart = qaParams.get('qaHoldStart') === '1';
-/** `?qaGrantCatalog=1`: the part catalog gets one synthetic active grant on the Pincer (qa-catalog.ts), so saves that bind it load
- *  and the editor's lost-abilities preview can be seen. */
-const CATALOG = qaParams.get('qaGrantCatalog') === '1' ? QA_GRANT_CATALOG : PARTS;
+/** The part catalog (every shipped part has its real grants since sub-project 3a; `?qaGrantCatalog` is gone, D32). */
+const CATALOG = PARTS;
 /** The first QA rejection, if `?qaRejectSubmit=1` asked for one. */
 function qaRejection(): SubmitOutcome | null {
   if (!qaRejectSubmit) return null;

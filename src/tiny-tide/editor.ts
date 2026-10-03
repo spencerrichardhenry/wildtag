@@ -807,10 +807,10 @@ class Editor {
       const r = chip.dataset.region as Region, slots = plan.regions[r].slots;
       chip.textContent = `${REGION_LABEL[r]} ${used[r]} / ${slots}`; chip.classList.toggle('over', used[r] >= slots);
     });
-    // Abilities whose binding this design would clear.
-    const cleared = designDelta(this.original, this.draft, this.options.loadout, this.catalog).clearedBindings, lost = this.root.querySelector<HTMLElement>('.ed-lost-abilities')!;
-    lost.hidden = !cleared.length;
-    lost.innerHTML = cleared.length ? `<strong>You lose these abilities:</strong><ul>${cleared.map(c => `<li>${esc(this.partName(c.binding.partUid))}: ${c.reason === 'part removed' ? 'its ability will be removed' : 'the new part no longer has that ability'} (slot ${c.slot + 1})</li>`).join('')}</ul>` : '';
+    // Moves this design would lose (T21 gives the full lost-moves line).
+    const lostKinds = designDelta(this.original, this.draft, this.options.loadout, this.catalog).lostKinds, lost = this.root.querySelector<HTMLElement>('.ed-lost-abilities')!;
+    lost.hidden = !lostKinds.length;
+    lost.innerHTML = lostKinds.length ? `<strong>You lose: ${lostKinds.map(k => esc(k)).join(', ')}</strong>` : '';
     const changes = this.root.querySelector<HTMLElement>('.ed-changes');
     if (changes) {
       changes.innerHTML = (this.changes.length ? this.changes : ['No changes from your design.']).map(c => `<li><span aria-hidden="true">• </span>${esc(c)}</li>`).join('');
@@ -824,11 +824,6 @@ class Editor {
     this.root.querySelector<HTMLButtonElement>('.ed-done')!.disabled = issues.length > 0 || this.submitting;
     this.root.querySelector<HTMLButtonElement>('.ed-cancel')!.disabled = this.submitting;
     this.root.querySelector<HTMLButtonElement>('.ed-undo')!.disabled = !this.history.length || this.submitting;
-  }
-  /** The name of the part that held a binding in the committed design. */
-  private partName(partUid: string) {
-    const placed = this.original.parts.find(p => p.uid === partUid), spec = placed && this.catalog.find(s => s.id === placed.id);
-    return spec?.name ?? 'A part';
   }
 }
 function statLine(stats: Partial<Stats>) {

@@ -34,6 +34,37 @@ describe('v4 saves', () => {
     const run = parseSave(JSON.stringify({ ...r, health: max + 5 }), build)!;
     expect(run.health).toBe(max); expect(validateRun(run, build)).toEqual([]);
   });
+  it('v4 save with loadout.active loads as four empty pins', () => {
+    const r = freshRun(1), old = { ...r, loadout: { active: [null, null] } };
+    expect(parseSave(JSON.stringify(old), build)!.loadout).toEqual({ slots: [null, null, null, null] });
+    expect(parseSave(JSON.stringify({ ...r, loadout: { active: 'x' } }), build)).toBeNull();
+  });
+  it('new loadout round-trips', () => {
+    const r = freshRun(1); r.loadout = { slots: [null, 'dash', null, null] };   // the Speck starter grants Dash
+    expect(parseSave(JSON.stringify(r), build)!.loadout).toEqual({ slots: [null, 'dash', null, null] });
+    expect(parseSave(JSON.stringify({ ...r, loadout: { slots: ['sweep', null, null, null] } }), build)).toBeNull();   // a kind the design does not grant
+  });
+  it('loads a pre-3a v4 save (T15-era format) as a valid run with four empty pins, and never writes the old key back', () => {
+    // A save as the build before slot pins wrote it: a crawler with half-heart health and the two-slot `loadout.active`.
+    const r = freshRun(9); r.stageDna = STAGES[0]!.goal;
+    const g = adaptToPlan(r.genome, plan('crawler')!, { unlocked: [] }, r.nextPartSerial); if (!g.ok) throw new Error('adapt');
+    const p = prepareEvolution(r, 'crawler', g.genome, r.name, build, g.nextSerial); if (!('planId' in p)) throw new Error(p.reason); commitEvolution(r, p);
+    const { loadout: _l, ...rest } = r, old = JSON.parse(JSON.stringify({ ...rest, health: maxHealthOf(r) - .5, loadout: { active: [null, null] } }));
+    expect(Object.keys(old.loadout)).toEqual(['active']);
+    const run = parseSave(JSON.stringify(old), build)!;
+    expect(run.loadout).toEqual({ slots: [null, null, null, null] }); expect(run.health).toBe(maxHealthOf(r) - .5); expect(run.plans).toEqual(['speck', 'crawler']);
+    expect(validateRun(run, build)).toEqual([]);
+    const written = JSON.stringify(run); expect(written).not.toContain('"active"'); expect(parseSave(written, build)).toEqual(run);
+  });
+  it('a run with a rare unlock and slot pins survives save and load', () => {
+    const r = freshRun(1); r.unlocked = ['claw_mother'];
+    r.genome.parts.push({ uid: 'p5', id: 'claw_mother', t: .45, angle: 2, scale: 1, mirror: true, roll: 0 }); r.nextPartSerial = 6;
+    r.economy.parts.p5 = { basis: 36, credit: { banked: 36, atRisk: 0 } };   // Clawmother pair: round(18 × 2 × 1) = 36
+    r.loadout = { slots: ['grab', null, 'dash', null] };
+    expect(validateRun(r, build)).toEqual([]);
+    const run = parseSave(JSON.stringify(r), build)!;
+    expect(run).toEqual(r); expect(run.unlocked).toEqual(['claw_mother']); expect(run.loadout).toEqual({ slots: ['grab', null, 'dash', null] });
+  });
   it('half-heart health loads', () => {
     const r = freshRun(1), max = maxHealthOf(r);
     expect(parseSave(JSON.stringify({ ...r, health: 2.5 }), build)!.health).toBe(2.5);

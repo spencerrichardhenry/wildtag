@@ -14,8 +14,7 @@ import { recoverPlayer } from '../src/tiny-tide/lifecycle';
 import { BREACH_REACH } from '../src/tiny-tide/player-motion';
 import { orientHull } from '../src/tiny-tide/orientation';
 import { PARTS, part } from '../src/tiny-tide/parts';
-import { QA_GRANT, QA_GRANT_CATALOG, QA_GRANT_PART } from '../src/tiny-tide/qa-catalog';
-import type { Actor, Vec3, WorldQueries } from '../src/tiny-tide/combat-types';
+import type { Actor, SlotPin, Tuple4, Vec3, WorldQueries } from '../src/tiny-tide/combat-types';
 
 const SAVE_KEY = 'tiny-tide-adventure-v4';
 const LINES: Record<'swimmer' | 'crawler', string[]> = { swimmer: ['swimmer', 'darter', 'sky_drifter', 'star_swimmer'], crawler: ['crawler', 'shellback', 'colossus', 'star_crawler'] };
@@ -49,8 +48,8 @@ export interface FixtureSpec {
   add?: Record<number, PartIn[]>;
   /** The mouth of a stage's design. */
   mouth?: Record<number, string>;
-  /** Binds the first Pincer's synthetic QA grant to slot 0 (the game needs `?qaGrantCatalog=1`). */
-  bindClaw?: boolean;
+  /** The run's slot pins (spec §7.2): four entries, each null or a kind the final design grants. */
+  pins?: Tuple4<SlotPin>;
   /** Builds a coast path (a kept save in this version). */
   coast?: boolean;
   pendingRespawn?: boolean;
@@ -85,7 +84,7 @@ function legacyFixture(kind: 'v1' | 'v2', seed: number, fields: Record<string, u
 export function makeFixture(spec: FixtureSpec = {}): Fixture {
   const seed = spec.seed ?? 1501;
   if (spec.legacy) return legacyFixture(spec.legacy, seed, spec.legacyFields);
-  const catalog = spec.bindClaw ? QA_GRANT_CATALOG : PARTS, build = buildOf(!!spec.coast, seed);
+  const catalog = PARTS, build = buildOf(!!spec.coast, seed);
   const run = freshRun(seed);
   run.unlocked = [...(spec.unlocked ?? [])];
   const path = spec.path ?? LINES[spec.line ?? 'swimmer'].slice(0, spec.stage ?? 0);
@@ -109,10 +108,7 @@ export function makeFixture(spec: FixtureSpec = {}): Fixture {
     commitEvolution(run, prepared, catalog);
   });
   if (spec.dna !== undefined || funded) run.economy = { ...run.economy, wallet: { banked: spec.dna ?? 100, atRisk: 0 } };
-  if (spec.bindClaw) {
-    const claw = run.genome.parts.find(p => p.id === QA_GRANT_PART); if (!claw) throw new Error('fixture: bindClaw needs a Pincer');
-    run.loadout = { active: [{ partUid: claw.uid, grantId: QA_GRANT.id }, null] };
-  }
+  if (spec.pins) run.loadout = { slots: [...spec.pins] as Tuple4<SlotPin> };
   run.stageDna = spec.ready && run.stage < 4 ? STAGES[run.stage]!.goal : 0;
   run.health = spec.health ?? maxHealthOf(run);
   run.pendingRespawn = !!spec.pendingRespawn;

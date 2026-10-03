@@ -4,7 +4,8 @@ import { PARTS, part, type Diet, type PartSpec } from './parts';
 import { closedLinesOf, commitmentsOf, eligibleChildren, plan, ROOT_PLAN, violates, type BodyPlan } from './plans';
 import { PLANET_COUNT } from './biomes';
 import type { FoodTag, Species } from './species';
-import type { CombatLoadout } from './combat-types';
+import { MOVE_PRIORITY, type CombatLoadout, type MoveKind } from './combat-types';
+import { clearMissingPins, grantedKinds, movesOf } from './moves';
 
 export { PLANET_COUNT, SIZES, WATER_LEVEL, random, seabedHeight } from './biomes';
 export interface Stage {
@@ -35,7 +36,9 @@ export interface Run {
   loadout: CombatLoadout; pendingRespawn: boolean; mechanics: Record<string, unknown>; archive: ArchivedDesign[]; notices: string[];
 }
 export interface Build { coast: boolean; anchorCheck?: DesignContext['anchorCheck'] }
-export type Commit = { ok: true; clearedBindings: number[] } | { ok: false; reason: string; shortfall?: number };
+export type Commit = { ok: true; clearedPins: MoveKind[] } | { ok: false; reason: string; shortfall?: number };
+/** Four empty slot pins (spec §10.5). */
+export const emptyLoadout = (): CombatLoadout => ({ slots: [null, null, null, null] });
 export interface Prepared { planId: string; genome: Genome; name: string; economy: Economy; diet: Diet; nextSerial: number }
 export const newSeed = () => Math.floor(Math.random() * 2 ** 31);
 export const dnaOf = (run: Run) => walletTotal(run.economy);
@@ -45,7 +48,7 @@ export function freshRun(seed = newSeed()): Run {
   const genome = starterGenome();
   const run: Run = { version: 4, seed, name: 'Little Tide', stage: 0, plans: [ROOT_PLAN], diet: dietOf(genome), economy: legacyEconomy(START_DNA, genome), stageDna: 0, totalDna: 0,
     bites: 0, elapsed: 0, deaths: 0, health: 0, genome, nextPartSerial: STARTER_NEXT_SERIAL, unlocked: [], eatenPlanets: [], completed: false,
-    loadout: { active: [null, null] }, pendingRespawn: false, mechanics: {}, archive: [], notices: [] };
+    loadout: emptyLoadout(), pendingRespawn: false, mechanics: {}, archive: [], notices: [] };
   run.health = maxHealthOf(run); return run;
 }
 export const dietCanEat = (diet: Diet, tag: FoodTag) => tag === 'any' || diet === 'omnivore' || (diet === 'herbivore' ? tag === 'plant' : tag === 'meat');
@@ -123,18 +126,13 @@ export function alphaReward(run: Run, spec: Species): { dna: number; part: strin
 }
 const serialAfter = (g: Genome, ...floors: number[]) => Math.max(...floors, ...g.parts.map(p => uidSerial(p.uid) + 1));
 type Failure = { ok: false; reason: string; shortfall?: number };
-/** Clears bindings whose part is gone or whose catalog spec no longer has the grant. */
-function clearMissing(run: Run, catalog: readonly PartSpec[]) {
-  const cleared: number[] = [];
-  run.loadout.active = run.loadout.active.map((binding, i) => {
-    if (!binding) return binding;
-    const placed = run.genome.parts.find(p => p.uid === binding.partUid), spec = placed && catalog.find(s => s.id === placed.id);
-    if (!placed || !spec?.activeGrants.some(g => g.id === binding.grantId)) { cleared.push(i); return null; } return binding;
-  }) as CombatLoadout['active'];
-  return cleared;
+/** Clears the pins of kinds the design no longer grants (spec §7.2). */
+function clearMissing(run: Run, catalog: readonly PartSpec[]): MoveKind[] {
+  const r = clearMissingPins(run.loadout.slots, grantedKinds(movesOf(run.genome, catalog)));
+  run.loadout = { slots: r.pins }; return r.cleared;
 }
 /** Runs every check on a copy; returns the copy only when it is valid. Never mutates `run`. */
-function candidate(run: Run, change: (c: Run) => void, build: Build, catalog: readonly PartSpec[]): { run: Run; cleared: number[] } | Failure {
+function candidate(run: Run, change: (c: Run) => void, build: Build, catalog: readonly PartSpec[]): { run: Run; cleared: MoveKind[] } | Failure {
   const c = structuredClone(run); change(c); const cleared = clearMissing(c, catalog);
   const issues = validateRun(c, build, catalog); return issues.length ? { ok: false, reason: `Internal check failed: ${issues[0]}` } : { run: c, cleared };
 }
@@ -150,7 +148,7 @@ export function applyDesign(run: Run, g: Genome, name: string, build: Build, nex
   const next = candidate(run, c => { c.economy = tx.economy; c.genome = cloneGenome(g); c.name = name.trim().slice(0, 24) || c.name;
     c.nextPartSerial = serialAfter(g, c.nextPartSerial, nextSerial); c.health = Math.min(c.health, maxHealthOf(c)); }, build, catalog);
   if ('ok' in next) return next;
-  Object.assign(run, next.run); return { ok: true, clearedBindings: next.cleared };
+  Object.assign(run, next.run); return { ok: true, clearedPins: next.cleared };
 }
 /** Checks an evolution and prices it. It never changes `run`. */
 export function prepareEvolution(run: Run, planId: string, g: Genome, name: string, build: Build, nextSerial: number, catalog: readonly PartSpec[] = PARTS): Prepared | Failure {
@@ -169,8 +167,8 @@ function applyEvolution(c: Run, p: Prepared) {
   c.economy = bankAll(p.economy); c.genome = cloneGenome(p.genome); c.name = p.name; c.diet = p.diet; c.plans.push(p.planId);
   c.stage++; c.stageDna = 0; c.nextPartSerial = Math.max(c.nextPartSerial, p.nextSerial); c.health = maxHealthOf(c);
 }
-/** Applies a validated Prepared atomically. Returns the cleared binding slots. */
-export function commitEvolution(run: Run, p: Prepared, catalog: readonly PartSpec[] = PARTS): number[] {
+/** Applies a validated Prepared atomically. Returns the kinds whose pins it cleared. */
+export function commitEvolution(run: Run, p: Prepared, catalog: readonly PartSpec[] = PARTS): MoveKind[] {
   const c = structuredClone(run); applyEvolution(c, p); const cleared = clearMissing(c, catalog); Object.assign(run, c); return cleared;
 }
 /** THE FAINT RULE: the one place that decides what a faint takes (spec §10.3). Change it here only.
@@ -228,18 +226,14 @@ export function validateRun(run: Run, build: Build, catalog: readonly PartSpec[]
     for (const x of problems(run.genome, currentPlan(run), { unlocked: run.unlocked, diet: run.diet }, catalog).filter(x => x.code !== 'dna' && x.code !== 'anchor')) out.push(`design ${x.code}: ${x.message}`);
     if (!finite(run.health) || run.health > maxHealthOf(run) || !Number.isInteger(run.health * 2)) out.push('health');
   }
-  const active = run.loadout?.active;
-  if (!isObject(run.loadout) || !Array.isArray(active) || active.length !== 2) out.push('loadout');
+  // Pins (spec §10.5): four entries, each null or a granted kind, no kind twice.
+  const slots = run.loadout?.slots as unknown;
+  if (!isObject(run.loadout) || Object.keys(run.loadout).length !== 1 || !Array.isArray(slots) || slots.length !== 4) out.push('loadout');
   else {
-    active.forEach((b, i) => {
-      if (b === null) return;
-      if (!isObject(b) || Object.keys(b).length !== 2 || typeof b.partUid !== 'string' || typeof b.grantId !== 'string') { out.push(`loadout ${i}: shape`); return; }
-      const placed = run.genome.parts.find(p => p.uid === b.partUid);
-      if (!placed) out.push(`loadout ${i}: part ${b.partUid}`);
-      else if (!catalog.find(s => s.id === placed.id)?.activeGrants.some(g => g.id === b.grantId)) out.push(`loadout ${i}: grant ${b.grantId}`);
-    });
-    const [x, y] = active as unknown[];
-    if (isObject(x) && isObject(y) && x.partUid === y.partUid && x.grantId === y.grantId) out.push('loadout: duplicate binding');
+    const granted = grantedKinds(movesOf(run.genome, catalog));
+    slots.forEach((k, i) => { if (k !== null && !(typeof k === 'string' && (MOVE_PRIORITY as readonly string[]).includes(k) && granted.includes(k as MoveKind))) out.push(`loadout ${i}: ${String(k)}`); });
+    const pinned = slots.filter(k => k !== null);
+    if (new Set(pinned).size !== pinned.length) out.push('loadout: kind twice');
   }
   if (typeof run.pendingRespawn !== 'boolean') out.push('pendingRespawn');
   if (!isObject(run.mechanics)) out.push('mechanics');
@@ -286,7 +280,7 @@ const isCredit = (c: unknown) => isObject(c) && typeof c.banked === 'number' && 
 function readV4(v: Record<string, unknown>): Run | null {
   if (v.version !== 4 || !strings(v.plans) || !DIETS.includes(v.diet as string) || !isObject(v.economy) || !isCredit(v.economy.wallet) || !isObject(v.economy.parts) ||
       !Object.values(v.economy.parts).every(l => isObject(l) && typeof l.basis === 'number' && isCredit(l.credit)) || !Number.isInteger(v.nextPartSerial) ||
-      !isObject(v.loadout) || !Array.isArray(v.loadout.active) || typeof v.pendingRespawn !== 'boolean' || !isObject(v.mechanics) || !Array.isArray(v.archive) || !strings(v.notices) ||
+      !isObject(v.loadout) || !(Array.isArray(v.loadout.active) || Array.isArray(v.loadout.slots)) || typeof v.pendingRespawn !== 'boolean' || !isObject(v.mechanics) || !Array.isArray(v.archive) || !strings(v.notices) ||
       !strings(v.unlocked) || !Array.isArray(v.eatenPlanets) || typeof v.name !== 'string' || typeof v.health !== 'number') return null;
   const genome = sanitizeGenome(v.genome); if (!genome) return null;
   const archive: ArchivedDesign[] = [];
@@ -298,7 +292,8 @@ function readV4(v: Record<string, unknown>): Run | null {
   // Only the Run fields (final review M18): an unknown top-level key is dropped, so it is never written back.
   const run = { version: 4, seed: v.seed, name: v.name, stage: v.stage, plans: v.plans, diet: v.diet, economy: v.economy, stageDna: v.stageDna, totalDna: v.totalDna,
     bites: v.bites, elapsed: v.elapsed, deaths: v.deaths, health: v.health, genome, nextPartSerial: v.nextPartSerial, unlocked: v.unlocked, eatenPlanets: v.eatenPlanets,
-    completed: v.completed, loadout: v.loadout, pendingRespawn: v.pendingRespawn, mechanics: v.mechanics, archive, notices: v.notices } as unknown as Run;
+    // A save from before 3a has `loadout.active` (no shipped part had an active grant then): four empty pins (spec §10.5, D2).
+    completed: v.completed, loadout: Array.isArray(v.loadout.slots) ? { slots: v.loadout.slots } : emptyLoadout(), pendingRespawn: v.pendingRespawn, mechanics: v.mechanics, archive, notices: v.notices } as unknown as Run;
   // Health has .5 steps (spec §10.1): a value between them rounds to the nearest half heart, at least .5.
   if (run.plans.length && run.plans.every(id => plan(id)) && Number.isFinite(run.health)) { const max = maxHealthOf(run); run.health = run.health <= 0 ? max : Math.max(.5, Math.min(Math.round(run.health * 2) / 2, max)); }
   return run;
@@ -346,7 +341,7 @@ function migrate(old: LegacyRunV2): { run: Run; notes: string[] } {
   const used = Math.max(maxSerial, ...adapted.parts.map(p => uidSerial(p.uid)), (chosen?.c.nextSerial ?? 1) - 1);
   const run: Run = { version: 4, seed: old.seed, name: old.name, stage: old.stage, plans: path, diet: dietOf(adapted), economy: tx.economy, stageDna: count(old.stageDna), totalDna: count(old.totalDna),
     bites: count(old.bites), elapsed: Math.max(0, old.elapsed), deaths: count(old.deaths), health: 0, genome: adapted, nextPartSerial: used + 1, unlocked: [...old.unlocked], eatenPlanets: [...old.eatenPlanets],
-    completed: old.completed, loadout: { active: [null, null] }, pendingRespawn: false, mechanics: {},
+    completed: old.completed, loadout: emptyLoadout(), pendingRespawn: false, mechanics: {},
     archive: [{ genome: original, name: old.name, savedAt: new Date().toISOString(), reason: 'Saved before the body-plan update.' }], notices: notes };
   const max = maxHealthOf(run); run.health = old.health <= 0 ? max : Math.max(1, Math.min(old.health, max));
   return { run, notes };

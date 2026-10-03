@@ -14,7 +14,7 @@ import { resolveMotion, startAnchor } from './motion';
 import { separationPush } from './separation';
 import { bodyLengthOf, hullFitOf, hullOffsets, massFor, sampleCombatPose, speciesCombatPose as sampleSpeciesPose } from './mount';
 import { CombatWorld, PLAYER_ID, playerMatrix, type CombatTick, type EntityCombat, type MotionBody, type PlayerBody } from './combat-world';
-import { assignSlots, movesOf, NO_PINS, type MoveSet, type SlotAssignment } from './moves';
+import { assignSlots, movesOf, type MoveSet, type SlotAssignment } from './moves';
 import { DROPS } from './parts';
 import { createRigPose, type RigPose } from './rig';
 import { orientedHeave, orientedSway, rotateInto } from './orientation';
@@ -52,7 +52,7 @@ export interface SimState {
   actorCache: ActorCache | null; hullRescaled: boolean; hullGrew: boolean;
   acceptedHits: number; rejectedHits: number; faintLog: { time: number; hadPermit: boolean; hadArc: boolean }[];
   /** The combat world (spec §3.1) and the player's moves, cached per genome revision. */
-  combat: CombatWorld; moves: { revision: number; set: MoveSet; slots: SlotAssignment; rig: RigPose } | null;
+  combat: CombatWorld; moves: { revision: number; pins: string; set: MoveSet; slots: SlotAssignment; rig: RigPose } | null;
   /** The previous tick's stick (break-free flicks), and the entity ids the player damaged this frame (the AI tick's provocation and `hit`). */
   previousMove: Vec3; hitBy: Set<number>;
 }
@@ -174,9 +174,11 @@ export function tryRespawn(s: SimState, w: SimWorld, events: SimEvent[]): boolea
   installPose(s, w, anchor, actor, events, true); refreshDerived(s); return true;
 }
 
-/** The player's moves and slots, cached per genome revision (pins: none until the loadout carries them). */
+/** The player's moves and slots (the run's pins, spec §7.2), cached per genome revision and pins. */
 export function playerMoves(s: SimState): NonNullable<SimState['moves']> {
-  if (!s.moves || s.moves.revision !== s.genomeRevision) s.moves = { revision: s.genomeRevision, set: movesOf(s.run.genome), slots: assignSlots(s.run.genome, NO_PINS), rig: createRigPose(s.run.genome) };
+  const pins = s.run.loadout.slots.join(',');
+  if (!s.moves || s.moves.revision !== s.genomeRevision || s.moves.pins !== pins)
+    s.moves = { revision: s.genomeRevision, pins, set: movesOf(s.run.genome), slots: assignSlots(s.run.genome, s.run.loadout.slots), rig: createRigPose(s.run.genome) };
   return s.moves;
 }
 /** The middle of the player's world hull (read from the shared worldHull buffer at once). */

@@ -5,17 +5,16 @@ import { SPECIES } from '../../src/tiny-tide/species';
 import { adaptToPlan, nextUid, type Genome } from '../../src/tiny-tide/genome';
 import { plan } from '../../src/tiny-tide/plans';
 import { species } from '../../src/tiny-tide/species';
-import { PARTS, type PartSpec } from '../../src/tiny-tide/parts';
 
 const build = { coast: false };
 const ready = (seed = 1) => { const r = freshRun(seed); r.stageDna = STAGES[0]!.goal; return r; };
 const design = (g: Genome, id: string, diet?: 'carnivore') => { const a = adaptToPlan(g, plan(id)!, { unlocked: [], diet }, 50); if (!a.ok) throw new Error(a.reasons.join(' ')); return a.genome; };
 const evolveTo = (r: Run, id: string, g: Genome, name = r.name) => { const p = prepareEvolution(r, id, g, name, build, r.nextPartSerial); if (!('planId' in p)) throw new Error(p.reason); commitEvolution(r, p); };
 describe('run v4', () => {
-  it('starts on Speck with 20 banked DNA, a herbivore diet, an empty two-slot loadout and serial 5', () => {
+  it('starts on Speck with 20 banked DNA, a herbivore diet, four empty pins and serial 5', () => {
     const r = freshRun(1);
     expect(r).toMatchObject({ version: 4, plans: ['speck'], diet: 'herbivore', nextPartSerial: 5, pendingRespawn: false, archive: [], notices: [], mechanics: {} });
-    expect(dnaOf(r)).toBe(20); expect(r.loadout.active).toEqual([null, null]); expect(validateRun(r, build)).toEqual([]);
+    expect(dnaOf(r)).toBe(20); expect(r.loadout).toEqual({ slots: [null, null, null, null] }); expect(validateRun(r, build)).toEqual([]);
   });
   it('earns at risk, with the plan foraging bonus for matching food', () => {
     const r = ready(); evolveTo(r, 'crawler', r.genome);
@@ -42,7 +41,7 @@ describe('run v4', () => {
   });
   it('charges edits through the ledger and reports the shortfall', () => {
     const r = freshRun(3), fins = { ...r.genome, parts: [...r.genome.parts, { uid: nextUid(5), id: 'fin_side', t: .5, angle: 1.8, scale: 1, mirror: true, roll: 0 }] };
-    expect(applyDesign(r, fins, r.name, build, 6)).toEqual({ ok: true, clearedBindings: [] }); expect(dnaOf(r)).toBe(0); expect(r.nextPartSerial).toBe(6);
+    expect(applyDesign(r, fins, r.name, build, 6)).toEqual({ ok: true, clearedPins: [] }); expect(dnaOf(r)).toBe(0); expect(r.nextPartSerial).toBe(6);
     const bigger = { ...fins, parts: fins.parts.map(p => p.uid === 'p5' ? { ...p, scale: 1.4 } : p) };   // round(10 × 2 × 1.2) = 24: buy 4, still 2 slots
     expect(applyDesign(r, bigger, r.name, build, 6)).toEqual({ ok: false, reason: 'Not enough DNA.', shortfall: 4 });
     const spike = { ...fins, parts: [...fins.parts, { uid: nextUid(6), id: 'spike', t: .3, angle: 0, scale: 1, mirror: false, roll: 0 }] };
@@ -132,7 +131,7 @@ describe('run v4', () => {
     const r = ready(); evolveTo(r, 'crawler', r.genome);
     const bad: unknown[] = [
       { ...r, plans: ['speck', 'swimmer'] }, { ...r, plans: ['speck', 'darter'] }, { ...r, diet: 'carnivore' },
-      { ...r, nextPartSerial: 2 }, { ...r, loadout: { active: [null, null, null] } }, { ...r, loadout: { active: [0, null] } },
+      { ...r, nextPartSerial: 2 }, { ...r, loadout: { slots: [null, null, null] } }, { ...r, loadout: { slots: [0, null, null, null] } }, { ...r, loadout: { slots: ['grab', null, null, null] } },
       { ...r, pendingRespawn: 'yes' }, { ...r, economy: { ...r.economy, wallet: { banked: -1, atRisk: 0 } } },
       { ...r, genome: { ...r.genome, parts: [...r.genome.parts, { ...r.genome.parts[0]! }] } },
     ];
@@ -151,18 +150,15 @@ describe('planets', () => {
   });
 });
 
-const grantParts: PartSpec[] = PARTS.map(p => p.id === 'claw_pincer' ? { ...p, activeGrants: [{ id: 'snap', abilityId: 'dash', socketIds: ['pinch'], mirrorPolicy: 'shared-cast' as const }] } : p);
 const clawRun = () => { const r = freshRun(1); r.genome.parts.push({ uid: 'p5', id: 'claw_pincer', t: .45, angle: 2, scale: 1, mirror: true, roll: 0 }); r.nextPartSerial = 6;
-  r.economy.parts.p5 = { basis: 24, credit: { banked: 24, atRisk: 0 } }; r.loadout.active = [{ partUid: 'p5', grantId: 'snap' }, null]; return r; };   // claw pair: round(12 × 2 × 1) = 24
-it('validates a binding against the catalog it is given', () => {
-  expect(validateRun(clawRun(), build, grantParts)).toEqual([]);
-  expect(validateRun(clawRun(), build)).toContain('loadout 0: grant snap');
+  r.economy.parts.p5 = { basis: 24, credit: { banked: 24, atRisk: 0 } }; r.loadout = { slots: ['grab', null, null, 'dash'] }; return r; };   // claw pair: round(12 × 2 × 1) = 24
+it('validates pins: granted kinds only, no kind twice, four entries, no extra keys', () => {
+  expect(validateRun(clawRun(), build)).toEqual([]);
+  const r = clawRun(); r.loadout = { slots: ['grab', 'grab', null, null] }; expect(validateRun(r, build)).toContain('loadout: kind twice');
+  const s = clawRun(); s.loadout = { slots: ['brace', null, null, null] }; expect(validateRun(s, build)).toContain('loadout 0: brace');   // no Shell plate
+  const t = clawRun(); (t.loadout as unknown as Record<string, unknown>).active = []; expect(validateRun(t, build)).toContain('loadout');
 });
-it('rejects the same binding in both slots, and extra keys', () => {
-  const r = clawRun(); r.loadout.active = [{ partUid: 'p5', grantId: 'snap' }, { partUid: 'p5', grantId: 'snap' }]; expect(validateRun(r, build, grantParts)).toContain('loadout: duplicate binding');
-  const s = clawRun(); (s.loadout.active as unknown[])[0] = { partUid: 'p5', grantId: 'snap', extra: 1 }; expect(validateRun(s, build, grantParts)).toContain('loadout 0: shape');
-});
-it('clears a binding when its part is removed', () => {
+it('pins for missing kinds are cleared at commit', () => {
   const r = clawRun(), g = structuredClone(r.genome); g.parts = g.parts.filter(p => p.uid !== 'p5');
-  expect(applyDesign(r, g, r.name, build, r.nextPartSerial, grantParts)).toEqual({ ok: true, clearedBindings: [0] }); expect(r.loadout.active).toEqual([null, null]);
+  expect(applyDesign(r, g, r.name, build, r.nextPartSerial)).toEqual({ ok: true, clearedPins: ['grab'] }); expect(r.loadout).toEqual({ slots: [null, null, null, 'dash'] });
 });

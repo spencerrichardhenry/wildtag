@@ -620,7 +620,6 @@ one once, at load. None of them changes a running game from outside.
 | `forcedSpawn=x,y,z` | The first start of the page load searches from this stage-local point instead of the start anchor. The spawn is still recovered to a legal pose. A pending respawn ignores it. |
 | `qaRejectSubmit=1` | The first editor submit returns the failure "QA rejection". |
 | `qaHoldStart=1` | After the first start, the simulation and the game clock stay still until the first key or pointer press in play. |
-| `qaGrantCatalog=1` | The Pincer gets one synthetic active grant (`src/tiny-tide/qa-catalog.ts`). Saves that bind it load, and the editor shows the abilities a design would lose. |
 
 Read-only diagnostics on `window.__tinyTide` include `editorProjection(target)`
 (the screen point of a visible part, by uid, or of a body point `{ t, angle }`

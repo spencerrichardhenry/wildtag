@@ -220,24 +220,23 @@ describe('combat contract', () => {
 });
 
 const withClaw = (over: Partial<Genome['parts'][number]> = {}): Genome => ({ ...starterGenome(), parts: [...starterGenome().parts, { uid: 'p5', id: 'claw_pincer', t: .2, angle: 2, scale: 1, mirror: true, roll: 0, ...over }] });
-const grantCatalog: PartSpec[] = PARTS.map(p => p.id === 'claw_pincer' ? { ...p, activeGrants: [{ id: 'snap', abilityId: 'dash', socketIds: ['pinch'], mirrorPolicy: 'shared-cast' as const }] } : p);
 describe('design delta', () => {
   it('lists emitters per copy', () => { expect(emittersOf(withClaw()).filter(e => e.partUid === 'p5')).toEqual([{ kind: 'part', partUid: 'p5', copy: 0, socketId: 'pinch' }, { kind: 'part', partUid: 'p5', copy: 1, socketId: 'pinch' }]); });
   it('removes copy 1 and changes copy 0 when a mirror is unpaired', () => {
-    const d = designDelta(withClaw(), withClaw({ mirror: false }), { active: [null, null] });
+    const d = designDelta(withClaw(), withClaw({ mirror: false }), { slots: [null, null, null, null] });
     expect(d.removedEmitters).toEqual([{ kind: 'part', partUid: 'p5', copy: 1, socketId: 'pinch' }]); expect(d.changedEmitters).toEqual([{ kind: 'part', partUid: 'p5', copy: 0, socketId: 'pinch' }]);
   });
-  it('treats a same-uid catalog replacement as removal of sockets it no longer has, and clears a lost grant', () => {
-    const loadout = { active: [{ partUid: 'p5', grantId: 'snap' }, null] as [{ partUid: string; grantId: string }, null] };
-    const d = designDelta(withClaw(), withClaw({ id: 'spike', mirror: false }), loadout, grantCatalog);
+  it('treats a same-uid catalog replacement as removal of sockets it no longer has, and clears the pin of a lost kind', () => {
+    // The Pincer pair (Grab) becomes a Spike (Counter): the Grab pin is cleared; Dash (the starter's tail and legs) stays.
+    const d = designDelta(withClaw(), withClaw({ id: 'spike', mirror: false }), { slots: ['grab', 'dash', null, null] });
     expect(d.removedEmitters.map(e => `${e.copy}:${e.socketId}`)).toEqual(['0:pinch', '1:pinch']);
-    expect(d.clearedBindings).toEqual([{ slot: 0, binding: { partUid: 'p5', grantId: 'snap' }, reason: 'grant missing' }]);
+    expect(d.clearedPins).toEqual([{ slot: 0, kind: 'grab' }]); expect(d.lostKinds).toEqual(['grab']);
   });
   it('reports nothing for an unchanged or repainted design, and a move or a reshape as a change', () => {
-    expect(designDelta(withClaw(), withClaw(), { active: [null, null] })).toEqual({ removedEmitters: [], changedEmitters: [], clearedBindings: [] });
-    expect(designDelta(withClaw(), { ...withClaw(), paint: { ...withClaw().paint, base: '#000000' } }, { active: [null, null] }).changedEmitters).toEqual([]);
-    expect(designDelta(withClaw(), withClaw({ t: .25 }), { active: [null, null] }).changedEmitters).toHaveLength(2);
+    expect(designDelta(withClaw(), withClaw(), { slots: [null, null, null, null] })).toEqual({ removedEmitters: [], changedEmitters: [], clearedPins: [], lostKinds: [] });
+    expect(designDelta(withClaw(), { ...withClaw(), paint: { ...withClaw().paint, base: '#000000' } }, { slots: [null, null, null, null] }).changedEmitters).toEqual([]);
+    expect(designDelta(withClaw(), withClaw({ t: .25 }), { slots: [null, null, null, null] }).changedEmitters).toHaveLength(2);
     const reshaped = { ...withClaw(), spine: withClaw().spine.map((s, i) => i === 1 ? { ...s, radius: s.radius + .1 } : s) };
-    expect(designDelta(withClaw(), reshaped, { active: [null, null] }).changedEmitters).toHaveLength(emittersOf(withClaw()).length);
+    expect(designDelta(withClaw(), reshaped, { slots: [null, null, null, null] }).changedEmitters).toHaveLength(emittersOf(withClaw()).length);
   });
 });

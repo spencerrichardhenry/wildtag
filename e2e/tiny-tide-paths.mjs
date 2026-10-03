@@ -627,17 +627,22 @@ check('12', 'Allocation and rig invalidation', async () => {
   assert.deepEqual(errors, []);
 });
 
-check('12b', 'Lost abilities (QA grant catalog)', async () => {
+check('12b', 'Lost moves (a pinned Pincer removed)', async () => {
+  // The Pincer pair grants Grab (a real grant since sub-project 3a; `?qaGrantCatalog` is gone, D32). The save pins Grab to slot 1.
+  // T21 replaces this check with the full lost-moves line.
   const { page, errors } = await newPage();
-  const fx = await play(page, { add: { 0: [{ id: 'claw_pincer', t: .5 }] }, bindClaw: true }, 'qaGrantCatalog=1');
+  const fx = await play(page, { add: { 0: [{ id: 'claw_pincer', t: .5 }] }, pins: ['grab', null, null, null] });
   const claw = fx.info.parts.find(p => p.id === 'claw_pincer').uid;
   await openEdit(page);
-  assert.equal(await page.locator('#editor .ed-lost-abilities').isHidden(), true, 'no lost abilities before the change');
+  assert.equal(await page.locator('#editor .ed-lost-abilities').isHidden(), true, 'no lost moves before the change');
   await selectPart(page, claw);
   await page.locator('#editor .ed-delete').click(); await frames(page, 2);
   const lost = page.locator('#editor .ed-lost-abilities');
-  assert.equal(await lost.isVisible(), true, 'removing the bound Pincer shows the lost abilities');
-  assert.match(await lost.textContent(), /Pincer: its ability will be removed \(slot 1\)/);
+  assert.equal(await lost.isVisible(), true, 'removing the pinned Pincer shows the lost moves');
+  assert.match(await lost.textContent(), /You lose: grab/);
+  await page.locator('#editor .ed-done').click(); await page.locator('#editor').waitFor({ state: 'detached' });
+  const s = await state(page), saved = JSON.parse(await storageOf(page, s.saveKey));
+  assert.deepEqual(saved.loadout, { slots: [null, null, null, null] }, 'the commit clears the Grab pin in the save');
   assert.deepEqual(errors, []);
 });
 

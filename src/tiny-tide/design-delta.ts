@@ -1,10 +1,12 @@
-// The emitter-level difference between two designs (spec §7): which weapons vanish, which move, which bindings break.
-import type { ActiveSlot, AbilityBinding, CombatLoadout, EmitterSource } from './combat-types';
+// The emitter-level difference between two designs (spec §7): which weapons vanish, which move, which pins clear.
+import type { ActiveSlot, CombatLoadout, EmitterSource, MoveKind } from './combat-types';
 import type { Genome, PlacedPart } from './genome';
 import { PARTS, type PartSpec } from './parts';
+import { grantedKinds, movesOf } from './moves';
 
 export type PartEmitterSource = Extract<EmitterSource, { kind: 'part' }>;
-export interface DesignDelta { removedEmitters: PartEmitterSource[]; changedEmitters: PartEmitterSource[]; clearedBindings: { slot: ActiveSlot; binding: AbilityBinding; reason: 'part removed' | 'grant missing' }[] }
+/** `clearedPins`: pins whose kind the new design no longer grants (spec §7.2); `lostKinds`: every kind the old design granted and the new one does not. */
+export interface DesignDelta { removedEmitters: PartEmitterSource[]; changedEmitters: PartEmitterSource[]; clearedPins: { slot: ActiveSlot; kind: MoveKind }[]; lostKinds: MoveKind[] }
 
 /** Per part, copy 0 then copy 1 if mirrored, sockets in catalog order. */
 export function emittersOf(g: Genome, catalog: readonly PartSpec[] = PARTS): PartEmitterSource[] {
@@ -27,12 +29,8 @@ export function designDelta(oldG: Genome, newG: Genome, loadout: CombatLoadout, 
     const before = oldG.parts.find(p => p.uid === e.partUid)!, after = newG.parts.find(p => p.uid === e.partUid)!;
     if (reshaped || moved(before, after)) changedEmitters.push(e);
   }
-  const clearedBindings: DesignDelta['clearedBindings'] = [];
-  loadout.active.forEach((binding, i) => {
-    if (!binding) return;
-    const placed = newG.parts.find(p => p.uid === binding.partUid);
-    if (!placed) { clearedBindings.push({ slot: i as ActiveSlot, binding, reason: 'part removed' }); return; }
-    if (!catalog.find(s => s.id === placed.id)?.activeGrants.some(g => g.id === binding.grantId)) clearedBindings.push({ slot: i as ActiveSlot, binding, reason: 'grant missing' });
-  });
-  return { removedEmitters, changedEmitters, clearedBindings };
+  const before = grantedKinds(movesOf(oldG, catalog)), after = grantedKinds(movesOf(newG, catalog));
+  const clearedPins: DesignDelta['clearedPins'] = [];
+  loadout.slots.forEach((kind, i) => { if (kind && !after.includes(kind)) clearedPins.push({ slot: i as ActiveSlot, kind }); });
+  return { removedEmitters, changedEmitters, clearedPins, lostKinds: before.filter(k => !after.includes(k)) };
 }
