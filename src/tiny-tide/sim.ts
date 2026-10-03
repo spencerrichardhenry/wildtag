@@ -1,22 +1,23 @@
 // One pure game tick (spec D29), moved out of main.ts in the same order: the growth check, the player step (with recovery, the trap
-// watch and the rescue glide), the chomp, the stuck retry, the ecosystem, hazards and faint, the respawn timer, and the game clock.
+// watch and the rescue glide), the combat tick (T8: new, after the step and before the chomp), the chomp, the stuck retry, the ecosystem, hazards and faint, the respawn timer, and the game clock.
 // main.ts and the combat probe both call it. It returns events; main.ts turns them into sound, particles, toasts and saves.
 import { SIZES } from './biomes';
 import { newRuntime, type Actor, type Capsule, type CombatInput, type CombatRuntime, type MutVec3, type Orientation, type RecoveryResult, type Vec3, type WorldQueries } from './combat-types';
 import type { Ecosystem, EcoEvent } from './ecosystem';
 import { chomp, CHOMP_COOLDOWN, type ChompResult } from './feeding';
-import { derive, effectiveStats, type Derived } from './genome';
+import { derive, dietOf, effectiveStats, type Derived } from './genome';
 import { basicRequested } from './input';
 import { beginRespawn, growthPose, newTrapWatch, recoverPlayer, resetRuntime, resolveHazards, resolveRespawn, rescueFreeRun, TRAP_MOVE, trapDue, trapFailed, trapRescued, rescueBudget, UnstickSearch, wedged, type TrapWatch } from './lifecycle';
 import { startAnchor } from './motion';
 import { bodyLengthOf, hullFitOf, hullOffsets, massFor, sampleCombatPose } from './mount';
-import { CombatWorld, playerMatrix, type PlayerBody } from './combat-world';
+import { CombatWorld, playerMatrix, type CombatTick, type MotionBody, type PlayerBody } from './combat-world';
 import { assignSlots, movesOf, NO_PINS, type MoveSet, type SlotAssignment } from './moves';
+import { DROPS } from './parts';
 import { createRigPose, type RigPose } from './rig';
 import { orientedHeave, orientedSway, rotateInto } from './orientation';
 import { newStepSnapshot, restoreStep, snapshotStep, stepPlayer, type PlayerStepResult, type StepSnapshot } from './player-motion';
 import { habitat, movement, movementCapabilities } from './profiles';
-import { currentPlan, evolveReady, growthOf, hurt, STAGES, type Run } from './state';
+import { currentPlan, evolveReady, growthOf, hurt, STAGES, unlock, type Run } from './state';
 import { admissionClock, admissionCount, supportHeight } from './world-queries';
 
 export type GameMode = 'menu' | 'playing' | 'paused' | 'evolving' | 'editing' | 'fainted' | 'stuck' | 'won';
@@ -42,6 +43,8 @@ export interface SimState {
   acceptedHits: number; rejectedHits: number; faintLog: { time: number; hadPermit: boolean; hadArc: boolean }[];
   /** The combat world (spec §3.1) and the player's moves, cached per genome revision. */
   combat: CombatWorld; moves: { revision: number; set: MoveSet; slots: SlotAssignment; rig: RigPose } | null;
+  /** The previous tick's stick (break-free flicks). */
+  previousMove: Vec3;
 }
 export type SimEvent =
   /** A pose was installed (`snap`: the camera jumps there too: start, respawn). */
@@ -49,18 +52,22 @@ export type SimEvent =
   | { type: 'step'; result: PlayerStepResult }
   | { type: 'stuck' } | { type: 'unstuck' }
   | { type: 'chomp'; result: ChompResult }
+  /** One combat tick's outcome (hits, kills, the moves the player started, a break-free). */
+  | { type: 'combat'; tick: CombatTick }
   | { type: 'regen' }
   /** An accepted hazard hit; `fainted` when it emptied the hearts (the run is already marked; save it at once). */
   | { type: 'hurt'; event: EcoEvent; damage: number; fainted: boolean }
   | { type: 'respawned' } | { type: 'respawn-waiting' }
+  /** Combat damage emptied the hearts (the run is already marked; save it at once). */
+  | { type: 'fainted' }
   /** A loaded run that was saved during a faint found no anchor yet: it waits fainted (main shows the faint overlay). */
   | { type: 'resume-fainted' };
 export interface SimInput { dt: number; intent: CombatInput; wish: Vec3; held: boolean }
 
-type SimOwned = Pick<SimState, 'trap' | 'unstick' | 'glide' | 'beforeStep' | 'rescueLog' | 'trapRescues' | 'lastSolids' | 'stepCalls' | 'rescueCalls' | 'actorCache' | 'hullRescaled' | 'hullGrew' | 'faintLog' | 'combat' | 'moves'>;
+type SimOwned = Pick<SimState, 'trap' | 'unstick' | 'glide' | 'beforeStep' | 'rescueLog' | 'trapRescues' | 'lastSolids' | 'stepCalls' | 'rescueCalls' | 'actorCache' | 'hullRescaled' | 'hullGrew' | 'faintLog' | 'combat' | 'moves' | 'previousMove'>;
 /** The fields only the simulation owns (main.ts spreads them into its bound state). */
 export const simOwnedState = (): SimOwned => ({ trap: newTrapWatch(), unstick: null, glide: null, beforeStep: newStepSnapshot(), rescueLog: { searches: 0, found: 0, failed: 0, last: null },
-  trapRescues: 0, lastSolids: [], stepCalls: 0, rescueCalls: 0, actorCache: null, hullRescaled: false, hullGrew: false, faintLog: [], combat: new CombatWorld(), moves: null });
+  trapRescues: 0, lastSolids: [], stepCalls: 0, rescueCalls: 0, actorCache: null, hullRescaled: false, hullGrew: false, faintLog: [], combat: new CombatWorld(), moves: null, previousMove: { x: 0, y: 0, z: 0 } });
 /** A plain state (tests and the combat probe). */
 export function newSimState(run: Run): SimState {
   return { run, rt: newRuntime(), physical: { x: 0, y: 0, z: 0 }, time: 0, mode: 'menu', derived: derive(effectiveStats(run.genome, currentPlan(run))), genomeRevision: 0,
@@ -154,14 +161,28 @@ export function playerMoves(s: SimState): NonNullable<SimState['moves']> {
   if (!s.moves || s.moves.revision !== s.genomeRevision) s.moves = { revision: s.genomeRevision, set: movesOf(s.run.genome), slots: assignSlots(s.run.genome, NO_PINS), rig: createRigPose(s.run.genome) };
   return s.moves;
 }
-/** The player's combat body at its installed pose (spec §5.10: sampleCombatPose on the rest rig). The centre is the middle of the hull. */
+/** The middle of the player's world hull (read from the shared worldHull buffer at once). */
+function hullCentre(s: SimState, actor: Actor): Vec3 {
+  const hull = worldHull(s, actor), first = hull[0]!, last = hull[hull.length - 1]!;
+  return { x: (first.start.x + last.end.x) / 2, y: (first.start.y + last.end.y) / 2, z: (first.start.z + last.end.z) / 2 };
+}
+/** What the combat motion of the player step reads: no combat pose is sampled (review R18). */
+export const playerMotionBody = (s: SimState, actor: Actor): MotionBody => ({ rt: s.rt, centre: hullCentre(s, actor), L: actor.bodyLength });
+/** The player's combat body at its installed pose (spec §5.10: sampleCombatPose on the rest rig). The centre is the middle of the hull.
+ *  simFrame samples it once per frame, after the player step (review R18). */
 export function playerBody(s: SimState, actor: Actor): PlayerBody {
   const plan = currentPlan(s.run), m = playerMoves(s), scale = SIZES[s.run.stage]! * growthOf(s.run), caps = movementCapabilities(plan);
   const pose = sampleCombatPose({ actorId: 'player', genome: s.run.genome, plan, world: playerMatrix(s.physical, s.rt.orientation, scale), rig: m.rig, physicalLength: actor.bodyLength });
-  const hull = worldHull(s, actor), first = hull[0]!, last = hull[hull.length - 1]!;
-  const centre = { x: (first.start.x + last.end.x) / 2, y: (first.start.y + last.end.y) / 2, z: (first.start.z + last.end.z) / 2 };
+  const centre = hullCentre(s, actor);
   return { rt: s.rt, position: s.physical, centre, L: actor.bodyLength, mass: massFor(plan, s.run.genome, actor.bodyLength), knockbackResistance: plan.physics.knockbackResistance,
     armor: s.derived.armor, ground: caps.ground, mode: movement(plan.movement).mode, inBreachArc: s.rt.arc !== null, health: s.run.health, pose };
+}
+/** A faint at 0 hearts, once (the hazard path and the combat path share it). */
+function faintNow(s: SimState): boolean {
+  const hadPermit = s.rt.permit !== null, hadArc = s.rt.arc !== null;
+  if (!beginRespawn(s.run, s.rt)) return false;
+  s.mode = 'fainted'; s.faintLog.push({ time: s.time, hadPermit, hadArc }); s.respawnClock = 1.8;
+  return true;
 }
 /** One frame of the simulation (main.ts `frame` without presentation). */
 export function simFrame(s: SimState, w: SimWorld, input: SimInput): SimEvent[] {
@@ -191,7 +212,7 @@ export function simFrame(s: SimState, w: SimWorld, input: SimInput): SimEvent[] 
       if (s.glide && s.glide.index >= s.glide.path.length) s.glide = null;
       r = { position: s.physical, status: 'moved', contacts: [], progress: 1, needsRecovery: false, breachStarted: false, arcEnded: false, permitEnded: false, turnRefused: false };
     } else s.stepCalls = admissionCount.n, r = stepPlayer(s.physical, rt, intent, { plan, profile: movement(plan.movement), caps, actor, ...legal, size: SIZES[stage]!, topSpeedLocal: STAGES[stage]!.speed * s.derived.speedFactor,
-      now: s.time, dt, wish, aim: null, actionLock: false });
+      now: s.time, dt, wish, aim: null, actionLock: false, combat: s.combat.playerMotion(playerMotionBody(s, actor), intent, s.time) });
     // As main.ts at HEAD: after a glide step stepCalls is the running admissionCount (it was 0), so a search started in that frame
     // gets rescueBudget 0 and begins next frame.
     s.stepCalls = admissionCount.n - s.stepCalls;
@@ -214,9 +235,21 @@ export function simFrame(s: SimState, w: SimWorld, input: SimInput): SimEvent[] 
     }
     if (w.qa) s.lastSolids = r.contacts.filter(c => c.solidId).map(c => c.solidId!);
     events.push({ type: 'step', result: r });
-    if (s.mode === 'playing' && basicRequested(intent) && s.chompCooldown <= 0) {
-      s.chompCooldown = CHOMP_COOLDOWN;
-      events.push({ type: 'chomp', result: chomp(run, w.eco, s.physical, growthOf(run), s.derived, s.time, worldHull(s, playerActorCached(s))) });
+    s.combat.onPlayerStep(rt, r, s.time);
+    // The combat world (spec §3.1; T8 decision: after the player step, before the chomp): the player's moves, every action, hits, holds
+    // and kills. The basic input that finds no combat species in the Bite cone falls back to today's chomp, before the ecosystem moves.
+    if (s.mode === 'playing') {
+      const body = playerBody(s, actor), m = playerMoves(s);   // the one combat-pose sample of this frame (review R18)
+      const tick = s.combat.tick({ now: s.time, dt, playing: true, intent, wish, previousMove: s.previousMove, player: body, moves: m.set, slots: m.slots, entities: w.eco.entities,
+        stage, diet: dietOf(run.genome), queries: legal.queries });
+      run.health = body.health; s.previousMove = intent.move;
+      if (tick.events.length || tick.killed.length || tick.started.length || tick.brokeFree) events.push({ type: 'combat', tick });
+      for (const e of tick.killed) { const drop = DROPS[e.spec.kind]; if (drop) unlock(run, drop); w.eco.consume(e); s.combat.forget(e); }
+      if (run.health <= 0 && faintNow(s)) events.push({ type: 'fainted' });
+      if (s.mode === 'playing' && tick.chomp && basicRequested(intent) && s.chompCooldown <= 0) {
+        s.chompCooldown = CHOMP_COOLDOWN;
+        events.push({ type: 'chomp', result: chomp(run, w.eco, s.physical, growthOf(run), s.derived, s.time, worldHull(s, playerActorCached(s))) });
+      }
     }
   }
   if (s.mode === 'stuck' && actor) {
@@ -240,12 +273,8 @@ export function simFrame(s: SimState, w: SimWorld, input: SimInput): SimEvent[] 
 /** One accepted hazard event: damage, and a faint at 0 hearts (once). */
 function takeHit(s: SimState, event: EcoEvent, events: SimEvent[]): void {
   s.sinceHit = 0;
-  const fainted = hurt(s.run, event.damage, s.derived.armor), damage = event.damage;
-  if (!fainted) { events.push({ type: 'hurt', event, damage, fainted: false }); return; }
-  const hadPermit = s.rt.permit !== null, hadArc = s.rt.arc !== null;
-  if (!beginRespawn(s.run, s.rt)) { events.push({ type: 'hurt', event, damage, fainted: false }); return; }
-  s.mode = 'fainted'; s.faintLog.push({ time: s.time, hadPermit, hadArc }); s.respawnClock = 1.8;
-  events.push({ type: 'hurt', event, damage, fainted: true });
+  const fainted = hurt(s.run, event.damage, s.derived.armor) && faintNow(s);
+  events.push({ type: 'hurt', event, damage: event.damage, fainted });
 }
 /** The faint timer: respawn at the start anchor, or wait and retry each second. */
 function tickFaint(s: SimState, w: SimWorld, dt: number, events: SimEvent[]): void {
@@ -259,7 +288,7 @@ export function simBegin(s: SimState, w: SimWorld, run: Run, forced: Vec3 | null
   const events: SimEvent[] = [];
   s.run = run; refreshDerived(s); run.health = Math.min(run.health, s.derived.maxHealth);
   s.mode = 'playing'; s.chompCooldown = 0; s.sinceHit = 99;
-  s.rt = newRuntime(); s.genomeRevision++; cancelRescue(s); s.startGracePending = false;
+  s.rt = newRuntime(); s.genomeRevision++; cancelRescue(s); s.startGracePending = false; s.combat.reset(); s.previousMove = { x: 0, y: 0, z: 0 };
   s.faintLog.length = 0; s.acceptedHits = 0; s.rejectedHits = 0;
   const actor = playerActorCached(s), t = w.legality(run.stage).queries.terrain;
   s.physical = { x: 0, y: t.space ? 3 * SIZES[run.stage]! : t.groundAt(0, 0) + actor.bodyLength, z: 0 };

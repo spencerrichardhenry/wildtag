@@ -37,6 +37,8 @@ export interface PlayerBody {
   rt: CombatRuntime; position: Vec3; centre: Vec3; L: number; mass: number; knockbackResistance: number; armor: number;
   ground: boolean; mode: MovementMode; inBreachArc: boolean; health: number; pose: CombatPose;
 }
+/** What `playerMotion` reads of the body (no combat pose: the sim samples that once per frame, after the step, for the tick). */
+export type MotionBody = Pick<PlayerBody, 'rt' | 'centre' | 'L'>;
 export interface CombatContext {
   now: number; dt: number;
   /** The game mode is `playing` (start rule 1 for the player). */
@@ -330,7 +332,7 @@ export class CombatWorld {
     return { x: origin.x + a.aim.x * CLAW_REACH * targetL, y: origin.y + a.aim.y * CLAW_REACH * targetL, z: origin.z + a.aim.z * CLAW_REACH * targetL };
   }
   /** Motion during the player's actions for the next player step (spec §5.12). */
-  playerMotion(p: PlayerBody, intent: CombatInput, now: number): CombatMotion {
+  playerMotion(p: MotionBody, intent: CombatInput, now: number): CombatMotion {
     const rt = p.rt; let speed = 1, face: CombatMotion['face'] = null, dash: Vec3 | null = null, forced: Vec3 | null = null;
     for (const a of liveActions(rt)) {
       const attack = a.resolved.attack, g = a.resolved.guard;

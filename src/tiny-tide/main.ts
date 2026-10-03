@@ -21,6 +21,8 @@ import { blockHint, blockHintDue, newBlockHintGate, type PlayerStepResult, newTa
 import { canChooseNextPlan, evolutionDestination, reconcileAfterCommit } from './lifecycle';
 import { admitted as simAdmitted, checkPose, playerActorCached as simActor, refreshDerived as simRefreshDerived, simBegin, simEvolve, simFrame, simOwnedState, type GameMode, type SimEvent, type SimState, type SimWorld } from './sim';
 import type { ChompResult } from './feeding';
+import { PLAYER_ID, type CombatTick } from './combat-world';
+import { damageText } from './combat-profiles';
 import { movement, movementCapabilities } from './profiles';
 import { admissionClock, makeWorldQueries, resetAdmissionClock, stageBounds, stageWorldQueries, zoneLabel } from './world-queries';
 import { ROCK_FIT, stageSolids } from './reef';
@@ -441,8 +443,8 @@ async function editDesign() {
       const before = run.genome, oldLoadout = structuredClone(run.loadout);
       const applied = applyDesign(run, r.genome, r.name, BUILD, r.nextSerial, CATALOG);
       if (!applied.ok) return { ok: false, reason: applied.reason };
-      // The simulation clock is stopped while editing, so `time` is the commit time.
-      reconcileAfterCommit(rt, designDelta(before, run.genome, oldLoadout, CATALOG), run.genome, 'player', time); genomeRevision++; refreshDerived(); committed = true;
+      // Cooldowns are action-clock times (spec §5.1); the action clock is stopped while editing.
+      reconcileAfterCommit(rt, designDelta(before, run.genome, oldLoadout, CATALOG), run.genome, 'player', rt.actionClock); genomeRevision++; refreshDerived(); committed = true;
       if (JSON.stringify(before) !== JSON.stringify(run.genome)) { world.setCreature(run.genome); world.burst(world.player.position.x, world.player.position.y, world.player.position.z, '#f4e2b9', 30); audio.found(); }
       return { ok: true };
     } });
@@ -479,6 +481,8 @@ function presentSim(events: readonly SimEvent[], dt: number) {
       case 'chomp': presentChomp(e.result); break;
       case 'regen': syncHearts(); break;
       case 'hurt': presentHurt(e.event, e.fainted); break;
+      case 'combat': presentCombat(e.tick); break;
+      case 'fainted': presentFaint(); break;
       case 'respawned': el('faint').hidden = true; save(); syncUI(); toast(`You kept ${Math.round(DEATH_KEEP * 100)}% of your DNA. Stay safe out there.`); break;
       case 'respawn-waiting': if (!respawnToasted) { respawnToasted = true; toast('Looking for a safe place to wake up…'); } break;
       case 'resume-fainted': el('faint').hidden = false; break;
@@ -526,9 +530,22 @@ function presentHurt(event: EcoEvent, fainted: boolean) {
   floater(`-${damageAfterArmor(event.damage, derived.armor)} ♥`, pos.x, pos.y, 'hurt');
   syncHearts(); el('hearts').classList.remove('hit'); void el('hearts').offsetWidth; el('hearts').classList.add('hit');
   if (!fainted) { if (run.health <= 2) toast(`${event.entity.spec.label} is winning! Get away to heal.`); return; }
-  // main.ts's takeHit cleared the input (and lastIntent) at a faint.
+  presentFaint();
+}
+/** A faint (the simulation already began the respawn): save at once, clear the input (main.ts's takeHit did), then the overlay. */
+function presentFaint() {
   save(); respawnToasted = false;
   clearInput(); audio.faint(); el('faint').hidden = false; world.burst(world.player.position.x, world.player.position.y, world.player.position.z, '#ff8f7a', 40);
+}
+/** One combat tick: damage numbers, hearts, and the removed bodies of kills (T13 adds the full hit feel). */
+function presentCombat(t: CombatTick) {
+  for (const e of t.events) {
+    const pos = world.screenPoint(new T.Vector3(e.point.x, e.point.y, e.point.z).divideScalar(world.scale));
+    if (e.amount > 0 || e.outcome !== 'hit') floater(damageText(e.outcome, e.unit, e.amount), pos.x, pos.y, e.targetId === PLAYER_ID ? 'hurt' : 'hit');
+    if (e.targetId === PLAYER_ID) syncHearts();
+  }
+  for (const k of t.killed) { const food = world.foods.find(f => f.entity === k); if (food) world.removeFood(food); }
+  if (t.killed.length) { syncUI(); save(); }
 }
 el('start').onclick = () => begin(); el('fresh').onclick = () => { dialogReturn = 'menu'; confirmRestart(); };
 el('evolve').onclick = () => void edit('evolve'); el('edit').onclick = () => void edit('edit');
