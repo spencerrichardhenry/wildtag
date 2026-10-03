@@ -1308,7 +1308,7 @@ hull centre for `centre` attacks (§5.10, plan review R2). Shape numbers in `L_e
 | `squid-grab` | capsule (0,0,.1)–(0,0,.75) r .12; hold 1.0 s, size factor 1.2, start 2, squeeze 1 every .5 s | .55 | .30 | 1.8 | .12 | .70 | 4.5 | 2 | 0 | 0 | **no** | yes | yes | [.2, .75] 2 |
 | `squid-lunge` | capsule (0,0,0)–(0,0,1.1) r .18; lunge 1.0 | .45 | .25 | 1.8 | .22 | .80 | 3.5 | 3 | 6 | .35 | yes | yes | windup | [.6, 1.2] 2 |
 | `eel-ambush` | capsule (0,0,0)–(0,0,1.3) r .15; lunge 1.2 | .45 | .25 | 2.0 | .20 | .70 | 5.0 | 3 | 6 | .35 | yes | yes | windup | den only |
-| `eel-bite` | cone .45, half 35° | .40 | .20 | 2.2 | .10 | .50 | 1.5 | 2 | 3 | .30 | yes | yes | yes | [0, .45] 3 |
+| `eel-bite` | cone .45, half 35° | .45 (T23 ruling: was .40; avoidable by a move at a .35 s reaction) | .20 | 2.2 | .10 | .50 | 1.5 | 2 | 3 | .30 | yes | yes | yes | [0, .45] 3 |
 | `eel-wrap` | capsule (0,0,0)–(0,0,.6) r .20; hold 1.2 s, size factor 1.2, start 1, squeeze 1 every .4 s | .60 | .35 | 2.0 | .12 | .80 | 6.0 | 1 | 0 | 0 | **no** | yes | yes | [0, .6] 1 |
 | `tyrant-bite` | cone .40, half 35° | .60 | .35 | 1.5 | .10 | .60 | 1.5 | 3 | 4 | .35 | yes | yes | no | [0, .4] 3 |
 | `tyrant-den-lunge` | capsule (0,0,0)–(0,0,1.2) r .14; lunge 1.1 | .70 | .45 | 1.5 | .25 | .90 | 4.0 | 4 | 8 | .40 | yes | yes | no | [.4, 1.2] 2 |
@@ -1320,7 +1320,7 @@ auto-aim off. A blocked ink applies no status.
 
 The wind-ups respect the floors: size-0 hostiles ≥ 0.45 s (snail 0.50, crab
 0.50–0.60); size-1 hostiles ≥ 0.40 s (puffer 0.55, squid 0.45–0.55, eel
-0.40–0.60); alphas ≥ 0.55 s (Clawmother 0.55–0.70, Reef Tyrant 0.60–0.80).
+0.45–0.60); alphas ≥ 0.55 s (Clawmother 0.55–0.70, Reef Tyrant 0.60–0.80).
 
 ### 11.6 Alpha phases
 
