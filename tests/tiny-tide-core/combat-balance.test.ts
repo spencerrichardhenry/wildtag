@@ -4,7 +4,7 @@
 // parallel); TIDE_PROBE_MERGE=1 merges every part file into the report and checks the bars.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { attackSetup, attackTrial, hostileAttacks, isProbeHunter, P5_HUNTER_FLOOR, ttkPass, journey, mergeReports, newWatch, onScreenFrom, probeMarkdown, PROBE_PARTS, runProbe, timeToKill, FULL_PROBE, type ProbePart, type ProbeReport } from '../../src/tiny-tide/combat-probe';
+import { attackSetup, attackTrial, makeRun, hostileAttacks, isProbeHunter, P5_HUNTER_FLOOR, P9_BUILDS, p9Spread, ttkPass, journey, mergeReports, newWatch, onScreenFrom, probeMarkdown, PROBE_PARTS, runProbe, timeToKill, FULL_PROBE, type ProbePart, type ProbeReport } from '../../src/tiny-tide/combat-probe';
 
 const FULL = process.env.TIDE_COMBAT_PROBE === '1';
 const OUT = '.codex-drafts/tiny-tide-qa';
@@ -35,6 +35,12 @@ describe('combat probe (smoke)', () => {
     expect(ttkPass('1:crab', 20, 9, 1)).toBe(true);
     expect(ttkPass('1:crab', 20, 21, 1)).toBe(false);     // the upper bar still holds
     expect(ttkPass('1:puffer', 10, 3, 0)).toBe(true);     // not a hunter: upper bar only
+  });
+  it('P9 (final review I6): builds every tradeoff build at sizes 0 and 1 and reports the damage spread per hunter', () => {
+    for (const b of P9_BUILDS) expect(() => makeRun(11000, b.build(1))).not.toThrow();
+    for (const b of P9_BUILDS) try { makeRun(11000, b.build(0)); } catch (e) { expect(String(e)).toMatch(/^Error: probe build /); }   // the size-0 body may refuse a part (locked, too complex)
+    const row = (build: string, species: string, damage: number) => ({ build, species, size: 0, trials: 1, damage, ttk: 5, wins: 1, faints: 0 });
+    expect(p9Spread([row('starter body', '1:crab', 4), row('brace (shell)', '1:crab', 2)]).find(x => x.species === '1:crab')).toEqual({ species: '1:crab', best: 'brace (shell)', worst: 'starter body', spread: 1 });
   });
   it('runs one trial of each measure', () => {
     const watch = newWatch();

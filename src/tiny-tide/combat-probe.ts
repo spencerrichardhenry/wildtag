@@ -44,7 +44,7 @@ export function onScreenFrom(player: Vec3, yaw: number, L: number, p: Vec3, cam:
 }
 
 // ---- builds (the fixture page's construction, with the game's own modules) ----
-export interface PartIn { id: string; scale?: number; mirror?: boolean }
+export interface PartIn { id: string; scale?: number; mirror?: boolean; /** The spine position (default the part's own). */ t?: number }
 /** A build: the mouth of size 0 and size 1, parts added at its last size, and the line it evolves along. */
 export interface ProbeBuild { label: string; stage: 0 | 1; line: 'swimmer' | 'crawler'; mouths: [string, string]; add: PartIn[] }
 type Legality = { queries: ReturnType<typeof stageWorldQueries>; bounds: ReturnType<typeof stageBounds> };
@@ -61,7 +61,7 @@ const buildOf = (seed: number): Build => ({ coast: false, anchorCheck: (g, p) =>
 function design(g: Genome, serial: number, mouth: string, add: readonly PartIn[]): { genome: Genome; next: number } {
   const out = cloneGenome(g), m = out.parts.find(p => part(p.id)?.kind === 'mouth');
   if (m) m.id = mouth;
-  for (const x of add) { const spec = part(x.id)!; out.parts.push({ uid: nextUid(serial++), id: x.id, t: spec.t, angle: spec.angle, scale: x.scale ?? 1, mirror: x.mirror ?? spec.mirror, roll: 0 }); }
+  for (const x of add) { const spec = part(x.id)!; out.parts.push({ uid: nextUid(serial++), id: x.id, t: x.t ?? spec.t, angle: spec.angle, scale: x.scale ?? 1, mirror: x.mirror ?? spec.mirror, roll: 0 }); }
   return { genome: out, next: serial };
 }
 const runs = new Map<string, string>();
@@ -437,6 +437,9 @@ export function journey(line: 'swimmer' | 'crawler', diet: JourneyReport['diet']
     const bot = newBot(); let corneredFor = 0, lastHitBy = 'unknown';
     // A target (prey or food) whose distance has not dropped by half a body length in 3 s is skipped for 15 s (a rock or the seabed in the way).
     const skipped = new Map<Entity, number>(); let chase: { e: Entity; best: number; since: number; start: number } | null = null;
+    // Final review M2 / item f: a ground mover that skipped a prey target as unreachable drops that prey species for the rest of the size
+    // (before, it chased the next sardine of the same school every 15 s: 240–465 s of skipped chases at size 1); an omnivore then eats plants.
+    const dropped = new Set<string>();
     const ground = movementCapabilities(currentPlan(p.s.run)).ground;
     while (rep.activeSeconds < limit && !evolveReady(p.s.run)) {
       const s = p.s, me = centreOfPlayer(s), L = playerActorCached(s).bodyLength, live = p.w.eco.entities.filter(e => e.active && !e.eaten);
@@ -451,7 +454,7 @@ export function journey(line: 'swimmer' | 'crawler', diet: JourneyReport['diet']
         corneredFor = hunter.e && hunter.d - .35 * SIZES[hunter.e.spec.tier]! * (hunter.e.spec.bodyScale ?? 1) <= .5 * entityL(hunter.e) ? corneredFor + PROBE_DT : 0;
         if (corneredFor >= 2 && hunter.e && reachable(hunter.e)) fight = hunter.e; else if (hunter.e && hunter.d < 8 * L) flee = hunter.e;
       } else {
-        const prey = near(live.filter(e => e.spec.behaviourId && !e.spec.alpha && reachable(e) && (e.spec.tier === s.run.stage || hostileSizes(e.spec).includes(s.run.stage))));
+        const prey = near(live.filter(e => e.spec.behaviourId && !e.spec.alpha && reachable(e) && !dropped.has(e.spec.key) && (e.spec.tier === s.run.stage || hostileSizes(e.spec).includes(s.run.stage))));
         const h = hunter.e && hunter.d < 10 * L ? hunter.e : null;
         if (h && !reachable(h)) flee = h; else fight = h ?? (prey.e && prey.d < 14 * L ? prey.e : null);
       }
@@ -465,7 +468,10 @@ export function journey(line: 'swimmer' | 'crawler', diet: JourneyReport['diet']
         const tc = entityCentre(target), d = Math.hypot(tc.x - me.x, tc.y - me.y, tc.z - me.z);
         if (!chase || chase.e !== target) chase = { e: target, best: d, since: s.time, start: s.time };
         else if (d < chase.best - .5 * L) { chase.best = d; chase.since = s.time; }
-        else if (s.time - chase.since > 3) { skipped.set(target, s.time + 15); rep.unreachableChaseSeconds += s.time - chase.start; chase = null; }
+        else if (s.time - chase.since > 3) {
+          skipped.set(target, s.time + 15); rep.unreachableChaseSeconds += s.time - chase.start; chase = null;
+          if (ground && target !== hunter.e && !!target.spec.behaviourId) dropped.add(target.spec.key);
+        }
       }
       const { intent, wish } = botInput(p, bot, { reaction: .35, useMoves: true, fight, flee, goal: food.e ? entityCentre(food.e) : null });
       const before = s.mode, stageDna = s.run.stageDna, events: SimEvent[] = simFrame(s, p.w, { dt: PROBE_DT, intent, wish, held: false });
@@ -519,6 +525,54 @@ const counterBuild = (stage: 0 | 1): ProbeBuild => ({ label: `counter ${stage}`,
 const meatBuild = (stage: 0 | 1): ProbeBuild => ({ label: `meat ${stage}`, stage, line: 'swimmer', mouths: ['mouth_snapper', 'mouth_snapper'], add: [] });
 const plantBuild = (stage: 0 | 1): ProbeBuild => ({ label: `plant ${stage}`, stage, line: 'swimmer', mouths: ['mouth_nibbler', 'mouth_nibbler'], add: [] });
 export const PROBE_BUILDS = { dashBuild, braceBuild, counterBuild, meatBuild, plantBuild };
+/** Final review I6: the P9 builds. Every one has a Snapper (so it can kill) and at most one extra part, plus "all four". The size-1 Swimmer
+ *  plan keeps its Paddle tail, so every size-1 build also has the tail's Dash; "starter body" is the Snapper alone (with that Dash at size 1). */
+const p9Build = (label: string, add: PartIn[]) => (stage: 0 | 1): ProbeBuild => ({ label: `${label} ${stage}`, stage, line: 'swimmer', mouths: ['mouth_snapper', 'mouth_snapper'], add });
+export const P9_BUILDS: readonly { label: string; build: (stage: 0 | 1) => ProbeBuild }[] = [
+  { label: 'starter body', build: p9Build('starter', []) },
+  { label: 'dash (side fins)', build: p9Build('dash', [{ id: 'fin_side', scale: 1, mirror: true }]) },
+  { label: 'brace (shell)', build: p9Build('brace', [{ id: 'shell_plate', scale: 1 }]) },
+  { label: 'counter (spike)', build: p9Build('counter', [{ id: 'spike', scale: 1 }]) },
+  { label: 'sweep (fan tail)', build: p9Build('sweep', [{ id: 'tail_fan', scale: 1, t: .9 }]) },
+  { label: 'grab (pincer)', build: p9Build('grab', [{ id: 'claw_pincer', scale: 1, t: .5 }]) },
+  { label: 'all four (shell, spike, pincer, tail Dash)', build: p9Build('all', [{ id: 'shell_plate', scale: 1 }, { id: 'spike', scale: 1 }, { id: 'claw_pincer', scale: 1, t: .5 }]) },
+];
+/** The P9 hunters (the P5 hunter floor's species) and their size. */
+export const P9_SPECIES: readonly string[] = ['1:crab', '2:squid', '2:eel'];
+function p9Rows(o: ProbeOptions, watch: DirectorWatch, flush: (rows: P9Row[]) => void, trialsPerSeed = 20): P9Row[] {
+  const rows: P9Row[] = [];
+  for (const species of P9_SPECIES) for (const b of P9_BUILDS) {
+    const size = SPECIES_SIZE[species]!, times: number[] = [], stats = { faints: 0, damage: 0 };
+    // A build the editor refuses at this size (a part still locked, or too complex for the size-0 body): reported with the reason, no trials.
+    try { makeRun(o.ttkSeeds[0]! * 1000, b.build(size)); } catch (e) {
+      const m = /^Error: probe (?:build|evolve) [^:]*: (.*)$/.exec(String(e)); if (!m) throw e;
+      rows.push({ build: b.label, species, size, trials: 0, damage: NaN, ttk: NaN, wins: 0, faints: 0, unbuildable: m[1] }); flush(rows); continue;
+    }
+    for (const seed of o.ttkSeeds) for (let i = 0; i < trialsPerSeed; i++) {
+      const t = timeToKill(seed * 1000 + i, b.build(size), species, 90, watch, stats, undefined, { reaction: .35, useMoves: true, gapL: 1 });
+      if (!Number.isNaN(t)) times.push(t);
+    }
+    rows.push({ build: b.label, species, size, trials: times.length, damage: times.length ? stats.damage / times.length : NaN, ttk: median(times), wins: times.filter(Number.isFinite).length, faints: stats.faints });
+    flush(rows);
+  }
+  return rows;
+}
+/** The P9 Markdown: the matrix (damage taken in half-hearts per fight / median time to kill) and the spread per hunter. */
+function p9Md(rows: readonly P9Row[]): string[] {
+  if (!rows.length) return [];
+  const builds = P9_BUILDS.map(b => b.label), cell = (b: string, sp: string) => { const x = rows.find(r => r.build === b && r.species === sp); return x?.unbuildable ? `not buildable (${x.unbuildable})` : x ? `${x.damage.toFixed(1)} ½♥ / ${Number.isFinite(x.ttk) ? x.ttk.toFixed(1) + ' s' : '∞'}${x.faints ? ` (${x.faints} faints)` : ''}` : '—'; };
+  return ['## P9 Body-design tradeoffs (fight bot, .35 s reaction; measurement only)', '', `| Build | ${P9_SPECIES.join(' | ')} |`, `| --- | ${P9_SPECIES.map(() => '---').join(' | ')} |`,
+    ...builds.map(b => `| ${b} | ${P9_SPECIES.map(sp => cell(b, sp)).join(' | ')} |`), '', '| Hunter | Least damage | Most damage | Spread (proposed bar ≥ 30 %) |', '| --- | --- | --- | --- |',
+    ...p9Spread(rows).map(x => `| ${x.species} | ${x.best} | ${x.worst} | ${Number.isFinite(x.spread) ? (x.spread * 100).toFixed(0) + ' %' : '∞'} |`), ''];
+}
+/** P9 per hunter: the best and worst build by damage taken and their spread (worst / best − 1); the review's proposed bar is ≥ 30 %. */
+export function p9Spread(rows: readonly P9Row[]): { species: string; best: string; worst: string; spread: number }[] {
+  return P9_SPECIES.map(species => {
+    const r = rows.filter(x => x.species === species && Number.isFinite(x.damage)).sort((a, b) => a.damage - b.damage);
+    const best = r[0], worst = r.at(-1);
+    return { species, best: best?.build ?? '—', worst: worst?.build ?? '—', spread: best && worst ? (best.damage > 0 ? worst.damage / best.damage - 1 : worst.damage > 0 ? Infinity : 0) : NaN };
+  });
+}
 
 export interface AttackRow { attackId: string; species: string; size: number; kind: 'alpha' | 'hunter' | 'fighter'; trials: number; share: number; bar: number | null; pass: boolean;
   /** Trials that found no subject, no legal place or no start (not counted). */
@@ -540,7 +594,12 @@ export interface ProbeReport { p0: P0Row[]; p1: AttackRow[]; p2: AttackRow[]; p3
    *  drawn from .25–.45 s for each trial (reported, no bar). */
   thresholds: ThresholdRow[]; p1Jitter: JitterRow[];
   /** P8 by camera (the p8 part). */
-  p8Views: ({ view: string } & ProbeReport['p8'])[]; pass: boolean }
+  p8Views: ({ view: string } & ProbeReport['p8'])[];
+  /** Final review I6 (measurement only, no bar): the body-design tradeoff matrix (p9 part). */
+  p9?: P9Row[]; pass: boolean }
+/** One P9 cell: a build fighting a hunter with the fight bot at a .35 s reaction. `damage`: mean half-hearts taken per fight; `ttk`: median
+ *  seconds to kill (Infinity: a faint or the cap); `wins`: kills. */
+export interface P9Row { build: string; species: string; size: number; trials: number; damage: number; ttk: number; wins: number; faints: number; /** The editor's refusal at this size (no trials). */ unbuildable?: string }
 export interface ThresholdRow { measure: 'p1' | 'p2' | 'p3'; attackId: string; species: string; size: number; bar: number;
   /** Largest reaction (s) in [0, .8] with share ≥ bar; null: not even at 0; .8: at least .8. */
   threshold: number | null; at25: number; at35: number; trials: number }
@@ -552,8 +611,8 @@ export interface ProbeOptions { trials: number; p0Trials: number; ttkSeeds: read
   /** Seeds per attack and reaction step of the reaction-threshold search (T23 fix round 1). */
   thresholdTrials: number }
 export const FULL_PROBE: ProbeOptions = { trials: 200, p0Trials: 100, ttkSeeds: [11, 12, 13], ttkTrials: 30, journeySeeds: [11, 12, 13, 14, 15], journeyLimit: 600, thresholdTrials: 40 };
-export type ProbePart = 'p0' | 'p1' | 'p2' | 'p3' | 'p4' | 'p5' | 'p6' | 'p7-swimmer' | 'p7-crawler' | 'p8' | 'notes' | 'th-p1' | 'th-p2' | 'th-p3' | 'p1-jitter';
-export const PROBE_PARTS: readonly ProbePart[] = ['p0', 'p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7-swimmer', 'p7-crawler', 'p8', 'notes', 'th-p1', 'th-p2', 'th-p3', 'p1-jitter'];
+export type ProbePart = 'p0' | 'p1' | 'p2' | 'p3' | 'p4' | 'p5' | 'p6' | 'p7-swimmer' | 'p7-crawler' | 'p8' | 'notes' | 'th-p1' | 'th-p2' | 'th-p3' | 'p1-jitter' | 'p9';
+export const PROBE_PARTS: readonly ProbePart[] = ['p0', 'p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7-swimmer', 'p7-crawler', 'p8', 'notes', 'th-p1', 'th-p2', 'th-p3', 'p1-jitter', 'p9'];
 
 /** Every hostile attack at sizes 0 and 1: its species, the size it targets and its kind. */
 export function hostileAttacks(): { attackId: string; species: string; size: 0 | 1; kind: AttackRow['kind'] }[] {
@@ -663,6 +722,7 @@ export function runProbe(o: ProbeOptions = FULL_PROBE, parts: readonly ProbePart
     if (part === 'p3') r.p3 = attackRows(all.filter(x => SPECIES_ATTACKS[x.attackId]!.parryable), o.trials, counterBuild, true, x => x === 'countered', () => .85, watch, rows => flush({ p3: rows }));
     if (part === 'p4') r.p4 = attackRows(all, o.trials, dashBuild, false, x => x === 'avoided', () => null, watch, rows => flush({ p4: rows }));
     if (part === 'p5') r.p5 = ttkRows(o, meatBuild, P5_BARS, 'meat', watch, rows => flush({ p5: rows }));
+    if (part === 'p9') r.p9 = p9Rows(o, watch, rows => flush({ p9: rows }));
     if (part === 'p6') r.p6 = ttkRows(o, plantBuild, P6_BARS, 'plant', watch, rows => flush({ p6: rows }));
     if (part === 'p7-swimmer' || part === 'p7-crawler') {
       const line = part === 'p7-swimmer' ? 'swimmer' : 'crawler', mine: JourneyReport[] = [];
@@ -774,6 +834,7 @@ export function mergeReports(list: readonly Partial<ProbeReport>[]): ProbeReport
   const r = emptyReport();
   for (const x of list) {
     for (const k of ['p0', 'p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'notes', 'thresholds', 'p1Jitter', 'p8Views'] as const) if (x[k]?.length) (r[k] as unknown[]).push(...x[k]!);
+    if (x.p9?.length) (r.p9 ??= []).push(...x.p9);
     if (x.p8) r.p8 = mergeP8(r.p8, x.p8);
   }
   return judge(r);
@@ -804,7 +865,7 @@ export function probeMarkdown(r: ProbeReport): string {
   return ['# Tiny Tide combat probe', '', `Overall: ${r.pass ? 'PASS' : '**FAIL**'}`, '',
     'Probe decisions: P0 band points are 5 % inside each edge; pattern and den attacks (no AI band) use probe bands (eel-ambush 0–.9, mother-emerge 0–.6, tyrant-charge .4–1.2); chain-only attacks (mother-pinch-2, mother-pinch-rage) start their parent and score the child (R12(2)); a move is used only when ready (R12(1)); P8 measures active starts in game time.', '',
     ...p0, ...rows('P1 Dash-only avoidance', r.p1), ...rows('P2 Brace', r.p2), ...rows('P3 Counter', r.p3), ...rows('P4 Movement only (reported)', r.p4),
-    ...ttk('P5 Time to kill, meat build', r.p5), ...ttk('P6 Time to kill, plant build', r.p6), ...journeys, ...faints,
+    ...ttk('P5 Time to kill, meat build', r.p5), ...ttk('P6 Time to kill, plant build', r.p6), ...p9Md(r.p9 ?? []), ...journeys, ...faints,
     '## Reaction thresholds (largest reaction that still meets the bar, step .01 s)', '', '| Measure | Attack | Species | Size | Bar | Threshold | Share at .25 s | Share at .35 s | Trials |', '| --- | --- | --- | --- | --- | --- | --- | --- | --- |',
     ...(r.thresholds ?? []).map(x => `| ${x.measure.toUpperCase()} | ${x.attackId} | ${x.species} | ${x.size} | ${pct(x.bar)} | ${x.threshold === null ? 'none' : x.threshold >= .8 ? '≥ 0.80 s' : x.threshold.toFixed(2) + ' s'} | ${pct(x.at25)} | ${pct(x.at35)} | ${x.trials} |`), '',
     '## P1 with reaction jitter .25–.45 s (reported)', '', '| Attack | Species | Size | Trials | Avoided | .25–.30 | .30–.35 | .35–.40 | .40–.45 |', '| --- | --- | --- | --- | --- | --- | --- | --- | --- |',
