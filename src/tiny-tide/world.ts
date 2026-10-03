@@ -41,9 +41,9 @@ function speciesPrefab(model: FoodKind, key: string): T.Group {
 const IMPACT_POOL = 64;
 /** Pose cues (spec §9.1 item 4) at full wind-up: rear back 15°, crouch to .8 height, inflate × 1.35, coil to .75 length, sink half a size into
  *  the sand, spin up to 12 rad/s. */
-/** An alpha under the sand: its model sinks by this × its size (fully buried), and the dust trail puffs every DUST_EVERY seconds. */
-const SUNK_DEPTH = .8, DUST_EVERY = .15;
 const CUE_REAR = 15 * Math.PI / 180, CUE_CROUCH = .2, CUE_INFLATE = .35, CUE_COIL = .25, CUE_BURROW = .5, CUE_SPIN = 12;
+/** An alpha under the sand: its model sinks by this × its size (its shell top stays visible), and the dust trail puffs every DUST_EVERY seconds. */
+const SUNK_DEPTH = .8, DUST_EVERY = .15;
 // The soft world edge (edge.ts): in the push zone the water gets darker and foggier, and scenery past the hard bound
 // (render units = stage-local units, so the bound is at ±PLAYER_HALF) fades into the fog colour.
 /** Fog density at the full edge fog (the clear-water density is .014). */
@@ -474,7 +474,7 @@ export class TideWorld {
       lod.group.traverse(object => { if (object instanceof T.Mesh) object.castShadow = shadow; });
     }
     // The menu keeps the ecosystem moving in the background with its ambient motion.
-    if (menu && dt > 0) this.eco.step({ stage: this.stage, dt, now: time, player: { x: 1e7, y: 0, z: 1e7 }, playerHull: [], perceivable: false, stealthFactor: 1 });
+    if (menu && dt > 0) this.eco.step({ stage: this.stage, dt, now: time, player: { x: 1e7, y: 0, z: 1e7 }, playerHull: [], perceivable: false, stealthFactor: 1, unlocked: [] });   // the menu: no run is playing (an empty list on purpose)
     this.syncFoods();
     for (const f of this.foods) {
       const e = f.entity;
@@ -495,7 +495,7 @@ export class TideWorld {
         else if (cue.cue === 'crouch') f.model.scale.y *= 1 - CUE_CROUCH * t;
         else if (cue.cue === 'coil') f.model.scale.z *= 1 - CUE_COIL * t;
         else if (cue.cue === 'rear') f.model.rotation.x = -CUE_REAR * t;
-        else if (cue.cue === 'burrow') f.model.position.y -= CUE_BURROW * size * t;
+        else if (cue.cue === 'burrow' && !this.sunk.has(e.id)) f.model.position.y -= CUE_BURROW * size * t;   // a sunk alpha rises by its depth only
         else if (cue.cue === 'spin' && !this.frozen.entities.has(e.id)) f.model.rotation.y += CUE_SPIN * t * dt;
       }
       if (cue?.cue !== 'rear' && f.model.rotation.x !== 0) f.model.rotation.x = 0;

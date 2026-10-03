@@ -607,7 +607,7 @@ describe('spawning and the ecosystem never use a solid (R5)', () => {
     for (const seed of REEF_SEEDS.slice(0, 3)) {
       const eco = new Ecosystem(seed), far = { x: 1e5, y: 0, z: 1e5 };
       for (const e of eco.entities) if (e.spec.tier <= 2) { eco.consume(e); e.respawn = .01; }
-      for (const stage of [0, 1, 2]) eco.step({ stage, dt: .1, now: stage, player: far, playerHull: [], perceivable: false, stealthFactor: 1 });
+      for (const stage of [0, 1, 2]) eco.step({ stage, dt: .1, now: stage, player: far, playerHull: [], perceivable: false, stealthFactor: 1, unlocked: [] });
       for (const e of eco.entities) if (e.spec.tier <= 2 && !e.eaten) { expect(inAnySolid(stageSolids(e.spec.tier, seed), e)).toBe(false); expect(inAnySolid(stageSolids(e.spec.tier, seed), { x: e.hx, y: e.hy, z: e.hz })).toBe(false); }
     }
   });
@@ -619,7 +619,7 @@ describe('spawning and the ecosystem never use a solid (R5)', () => {
       const player = { x: near.x + 2 * near.sx, y: near.y + 3 * size, z: near.z }, hull = [{ start: player, end: player, radius: .6 * size }];
       let inside = 0, hullInside = 0, steps = 0;
       for (let f = 0; f < 600; f++) {
-        eco.step({ stage, dt: 1 / 60, now: f / 60, player, playerHull: hull, perceivable: true, stealthFactor: 1 });
+        eco.step({ stage, dt: 1 / 60, now: f / 60, player, playerHull: hull, perceivable: true, stealthFactor: 1, unlocked: [] });
         for (const e of eco.entities) {
           if (e.eaten || !e.active || e.spec.tier > 3) continue;
           steps++;

@@ -99,7 +99,7 @@ describe('Tiny Tide world generation', () => {
 });
 
 describe('Tiny Tide ecosystem', () => {
-  const ctx = (_eco: Ecosystem, stage: number, player: { x: number; y: number; z: number }, extra = {}) => ({ stage, dt: .1, now: 0, player, playerHull: [{ start: player, end: player, radius: .6 * SIZES[stage]! }], stealthFactor: 1, perceivable: true, ...extra });
+  const ctx = (_eco: Ecosystem, stage: number, player: { x: number; y: number; z: number }, extra = {}) => ({ stage, dt: .1, now: 0, player, playerHull: [{ start: player, end: player, radius: .6 * SIZES[stage]! }], stealthFactor: 1, perceivable: true, unlocked: [] as string[], ...extra });
   it('lets a crab notice and hunt a nearby tiny creature, and stealth hides it; it attacks through the combat world, not a contact hazard', () => {
     // T16: the Peach crab is a combat species (telegraphed attacks from the AI tick, tests/tiny-tide-core/ai-tick.test.ts); the player point
     // is 3 units up, so the seabed between does not block the line of sight (review I9).

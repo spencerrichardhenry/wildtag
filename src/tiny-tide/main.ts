@@ -340,8 +340,11 @@ function viewOriginal() {
 function escapeHtml(text: string) { return text.replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`); }
 syncHome();
 function toast(message: string) { el('toast').textContent = message; el('toast').classList.add('show'); toastTimer = 4.5; }
+/** The float-up animation's rise (style.css `float-up`: 65 px) plus half a floater's height. */
+const FLOATER_RISE = 65 + 18;
 function floater(text: string, x: number, y: number, kind = '', colour?: string) {
-  const label = document.createElement('span'); label.className = `bite-floater ${kind}`; label.textContent = text; label.style.left = `${x}px`; label.style.top = `${y}px`;
+  // A floater rises FLOATER_RISE px: it starts low enough never to cover the HUD band, the hint pill or the alpha bar (T17 fix round 1).
+  const label = document.createElement('span'); label.className = `bite-floater ${kind}`; label.textContent = text; label.style.left = `${x}px`; label.style.top = `${Math.max(y, hudBand() + FLOATER_RISE)}px`;
   if (colour) label.style.color = colour;
   el('floaters').append(label); setTimeout(() => label.remove(), 950);
 }

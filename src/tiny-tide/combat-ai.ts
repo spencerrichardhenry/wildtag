@@ -329,6 +329,9 @@ function burrow(b: SpeciesBehaviour, s: AiState, i: AiInput, p: BehaviourPhase, 
     if (wasAttack && s.name === 'reposition') s.emerges = 0;   // the combo is over (a refused ask also repositions: the combo stays due)
     return o;
   }
+  // As the idle branch: no emerge and no new sink at a player that can not be attacked (fainted, respawning, the D27 give-up). Under the sand
+  // it waits; the lair reset brings it up when the player stays away (T17 fix round 1).
+  if ((!i.hostile || !i.player.targetable) && s.name !== 'emerge') return out(HOLD, s.name === 'sink' || s.name === 'burrowed' ? { untargetable: true } : {});
   switch (s.name) {
     case 'sink': if (now - s.since >= BURROW.sinkSeconds - 1e-9) set(s, 'burrowed', now); return out(HOLD, { untargetable: true });
     case 'burrowed': {

@@ -42,7 +42,9 @@ export interface Entity {
 /** How a combat species moves this tick: its AI intent (ambient, toward, away, hold), a point to face while holding, a lunge's velocity, its
  *  external (knockback) velocity, a hit-stop freeze, a held body's displacement to the claw point, and `snap`: an emerge point to stand on
  *  at a target-origin wind-up start (review R4; admitted through findRecoveryPose, else no move). `moved` is filled by the step. */
-export interface EntityMotion { intent: MoveIntent; face: Vec3 | null; lunge: Vec3 | null; external: MutVec3; frozen: boolean; held: Vec3 | null; snap?: Vec3 | null; moved: number }
+export interface EntityMotion { intent: MoveIntent; face: Vec3 | null; lunge: Vec3 | null; external: MutVec3; frozen: boolean; held: Vec3 | null; snap?: Vec3 | null; moved: number;
+  /** This tick's share of the body separation from the player (a displacement; sim.ts `separate`, T17 fix round 1). */
+  separation?: MutVec3 }
 export interface EcoContext {
   stage: number; dt: number; now: number;
   player: Vec3;
@@ -50,8 +52,9 @@ export interface EcoContext {
   playerHull: readonly Capsule[];
   /** False while the player can not be noticed (menu, evolving, fainted). */
   perceivable: boolean; stealthFactor: number;
-  /** The run's unlocked parts: an alpha whose reward part is unlocked was defeated and is gone for the run (spec §10.4, D23). */
-  unlocked?: readonly string[];
+  /** The run's unlocked parts: an alpha whose reward part is unlocked was defeated and is gone for the run (spec §10.4, D23). Required, so
+   *  every caller decides (T17 fix round 1). */
+  unlocked: readonly string[];
 }
 /** Damage acceptance is not decided here; the damage resolution accepts or rejects every event. */
 export interface EcoEvent { type: 'hazard'; entity: Entity; hazard: ContactHazard; damage: number; point: Vec3; normal: Vec3; time: number }
@@ -253,7 +256,7 @@ export class Ecosystem {
     for (const e of this.entities) {
       // An alpha is present only while the player's size is its own and its reward part is locked (spec §10.4); back at its lair, fresh.
       if (e.spec.alpha) {
-        const present = ctx.stage === e.spec.alpha.size && !(ctx.unlocked ?? []).includes(e.spec.alpha.rewardPartId);
+        const present = ctx.stage === e.spec.alpha.size && !ctx.unlocked.includes(e.spec.alpha.rewardPartId);
         if (!present) { if (!e.eaten) { e.eaten = true; e.combat = null; this.setMode(e, 'calm'); } e.respawn = -1; e.active = false; continue; }
         if (e.eaten) {
           const lair = lairOf(this.seed, e);
@@ -382,6 +385,7 @@ export class Ecosystem {
       if (m.lunge) { d.x += m.lunge.x * dt; d.y += (mode === 'ground' ? 0 : m.lunge.y) * dt; d.z += m.lunge.z * dt; }
       d.x += m.external.x * dt; d.y += m.external.y * dt; d.z += m.external.z * dt;
     }
+    if (m.separation && !m.held) { d.x += m.separation.x; d.y += m.separation.y; d.z += m.separation.z; }
     if (mode === 'ground' && !q.terrain.space) d.y = supportHeight(actor, e.x + d.x, e.z + d.z, O0, q.terrain) + .01 * actor.bodyLength - e.y;
     else if (mode === 'surface') d.y = e.hy - e.y;
     const req = this.req, from = this.from;

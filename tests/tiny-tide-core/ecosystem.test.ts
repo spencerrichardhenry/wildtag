@@ -9,7 +9,7 @@ import type { Terrain, Vec3 } from '../../src/tiny-tide/combat-types';
 
 const hullAt = (p: Vec3, r = .6) => [{ start: p, end: p, radius: r }];
 const ctx = (player: Vec3, now: number, extra: { stage?: number; playerHull?: ReturnType<typeof hullAt>; perceivable?: boolean } = {}) =>
-  ({ stage: 0, dt: .1, now, player, playerHull: hullAt(player), perceivable: true, stealthFactor: 1, ...extra });
+  ({ stage: 0, dt: .1, now, player, playerHull: hullAt(player), perceivable: true, stealthFactor: 1, unlocked: [] as string[], ...extra });
 /** The crab nearest the centre: a stage 0 player (bound ±50, push zone past 40) can meet it, and hunters do not chase into the push
  *  zone (owner ruling M11). */
 const crabOf = (eco: Ecosystem) => eco.entities.filter(e => e.spec.key === '1:crab' && !e.eaten).sort((a, b) => Math.max(Math.abs(a.x), Math.abs(a.z)) - Math.max(Math.abs(b.x), Math.abs(b.z)))[0]!;
@@ -172,7 +172,7 @@ describe('hunters and the world edge (owner ruling M11)', () => {
       for (const stage of [0, 1, 2]) {
         // The player sits just inside its soft start, beyond each hunter: they chase it toward the edge.
         const size = SIZES[stage]!, player = { x: 39.5 * size, y: 30, z: 0 }, hull = [{ start: player, end: player, radius: .5 * size }];
-        for (let f = 0; f < 600; f++) eco.step({ stage, dt: 1 / 30, now: stage * 100 + f / 30, player, playerHull: hull, perceivable: true, stealthFactor: 1 });
+        for (let f = 0; f < 600; f++) eco.step({ stage, dt: 1 / 30, now: stage * 100 + f / 30, player, playerHull: hull, perceivable: true, stealthFactor: 1, unlocked: [] });
       }
       for (const e of eco.entities) if (!e.eaten && e.spec.tier <= 3 && (e.spec.hunts.length > 0 || e.spec.fights)) {
         const reach = Math.max(Math.abs(e.x), Math.abs(e.z)) / SIZES[e.spec.tier]!;
@@ -184,7 +184,7 @@ describe('hunters and the world edge (owner ruling M11)', () => {
     const eco = new Ecosystem(1), crab = eco.entities.find(e => e.spec.key === '1:crab' && !e.eaten)!;
     // A Speck (stage 0) right next to the crab: inside the soft start it is acquired; in the push zone it is given up / never acquired.
     const at = (x: number) => ({ x, y: crab.y, z: crab.z });
-    const step = (p: Vec3, now: number) => eco.step({ stage: 0, dt: 1 / 60, now, player: p, playerHull: [{ start: p, end: p, radius: .3 }], perceivable: true, stealthFactor: 1 });
+    const step = (p: Vec3, now: number) => eco.step({ stage: 0, dt: 1 / 60, now, player: p, playerHull: [{ start: p, end: p, radius: .3 }], perceivable: true, stealthFactor: 1, unlocked: [] });
     crab.x = crab.hx = 38; crab.z = crab.hz = 0; crab.y = crab.hy;
     step(at(36), 0); expect(crab.mode).toBe('hunt');
     step(at(41), 1 / 60); expect(crab.mode).toBe('return');

@@ -26,6 +26,8 @@ export interface Encounter { seed: number; entityId: number; hunterKey: string; 
 export interface EscapeResult { ok: boolean; reason: 'gave-up' | 'no-hit' | 'hit' | 'not-acquired' | 'stuck'; seconds: number }
 
 const DT = 1 / 60, ESCAPE_SECONDS = 8;
+/** The run's unlocked parts: the harness plays a fresh starter run, which has none (an alpha is present at its size). */
+const NO_UNLOCKS: readonly string[] = [];
 const DEFAULT_SEEDS = Array.from({ length: 40 }, (_, i) => i + 1);
 
 interface Legality { queries: WorldQueries; bounds: { half: number; maxY?: number } }
@@ -58,7 +60,7 @@ const distance = (a: Vec3, b: Vec3) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.
 
 /** The acquiring step at now 0: the player stands still at `start`. True when the hunter hunts with no hazard event from it. */
 function acquires(eco: Ecosystem, hunter: Entity, pl: Player, start: Vec3, o: Orientation): boolean {
-  const events = eco.step({ stage: pl.plan.size, dt: DT, now: 0, player: start, playerHull: worldHull(pl.actor, start, o), perceivable: true, stealthFactor: pl.stealth });
+  const events = eco.step({ stage: pl.plan.size, dt: DT, now: 0, player: start, playerHull: worldHull(pl.actor, start, o), perceivable: true, stealthFactor: pl.stealth, unlocked: NO_UNLOCKS });
   return hunter.mode === 'hunt' && !hunterEvent(events, hunter);
 }
 
@@ -180,7 +182,7 @@ export function simulateEscape(e: Encounter, hunter: { speedScale?: number; poli
     if (struck) return { ok: false, reason: 'hit', seconds: now };
     combat.aiTick({ now, dt: DT, stage, runSeed: e.seed, entities: eco.entities, player: b, playing: true, stealthFactor: pl.stealth, hitBy: new Set(), isOnScreen: () => true,
       lineOfSight: (x, q) => eco.lineOfSight(x, q), givingUp: eco.givingUp(now) });
-    const events = eco.step({ stage, dt: DT, now, player: position, playerHull: worldHull(actor, position, rt.orientation), perceivable: true, stealthFactor: pl.stealth });
+    const events = eco.step({ stage, dt: DT, now, player: position, playerHull: worldHull(actor, position, rt.orientation), perceivable: true, stealthFactor: pl.stealth, unlocked: NO_UNLOCKS });
     combat.afterMotion(eco.entities);
     const hit = hunterEvent(events, h);
     if (hit) return { ok: false, reason: 'hit', seconds: hit.time };

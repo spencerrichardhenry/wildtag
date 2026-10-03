@@ -9,6 +9,12 @@ import { RELEASED } from '../../src/tiny-tide/input';
 import { applyHitStop, bufferPress, holdingAction } from '../../src/tiny-tide/action-engine';
 import { stageBounds } from '../../src/tiny-tide/world-queries';
 import type { CombatInput } from '../../src/tiny-tide/combat-types';
+import { worldHull } from '../../src/tiny-tide/sim';
+import { newAiState } from '../../src/tiny-tide/combat-ai';
+import { hullOverlap, SEPARATION_SLOP } from '../../src/tiny-tide/separation';
+import { speciesCombatPose } from '../../src/tiny-tide/mount';
+import { SPECIES, species, type Species } from '../../src/tiny-tide/species';
+import type { Vec3 } from '../../src/tiny-tide/combat-types';
 import { FAINT_GIVE_UP, playerActorCached, playerMotionBody, REGEN_AFTER, simBegin, simEvolve, simFrame, simSuspend, type SimEvent, type SimState, type SimWorld } from '../../src/tiny-tide/sim';
 import { earn } from '../../src/tiny-tide/economy';
 import { RESPAWN_GRACE } from '../../src/tiny-tide/lifecycle';
@@ -188,3 +194,59 @@ describe('the combat tick in simFrame', () => {
     }
   });
 });
+
+describe('soft body separation (T17 fix round 1)', () => {
+  const MOTHER = SPECIES.find(x => x.key === '1:clawmother')!, CRAB = species(1, 'crab'), DRIFTER = species(0, 'drifter');
+  /** A shipped-behaviour Speck sim with `e` placed so that its hull centre is at the Speck's hull centre plus `offset`. */
+  function setup(spec: Species, offset: Vec3) {
+    const e = entity(1, spec, { x: 0, y: 0, z: 0 }), { s, w } = begun([e]); s.combat = new CombatWorld();
+    const actor = playerActorCached(s), pc = hullCentreOf(worldHull(s, actor)), ec = speciesCombatPose(e, 0).hull[0]!.start;
+    Object.assign(e, { x: pc.x + offset.x - (ec.x - e.x), y: pc.y + offset.y - (ec.y - e.y), z: pc.z + offset.z - (ec.z - e.z) });
+    return { e, s, w, actor };
+  }
+  const hullCentreOf = (h: readonly { start: Vec3; end: Vec3 }[]) => ({ x: h.reduce((a, c) => a + c.start.x + c.end.x, 0) / (2 * h.length), y: h.reduce((a, c) => a + c.start.y + c.end.y, 0) / (2 * h.length), z: h.reduce((a, c) => a + c.start.z + c.end.z, 0) / (2 * h.length) });
+  it('a player pushed into the Clawmother ends outside her hull within 0.2 s, and every installed pose is admitted', () => {
+    const { e, s, w, actor } = setup(MOTHER, { x: .15, y: .5, z: .1 });
+    expect(hullOverlap(worldHull(s, actor), speciesCombatPose(e, 0).hull)).toBeGreaterThan(actor.bodyLength);   // deep inside her
+    const legal = w.legality(0);
+    for (let i = 0; i < 12; i++) {
+      frame(s, w);
+      expect(legal.queries.overlapHull(actor, s.physical, s.rt.orientation, { time: s.time, bounds: legal.bounds }).ok).toBe(true);
+    }
+    expect(hullOverlap(worldHull(s, actor), speciesCombatPose(e, s.time).hull)).toBeLessThanOrEqual((SEPARATION_SLOP + .02) * actor.bodyLength);
+  });
+  it('a crab pinch hits a player who tried to stand at the crab\'s centre', () => {
+    const { e, s, w } = setup(CRAB, { x: 0, y: 0, z: 0 }); e.mode = 'hunt'; s.run.health = 50;
+    const outcomes: string[] = [];
+    for (let i = 0; i < 6 * 60; i++) for (const ev of frame(s, w)) if (ev.type === 'combat') outcomes.push(...ev.tick.events.filter(x => x.attackerId === 'e1' && x.targetId === 'player').map(x => x.outcome));
+    expect(outcomes).toContain('hit');
+  });
+  it('a Clawmother pinch hits a player who keeps trying to stand at her centre (the review case)', () => {
+    const { e, s, w } = setup(MOTHER, { x: .15, y: .5, z: .1 }); s.run.health = 50;
+    const outcomes: string[] = [];
+    for (let i = 0; i < 8 * 60; i++) {
+      const c = speciesCombatPose(e, s.time).hull[0]!.start, d = { x: c.x - s.physical.x, y: 0, z: c.z - s.physical.z }, l = Math.hypot(d.x, d.z) || 1;
+      for (const ev of simFrame(s, w, { dt: DT, intent: { ...RELEASED }, wish: { x: d.x / l, y: 0, z: d.z / l }, held: false }))
+        if (ev.type === 'combat') outcomes.push(...ev.tick.events.filter(x => x.attackerId === 'e1' && x.targetId === 'player').map(x => x.outcome));
+    }
+    expect(outcomes).toContain('hit');
+  });
+  it('no separation jitter: a body at rest touching a species keeps still (< 1e-3 L over 60 frames)', () => {
+    const { s, w, actor } = setup(DRIFTER, { x: 0, y: 0, z: .8 * actor0().bodyLength });
+    for (let i = 0; i < 60; i++) frame(s, w);   // settle out of the overlap
+    const at = { ...s.physical }, path: number[] = [];
+    for (let i = 0; i < 60; i++) { frame(s, w); path.push(Math.hypot(s.physical.x - at.x, s.physical.y - at.y, s.physical.z - at.z)); }
+    expect(Math.max(...path)).toBeLessThan(1e-3 * actor.bodyLength);
+  });
+  it('no separation from an alpha under the sand (burrowed); the same alpha above the sand pushes', () => {
+    const moved = (name: 'burrowed' | 'approach') => {
+      const { e, s, w } = setup(MOTHER, { x: .15, y: .5, z: .1 }), c = s.combat.stateOf(e)!;
+      c.ai = newAiState(1, e.id, 0); c.ai.name = name; c.ai.since = 0; c.ai.home = { x: e.x, y: e.y, z: e.z }; if (name === 'burrowed') { c.ai.phase = 1; e.hp = .5 * c.maxHp; }
+      const before = { ...s.physical }; frame(s, w);
+      expect(c.ai.name).toBe(name === 'burrowed' ? 'burrowed' : c.ai.name);
+      return Math.hypot(s.physical.x - before.x, s.physical.z - before.z);
+    };
+    expect(moved('burrowed')).toBeLessThan(1e-6); expect(moved('approach')).toBeGreaterThan(.01);
+  });
+});
+const actor0 = () => playerActorCached(speck());

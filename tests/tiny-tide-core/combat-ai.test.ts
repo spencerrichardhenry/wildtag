@@ -190,6 +190,16 @@ describe('combat AI: ambusher rules', () => {
 
 describe('combat AI: alphas', () => {
   const mother = BEHAVIOURS.clawmother!, L = 10.08;
+  it('the burrow loop stops at a player that can not be attacked (no emerge at a fainted player), as the idle branch does', () => {
+    for (const over of [{ hostile: false }, { player: { position: at(0, 5), d: .3, visible: true, targetable: false } }]) {
+      const s = newAiState(1, 40); s.home = at(0, 0); s.phase = 1; s.name = 'burrowed'; s.since = 0;
+      const log = drive(mother, s, 4, () => ({ ...alphaInput(40), ...over }));
+      expect(log.filter(l => l.out.attack)).toEqual([]);
+      expect(log.some(l => l.state === 'sink')).toBe(false);   // no new sink either
+    }
+    const s = newAiState(1, 41); s.home = at(0, 0); s.phase = 1; s.name = 'burrowed'; s.since = 0;
+    expect(drive(mother, s, 4, () => alphaInput(40)).some(l => l.out.attack?.attackId === 'mother-emerge')).toBe(true);   // control
+  });
   it('alpha absent when its part is unlocked or at another size', () => {
     const eco = new Ecosystem(3), mother = eco.entities.find(e => e.spec.key === '1:clawmother')!, far = { x: 0, y: 900, z: 0 };
     const step = (stage: number, now: number, unlocked: string[] = []) => eco.step({ stage, dt: DT, now, player: far, playerHull: [], perceivable: false, stealthFactor: 1, unlocked });

@@ -2,7 +2,7 @@
 // watch and the rescue glide), the combat tick (T8: new, after the step and before the chomp), the chomp, the stuck retry, the ecosystem, hazards and faint, the respawn timer, and the game clock.
 // main.ts and the combat probe both call it. It returns events; main.ts turns them into sound, particles, toasts and saves.
 import { SIZES } from './biomes';
-import { clearBuffer } from './action-engine';
+import { clearBuffer, liveActions } from './action-engine';
 import { newRuntime, type Actor, type Capsule, type CombatInput, type CombatRuntime, type MutVec3, type Orientation, type RecoveryResult, type Vec3, type WorldQueries } from './combat-types';
 import type { Ecosystem, EcoEvent, Entity } from './ecosystem';
 import { chomp, CHOMP_COOLDOWN, type ChompResult } from './feeding';
@@ -10,9 +10,10 @@ import { derive, dietOf, effectiveStats, type Derived, type Genome } from './gen
 import type { BodyPlan } from './plans';
 import { basicRequested } from './input';
 import { beginRespawn, growthPose, RESPAWN_GRACE, newTrapWatch, recoverPlayer, resetRuntime, resolveHazards, resolveRespawn, rescueFreeRun, TRAP_MOVE, trapDue, trapFailed, trapRescued, rescueBudget, UnstickSearch, wedged, type TrapWatch } from './lifecycle';
-import { startAnchor } from './motion';
-import { bodyLengthOf, hullFitOf, hullOffsets, massFor, sampleCombatPose } from './mount';
-import { CombatWorld, PLAYER_ID, playerMatrix, type CombatTick, type MotionBody, type PlayerBody } from './combat-world';
+import { resolveMotion, startAnchor } from './motion';
+import { separationPush } from './separation';
+import { bodyLengthOf, hullFitOf, hullOffsets, massFor, sampleCombatPose, speciesCombatPose as sampleSpeciesPose } from './mount';
+import { CombatWorld, PLAYER_ID, playerMatrix, type CombatTick, type EntityCombat, type MotionBody, type PlayerBody } from './combat-world';
 import { assignSlots, movesOf, NO_PINS, type MoveSet, type SlotAssignment } from './moves';
 import { DROPS } from './parts';
 import { createRigPose, type RigPose } from './rig';
@@ -111,8 +112,10 @@ export function playerActorCached(s: SimState): Actor {
 }
 const hullBuffer: { start: MutVec3; end: MutVec3; radius: number; sway: number; heave: number }[] = [];
 /** The player's hull in world space; the buffer is reused every call (its readers copy what they keep). */
-export function worldHull(s: SimState, actor: Actor): Capsule[] {
-  const o = s.rt.orientation, h = actor.hull, p = s.physical;
+export function worldHull(s: SimState, actor: Actor): Capsule[] { return worldHullAt(s, actor, s.physical); }
+/** The player's hull in world space at `p` (the shared buffer, as worldHull). */
+function worldHullAt(s: SimState, actor: Actor, p: Vec3): Capsule[] {
+  const o = s.rt.orientation, h = actor.hull;
   while (hullBuffer.length < h.length) hullBuffer.push({ start: { x: 0, y: 0, z: 0 }, end: { x: 0, y: 0, z: 0 }, radius: 0, sway: 0, heave: 0 });
   hullBuffer.length = h.length;
   for (let i = 0; i < h.length; i++) {
@@ -308,6 +311,8 @@ export function simFrame(s: SimState, w: SimWorld, input: SimInput): SimEvent[] 
     s.hitBy.clear();
     for (const g of ai.engagements) if (s.mode === 'playing' && survivorBonusDue(run, behaviourType(g.entity), g)) events.push({ type: 'survived', entity: g.entity, dna: survivorReward(run, g.entity.spec) });
     if (ai.roars.length) events.push({ type: 'roar', entities: ai.roars });
+    // Soft body separation: the player's push is installed here (part of the player's own motion, like its step; never while a rescue glides).
+    if (s.mode === 'playing' && !run.pendingRespawn) { const moved = separate(s, w, actor, dt); if (moved && !s.glide) s.physical = moved; }
     admissionClock.caller = 'ecosystem';
     const hazards = w.eco.step({ stage, dt, now: s.time, player: s.physical, playerHull: worldHull(s, actor), perceivable: s.rt.perceivable && s.mode !== 'fainted', stealthFactor: s.derived.stealthFactor, unlocked: run.unlocked });
     admissionClock.caller = 'player';
@@ -323,6 +328,33 @@ export function simFrame(s: SimState, w: SimWorld, input: SimInput): SimEvent[] 
   return events;
 }
 /** The behaviour type of a combat species (the survivor bonus applies to hunters). */
+/** Under the sand (the burrow pattern): no body to bump into. The emerge wind-up counts too: the body is still rising at the target point. */
+const buried = (c: EntityCombat): boolean => {
+  const n = c.ai?.name;
+  return n === 'sink' || n === 'burrowed' || (n === 'emerge' && liveActions(c.rt).some(a => a.phase === 'windup'));
+};
+/** Soft body separation (T17 fix round 1, controller ruling): the player's hull and each live combat species' hull that overlap are pushed
+ *  apart (separation.ts). The player's share goes through resolveMotion (cause 'knockback'; a refused result is never installed: the last
+ *  pose stays); the species' share goes into its motion for this tick's ecosystem step. Untargetable species and a player in Dash i-frames
+ *  still separate; an alpha under the sand does not, nor a grab pair (the hold places the held body). Returns the player's new position (the
+ *  caller installs it), or null. */
+function separate(s: SimState, w: SimWorld, actor: Actor, dt: number): Vec3 | null {
+  let at: Vec3 | null = null;
+  const plan = currentPlan(s.run), playerMass = massFor(plan, s.run.genome, actor.bodyLength), legal = w.legality(s.run.stage);
+  for (const c of s.combat.entities.values()) {
+    const e = c.entity;
+    if (e.eaten || !e.active || buried(c) || s.rt.heldBy === c.id || c.rt.heldBy === PLAYER_ID) continue;
+    const pose = sampleSpeciesPose(e, s.time);
+    const from = at ?? s.physical, push = separationPush({ player: worldHullAt(s, actor, from), species: pose.hull, playerMass, speciesMass: pose.mass, speciesResistance: c.behaviour.knockbackResistance,
+      horizontal: movement(e.spec.movementProfileId).mode === 'ground', speciesForward: pose.forward, playerL: actor.bodyLength, dt });
+    if (!push) continue;
+    const r = resolveMotion({ actorId: actor.id, from, displacement: push.player, orientation: s.rt.orientation, hull: actor.hull, habitatProfileId: actor.habitat.id, cause: 'knockback',
+      traversalPermit: s.rt.permit }, { ...legal, actor, interval: { start: s.time, end: s.time + dt } });
+    if (r.status !== 'invalid-start' && r.status !== 'needs-recovery') at = r.position;
+    if (e.combat) { const q = e.combat.separation ??= { x: 0, y: 0, z: 0 }; q.x += push.species.x; q.y += push.species.y; q.z += push.species.z; }
+  }
+  return at;
+}
 const behaviourType = (e: Entity) => e.spec.behaviourId ? BEHAVIOURS[e.spec.behaviourId]?.type : undefined;
 /** One accepted hazard event: damage, and a faint at 0 hearts (once). */
 function takeHit(s: SimState, w: SimWorld, event: EcoEvent, events: SimEvent[]): void {

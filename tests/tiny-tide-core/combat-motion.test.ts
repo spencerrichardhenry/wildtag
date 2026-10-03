@@ -81,7 +81,7 @@ describe('combat motion of species', () => {
       const eco = new Ecosystem(seed), rand = random(seed * 13 + 1), q = stageWorldQueries(1, seed), bounds = { half: WORLD_HALF * SIZES[1]! };
       const solids = stageSolids(1, seed).solids.filter(s => Math.max(Math.abs(s.minX), Math.abs(s.maxX), Math.abs(s.minZ), Math.abs(s.maxZ)) < 35 * SIZES[1]!);
       const crabs = eco.entities.filter(e => e.spec.key === '1:crab');
-      eco.step({ stage: 1, dt: DT, now: 0, player: { x: 0, y: 900, z: 0 }, playerHull: [], perceivable: false, stealthFactor: 1 });
+      eco.step({ stage: 1, dt: DT, now: 0, player: { x: 0, y: 900, z: 0 }, playerHull: [], perceivable: false, stealthFactor: 1, unlocked: [] });
       for (let c = 0; c < 56; c++) {
         const e = crabs[c % crabs.length]!, s = solids[Math.floor(rand() * solids.length)]!, a = rand() * 2 * Math.PI, L = speciesActor(e).bodyLength, r = Math.max(s.maxX - s.minX, s.maxZ - s.minZ) / 2 + .6 * L;
         const start = findRecoveryPose(speciesActor(e), { x: (s.minX + s.maxX) / 2 + Math.sin(a) * r, y: s.minY, z: (s.minZ + s.maxZ) / 2 + Math.cos(a) * r }, { queries: q, bounds, orientation: { yaw: 0, pitch: 0 }, time: 0 }, { maxDistance: 3 * L });
@@ -90,7 +90,7 @@ describe('combat motion of species', () => {
         const kind = c % 3, push = scaled(dir(rand, true), kind === 2 ? .5 * L * rand() : (kind === 0 ? 1.2 * L / .22 : 45 * L * rand()));
         e.combat = { intent: { kind: 'hold' }, face: null, lunge: kind === 0 ? push : null, external: kind === 1 ? { ...push } : { x: 0, y: 0, z: 0 }, frozen: false, held: kind === 2 ? push : null, moved: 0 };
         for (let i = 0; i < 8; i++) {
-          eco.step({ stage: 1, dt: DT, now: (i + 1) * DT, player: { x: 0, y: 900, z: 0 }, playerHull: [], perceivable: false, stealthFactor: 1 });
+          eco.step({ stage: 1, dt: DT, now: (i + 1) * DT, player: { x: 0, y: 900, z: 0 }, playerHull: [], perceivable: false, stealthFactor: 1, unlocked: [] });
           if (e.eaten) break;
           expect(q.overlapHull(speciesActor(e), { x: e.x, y: e.y, z: e.z }, { yaw: 0, pitch: 0 }, { time: (i + 1) * DT, bounds }).ok, `seed ${seed} case ${c} step ${i}`).toBe(true); steps++;
         }
