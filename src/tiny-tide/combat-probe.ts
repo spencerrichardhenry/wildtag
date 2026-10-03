@@ -449,7 +449,7 @@ export function journey(line: 'swimmer' | 'crawler', diet: JourneyReport['diet']
       const open = (e: Entity) => !((skipped.get(e) ?? -Infinity) > s.time);
       const near = (es: Entity[]) => es.filter(open).reduce<{ e: Entity | null; d: number }>((b, e) => { const c = entityCentre(e), d = Math.hypot(c.x - me.x, c.y - me.y, c.z - me.z); return d < b.d ? { e, d } : b; }, { e: null, d: Infinity });
       const hunter = near(hunters.filter(e => !e.spec.alpha));
-      let fight: Entity | null = null, flee: Entity | null = null;
+      let fight: Entity | null = null, flee: Entity | null = null, roam: Entity | null = null;
       if (diet === 'herbivore') {
         corneredFor = hunter.e && hunter.d - .35 * SIZES[hunter.e.spec.tier]! * (hunter.e.spec.bodyScale ?? 1) <= .5 * entityL(hunter.e) ? corneredFor + PROBE_DT : 0;
         if (corneredFor >= 2 && hunter.e && reachable(hunter.e)) fight = hunter.e; else if (hunter.e && hunter.d < 8 * L) flee = hunter.e;
@@ -457,13 +457,16 @@ export function journey(line: 'swimmer' | 'crawler', diet: JourneyReport['diet']
         const prey = near(live.filter(e => e.spec.behaviourId && !e.spec.alpha && reachable(e) && !dropped.has(e.spec.key) && (e.spec.tier === s.run.stage || hostileSizes(e.spec).includes(s.run.stage))));
         const h = hunter.e && hunter.d < 10 * L ? hunter.e : null;
         if (h && !reachable(h)) flee = h; else fight = h ?? (prey.e && prey.d < 14 * L ? prey.e : null);
+        // Final review item f: with nothing near, the bot travels toward the nearest open prey at any distance (it stood still for 570 s on
+        // seed 15 at size 0 once every prey within 14 L was eaten and no meat food was left).
+        if (!fight && !flee && prey.e) roam = prey.e;
       }
       const alpha = near(hunters.filter(e => !!e.spec.alpha));
       // An alpha that hunts: every diet keeps away from it while it hunts prey or food (T23 fix round 1: the bot chased sardines into the Reef
       // Tyrant); only a non-alpha hunter that the bot is fighting or fleeing comes first.
       if (alpha.e && alpha.d < 6 * entityL(alpha.e) && !flee && !(fight && fight === hunter.e)) { flee = alpha.e; fight = null; }
       const food = near(live.filter(e => !e.spec.behaviourId && e.spec.tier === s.run.stage && dietCanEat(s.run.diet, e.spec.tag) && e.spec.kind !== 'planet' && reachable(e)));   // the run's diet: the omnivore plan has a Snapper at size 0
-      const target = fight ?? (flee ? null : food.e);
+      const target = fight ?? (flee ? null : food.e ?? roam);
       if (target) {
         const tc = entityCentre(target), d = Math.hypot(tc.x - me.x, tc.y - me.y, tc.z - me.z);
         if (!chase || chase.e !== target) chase = { e: target, best: d, since: s.time, start: s.time };
@@ -473,7 +476,8 @@ export function journey(line: 'swimmer' | 'crawler', diet: JourneyReport['diet']
           if (ground && target !== hunter.e && !!target.spec.behaviourId) dropped.add(target.spec.key);
         }
       }
-      const { intent, wish } = botInput(p, bot, { reaction: .35, useMoves: true, fight, flee, goal: food.e ? entityCentre(food.e) : null });
+      const goalOf = food.e ?? roam;
+      const { intent, wish } = botInput(p, bot, { reaction: .35, useMoves: true, fight, flee, goal: goalOf ? entityCentre(goalOf) : null });
       const before = s.mode, stageDna = s.run.stageDna, events: SimEvent[] = simFrame(s, p.w, { dt: PROBE_DT, intent, wish, held: false });
       if (before === 'playing') rep.activeSeconds += PROBE_DT;
       if (s.rt.heldBy !== null) rep.heldSeconds += PROBE_DT;
