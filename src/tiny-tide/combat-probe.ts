@@ -466,6 +466,9 @@ export function journey(line: 'swimmer' | 'crawler', diet: JourneyReport['diet']
       // Tyrant); only a non-alpha hunter that the bot is fighting or fleeing comes first.
       if (alpha.e && alpha.d < 6 * entityL(alpha.e) && !flee && !(fight && fight === hunter.e)) { flee = alpha.e; fight = null; }
       const food = near(live.filter(e => !e.spec.behaviourId && e.spec.tier === s.run.stage && dietCanEat(s.run.diet, e.spec.tag) && e.spec.kind !== 'planet' && reachable(e)));   // the run's diet: the omnivore plan has a Snapper at size 0
+      // Item f (fix round 2): an omnivore eats the nearer of its food and its prey (it fought every crab in reach and ate almost no plants).
+      if (diet === 'omnivore' && fight && fight !== hunter.e && food.e) { const fc = entityCentre(fight); if (food.d < Math.hypot(fc.x - me.x, fc.y - me.y, fc.z - me.z)) { fight = null; roam = null; } }
+      if (diet === 'omnivore' && !fight && food.e) roam = null;
       const target = fight ?? (flee ? null : food.e ?? roam);
       if (target) {
         const tc = entityCentre(target), d = Math.hypot(tc.x - me.x, tc.y - me.y, tc.z - me.z);
