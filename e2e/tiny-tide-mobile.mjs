@@ -73,6 +73,13 @@ try {
  assert.match(await line.textContent(),/\bleg/i,'the problem line mentions legs');
  const lb=await line.boundingBox();assert.ok(lb&&lb.x>=0&&lb.y>=0&&lb.x+lb.width<=391&&lb.y+lb.height<=845,'the problem line fits the phone');
  await second.screenshot({path:`${out}/mobile-problem-line.png`});
+ // T21 fix round 2: at 375x667 the editor's top bar fits (no element past the right edge).
+ {const pc=await browser.newContext({viewport:{width:375,height:667},deviceScaleFactor:2,isMobile:true,hasTouch:true});const pg=await pc.newPage();
+  pg.on('pageerror',e=>errors.push(e.message));pg.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
+  const fx=await makeFixture(pg,{add:{0:[{id:'claw_pincer',t:.5}]}});await openGame(pg,{storage:{[fx.key]:fx.json}});await start(pg);
+  await pg.locator('#edit').tap();await pg.locator('#editor').waitFor();await frames(pg,30);
+  const right=await pg.evaluate(()=>Math.max(...[...document.querySelectorAll('#editor .ed-top, #editor .ed-top *')].map(e=>e.getBoundingClientRect().right)));
+  assert.ok(right<=375,`375x667: the editor top bar fits (right edge ${right})`);await pc.close();}
  // T21 fix round 1: the phone editor frames the creature in the free band between the overlays (portrait and landscape), the
  // lost-moves alert stays above the band, and the Moves sheet has slots of at least 44 px that swap by tap then tap.
  for(const [w,h] of [[320,568],[844,390]]){const pc=await browser.newContext({viewport:{width:w,height:h},deviceScaleFactor:2,isMobile:true,hasTouch:true});const pg=await pc.newPage();
@@ -88,6 +95,15 @@ try {
   for(const sel of ['.ed-regions','.ed-tabs','.ed-top']){const r=await pg.locator('#editor '+sel).boundingBox();const b=before.band;assert.ok(r.y+r.height<=b.top+1||r.y>=b.bottom-1||r.x+r.width<=b.left+1,`${w}x${h}: ${sel} does not overlap the band`);}
   // Select the Pincer: the part tool takes the band's lower edge, the creature stays framed. Remove it: the lost-moves alert sits above the band.
   const uid=fx.info.parts.find(p=>p.id==='claw_pincer').uid,pt=await pg.evaluate(u=>window.__tinyTide.editorProjection(u),uid);await pg.touchscreen.tap(pt.x,pt.y);await framed('a part selected');
+  // T21 fix round 2: the docked part tool gives each slider a full-width row with a 44 px hit area; a touch drag on Size changes the size.
+  for(const sel of ['.ed-scale','.ed-roll']){const r=await pg.locator('#editor .ed-tool '+sel).boundingBox();assert.ok(r.height>=44&&r.width>=160,`${w}x${h}: the ${sel} slider is at least 160x44 (${r.width|0}x${r.height|0})`);}
+  if(w===320){const slider=pg.locator('#editor .ed-scale'),r=await slider.boundingBox(),v0=await slider.inputValue(),c0=await pg.locator('#editor .ed-size-cost').textContent();
+   const min=+(await slider.getAttribute('min')),max=+(await slider.getAttribute('max')),x0=r.x+14+(r.width-28)*(+v0-min)/(max-min),y=r.y+r.height/2;
+   const cdp=await pc.newCDPSession(pg),t=(type,x)=>cdp.send('Input.dispatchTouchEvent',{type,touchPoints:x===null?[]:[{x,y,id:1,radiusX:4,radiusY:4,force:1}]});
+   await t('touchStart',x0);for(let i=1;i<=8;i++)await t('touchMove',x0-i*8);await t('touchEnd',null);await frames(pg,3);
+   assert.ok(+(await slider.inputValue())<+v0,`320x568: a touch drag on Size makes the part smaller (${v0} -> ${await slider.inputValue()})`);
+   assert.notEqual(await pg.locator('#editor .ed-size-cost').textContent(),c0,'320x568: the size cost follows the new size');
+   await pg.locator('#editor .ed-undo').tap();await frames(pg,3);}
   await pg.locator('#editor .ed-delete').tap();const after=await framed('lost moves');
   const lost=await pg.locator('#editor .ed-lost-moves').boundingBox();assert.ok(lost&&lost.y+lost.height<=after.band.top+1,`${w}x${h}: the lost-moves alert is above the band`);
   await pg.locator('#editor .ed-undo').tap();await frames(pg,3);
@@ -108,5 +124,5 @@ try {
   tris[stage]=most;await pc.close();}
  console.log('Phone triangles per frame (most of 20 samples):',JSON.stringify(tris));
  for(const [stage,count] of Object.entries(tris)) assert.ok(count<=PHONE_TRIANGLE_BUDGET,`stage ${stage}: ${count} triangles within the phone budget ${PHONE_TRIANGLE_BUDGET}`);
- assert.deepEqual(errors,[]);console.log('PASSED: v1 migration (-v1 unchanged), genuine multitouch move + rise, swipe camera, stable hover, Dive, touch cancellation, the basic-button drag aim and touch mode, 390/320 portrait and landscape control layout (slots visible, at least 48 px, no overlap), phone Evolve → Swimmer → Undo all problem line, the phone editor creature band at 320x568 and 844x390 (framing, alerts above it, 44 px sheet slots, tap swap), phone triangle budget at stages 0–3.');
+ assert.deepEqual(errors,[]);console.log('PASSED: v1 migration (-v1 unchanged), genuine multitouch move + rise, swipe camera, stable hover, Dive, touch cancellation, the basic-button drag aim and touch mode, 390/320 portrait and landscape control layout (slots visible, at least 48 px, no overlap), phone Evolve → Swimmer → Undo all problem line, the phone editor creature band at 320x568 and 844x390 (framing, alerts above it, 44 px sheet slots, tap swap, 44 px tool sliders and a touch size drag, the 375x667 top bar fit), phone triangle budget at stages 0–3.');
 } finally {await browser.close();}

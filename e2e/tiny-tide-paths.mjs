@@ -583,7 +583,7 @@ check('11', 'Gestures (touch, 390x844)', async () => {
   assert.doesNotMatch(await card.getAttribute('class'), /\bactive\b/, 'placement is disarmed');
   await tap(await project(page, 'p3'));
   assert.equal(await selectedUid(page), 'p3', 'a tap selects the tail');
-  // The phone editor frames the creature above the part tool (T21 fix round 1): project the tail again after the selection.
+  // The phone editor may reframe the creature when the overlays change (T21): project the tail again after the selection.
   const tail = await project(page, 'p3');
   const attached = await data(page, 'selected'), target = await rearTarget(page, tail);
   const f = { x: tail.x, y: tail.y, id: 1 };

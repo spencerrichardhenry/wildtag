@@ -131,8 +131,9 @@ class Editor {
   private sizeDiff: { uid: string; text: string } | null = null;
   /** Phone layouts: the stats box is a sheet that the Moves button opens. */
   private sheetOpen = false;
-  /** Phone layouts: the free band (px) the creature is framed in, re-measured when the overlays change. */
+  /** Phone layouts: the free band (px) the creature is framed in, re-measured when the overlays change; `framing` eases toward it. */
   private band: Box | null = null;
+  private framing: { cx: number; cy: number; w: number; h: number; target: T.Vector3; at: number } | null = null;
   private bandDirty = true;
   private fitBox = new T.Box3(); private fitAge = 0;
   /** The last HTML or text written to an element, so an unchanged render skips the DOM write. */
@@ -413,13 +414,13 @@ class Editor {
     this.sheetOpen = open; this.root.querySelector('.ed-stats')!.classList.toggle('open', open);
     this.root.querySelector('.ed-moves-open')!.setAttribute('aria-expanded', String(open)); this.bandDirty = true;
   }
-  /** The free band on a phone: below the top bar and the alerts, above the region chips, the part tool, the tabs and an open sheet,
-   *  and right of the landscape side panel. */
+  /** The free band on a phone: below the top bar and the alerts, above the region chips, the tabs and an open sheet, and right of
+   *  the landscape side panel. The part tool docks over the parts panel, so it does not change the band. */
   private measureBand(layout: Layout): Box | null {
     if (layout === 'desktop') return null;
     const box = (selector: string) => { const e = this.root.querySelector<HTMLElement>(selector); if (!e || e.hidden) return null; const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 ? r : null; };
     const top = this.root.querySelector<HTMLElement>('.ed-top')!.getBoundingClientRect(), alerts = box('.ed-alerts'), sheet = this.sheetOpen ? box('.ed-stats') : null;
-    const lows = [box('.ed-regions'), box('.ed-tool'), layout === 'portrait' ? box('.ed-tabs') : null, layout === 'portrait' ? box('.ed-panel') : null, layout === 'portrait' ? sheet : null].filter((r): r is DOMRect => !!r);
+    const lows = [box('.ed-regions'), layout === 'portrait' ? box('.ed-tabs') : null, layout === 'portrait' ? box('.ed-panel') : null, layout === 'portrait' ? sheet : null].filter((r): r is DOMRect => !!r);
     const b: Box = { left: 0, top: Math.max(top.bottom, alerts?.bottom ?? 0) + 4, right: innerWidth, bottom: Math.min(innerHeight, ...lows.map(r => r.top)) - 4 };
     if (layout === 'landscape') { const panel = box('.ed-panel'); if (panel) b.left = panel.right + 8; if (sheet) b.right = sheet.left - 8; }
     if (b.bottom - b.top < 40) b.bottom = b.top + 40;
@@ -454,7 +455,7 @@ class Editor {
     });
     const layout = layoutNow(), dir = new T.Vector3(Math.sin(this.yaw) * Math.cos(this.pitch), Math.sin(this.pitch), Math.cos(this.yaw) * Math.cos(this.pitch));
     if (layout === 'desktop') {
-      this.band = null;
+      this.band = null; this.framing = null;
       // Fit the whole creature in the narrower field of view; the panel is on the left, so nudge the creature to the free space.
       const radius = model.length / 2 + .6, vertical = T.MathUtils.degToRad(this.camera.fov), horizontal = 2 * Math.atan(Math.tan(vertical / 2) * this.camera.aspect);
       const distance = radius / Math.sin(Math.min(vertical, horizontal) / 2) * this.zoom;
@@ -465,15 +466,20 @@ class Editor {
     this.syncViewData();
   }
   /** Phone layouts: the creature is centred in the free band and fills it (the overlays cover the rest of the canvas). The band and
-   *  the creature's box are re-measured only between gestures (the box every 10 frames), so nothing moves under a finger; a change
-   *  takes effect at once, so a tap and the projection after it agree. */
+   *  the creature's box are re-measured only between gestures (the box every 10 frames). A change eases in over about 150 ms
+   *  (time constant 50 ms); during a gesture the framing holds still, so nothing moves under a finger. */
   private frameInBand(layout: Layout, dir: T.Vector3) {
     const idle = this.owner === 'none' || !this.band;
     if (idle && (this.bandDirty || !this.band)) { this.band = this.measureBand(layout); this.bandDirty = false; }
     if (idle && (this.fitAge-- <= 0 || this.fitBox.isEmpty())) { this.fitBox.setFromObject(this.model.group); this.fitAge = 10; }
     const b = this.band!, size = this.fitBox.getSize(new T.Vector3()), centre = this.fitBox.getCenter(new T.Vector3());
     const goal = { cx: (b.left + b.right) / 2, cy: (b.top + b.bottom) / 2, w: b.right - b.left, h: b.bottom - b.top, target: centre };
-    const f = goal;
+    const now = performance.now(), f = this.framing ??= { ...goal, target: centre.clone(), at: now };
+    if (idle) {
+      const k = 1 - Math.exp(-Math.min(.1, (now - f.at) / 1000) / .05);
+      f.cx += (goal.cx - f.cx) * k; f.cy += (goal.cy - f.cy) * k; f.w += (goal.w - f.w) * k; f.h += (goal.h - f.h) * k; f.target.lerp(centre, k);
+    }
+    f.at = now;
     // Turning does not change the fit: the horizontal extent is the box's diagonal in plan; the vertical one adds the pitch.
     const W = innerWidth, H = innerHeight, tan = Math.tan(T.MathUtils.degToRad(this.camera.fov) / 2), across = Math.hypot(size.x, size.z) / 2;
     const up = size.y / 2 * Math.cos(this.pitch) + across * Math.sin(Math.abs(this.pitch)), margin = 1.12;
@@ -859,8 +865,7 @@ class Editor {
   private renderTool() {
     const tool = this.root.querySelector<HTMLElement>('.ed-tool')!;
     const placed = this.placedBy(this.selected);
-    tool.hidden = !placed || this.tab !== 'parts'; this.root.classList.toggle('tool-on', !tool.hidden); this.bandDirty = true;
-    if (!placed || tool.hidden) return;
+    tool.hidden = !placed || this.tab !== 'parts'; if (!placed || tool.hidden) return;
     const spec = part(placed.id)!, uid = placed.uid;
     const refund = this.quote().net - this.quote(this.with(g => { g.parts = g.parts.filter(p => p.uid !== uid); })).net;
     tool.innerHTML = `<strong>${esc(spec.name)}</strong>
@@ -868,7 +873,9 @@ class Editor {
       <span class="ed-size-cost">${this.sizeCost(placed)}</span>
       <label>Turn<input type="range" class="ed-roll" min="${-Math.PI}" max="${Math.PI}" step=".05" value="${placed.roll}"></label>
       ${spec.mirror ? `<button class="ed-mirror ghost-button" aria-pressed="${placed.mirror}">${placed.mirror ? 'Pair ✓' : 'Pair'}</button>` : ''}
-      <button class="ed-delete ghost-button">Remove${refund > 0 ? ` (+${refund})` : ''}</button>`;
+      <button class="ed-delete ghost-button">Remove${refund > 0 ? ` (+${refund})` : ''}</button>
+      <button class="ed-tool-close ghost-button" aria-label="Done with this part">✕</button>`;
+    tool.querySelector<HTMLButtonElement>('.ed-tool-close')!.onclick = () => { this.selected = null; this.render(); };
     const scale = tool.querySelector<HTMLInputElement>('.ed-scale')!, roll = tool.querySelector<HTMLInputElement>('.ed-roll')!, cost = tool.querySelector<HTMLElement>('.ed-size-cost')!;
     for (const input of [scale, roll]) { input.addEventListener('pointerdown', () => this.beginGesture()); input.addEventListener('keydown', () => this.beginGesture()); input.addEventListener('change', () => { this.pending = null; }); }
     scale.oninput = () => {
