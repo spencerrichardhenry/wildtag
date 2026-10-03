@@ -127,9 +127,9 @@ function rawBandDistance(p: ProbeWorld, e: Entity): number {
 }
 /** Installs `e` in front of the player at band distance `d` (iterated with still frames: a ground body settles; the AI may not attack
  *  meanwhile). False when no legal pose within .04 L_e of `d` was found. */
-function placeAtBand(p: ProbeWorld, e: Entity, d: number): boolean {
+function placeAtBand(p: ProbeWorld, e: Entity, d: number, turn = 0): boolean {
   const c0 = p.s.combat.stateOf(e); if (c0) c0.tokenRetryAt = Infinity;
-  const yaw = p.s.rt.orientation.yaw, me = p.s.physical, Le = entityL(e);
+  const yaw = p.s.rt.orientation.yaw + turn, me = p.s.physical, Le = entityL(e);
   let D = d * Le + .35 * SIZES[e.spec.tier]! * (e.spec.bodyScale ?? 1) + .5 * playerActorCached(p.s).bodyLength;
   for (let k = 0; k < 8; k++) {
     if (!p.w.eco.placeAt(e, { x: me.x + Math.sin(yaw) * D, y: me.y, z: me.z + Math.cos(yaw) * D })) return false;
@@ -277,8 +277,8 @@ export function botInput(p: ProbeWorld, bot: Bot, o: BotOptions): { intent: Comb
 // ---- director invariants (P8, in game time: activeStartedAt, T11 ruling) ----
 export interface DirectorWatch { maxTokens: number; minActiveGap: number; minOffScreenWindup: number; lastActiveAt: number; world: ProbeWorld | null; seen: Map<string, { windup: number; onScreen: boolean; active: boolean }>;
   /** The two actions of the smallest gap (diagnostics). */
-  gapPair: string; windups: number }
-export const newWatch = (): DirectorWatch => ({ maxTokens: 0, minActiveGap: Infinity, minOffScreenWindup: Infinity, lastActiveAt: -Infinity, world: null, seen: new Map(), gapPair: '', windups: 0 });
+  gapPair: string; windups: number; offScreen: number }
+export const newWatch = (): DirectorWatch => ({ maxTokens: 0, minActiveGap: Infinity, minOffScreenWindup: Infinity, lastActiveAt: -Infinity, world: null, seen: new Map(), gapPair: '', windups: 0, offScreen: 0 });
 let lastActiveId = '';
 function watchDirector(p: ProbeWorld, d: DirectorWatch): void {
   // Each world has its own clock and director: spacing is measured inside one world.
@@ -292,7 +292,7 @@ function watchDirector(p: ProbeWorld, d: DirectorWatch): void {
       // The director's on-screen test is on the shape's centroid at the start (combat-world startCentroid).
       const shapes = a.lockedShapes ?? s.combat.speciesShapes(c, a, s.time), at = shapes[0] ? shapeCentroid(shapes[0]) : entityCentre(c.entity);
       w = { windup: windupLength(a), onScreen: p.w.isOnScreen(at), active: false }; d.seen.set(a.instanceId, w); d.windups++;
-      if (!w.onScreen) d.minOffScreenWindup = Math.min(d.minOffScreenWindup, w.windup);
+      if (!w.onScreen) { d.offScreen++; d.minOffScreenWindup = Math.min(d.minOffScreenWindup, w.windup); }
     }
     if (!w.active && a.phase !== 'windup') { w.active = true; const at = activeStartedAt(c.rt, a, s.time); if (at !== null) starts.push({ at, id: a.instanceId }); }
   }
@@ -360,6 +360,27 @@ export function attackTrial(seed: number, build: ProbeBuild, speciesKey: string,
   return outcome;
 }
 
+/** P8, off-screen wind-ups: the subject placed behind or beside the player (`turn` from its facing) at the far point of its longest band, and
+ *  the AI left to start its own attack (the director judges on-screen as in the game; the camera model sees close attackers even behind the
+ *  player). Runs until that attack ends or `seconds` pass. True if it attacked. */
+export function behindTrial(seed: number, build: ProbeBuild, speciesKey: string, watch: DirectorWatch, turn = Math.PI, seconds = 6): boolean {
+  const run = makeRun(seed, build), p = startWorld(seed, run), subject = p.w.eco.entities.find(e => e.spec.key === speciesKey && (!e.eaten || !!e.spec.alpha));
+  if (!subject || (subject.spec.alpha && subject.spec.alpha.size !== run.stage)) return false;
+  isolate(p, subject); stillFrame(p);
+  const b = BEHAVIOURS[subject.spec.behaviourId ?? '']!, longest = [...b.attacks, ...(b.phases?.[0]?.attacks ?? [])].sort((x, y) => y.band[1] - x.band[1])[0];
+  if (subject.eaten || !longest || !placeAtBand(p, subject, bandPoint(longest.band, 'far'), turn)) return false;
+  const c = p.s.combat.stateOf(subject); if (!c) return false;
+  c.tokenRetryAt = -Infinity;
+  let attacked = false;
+  for (const t0 = p.s.time; p.s.time - t0 < seconds;) {
+    stillFrame(p); watchDirector(p, watch);
+    const live = c.rt.actions.some(a => a.targetId === PLAYER_ID && a.phase !== 'interrupted' && a.phase !== 'recovery');
+    if (live) attacked = true; else if (attacked) break;
+    if (p.s.mode !== 'playing') break;
+  }
+  return attacked;
+}
+
 // ---- P5/P6: time to kill ----
 /** Seconds until the fight bot kills one creature of `speciesKey` placed 1 of its body lengths away, or Infinity (a faint or `cap`). */
 export function timeToKill(seed: number, build: ProbeBuild, speciesKey: string, cap: number, watch?: DirectorWatch, stats?: { faints: number; damage: number },
@@ -394,8 +415,8 @@ export interface JourneyReport { line: 'swimmer' | 'crawler'; diet: 'herbivore' 
 const DIET_MOUTHS: Record<JourneyReport['diet'], [string, string]> = { herbivore: ['mouth_nibbler', 'mouth_nibbler'], carnivore: ['mouth_snapper', 'mouth_snapper'], omnivore: ['mouth_snapper', 'mouth_beak'] };
 /** The journey bot (fight bot, 0.35 s reaction): it eats by diet; meat diets fight hunters and prey; the plant diet flees hunters and fights only
  *  when cornered (a hunter within 0.5 of its body lengths for 2 s). R12(5): no diet fights a hunter it cannot reach (a ground mover and the
- *  height difference above its Bite reach): it keeps away from it and keeps feeding. Each size ends at evolve-ready or after `limit` seconds of
- *  active time. */
+ *  height difference above its Bite reach): it keeps away from it and keeps feeding; a ground mover also skips food above that reach. Each
+ *  size ends at evolve-ready or after `limit` seconds of active time. */
 export function journey(line: 'swimmer' | 'crawler', diet: JourneyReport['diet'], seed: number, limit = 600, watch?: DirectorWatch): JourneyReport {
   const mouths = DIET_MOUTHS[diet], run = makeRun(seed, { label: 'journey', stage: 0, line, mouths, add: [] });
   let p = startWorld(seed, run, 2);
@@ -425,7 +446,7 @@ export function journey(line: 'swimmer' | 'crawler', diet: JourneyReport['diet']
       }
       const alpha = near(hunters.filter(e => !!e.spec.alpha));
       if (!fight && !flee && alpha.e && alpha.d < 6 * entityL(alpha.e)) flee = alpha.e;   // an alpha that hunts: every diet keeps away
-      const food = near(live.filter(e => !e.spec.behaviourId && e.spec.tier === s.run.stage && dietCanEat(diet, e.spec.tag) && e.spec.kind !== 'planet'));
+      const food = near(live.filter(e => !e.spec.behaviourId && e.spec.tier === s.run.stage && dietCanEat(diet, e.spec.tag) && e.spec.kind !== 'planet' && reachable(e)));
       const target = fight ?? (flee ? null : food.e);
       if (target) {
         const tc = entityCentre(target), d = Math.hypot(tc.x - me.x, tc.y - me.y, tc.z - me.z);
@@ -480,11 +501,11 @@ export interface P0Row { attackId: string; species: string; size: number; band: 
   trials: { near: number; mid: number; far: number }; pass: boolean }
 export interface TtkRow { species: string; build: 'meat' | 'plant'; median: number; bar: number | null; pass: boolean; trials: number; faints: number; times: number[] }
 export interface ProbeReport { p0: P0Row[]; p1: AttackRow[]; p2: AttackRow[]; p3: AttackRow[]; p4: AttackRow[]; p5: TtkRow[]; p6: TtkRow[]; p7: JourneyReport[];
-  p8: { maxTokens: number; minActiveGap: number; minOffScreenWindup: number; windups: number; gapPair: string; pass: boolean }; pass: boolean }
+  p8: { maxTokens: number; minActiveGap: number; minOffScreenWindup: number; windups: number; offScreen: number; gapPair: string; pass: boolean }; pass: boolean }
 export interface ProbeOptions { trials: number; p0Trials: number; ttkSeeds: readonly number[]; ttkTrials: number; journeySeeds: readonly number[]; journeyLimit: number }
 export const FULL_PROBE: ProbeOptions = { trials: 200, p0Trials: 100, ttkSeeds: [11, 12, 13], ttkTrials: 30, journeySeeds: [11, 12, 13], journeyLimit: 600 };
-export type ProbePart = 'p0' | 'p1' | 'p2' | 'p3' | 'p4' | 'p5' | 'p6' | 'p7-swimmer' | 'p7-crawler';
-export const PROBE_PARTS: readonly ProbePart[] = ['p0', 'p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7-swimmer', 'p7-crawler'];
+export type ProbePart = 'p0' | 'p1' | 'p2' | 'p3' | 'p4' | 'p5' | 'p6' | 'p7-swimmer' | 'p7-crawler' | 'p8';
+export const PROBE_PARTS: readonly ProbePart[] = ['p0', 'p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7-swimmer', 'p7-crawler', 'p8'];
 
 /** Every hostile attack at sizes 0 and 1: its species, the size it targets and its kind. */
 export function hostileAttacks(): { attackId: string; species: string; size: 0 | 1; kind: AttackRow['kind'] }[] {
@@ -558,10 +579,10 @@ function ttkRows(o: ProbeOptions, build: (size: 0 | 1) => ProbeBuild, bars: Read
   }
   return rows;
 }
-const p8Of = (watch: DirectorWatch) => ({ maxTokens: watch.maxTokens, minActiveGap: watch.minActiveGap, minOffScreenWindup: watch.minOffScreenWindup, windups: watch.windups, gapPair: watch.gapPair,
+const p8Of = (watch: DirectorWatch) => ({ maxTokens: watch.maxTokens, minActiveGap: watch.minActiveGap, minOffScreenWindup: watch.minOffScreenWindup, windups: watch.windups, offScreen: watch.offScreen, gapPair: watch.gapPair,
   pass: watch.maxTokens <= 2 && watch.minActiveGap >= .25 - 1e-6 && watch.minOffScreenWindup >= .6 - 1e-6 });
 export function emptyReport(): ProbeReport {
-  return { p0: [], p1: [], p2: [], p3: [], p4: [], p5: [], p6: [], p7: [], p8: { maxTokens: 0, minActiveGap: Infinity, minOffScreenWindup: Infinity, windups: 0, gapPair: '', pass: true }, pass: false };
+  return { p0: [], p1: [], p2: [], p3: [], p4: [], p5: [], p6: [], p7: [], p8: { maxTokens: 0, minActiveGap: Infinity, minOffScreenWindup: Infinity, windups: 0, offScreen: 0, gapPair: '', pass: true }, pass: false };
 }
 /** The pass flag of a whole report. */
 export function judge(r: ProbeReport): ProbeReport {
@@ -586,13 +607,18 @@ export function runProbe(o: ProbeOptions = FULL_PROBE, parts: readonly ProbePart
       for (const diet of ['herbivore', 'carnivore', 'omnivore'] as const) for (const seed of o.journeySeeds) { mine.push(journey(line, diet, seed, o.journeyLimit, watch)); flush({ p7: [...mine] }); }
       r.p7.push(...mine);
     }
+    // P8 is watched over every run; this part adds attackers that start behind the player (off-screen wind-ups).
+    if (part === 'p8') for (let i = 0; i < Math.max(1, Math.round(o.p0Trials / 5)); i++) {
+      for (const species of Object.keys(SPECIES_SIZE)) for (const turn of [Math.PI, Math.PI / 2, -Math.PI / 2]) behindTrial(1000 + i, dashBuild(SPECIES_SIZE[species]!), species, watch, turn);
+      flush({});
+    }
     r.p8 = mergeP8(r.p8, p8Of(watch));
   }
   return judge(r);
 }
 function mergeP8(a: ProbeReport['p8'], b: ProbeReport['p8']): ProbeReport['p8'] {
   const m = { maxTokens: Math.max(a.maxTokens, b.maxTokens), minActiveGap: Math.min(a.minActiveGap, b.minActiveGap), minOffScreenWindup: Math.min(a.minOffScreenWindup, b.minOffScreenWindup),
-    windups: a.windups + b.windups, gapPair: b.minActiveGap < a.minActiveGap ? b.gapPair : a.gapPair };
+    windups: a.windups + b.windups, offScreen: (a.offScreen ?? 0) + (b.offScreen ?? 0), gapPair: b.minActiveGap < a.minActiveGap ? b.gapPair : a.gapPair };
   return { ...m, pass: m.maxTokens <= 2 && m.minActiveGap >= .25 - 1e-6 && m.minOffScreenWindup >= .6 - 1e-6 };
 }
 /** Merges part reports (each from `runProbe` with some parts) into one report. */
@@ -630,5 +656,5 @@ export function probeMarkdown(r: ProbeReport): string {
     'Probe decisions: P0 band points are 5 % inside each edge; pattern and den attacks (no AI band) use probe bands (eel-ambush 0–.9, mother-emerge 0–.6, tyrant-charge .4–1.2); chain-only attacks (mother-pinch-2, mother-pinch-rage) start their parent and score the child (R12(2)); a move is used only when ready (R12(1)); P8 measures active starts in game time.', '',
     ...p0, ...rows('P1 Dash-only avoidance', r.p1), ...rows('P2 Brace', r.p2), ...rows('P3 Counter', r.p3), ...rows('P4 Movement only (reported)', r.p4),
     ...ttk('P5 Time to kill, meat build', r.p5), ...ttk('P6 Time to kill, plant build', r.p6), ...journeys, ...faints,
-    '## P8 Director', '', `Most tokens at once: ${r.p8.maxTokens}; smallest gap between active starts: ${Number.isFinite(r.p8.minActiveGap) ? r.p8.minActiveGap.toFixed(3) + ' s' : '∞'} (${r.p8.gapPair || '—'}); shortest off-screen wind-up: ${sec(r.p8.minOffScreenWindup)}; wind-ups watched: ${r.p8.windups}; pass: ${r.p8.pass ? 'yes' : '**no**'}`, ''].join('\n');
+    '## P8 Director', '', `Most tokens at once: ${r.p8.maxTokens}; smallest gap between active starts: ${Number.isFinite(r.p8.minActiveGap) ? r.p8.minActiveGap.toFixed(3) + ' s' : '∞'} (${r.p8.gapPair || '—'}); shortest off-screen wind-up: ${sec(r.p8.minOffScreenWindup)} (${r.p8.offScreen} off-screen); wind-ups watched: ${r.p8.windups}; pass: ${r.p8.pass ? 'yes' : '**no**'}`, ''].join('\n');
 }
