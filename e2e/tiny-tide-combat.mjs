@@ -296,26 +296,33 @@ check('telegraph-before-hit', async () => {
     assert.ok(first, 'a telegraph showed'); facts.firstTelegraphLead = +(hit.time - first.time).toFixed(3);
     assert.ok(hit.time - first.time >= .45 - 1e-6, `the telegraph showed ${(hit.time - first.time).toFixed(2)} s before the damage (≥ .45)`);
     assertLeads(telegraphLeads(xs), facts.leads);
-    // The camera turned away (spec §14.2): a portrait phone viewport and the look camera turned to the side, behind, and to the pitch limits,
-    // for 30 s of game time. Every attack must show ≥ .35 s before active; one that goes active off screen must show its edge arrow ≥ .35 s
-    // before. (T23 found no off-screen wind-up with the game's camera: an attack at the player has its centroid near the player.)
+    // The camera turned away (spec §14.2), set up so that an attack is off screen for its whole wind-up: a 320×568 portrait viewport, the camera
+    // at its low pitch limit (-.8) and turned so that the crab is 90° to the side, and the Speck kept at the crab's lunge distance (a gap of
+    // .9–1.3 crab lengths). The crab's long attacks then have their shape centroid 1.5–2 player L to the side, past the screen edge. The camera
+    // turns only between attacks (it holds still through every wind-up). At the default camera every attack is on screen (T23 found the same).
+    // Bar: at least one wind-up off screen from start to active, and its edge arrow shows ≥ .6 s before active (the director's off-screen
+    // wind-up, OFF_SCREEN_WINDUP); every attack is visible ≥ .35 s before active.
     await page.setViewportSize({ width: 320, height: 568 }); await frames(page, 3);
     await startRecorder(page, telegraphPick);
-    const poses = [[Math.PI / 2, -.8], [-Math.PI / 2, -.8], [Math.PI, -.8], [Math.PI / 2, 1.05], [Math.PI, 1.05], [-Math.PI / 2, .2], [Math.PI, .2]];
-    const t0 = (await state(page)).time, w0 = Date.now();
-    for (let k = 0; (await state(page)).time - t0 < 30 && Date.now() - w0 < 90000; k++) {
+    const t0 = (await state(page)).time, w0 = Date.now(), size = SIZES[0];
+    let rows = [];
+    while ((await state(page)).time - t0 < 90 && Date.now() - w0 < 150000) {
       const s = await state(page), e = s.combat.encounter;
-      if (s.mode === 'fainted') { await untilGameTime(page, x => x.mode === 'playing', 10, 'respawn'); continue; }
-      // The camera holds still through a wind-up (it turns only between attacks), as a camera the player turned away and left.
-      if (s.combat.telegraphs.some(t => t.targetsPlayer && t.phase === 'windup')) { await page.waitForTimeout(100); continue; }
-      const [off, pitch] = poses[k % poses.length], toCrab = Math.atan2(e.x - s.physical.x, e.z - s.physical.z);
-      await turnCamera(page, toCrab + off, pitch); await page.waitForTimeout(700);
+      if (s.mode === 'fainted') { await control(page, []); await untilGameTime(page, x => x.mode === 'playing', 10, 'respawn'); continue; }
+      rows = telegraphLeads(await page.evaluate(() => window.__rec.out.slice()));
+      if (rows.some(r => r.offAtActive && r.onScreenAt === null) && s.time - t0 > 10) break;
+      if (s.combat.telegraphs.some(t => t.targetsPlayer && t.phase === 'windup')) { await control(page, []); await page.waitForTimeout(100); continue; }
+      const gap = (Math.hypot(s.physical.x - e.x, s.physical.z - e.z) - .35 * e.bodyLength) / e.bodyLength;
+      await control(page, gap < .9 ? steer(s, { x: 2 * s.player.x - e.x / size, z: 2 * s.player.z - e.z / size }, .2) : gap > 1.3 ? steer(s, { x: e.x / size, z: e.z / size }, .2) : []);
+      await turnCamera(page, Math.atan2(e.x - s.physical.x, e.z - s.physical.z) + Math.PI / 2, -.8); await page.waitForTimeout(100);
     }
-    const ys = await stopRecorder(page), rows = telegraphLeads(ys);
+    await control(page, []);
+    rows = telegraphLeads(await stopRecorder(page));
     assertLeads(rows, facts.leads);
-    facts.cameraAway = { attacks: rows.length, offScreenAtActive: rows.filter(r => r.offAtActive).length, offWholeWindup: rows.filter(r => r.offAtActive && r.onScreenAt === null).length,
-      withArrow: rows.filter(r => r.arrowAt !== null).length, edgeArrowLead: rows.filter(r => r.offAtActive).map(r => +(r.activeAt - r.arrowAt).toFixed(3)) };
-    assert.ok(rows.length >= 3, `the crab attacked while the camera was turned away (${rows.length} attacks)`);
+    const offWhole = rows.filter(r => r.offAtActive && r.onScreenAt === null);
+    facts.cameraAway = { attacks: rows.length, offWholeWindup: offWhole.length, edgeArrowLead: offWhole.map(r => `${r.attack} ${r.arrowAt === null ? 'none' : (r.activeAt - r.arrowAt).toFixed(3)}`) };
+    assert.ok(offWhole.length >= 1, `an attack was off screen for its whole wind-up (${rows.length} attacks, none off screen)`);
+    for (const r of offWhole) assert.ok(r.arrowAt !== null && r.activeAt - r.arrowAt >= .6 - 1e-6, `${r.attack}: off screen in its wind-up, the edge arrow showed ${r.arrowAt === null ? 'never' : (r.activeAt - r.arrowAt).toFixed(3)} s before active (≥ .6)`);
     assert.deepEqual(errors, []);
   }
   // Part 2 (controller addition): every hunter attack at least once; each is visible (on screen or as an edge arrow) ≥ .35 s before its active
@@ -323,7 +330,10 @@ check('telegraph-before-hit', async () => {
   for (const [key, ids] of Object.entries(HUNTER_ATTACKS)) {
     const { page, errors } = await newPage();
     // The recorder starts before the start: the eel's den ambush can begin on the first played frame.
-    await play(page, key === '1:crab' ? {} : { stage: 1, line: 'swimmer' }, `qaEncounter=${key}&qaStartGrace=0`, () => startRecorder(page, telegraphPick));
+    // The eel: a Swimmer with Brace (FOUR) that braces through each wind-up. An unbraced ambush hit knocks the player past the eel's leash, so
+    // the eel goes home at once and its out-of-den attacks (eel-bite, eel-wrap) almost never start (fix round 1: eel-wrap was missed in 240 s).
+    const eel = key === '2:eel';
+    await play(page, key === '1:crab' ? {} : eel ? FOUR : { stage: 1, line: 'swimmer' }, `qaEncounter=${key}&qaStartGrace=0`, () => startRecorder(page, telegraphPick));
     const w0 = Date.now(), seen = new Set(); let den = null, rows = [];
     while (ids.some(id => !seen.has(id)) && Date.now() - w0 < 240000) {
       const s = await state(page);
@@ -335,7 +345,8 @@ check('telegraph-before-hit', async () => {
       const busy = s.combat.actions.some(a => a.target === 'player' && a.phase !== 'recovery');
       const goal = missing[0] === 'eel-ambush' && den && e.mode !== 'hunt' && e.mode !== 'angry' ? den : e, [lo, hi] = BANDS[missing[0]];
       let keys = [];
-      if (!busy) {
+      if (eel && s.combat.actions.some(a => a.target === 'player' && a.phase === 'windup')) keys = ['Digit1'];   // hold Brace (slot 1)
+      else if (!busy) {
         if (goal === den || gap > hi - .05) keys = [...steer(s, { x: goal.x / size, z: goal.z / size }, .2), ...verticalKeys(page, s, goal)];
         else if (gap < lo + .05) keys = steer(s, { x: 2 * s.player.x - e.x / size, z: 2 * s.player.z - e.z / size }, .2);
       }
@@ -381,7 +392,7 @@ check('hit-stop', async () => {
   const lo = .06 - frameDt - 1e-6, hi = .09 + frameDt + 1e-6;
   assert.ok(stopped >= lo && stopped <= hi, `both clocks stopped about ${(stopped * 1000).toFixed(0)} ms (60–90 ms ± one ${(frameDt * 1000).toFixed(0)} ms frame)`);
   assert.ok(end > at || stopped >= .06 - 1e-6, 'the clocks stay still for more than one frame');
-  assert.ok(xs.slice(at, end + 1).some((x, i, a) => i > 0 && x.others !== a[i - 1].others) || xs[at].others !== xs[at - 1].others, 'a third entity moves during the hit-stop');
+  assert.ok(xs.slice(at, end + 1).some((x, i, a) => i > 0 && x.others !== a[i - 1].others), 'a third entity moves during the hit-stop');
   assert.ok(xs[end].time > xs[at].time, 'world time advances during the hit-stop');
   assert.deepEqual(errors, []);
 });
@@ -391,7 +402,7 @@ check('faint-rule', async () => {
   const fx = await play(page, { health: .5, atRisk: 37, stageDna: 37 }, 'qaEncounter=1:crab&qaStartGrace=0');
   const before = JSON.parse(await storageOf(page, KEYS.v4) ?? fx.json);
   await untilGameTime(page, s => s.mode === 'fainted', 40, 'a crab hit faints the player');
-  assert.match(await page.locator('#faint').textContent(), /37 DNA/);
+  assert.match(await page.locator('#faint').textContent(), /\b37 DNA/);
   await untilGameTime(page, s => s.mode === 'playing', 10, 'the respawn');
   await page.waitForTimeout(300);
   const after = JSON.parse(await storageOf(page, KEYS.v4)), s = await state(page);
@@ -406,12 +417,12 @@ check('faint-rule', async () => {
 check('alpha', async () => {
   const { page, errors } = await newPage();
   await play(page, { mouth: { 0: 'mouth_snapper' } }, 'qaEncounter=1:clawmother&qaAlphaHealth=0.62&qaStartGrace=0');
-  const seen = { phases: new Set(), burrow: false, rage: false, faints: 0 }, t0 = (await state(page)).time, w0 = Date.now();
+  const seen = { phases: new Set(), phase0Attack: false, burrow: false, rage: false, faints: 0 }, t0 = (await state(page)).time, w0 = Date.now();
   let s = await state(page); const dna0 = s.totalDna;
   while (!s.unlocked.includes('claw_mother')) {
     assert.ok(s.time - t0 < 300 && Date.now() - w0 < 420000, `the Clawmother is defeated within 300 s of game time (hp ${s.combat.alphas.find(x => x.key === '1:clawmother')?.hp})`);
     const a = s.combat.alphas.find(x => x.key === '1:clawmother');
-    if (a) { seen.phases.add(a.phase); if (a.state === 'sink' || a.state === 'burrowed') seen.burrow = true; }
+    if (a) { seen.phases.add(a.phase); if (a.state === 'sink' || a.state === 'burrowed') seen.burrow = true; if (a.phase === 0 && s.combat.actions.some(x => x.actor === a.id && x.target === 'player')) seen.phase0Attack = true; }
     if (s.combat.actions.some(x => x.id === 'mother-pinch-rage' || x.id === 'mother-sweep')) seen.rage = true;
     if (s.mode === 'fainted') { seen.faints++; await control(page, []); await untilGameTime(page, x => x.mode === 'playing', 10, 'respawn'); s = await state(page); continue; }
     const e = s.combat.encounter, size = SIZES[s.stage];
@@ -431,14 +442,17 @@ check('alpha', async () => {
     await page.waitForTimeout(60); s = await state(page);
   }
   await control(page, []);
-  facts.alpha = { phases: [...seen.phases], burrow: seen.burrow, rage: seen.rage, faints: seen.faints, gameSeconds: +(s.time - t0).toFixed(1) };
-  assert.ok(seen.phases.has(1), 'below 60 %: phase 2'); assert.ok(seen.burrow, 'phase 2 burrows'); assert.ok(seen.phases.has(2) && seen.rage, 'below 30 %: the enraged attacks');
+  facts.alpha = { phases: [...seen.phases], phase0Attack: seen.phase0Attack, burrow: seen.burrow, rage: seen.rage, faints: seen.faints, gameSeconds: +(s.time - t0).toFixed(1) };
+  assert.ok(seen.phases.has(0) && seen.phase0Attack, 'phase 1 attacks'); assert.ok(seen.phases.has(1), 'below 60 %: phase 2'); assert.ok(seen.burrow, 'phase 2 burrows'); assert.ok(seen.phases.has(2) && seen.rage, 'below 30 %: the enraged attacks');
   assert.ok(s.totalDna - dna0 >= 40, `the defeat pays 40 DNA (${s.totalDna - dna0})`);
   await page.locator('#edit').click(); await page.locator('#editor').waitFor(); await page.locator('#editor [data-tab=parts]').click(); await page.locator('#editor [data-kind=arm]').click();
   assert.equal(await page.locator('#editor .ed-card[data-part=claw_mother]').count(), 1, 'the rare part is in the editor');
   await page.locator('#editor .ed-cancel').click(); await page.locator('#editor').waitFor({ state: 'detached' });
   await page.reload(); await page.waitForFunction(() => window.__tinyTide?.time > .3); await start(page); await page.waitForTimeout(500);
-  assert.ok((await state(page)).combat.alphas.every(a => a.eaten || a.key !== '1:clawmother'), 'after a reload the Clawmother is absent');
+  const reloaded = await state(page);
+  assert.ok(Object.keys(reloaded.combat.hp).length > 0, 'after a reload the combat world is live (its diagnostics are not empty)');
+  assert.ok(reloaded.unlocked.includes('claw_mother'), 'after a reload the reward stays unlocked');
+  assert.ok(!reloaded.combat.alphas.some(a => a.key === '1:clawmother' && !a.eaten), 'after a reload the Clawmother is absent');
   assert.deepEqual(errors, []);
 }, 480);
 
@@ -480,15 +494,15 @@ check('hints', async () => {
 /** Frame time (plan review R18): the game's work per frame (the requestAnimationFrame callback, timed in the page) and the frame interval,
  *  with 13 or more live combat bodies within 6 L of the player (`qaCrowd`: every sardine and puffer, or every drifter and spiny snail at size 0,
  *  on a ring of 3 L). Budgets: desktop median callback ≤ 16.7 ms (controller ruling); a phone with 4× CPU throttle ≤ 33.3 ms (set here: two
- *  60 Hz frames; the owner may change it). The heap growth per frame (positive JS heap deltas across the callback) estimates allocations. */
-const BUDGET = { desktop: 16.7, phone: 33.3 };
+ *  60 Hz frames; the owner may change it). p95 budgets (fix round 1): desktop ≤ 33 ms, phone ≤ 50 ms. The heap growth per frame (positive JS heap deltas across the callback) estimates allocations. */
+const BUDGET = { desktop: 16.7, phone: 33.3 }, P95_BUDGET = { desktop: 33, phone: 50 };
 check('frame-time', async () => {
   facts.frames = {};
   const phone = viewport => ({ viewport, deviceScaleFactor: 2, isMobile: true, hasTouch: true }), STAGE1 = [{ stage: 1, line: 'swimmer' }, '1:sardine,1:puffer'], STAGE0 = [{}, '0:drifter,0:spiny_snail'];
   // Desktop and a 320×568 phone (controller ruling); 844×390 at stage 0 and stage 1 with 4× CPU throttle (plan review R18).
-  for (const [label, options, throttle, [spec, crowd], budget] of [['desktop stage 1', { viewport: { width: 1440, height: 900 } }, 1, STAGE1, BUDGET.desktop],
-    ['phone 320x568 stage 1 (4x CPU)', phone({ width: 320, height: 568 }), 4, STAGE1, BUDGET.phone], ['phone 844x390 stage 0 (4x CPU)', phone({ width: 844, height: 390 }), 4, STAGE0, BUDGET.phone],
-    ['phone 844x390 stage 1 (4x CPU)', phone({ width: 844, height: 390 }), 4, STAGE1, BUDGET.phone]]) {
+  for (const [label, options, throttle, [spec, crowd], budget, p95Budget] of [['desktop stage 1', { viewport: { width: 1440, height: 900 } }, 1, STAGE1, BUDGET.desktop, P95_BUDGET.desktop],
+    ['phone 320x568 stage 1 (4x CPU)', phone({ width: 320, height: 568 }), 4, STAGE1, BUDGET.phone, P95_BUDGET.phone], ['phone 844x390 stage 0 (4x CPU)', phone({ width: 844, height: 390 }), 4, STAGE0, BUDGET.phone, P95_BUDGET.phone],
+    ['phone 844x390 stage 1 (4x CPU)', phone({ width: 844, height: 390 }), 4, STAGE1, BUDGET.phone, P95_BUDGET.phone]]) {
     const { context, page, errors } = await newPage(options);
     // Time every requestAnimationFrame callback (the game's frame and nothing else in this page asks for frames during the sample).
     await page.addInitScript(() => {
@@ -516,6 +530,7 @@ check('frame-time', async () => {
     assert.ok(Math.min(before, afterNear) >= 13, `${label}: 13 or more combat bodies within 6 L of the player (${before} at the start, ${afterNear} at the end)`);
     assert.equal(after.mode, 'playing', `${label}: the sample is play`);
     assert.ok(q(.5) <= budget, `${label}: median frame work ${q(.5).toFixed(2)} ms ≤ ${budget} ms`);
+    assert.ok(q(.95) <= p95Budget, `${label}: p95 frame work ${q(.95).toFixed(2)} ms ≤ ${p95Budget} ms`);
     assert.deepEqual(errors, []);
     await context.close();
   }
