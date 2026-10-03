@@ -16,7 +16,7 @@ import { renderPreview } from './preview';
 import { cardSummary, COAST_READY, eligibleChildren, leadsTo, type BodyPlan } from './plans';
 import { quoteDesign } from './economy';
 import { newRuntime, type Actor, type CombatInput, type Constraint, type MoveKind, type Tuple4, type Vec3, type WorldQueries } from './combat-types';
-import { aimChevron, aimPitch, autoAim, BRACE_AUTO_AIM_HALF_ANGLE, dragAim, mouseButtons, NO_MOUSE, pitched, pointerAim, POINTER_FRESH_SECONDS, readIntent, RELEASED, type AimCandidate, type AimSource, type MouseState } from './input';
+import { aimChevron, aimPitch, autoAim, BRACE_AUTO_AIM_HALF_ANGLE, dragAim, aimToward, mouseButtons, NO_MOUSE, pickAimTarget, pitched, pointerAim, POINTER_FRESH_SECONDS, type PickCandidate, readIntent, RELEASED, type AimCandidate, type AimSource, type MouseState } from './input';
 import { BURROW } from './bestiary';
 import { AlphaBar, alphaView, CombatHud, CombatOverlay, EdgeArrowMemory, edgeArrowAt, faintMessage, FLOATER_COLOURS, floaterClass, floaterText, HP_BAR_SECONDS, MOVE_ICONS, slotViews, type AlphaView, type EdgeArrow, type HpBar } from './combat-hud';
 import { forwardOf } from './orientation';
@@ -955,15 +955,38 @@ function phoneAutoAim(p: Vec3, facing: Vec3): Vec3 | null {
   });
   return autoAim(p, facing, candidates, reach, bracing ? BRACE_AUTO_AIM_HALF_ANGLE : undefined);
 }
-/** The aim (spec §8.4): a phone drag on the basic button; else the desktop pointer while it is over the canvas and moved in the last 4 s;
- *  else on a phone auto-aim (or the facing, source none); else the camera forward. Free movers pitch toward a soft-lock target (D9); ground
- *  movers aim level. Render units: only directions leave this function. */
+/** The combat species under the desktop pointer (spec §8.4, final review C1): the nearest hurtbox the pointer ray meets, else the nearest
+ *  hull centre within 48 CSS px of the pointer. Its hull centre (physical units), or null. */
+let lastAimPick: Vec3 | null = null;
+function pointerPick(): Vec3 | null {
+  const ray = world.pointerRay(pointerX, pointerY), k = world.scale, origin = { x: ray.origin.x * k, y: ray.origin.y * k, z: ray.origin.z * k };
+  const candidates: PickCandidate[] = combatFoods().flatMap(f => {
+    if (sim.combat.stateOf(f.entity)?.rt.targetable === false) return [];
+    const e = f.entity, h = speciesActor(e).hull[0]!, centre = { x: e.x + h.start.x, y: e.y + h.start.y, z: e.z + h.start.z };
+    const sp = world.screenPoint(new T.Vector3(centre.x / k, centre.y / k, centre.z / k));
+    return [{ centre, spheres: [{ ...centre, r: h.radius }], screen: sp.visible ? { x: sp.x, y: sp.y } : null }];
+  });
+  return pickAimTarget(origin, ray.dir, candidates, { x: pointerX, y: pointerY });
+}
+/** The aim (spec §8.4): a phone drag on the basic button; else the desktop pointer: the combat species under it (while the pointer is over
+ *  the canvas, also when it is still: review M1), else, while it moved in the last 4 s, where its ray meets the seabed, a solid or the
+ *  player's height plane beyond the player (never a point behind the player: review C1); else on a phone auto-aim (or the facing, source
+ *  none); else the camera forward. Free movers pitch toward a pick or a soft-lock target (D9); ground movers aim level. Render units:
+ *  only directions leave this function. */
 function currentAim(caps: { pitch: boolean }): { aim: Vec3; source: AimSource } {
   const p = world.player.position, fresh = pointerOver && performance.now() - pointerAt < POINTER_FRESH_SECONDS * 1000;
-  let flat: Vec3 | null = null, source: AimSource = 'camera';
+  let flat: Vec3 | null = null, source: AimSource = 'camera'; lastAimPick = null;
   if (chompDrag?.aim) { flat = chompDrag.aim; source = 'drag'; }
-  else if (fresh) { const ray = world.pointerRay(pointerX, pointerY); flat = pointerAim(p, ray.origin, ray.dir); if (flat) source = 'pointer'; }
-  else if (touchMode) {
+  else if (pointerOver && !touchMode) {
+    const pick = lastAimPick = pointerPick(), toward = pick && aimToward(physical, pick, caps.pitch, PITCH_LIMIT);
+    if (toward) return { aim: toward, source: 'pointer' };
+  }
+  if (!flat && fresh) {
+    const ray = world.pointerRay(pointerX, pointerY), k = world.scale, q = legality(run.stage).queries, at = { x: 0, y: 0, z: 0 };
+    const blocked = (r: Vec3) => { at.x = r.x * k; at.y = r.y * k; at.z = r.z * k; return q.segmentClear?.(at, at, 1) === false; };
+    flat = pointerAim(p, ray.origin, ray.dir, blocked, 16 * playerActorCached().bodyLength / k); if (flat) source = 'pointer';
+  }
+  else if (!flat && touchMode) {
     const facing = forwardOf({ yaw: rt.orientation.yaw, pitch: 0 }), auto = phoneAutoAim(p, facing);
     if (!auto) return { aim: facing, source: 'none' };   // review R16: a bracing player then turns toward the move stick
     const h = Math.hypot(auto.x, auto.z); if (h < 1e-9) return { aim: facing, source: 'none' };
@@ -1134,7 +1157,7 @@ function combatDiagnostics() {
 // Read-only diagnostics allow browser verification to steer with real controls.
 if (QA) {
   const copy = (v: Vec3) => ({ x: v.x, y: v.y, z: v.z });
-  Object.defineProperty(window, '__tinyTide', { get: () => ({ mode, input: { basicHeld: lastIntent.basicHeld, activeHeld: [...lastIntent.activeHeld], aim: lastIntent.aim && copy(lastIntent.aim), aimSource: lastIntent.aimSource, touchMode },
+  Object.defineProperty(window, '__tinyTide', { get: () => ({ mode, input: { basicHeld: lastIntent.basicHeld, activeHeld: [...lastIntent.activeHeld], aim: lastIntent.aim && copy(lastIntent.aim), aimSource: lastIntent.aimSource, aimPick: lastAimPick && copy(lastAimPick), touchMode },
     plan: currentPlan(run).id, plans: [...run.plans], zone: zoneNow(), velocity: copy(rt.controlledVelocity), externalVelocity: copy(rt.externalVelocity),
     orientation: { ...rt.orientation }, permit: rt.permit ? { ...rt.permit } : null, arc: rt.arc ? { ...rt.arc } : null, breachReadyAt: rt.breachReadyAt, invulnerableUntil: rt.invulnerableUntil,
     pendingRespawn: run.pendingRespawn, caps: capsOf(), physical: copy(physical), legal: mode === 'menu' ? null : admittedNow(playerActor(currentPlan(run), run.genome, run.stage, growthOf(run))), contactNow, lastContact: lastContact === null ? null : `${lastContact}`, lastContactSolid, trapRescues: sim.trapRescues, rescueLog: JSON.parse(JSON.stringify(sim.rescueLog)), contactSolids: [...sim.lastSolids], groundOffset: rt.groundOffset, solidOverlap: mode === 'menu' ? null : solidOverlap(), solidsNear: mode === 'menu' ? [] : solidsNear(32), edge: { inZone: edgeNow, hinted: edgeHinted, half: PLAYER_HALF, softStart: EDGE_SOFT_START * PLAYER_HALF }, hazardSources: hazardSources(), growth: growthOf(run), acceptedHits, rejectedHits,

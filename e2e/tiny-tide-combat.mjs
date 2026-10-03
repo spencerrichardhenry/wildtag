@@ -67,9 +67,9 @@ async function startRecorder(page, pick) {
 const stopRecorder = page => page.evaluate(() => { const r = window.__rec; if (!r) return []; r.on = false; return r.out; });
 /** The screen point (CSS pixels) of a physical point. */
 const screenOf = (page, p) => page.evaluate(p => window.__tinyTide.screenOf(p), p);
-/** The screen point that aims at a creature: the pointer ray meets the horizontal plane through the player (spec §8.4), so the bot points at
- *  the creature's place at the player's height (a free mover's pitch then follows the soft lock, D9). */
-const aimPoint = (s, e) => ({ x: e.x, y: s.physical.y, z: e.z });
+/** The screen point that aims at a creature: its hull centre, where a person puts the pointer (final review C1: the pointer picks the
+ *  combat creature under it, spec §8.4). */
+const aimPoint = (s, e) => ({ x: e.x, y: e.y + .25 * e.bodyLength, z: e.z });
 /** Moves the pointer so that the aim points at creature `e` (pointer aim); false when that point is off screen. */
 async function aimAt(page, s, e) {
   const v = await screenOf(page, aimPoint(s, e)); if (!v.visible) return false;
@@ -121,14 +121,15 @@ check('desktop-controls', async () => {
   await play(page, FOUR, 'qaEncounter=1:crab');
   let s = await state(page);
   assert.deepEqual(s.combat.slots, ['brace', 'counter', 'dash', 'grab'], 'four slots in priority order');
-  // The aim follows the pointer: a point 40° right of the facing, at the creature's height.
-  const yaw = s.orientation.yaw + 40 * DEG, P = { x: s.physical.x + 3 * SIZES[s.stage] * Math.sin(yaw), y: s.physical.y, z: s.physical.z + 3 * SIZES[s.stage] * Math.cos(yaw) };
+  // The aim follows the pointer: a point in open water 40° right of the camera forward and beyond the creature, at its height (spec §8.4:
+  // the no-pick pointer meets the plane through the creature beyond it; a point between the camera and the creature is never used, C1).
+  const yaw = s.world.yaw + Math.PI + 40 * DEG, P = { x: s.physical.x + 3 * SIZES[s.stage] * Math.sin(yaw), y: s.physical.y, z: s.physical.z + 3 * SIZES[s.stage] * Math.cos(yaw) };
   const screen = await screenOf(page, P); assert.ok(screen.visible, 'the aim point is on screen');
   await page.mouse.move(screen.x - 20, screen.y); await page.mouse.move(screen.x, screen.y, { steps: 4 }); await frames(page, 3);
   s = await state(page);
   assert.equal(s.combat.aimSource, 'pointer');
   const aimYaw = Math.atan2(s.combat.aim.x, s.combat.aim.z), want = Math.atan2(P.x - s.physical.x, P.z - s.physical.z), off = Math.abs(Math.atan2(Math.sin(aimYaw - want), Math.cos(aimYaw - want)));
-  facts.pointerAimErrorDeg = +(off / DEG).toFixed(2);
+  facts.pointerAimErrorDeg = +(off / DEG).toFixed(2); 
   assert.ok(off <= 5 * DEG, `the aim yaw is within 5° of the pointer direction (${(off / DEG).toFixed(1)}°)`);
   // No pointer movement for 4 s: the camera forward.
   await page.waitForTimeout(4300); s = await state(page);
@@ -171,6 +172,50 @@ check('desktop-controls', async () => {
   assert.deepEqual(errors, []);
 });
 
+// Final review C1: the pointer on the crab's real screen position aims at it from 0, 1.5 and 3 L above (the old plane rule aimed up to 165°
+// backward), and a Bite with that aim lands.
+check('pointer-pick', async () => {
+  const { page, errors } = await newPage();
+  await play(page, FOUR, 'qaEncounter=1:crab&qaStartGrace=0');
+  const L = page.bodyLength, settle = () => page.waitForTimeout(700);
+  await settle();
+  // Turn the camera (middle drag) until the crab is near the screen centre.
+  for (let i = 0; i < 40; i++) {
+    const s = await state(page), e = s.combat.encounter, v = await screenOf(page, aimPoint(s, e));
+    if (v.visible && Math.abs(v.x - 720) < 120 && v.y > 200 && v.y < 760) break;
+    await page.mouse.move(720, 450); await page.mouse.down({ button: 'middle' }); await page.mouse.move(820, 450, { steps: 5 }); await page.mouse.up({ button: 'middle' }); await settle();
+  }
+  facts.yawErrorDeg = {}; facts.pitchErrorDeg = {};
+  for (const h of [0, 1.5, 3]) {
+    // Rise (E) until the swimmer's centre is about h L above the crab's hull centre (h 0: as it starts, about level).
+    for (let i = 0; i < 60; i++) {
+      const s = await state(page), e = s.combat.encounter, above = (s.physical.y - aimPoint(s, e).y) / L;
+      if (above >= h - .25) break;
+      await control(page, ['KeyE']); await page.waitForTimeout(80); await control(page, []);
+    }
+    await settle();
+    let s = await state(page); const e = s.combat.encounter;
+    const v = await screenOf(page, aimPoint(s, e)); assert.ok(v.visible && v.y > 2 && v.y < 898, `the crab is on screen at ${h} L above (${JSON.stringify(v)})`);
+    await page.mouse.move(v.x - 3, v.y); await page.mouse.move(v.x, v.y, { steps: 2 }); await frames(page, 3);
+    s = await state(page); const c = aimPoint(s, s.combat.encounter), a = s.combat.aim;
+    const above = (s.physical.y - c.y) / L, want = Math.atan2(c.x - s.physical.x, c.z - s.physical.z), got = Math.atan2(a.x, a.z), d = Math.abs(Math.atan2(Math.sin(want - got), Math.cos(want - got)));
+    const pitchWant = Math.atan2(c.y - s.physical.y, Math.hypot(c.x - s.physical.x, c.z - s.physical.z)), pitchGot = Math.atan2(a.y, Math.hypot(a.x, a.z));
+    facts.yawErrorDeg[above.toFixed(1)] = +(d / DEG).toFixed(1); facts.pitchErrorDeg[above.toFixed(1)] = +(Math.abs(pitchWant - pitchGot) / DEG).toFixed(1);
+    assert.equal(s.combat.aimSource, 'pointer', `pointer aim at ${above.toFixed(1)} L above`);
+    assert.ok(above >= h - .3, `the swimmer is ${above.toFixed(2)} L above the crab (want about ${h})`);
+    assert.ok(d <= 10 * DEG, `${above.toFixed(1)} L above the crab: the aim yaw is within 10° of the crab (${(d / DEG).toFixed(1)}°)`);
+  }
+  // The Bite lands: approach with the pointer on the crab and click on its real screen position.
+  const w0 = Date.now(); let hit = false;
+  while (Date.now() - w0 < 60000 && !hit) {
+    const s = await state(page);
+    if (s.combat.hits.some(x => x.attacker === 'player' && x.outcome === 'hit')) { hit = true; break; }
+    if (!inReach(page, s)) await approach(page, s => inReach(page, s), 'walk to the crab');
+    const s1 = await state(page); await clickAt(page, s1, s1.combat.encounter); await page.waitForTimeout(150);
+  }
+  assert.ok(hit, 'a Bite aimed by the pointer on the crab lands');
+  assert.deepEqual(errors, []);
+});
 check('desktop-chomp', async () => {
   // Space with only a plant in reach eats it (the basic dispatch falls back to the chomp).
   const { page, errors } = await newPage();

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { aimChevron, aimPitch, AUTO_AIM_HALF_ANGLE, autoAim, basicRequested, BRACE_AUTO_AIM_HALF_ANGLE, DRAG_DEAD_ZONE, dragAim, mouseButtons, NO_MOUSE, pitched, pointerAim, readIntent, RELEASED, type InputSources } from '../../src/tiny-tide/input';
+import { aimChevron, aimPitch, AUTO_AIM_HALF_ANGLE, autoAim, basicRequested, BRACE_AUTO_AIM_HALF_ANGLE, DRAG_DEAD_ZONE, dragAim, mouseButtons, NO_MOUSE, pitched, pickAimTarget, aimToward, pointerAim, PICK_TOLERANCE_PX, readIntent, RELEASED, type InputSources } from '../../src/tiny-tide/input';
 
 const src = (over: Partial<InputSources> = {}): InputSources => ({ stickX: 0, stickZ: 0, keys: new Set(), chompHeld: false, chompTapped: false, riseHeld: false, riseTapped: false, diveHeld: false, ...over });
 const read = (s: InputSources, prev = RELEASED, breach = false) => readIntent(s, prev, { breachOnRiseTap: breach });
@@ -52,8 +52,48 @@ describe('aim', () => {
     const o = { x: 0, y: 5, z: 0 };
     const a = pointerAim(o, { x: 0, y: 10, z: -10 }, { x: 3 / Math.hypot(3, 5, 10), y: -5 / Math.hypot(3, 5, 10), z: 10 / Math.hypot(3, 5, 10) });   // hits (3, 5, 0)
     expect(a!.x).toBeCloseTo(1); expect(a!.z).toBeCloseTo(0);
-    expect(pointerAim(o, { x: 0, y: 10, z: -10 }, { x: 0, y: 1, z: 0 })).toBeNull();   // up: no meet in front
-    expect(pointerAim(o, { x: 0, y: 10, z: -10 }, { x: 1, y: 0, z: 0 })).toBeNull();   // parallel
+    expect(pointerAim(o, { x: 0, y: 10, z: -10 }, { x: 0, y: 1, z: 0 })).toBeNull();   // straight up: no horizontal direction
+    const par = pointerAim(o, { x: 0, y: 10, z: -10 }, { x: 1, y: 0, z: 0 });   // parallel, meets nothing: the ray's own horizontal direction
+    expect(par!.x).toBeCloseTo(1); expect(par!.z).toBeCloseTo(0);
+  });
+  // Final review C1: camera behind and about level, swimmer 3 units over a crab on the seabed (y 0) 4 units ahead. The pointer ray to the crab
+  // crosses the swimmer's height plane between the camera and the swimmer; the old rule aimed back toward the camera (141–165°).
+  const ground = (p: { y: number }) => p.y < 0;
+  it('never aims at a plane point behind the player (C1): the ray meets the seabed beyond the player instead', () => {
+    const o = { x: 0, y: 3, z: 0 }, cam = { x: 0, y: 3.4, z: -6 }, crab = { x: 0, y: .25, z: 4 };
+    const d = { x: crab.x - cam.x, y: crab.y - cam.y, z: crab.z - cam.z }, l = Math.hypot(d.x, d.y, d.z), dir = { x: d.x / l, y: d.y / l, z: d.z / l };
+    const a = pointerAim(o, cam, dir, ground, 20)!;
+    expect(a.z).toBeGreaterThan(.99);   // forward (+z), not back toward the camera
+    // With no terrain test (old callers) the plane point behind the player is still refused: the ray direction instead.
+    expect(pointerAim(o, cam, dir)!.z).toBeGreaterThan(.99);
+    // A level pointer still meets the plane in front of the player (unchanged).
+    const side = pointerAim(o, { x: 0, y: 3, z: -6 }, { x: .6, y: 0, z: .8 }, ground, 20)!;
+    expect(side.x).toBeCloseTo(.6); expect(side.z).toBeCloseTo(.8);
+  });
+  it('prefers the plane point beyond the player to a seabed hit next to it (a creature just over the seabed, camera above)', () => {
+    const o = { x: 0, y: 3, z: 0 }, cam = { x: 0, y: 7, z: -9 }, P = { x: 7.7, y: 3, z: 9.2 }, floor = (p: { y: number }) => p.y < 2.9;
+    const d = { x: P.x - cam.x, y: P.y - cam.y, z: P.z - cam.z }, l = Math.hypot(d.x, d.y, d.z), a = pointerAim(o, cam, { x: d.x / l, y: d.y / l, z: d.z / l }, floor, 20)!;
+    expect(Math.atan2(a.x, a.z)).toBeCloseTo(Math.atan2(P.x, P.z), 5);
+  });
+  it('picks the combat creature under the pointer: nearest hurtbox hit, else the nearest centre within 48 px', () => {
+    const cam = { x: 0, y: 3.4, z: -6 }, at = (p: { x: number; y: number; z: number }) => { const d = { x: p.x - cam.x, y: p.y - cam.y, z: p.z - cam.z }, l = Math.hypot(d.x, d.y, d.z); return { x: d.x / l, y: d.y / l, z: d.z / l }; };
+    const crab = { centre: { x: 0, y: .25, z: 4 }, spheres: [{ x: 0, y: .25, z: 4, r: .3 }], screen: { x: 500, y: 600 } };
+    const far = { centre: { x: 0, y: .25, z: 12 }, spheres: [{ x: 0, y: .25, z: 12, r: .3 }], screen: { x: 500, y: 560 } };
+    expect(pickAimTarget(cam, at(crab.centre), [far, crab], { x: 500, y: 600 })).toEqual(crab.centre);   // a direct hit
+    // A miss of every sphere: the nearest projected centre within PICK_TOLERANCE_PX of the pointer.
+    const off = at({ x: 2, y: .25, z: 4 });
+    expect(pickAimTarget(cam, off, [far, crab], { x: 500 + PICK_TOLERANCE_PX - 1, y: 600 })).toEqual(crab.centre);
+    expect(pickAimTarget(cam, off, [far, crab], { x: 500 + PICK_TOLERANCE_PX + 30, y: 640 })).toBeNull();
+    // Off-screen centres (null) are not tolerance candidates.
+    expect(pickAimTarget(cam, off, [{ ...crab, screen: null }], { x: 500, y: 600 })).toBeNull();
+  });
+  it('aims from the player at a picked centre: yaw and clamped pitch for a free mover, yaw only on the ground', () => {
+    const o = { x: 0, y: 3, z: 0 }, c = { x: 0, y: .25, z: 4 };
+    const free = aimToward(o, c, true, 1.2)!, flat = aimToward(o, c, false, 1.2)!;
+    expect(Math.atan2(free.x, free.z)).toBeCloseTo(0); expect(Math.atan2(free.y, Math.hypot(free.x, free.z))).toBeCloseTo(Math.atan2(-2.75, 4));
+    expect(flat).toEqual({ x: 0, y: 0, z: 1 });
+    expect(Math.asin(aimToward(o, { x: 0, y: 100, z: 1 }, true, 1.2)!.y)).toBeCloseTo(1.2);
+    expect(aimToward(o, { x: 0, y: -1, z: 0 }, true, 1.2)).toBeNull();   // straight below: no yaw
   });
   it('soft-locks the pitch within 30° of yaw, else keeps the creature pitch', () => {
     const o = { x: 0, y: 0, z: 0 }, fwd = { x: 0, y: 0, z: 1 };

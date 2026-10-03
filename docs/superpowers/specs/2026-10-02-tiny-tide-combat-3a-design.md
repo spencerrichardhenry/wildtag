@@ -878,11 +878,21 @@ keeps its eat-food meaning when no enemy is in the cone.
 
 ### 8.4 Aim
 
-- **Desktop pointer:** the pointer ray meets the horizontal plane through the
-  creature's origin. The aim yaw is toward that point. If the ray does not
-  meet the plane in front of the camera, the camera forward is used.
-- The pointer counts only when it is over the canvas and moved in the last
-  4 s. Else the aim is the camera forward (keyboard-only, R2).
+- **Desktop pointer, pick first** (final review C1): the pointer picks the
+  live combat species under it: the nearest hurtbox sphere that the pointer
+  ray meets, else the nearest projected hull centre within 48 CSS px of the
+  pointer. The aim points from the player at that hull centre: yaw and pitch
+  for a free mover (pitch clamped to `PITCH_LIMIT`), yaw only for a ground
+  mover. A pick counts while the pointer is over the canvas, also when the
+  pointer is still (review M1).
+- **Desktop pointer, no pick:** the aim yaw points at the first point of the
+  ray beyond the player's depth along the ray that is on the horizontal plane
+  through the creature's origin, or in the seabed or a solid (sampled up to
+  16 L beyond the player). A point between the camera and the player is never
+  used (it lies behind the player when the target is lower or higher). With
+  no such point, the aim is the ray's own horizontal direction.
+- The no-pick pointer counts only when it is over the canvas and moved in the
+  last 4 s. Else the aim is the camera forward (keyboard-only, R2).
 - **Phone drag:** a drag on the basic button beyond 12 px from the press
   point sets the aim yaw: screen up is the camera's horizontal forward. The
   same press starts the basic move at once; the drag then steers it until the

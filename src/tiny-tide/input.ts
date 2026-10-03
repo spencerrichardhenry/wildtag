@@ -66,13 +66,54 @@ export function mouseButtons(prev: MouseState, buttons: number, leftIsLook = fal
 // ---- aim (spec §8.4) ----
 /** The desktop pointer counts for this long after it last moved over the canvas; then the aim is the camera forward. */
 export const POINTER_FRESH_SECONDS = 4;
-/** The horizontal aim from `origin` toward where the pointer ray (render units) meets the horizontal plane through `origin`; null when the
- *  ray does not meet that plane in front of the camera (the caller uses the camera forward). */
-export function pointerAim(origin: Vec3, rayOrigin: Vec3, rayDir: Vec3): Vec3 | null {
-  if (Math.abs(rayDir.y) < 1e-9) return null;
-  const t = (origin.y - rayOrigin.y) / rayDir.y; if (t <= 0) return null;
-  const dx = rayOrigin.x + rayDir.x * t - origin.x, dz = rayOrigin.z + rayDir.z * t - origin.z, l = Math.hypot(dx, dz);
-  return l > 1e-6 ? { x: dx / l, y: 0, z: dz / l } : null;
+/** The horizontal aim of the pointer ray (render or physical units, the caller's choice) with no creature under it (spec §8.4, final review C1):
+ *  toward the first point of the ray beyond the player's depth along it (`t > t_player`) that is either on the horizontal plane through
+ *  `origin` or blocked (`blocked`: the seabed or a solid, sampled every `reach` / 32 up to `reach` beyond the player). A point between the
+ *  camera and the player is never used: with a target below or above the player that point lies behind it (the old rule aimed back at the
+ *  camera, up to 165° off). With no such point, the ray's own horizontal direction. Null only for a vertical ray. */
+export function pointerAim(origin: Vec3, rayOrigin: Vec3, rayDir: Vec3, blocked?: (p: Vec3) => boolean, reach = 0): Vec3 | null {
+  const tp = (origin.x - rayOrigin.x) * rayDir.x + (origin.y - rayOrigin.y) * rayDir.y + (origin.z - rayOrigin.z) * rayDir.z;
+  let best = Infinity;
+  if (Math.abs(rayDir.y) > 1e-9) { const t = (origin.y - rayOrigin.y) / rayDir.y; if (t > Math.max(0, tp) + 1e-9) best = t; }
+  if (blocked && reach > 0) {
+    const t0 = Math.max(0, tp), step = reach / 32, p = { x: 0, y: 0, z: 0 };
+    for (let k = 1; k <= 32; k++) {
+      const t = t0 + k * step; if (t >= best) break;
+      p.x = rayOrigin.x + rayDir.x * t; p.y = rayOrigin.y + rayDir.y * t; p.z = rayOrigin.z + rayDir.z * t;
+      if (blocked(p)) { best = t; break; }
+    }
+  }
+  if (Number.isFinite(best)) {
+    const dx = rayOrigin.x + rayDir.x * best - origin.x, dz = rayOrigin.z + rayDir.z * best - origin.z, l = Math.hypot(dx, dz);
+    if (l > 1e-6) return { x: dx / l, y: 0, z: dz / l };
+  }
+  const h = Math.hypot(rayDir.x, rayDir.z);
+  return h > 1e-6 ? { x: rayDir.x / h, y: 0, z: rayDir.z / h } : null;
+}
+/** A pointer pick tolerance: with no hurtbox under the pointer, a creature whose projected hull centre is this close (CSS px) is picked. */
+export const PICK_TOLERANCE_PX = 48;
+/** A pick candidate: its hull centre, its hurtbox spheres (same units as the ray) and its projected centre (CSS px; null off screen). */
+export interface PickCandidate { centre: Vec3; spheres: readonly { x: number; y: number; z: number; r: number }[]; screen: { x: number; y: number } | null }
+/** The creature under the pointer (spec §8.4, final review C1): the candidate with the nearest hurtbox sphere the ray meets (in front of the
+ *  ray origin), else the nearest projected centre within `tolerancePx` of `pointer`; its hull centre, or null. */
+export function pickAimTarget(rayOrigin: Vec3, rayDir: Vec3, candidates: readonly PickCandidate[], pointer: { x: number; y: number }, tolerancePx = PICK_TOLERANCE_PX): Vec3 | null {
+  let best: Vec3 | null = null, bestT = Infinity;
+  for (const c of candidates) for (const s of c.spheres) {
+    const ox = s.x - rayOrigin.x, oy = s.y - rayOrigin.y, oz = s.z - rayOrigin.z, b = ox * rayDir.x + oy * rayDir.y + oz * rayDir.z;
+    const d2 = ox * ox + oy * oy + oz * oz - b * b; if (d2 > s.r * s.r) continue;
+    const t = b - Math.sqrt(s.r * s.r - d2); if (t > 0 && t < bestT) { bestT = t; best = c.centre; }
+  }
+  if (best) return best;
+  let bestPx = tolerancePx;
+  for (const c of candidates) { if (!c.screen) continue; const d = Math.hypot(c.screen.x - pointer.x, c.screen.y - pointer.y); if (d <= bestPx) { bestPx = d; best = c.centre; } }
+  return best;
+}
+/** The aim from `origin` at a picked `target`: its yaw, and for a free mover (`pitch`) its pitch clamped to ±`limit`; a ground mover aims
+ *  level. Null when the target is straight above or below. */
+export function aimToward(origin: Vec3, target: Vec3, pitch: boolean, limit: number): Vec3 | null {
+  const dx = target.x - origin.x, dz = target.z - origin.z, h = Math.hypot(dx, dz); if (h < 1e-6) return null;
+  const level = { x: dx / h, y: 0, z: dz / h };
+  return pitch ? pitched(level, Math.max(-limit, Math.min(limit, Math.atan2(target.y - origin.y, h)))) : level;
 }
 /** The soft-lock cone (D9): a target within 30° of yaw of the aim sets the pitch. */
 export const SOFT_LOCK_HALF_ANGLE = 30 * Math.PI / 180;
