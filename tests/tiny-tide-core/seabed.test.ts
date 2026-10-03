@@ -1,6 +1,8 @@
 // tests/tiny-tide-core/seabed.test.ts — owner playtest P3: the drawn seabed agrees with the collision ground (seabedHeight).
 import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+// Final review I8: heavy geometry tests; 1–5 s alone, much longer beside a browser check (the default 5 s timed out under load).
+vi.setConfig({ testTimeout: 30_000 });
 import { PLAYER_HALF, SIZES, seabedHeight } from '../../src/tiny-tide/biomes';
 import { starterFor } from '../../src/tiny-tide/genome';
 import { bodyLengthOf } from '../../src/tiny-tide/mount';

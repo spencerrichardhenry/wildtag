@@ -1,5 +1,7 @@
 // tests/tiny-tide-core/hull-fit.test.ts — owner playtest P3: the tighter swim hull and the grown-body Breach landing.
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+// Final review I8: heavy geometry tests; 1–5 s alone, much longer beside a browser check (the default 5 s timed out under load).
+vi.setConfig({ testTimeout: 30_000 });
 import { newRuntime, type Actor, type Capsule, type CombatInput, type Terrain, type Vec3 } from '../../src/tiny-tide/combat-types';
 import { random, SIZES, WATER_LEVEL } from '../../src/tiny-tide/biomes';
 import { derive, effectiveStats, starterFor, starterGenome, type Genome } from '../../src/tiny-tide/genome';

@@ -98,7 +98,7 @@ describe('sim', () => {
     expect({ deaths: golden.faint.at(-1)!.deaths, mode: golden.faint.at(-1)!.mode }).toEqual({ deaths: 1, mode: 'playing' });
     expect(regens(golden.regen), 'regen from 3 hearts').toBeGreaterThanOrEqual(6);
     expect(runAll(runSim)).toEqual(golden);
-  }, 60_000);
+  }, 180_000);   // final review I8: 63 s beside a browser check
 });
 describe('the faint give-up (D27, T15 fix round 1)', () => {
   it('the regen script over 120 s faints once: hunters give up for 6 s after the respawn grace, not 6 s after the faint', () => {
