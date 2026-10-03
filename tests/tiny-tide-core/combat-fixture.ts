@@ -44,7 +44,7 @@ export const FX_FLEER = base('0:fx_fleer', { kind: 'shrimp', model: 'shrimp', ti
 /** A valid catalog: the shipped catalogs plus the fixture rows above. */
 export function fixtureCatalogs(): Catalogs {
   const c = defaultCatalogs(), claw = c.parts.find(p => p.id === 'claw_pincer')!;
-  const rare: PartSpec = { ...claw, id: 'fx_rare', name: 'Fixture claw', rare: true, model: 'claw_pincer' };
+  const rare: PartSpec = { ...claw, id: 'fx_rare', name: 'Fixture claw', rare: true, model: 'claw_pincer', basicAttacks: [], activeGrants: [] };
   return { ...c, attacks: { ...c.attacks, pinch: { ...syntheticAttack }, poke: { ...POKE }, wrap: { ...WRAP }, smash: { ...SMASH } }, abilities: { ...c.abilities, ...structuredClone(FX_ABILITIES) },
     guards: { ...c.guards, 'fx-brace': { ...FX_BRACE }, 'fx-counter': { ...FX_COUNTER } }, evasions: { ...c.evasions, 'fx-dash': { ...FX_DASH } }, behaviours: { ...c.behaviours, ...structuredClone(FX_BEHAVIOURS) },
     parts: [...c.parts, rare], species: [...c.species, { ...FX_HUNTER }, { ...FX_ALPHA }, { ...FX_FLEER }] };

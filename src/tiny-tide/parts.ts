@@ -38,8 +38,24 @@ const SOCKETS: Record<string, readonly CombatSocket[]> = {
   tail_paddle: [socket('slap', 1.1, 0, { kind: 'seg', index: 3 })], tail_fan: [socket('slap', 1.1, 0, { kind: 'seg', index: 2 })], tail_fluke: [socket('slap', 1, 0, { kind: 'seg', index: 3 })],
   jet_vent: [socket('thrust', .7, 0)],
 };
+/** The basic grant of each mouth (spec §7.1). Filter grin, Fangs and Maw reuse the Nibbler, Snapper and Beak rows until 3b (plan decision). */
+export const MOUTH_BITES: Readonly<Record<string, string>> = { mouth_nibbler: 'bite-nibbler', mouth_snapper: 'bite-snapper', mouth_beak: 'bite-beak', mouth_filter: 'bite-nibbler', mouth_fangs: 'bite-snapper', mouth_maw: 'bite-beak', mouth_tyrant: 'bite-tyrant' };
+/** The ability of each move-giving part (spec §7.1, §7.6). */
+export const PART_ABILITIES: Readonly<Record<string, string>> = {
+  claw_pincer: 'grab-pincer', claw_mother: 'grab-clawmother', spike: 'counter-spike', shell_plate: 'brace-shell',
+  fin_side: 'dash-side-fin', fin_dorsal: 'dash-dorsal-fin', fin_frill: 'dash-frill-fin', tail_paddle: 'dash-paddle-tail', leg_little: 'scuttle-little-leg', leg_crab: 'scuttle-crab-leg',
+  tail_fan: 'sweep-fan-tail', tail_fluke: 'sweep-fluke',
+};
+/** The socket each kind emits from (Brace and Dash have none). */
+export const KIND_SOCKETS: Readonly<Record<MoveKind, readonly string[]>> = { grab: ['pinch'], counter: ['spike'], sweep: ['slap'], brace: [], dash: [] };
+/** The basic grant of a mouth and the active grant of a move-giving part (grant ids: 'bite' and the move kind). */
+const grantsOf = (id: string): Pick<PartSpec, 'basicAttacks' | 'activeGrants'> => {
+  const bite = MOUTH_BITES[id], ability = PART_ABILITIES[id], kind = PART_MOVES[id];
+  return { basicAttacks: bite ? [{ id: 'bite', attackId: bite, socketIds: ['bite'] }] : [],
+    activeGrants: ability && kind ? [{ id: kind, abilityId: ability, socketIds: KIND_SOCKETS[kind], mirrorPolicy: 'shared-cast' }] : [] };
+};
 const p = (id: string, name: string, kind: PartKind, stage: number, cost: number, stats: Partial<Stats>, tint: TintSlot, mirror: boolean, t: number, angle: number, blurb: string, diet?: Diet): PartSpec =>
-  ({ id, name, kind, stage, cost, stats, tint, mirror, t, angle, blurb, diet, traits: TRAITS[id] ?? (kind === 'mouth' ? ['weapon'] : []), sockets: SOCKETS[id] ?? [], basicAttacks: [], activeGrants: [] });
+  ({ id, name, kind, stage, cost, stats, tint, mirror, t, angle, blurb, diet, traits: TRAITS[id] ?? (kind === 'mouth' ? ['weapon'] : []), sockets: SOCKETS[id] ?? [], ...grantsOf(id) });
 const HALF = Math.PI / 2;
 export const PARTS: readonly PartSpec[] = [
   p('mouth_nibbler', 'Nibbler', 'mouth', 0, 0, { reach: .2 }, 'belly', false, 0, 0, 'Soft lips for plants.', 'herbivore'),

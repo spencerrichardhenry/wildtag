@@ -104,6 +104,7 @@ describe('combat contract', () => {
       [c => { c.abilities.grab!.scaling = { 'attack.nope': .2 }; }, 'ability grab: scaling key attack.nope'],
       [c => { c.abilities.grab!.pair = { multiply: { 'attack.damage': .5 }, add: {} }; }, 'ability grab: pair multiplier attack.damage'],
       [c => { c.abilities.dash!.scaling = { cooldownSeconds: Infinity }; }, 'ability dash: scaling value cooldownSeconds'],
+      [c => { c.abilities.dash!.pair = { multiply: { cooldownSeconds: 1.2 }, add: {} }; }, 'ability dash: pair multiplier cooldownSeconds'],
       // V11
       [c => { c.guards['fx-brace']!.blockFraction = 1.2; }, 'guard fx-brace: blockFraction'],
       [c => { c.guards['fx-brace']!.frontHalfAngle = 0; }, 'guard fx-brace: frontHalfAngle'],
@@ -136,6 +137,12 @@ describe('combat contract', () => {
       [c => { c.behaviours['fx-hunter']!.lair = { radiusBodyLengths: 2, resetOutsideFactor: 1.5, resetDelaySeconds: 3, healPerSecond: .04 }; }, 'behaviour fx-hunter: lair'],
       [c => { c.behaviours['fx-alpha']!.phases = [...c.behaviours['fx-alpha']!.phases!].reverse(); }, 'behaviour fx-alpha: phase order'],
       [c => { c.behaviours['fx-alpha']!.phases = c.behaviours['fx-alpha']!.phases!.map(p => ({ ...p, pattern: 'burrow' as const })); }, 'behaviour fx-alpha: phase 0 pattern'],
+      // V16
+      [c => { claw(c).activeGrants = []; }, 'part claw_pincer: grants'],
+      [c => { claw(c).activeGrants = [{ id: 'grab', abilityId: 'counter-spike', socketIds: ['pinch'], mirrorPolicy: 'shared-cast' }]; }, 'part claw_pincer: move kind'],
+      [c => { c.parts = c.parts.map(p => p.id === 'mouth_snapper' ? { ...p, basicAttacks: [] } : p); }, 'part mouth_snapper: basic'],
+      [c => { claw(c).basicAttacks = [{ id: 'bite', attackId: 'bite-snapper', socketIds: ['pinch'] }]; }, 'part claw_pincer: basic'],
+      [c => { c.parts = c.parts.map(p => p.id === 'eye_bead' ? { ...p, activeGrants: [{ id: 'dash', abilityId: 'dash-side-fin', socketIds: [], mirrorPolicy: 'shared-cast' as const }] } : p); }, 'part eye_bead: grants'],
       // V17
       [c => { c.species = c.species.filter(s => s.key !== '1:fx_alpha'); }, 'part fx_rare: rare without one alpha'],
       [c => { c.parts = c.parts.map(p => p.id === 'fx_rare' ? { ...p, model: 'fx_rare' } : p); }, 'part fx_rare: model fx_rare'],

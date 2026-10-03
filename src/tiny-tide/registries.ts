@@ -3,7 +3,8 @@ import { MOVE_PRIORITY, type AbilitySpec, type AttackSpec, type ContactHazard, t
 import { HABITATS, HULLS, MOUNTS, MOVEMENTS, POSES, PURSUITS } from './profiles';
 import { EFFECTS, TELEGRAPHS } from './combat-profiles';
 import { BEHAVIOUR_TYPES, BEHAVIOURS, hostileSizes, minWindup, SPECIES_ATTACKS, type SpeciesBehaviour } from './bestiary';
-import { PARTS, type PartSpec } from './parts';
+import { PART_MOVES, PARTS, type PartSpec } from './parts';
+import { EVASIONS, GUARDS, PLAYER_ABILITIES, PLAYER_ATTACKS } from './moves';
 import { PLANS, type BodyPlan } from './plans';
 import { FOOD_GLBS, SPECIES, type Species } from './species';
 import { PART_RIG, type RigNode } from './rig';
@@ -22,10 +23,9 @@ function merged(...sources: Record<string, AttackSpec>[]): Record<string, Attack
   for (const src of sources) for (const [k, v] of Object.entries(src)) { if (out[k]) throw new Error(`duplicate attack id ${k}`); out[k] = v; }
   return out;
 }
-export const ATTACKS: Record<string, AttackSpec> = merged(SPECIES_ATTACKS);
-export const ABILITIES: Record<string, AbilitySpec> = {};
-export const GUARDS: Record<string, GuardProfile> = {};
-export const EVASIONS: Record<string, EvasionProfile> = {};
+export const ATTACKS: Record<string, AttackSpec> = merged(PLAYER_ATTACKS, SPECIES_ATTACKS);
+export const ABILITIES: Record<string, AbilitySpec> = PLAYER_ABILITIES;
+export { EVASIONS, GUARDS };
 const hazard = (id: string, damage: number, cadenceSeconds: number): ContactHazard => ({ id, damage, cadenceSeconds, invulnerabilitySeconds: .8, impulse: 0 });
 export const HAZARDS: Record<string, ContactHazard> = Object.fromEntries([hazard('jelly-sting', 1, 1.8), hazard('ray-sting', 1, 1.8), hazard('crab-pinch', 2, 1.4), hazard('squid-grab', 2, 1.4), hazard('plane-buzz', 2, 1.4)].map(h => [h.id, h]));
 export const defaultCatalogs = (): Catalogs => structuredClone({ habitats: HABITATS, movements: MOVEMENTS, pursuits: PURSUITS, hulls: HULLS, mounts: MOUNTS, poses: POSES, telegraphs: TELEGRAPHS,
@@ -41,6 +41,8 @@ export function numberAt(o: unknown, path: string): number | undefined {
   for (const k of path.split('.')) { if (!v || typeof v !== 'object') return undefined; v = (v as Record<string, unknown>)[k]; }
   return typeof v === 'number' ? v : undefined;
 }
+/** A pair is stronger, never weaker: a multiplier is ≥ 1, except a cooldown's, which is in (0, 1] (the Dash pair's × .85; spec defect: V10 said ≥ 1). */
+const pairMultiplierOk = (key: string, v: number) => key.endsWith('cooldownSeconds') ? v > 0 && v <= 1 : v >= 1;
 /** Attack paths may start with `shape.`, `lunge.` or `hold.`, or name a top-level number. */
 const attackPathOk = (a: AttackSpec, key: string) => { const head = key.split('.')[0]!; return (key.includes('.') ? ['shape', 'lunge', 'hold'].includes(head) : true) && numberAt(a, key) !== undefined; };
 
@@ -107,7 +109,7 @@ export function validateContract(c: Catalogs = defaultCatalogs()): string[] {
     for (const [key, v] of [...Object.entries(a.scaling ?? {}), ...Object.entries(pair?.multiply ?? {}), ...Object.entries(pair?.add ?? {})]) {
       if (!attackPathOk(a, key)) out.push(`attack ${k}: scaling key ${key}`); else if (!fin(v)) out.push(`attack ${k}: scaling value ${key}`);
     }
-    for (const [key, v] of Object.entries(pair?.multiply ?? {})) if (fin(v) && v < 1) out.push(`attack ${k}: pair multiplier ${key}`);
+    for (const [key, v] of Object.entries(pair?.multiply ?? {})) if (fin(v) && !pairMultiplierOk(key, v)) out.push(`attack ${k}: pair multiplier ${key}`);
     // V6
     const tg = c.telegraphs[a.telegraphProfileId];
     if (tg) {
@@ -151,7 +153,7 @@ export function validateContract(c: Catalogs = defaultCatalogs()): string[] {
     for (const [key, v] of [...Object.entries(a.scaling), ...Object.entries(a.pair?.multiply ?? {}), ...Object.entries(a.pair?.add ?? {})]) {
       if (!target(key)) out.push(`ability ${k}: scaling key ${key}`); else if (!fin(v)) out.push(`ability ${k}: scaling value ${key}`);
     }
-    for (const [key, v] of Object.entries(a.pair?.multiply ?? {})) if (fin(v) && v < 1) out.push(`ability ${k}: pair multiplier ${key}`);
+    for (const [key, v] of Object.entries(a.pair?.multiply ?? {})) if (fin(v) && !pairMultiplierOk(key, v)) out.push(`ability ${k}: pair multiplier ${key}`);
   }
   // V11
   for (const [k, g] of Object.entries(c.guards)) {
@@ -243,6 +245,14 @@ export function validateContract(c: Catalogs = defaultCatalogs()): string[] {
     }
     for (const g of p.basicAttacks) if (!c.attacks[g.attackId]) out.push(`part ${p.id}: attack ${g.attackId}`);
     for (const g of p.activeGrants) { if (!c.abilities[g.abilityId]) out.push(`part ${p.id}: ability ${g.abilityId}`); if (g.mirrorPolicy !== 'shared-cast') out.push(`part ${p.id}: mirrorPolicy ${g.id}`); }
+    // V16: one grant per move-giving part, of its kind (spec §7.1); one Bite per mouth; no other basic grant.
+    const kind = PART_MOVES[p.id];
+    if (kind ? p.activeGrants.length !== 1 : p.activeGrants.length !== 0) out.push(`part ${p.id}: grants`);
+    else if (kind && c.abilities[p.activeGrants[0]!.abilityId] && c.abilities[p.activeGrants[0]!.abilityId]!.kind !== kind) out.push(`part ${p.id}: move kind`);
+    if (p.kind === 'mouth') {
+      const b = p.basicAttacks[0], a = b && c.attacks[b.attackId];
+      if (p.basicAttacks.length !== 1 || !a || a.aimMode !== 'input' || a.damageUnit !== 'hp') out.push(`part ${p.id}: basic`);
+    } else if (p.basicAttacks.length) out.push(`part ${p.id}: basic`);
     // V17
     if (p.rare && c.species.filter(s => s.alpha?.rewardPartId === p.id).length !== 1) out.push(`part ${p.id}: rare without one alpha`);
     if (p.model !== undefined && !c.parts.some(q => q.id === p.model && !q.rare)) out.push(`part ${p.id}: model ${p.model}`);
