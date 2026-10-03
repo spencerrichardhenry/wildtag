@@ -130,6 +130,8 @@ export interface WorldQueries {
   overlapHull(actor: Actor, at: Vec3, o: Orientation, ctx: AdmissionContext): Admission;
   /** The top (largest y) of a decoration solid by id, when these queries have solids (the ground step-over, fix round 2). */
   solidTop?(id: string): number | undefined;
+  /** Combat obstruction (spec §5.11): false when a sample at most `step` apart on the segment is under the ground or inside a reef solid. */
+  segmentClear?(a: Vec3, b: Vec3, step: number): boolean;
 }
 export interface LegalityContext { queries: WorldQueries; bounds?: { half: number; maxY?: number } }
 export interface MotionRequest { actorId: ActorId; from: Vec3; displacement: Vec3; orientation: Orientation; turn?: Orientation; hull: readonly Capsule[]; habitatProfileId: string;

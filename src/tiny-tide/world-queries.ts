@@ -60,6 +60,15 @@ export function makeWorldQueries(t: Terrain, extras: WorldExtras = {}): WorldQue
     refugeAccess: (actor, id) => extras.refugeAccess ? extras.refugeAccess(actor, id) : true,
     overlapHull: (actor, at, o, ctx) => (admissionCount.n++, admissionClock.on) ? timedAdmit(actor, at, o, ctx, t, extras) : admit(actor, at, o, ctx, t, extras),
     solidTop: id => extras.solids?.byId(id)?.maxY,
+    segmentClear: (a, b, step) => {
+      const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z, n = Math.max(1, Math.ceil(Math.hypot(dx, dy, dz) / Math.max(1e-9, step)));
+      for (let k = 0; k <= n; k++) {
+        const f = k / n, x = a.x + dx * f, y = a.y + dy * f, z = a.z + dz * f;
+        if (!t.space && y < t.groundAt(x, z)) return false;
+        if (extras.solids?.solidAt(x, y, z, 0)) return false;
+      }
+      return true;
+    },
   };
 }
 
