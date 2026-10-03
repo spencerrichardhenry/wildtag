@@ -447,8 +447,10 @@ export function journey(line: 'swimmer' | 'crawler', diet: JourneyReport['diet']
         if (h && !reachable(h)) flee = h; else fight = h ?? (prey.e && prey.d < 14 * L ? prey.e : null);
       }
       const alpha = near(hunters.filter(e => !!e.spec.alpha));
-      if (!fight && !flee && alpha.e && alpha.d < 6 * entityL(alpha.e)) flee = alpha.e;   // an alpha that hunts: every diet keeps away
-      const food = near(live.filter(e => !e.spec.behaviourId && e.spec.tier === s.run.stage && dietCanEat(diet, e.spec.tag) && e.spec.kind !== 'planet' && reachable(e)));
+      // An alpha that hunts: every diet keeps away from it while it hunts prey or food (T23 fix round 1: the bot chased sardines into the Reef
+      // Tyrant); only a non-alpha hunter that the bot is fighting or fleeing comes first.
+      if (alpha.e && alpha.d < 6 * entityL(alpha.e) && !flee && !(fight && fight === hunter.e)) { flee = alpha.e; fight = null; }
+      const food = near(live.filter(e => !e.spec.behaviourId && e.spec.tier === s.run.stage && dietCanEat(s.run.diet, e.spec.tag) && e.spec.kind !== 'planet' && reachable(e)));   // the run's diet: the omnivore plan has a Snapper at size 0
       const target = fight ?? (flee ? null : food.e);
       if (target) {
         const tc = entityCentre(target), d = Math.hypot(tc.x - me.x, tc.y - me.y, tc.z - me.z);
@@ -508,7 +510,7 @@ export interface ProbeReport { p0: P0Row[]; p1: AttackRow[]; p2: AttackRow[]; p3
   notes: NoteRow[]; pass: boolean }
 export interface NoteRow { note: string; build: string; species: string; median: number; faints: number; trials: number; damage: number; times: number[] }
 export interface ProbeOptions { trials: number; p0Trials: number; ttkSeeds: readonly number[]; ttkTrials: number; journeySeeds: readonly number[]; journeyLimit: number }
-export const FULL_PROBE: ProbeOptions = { trials: 200, p0Trials: 100, ttkSeeds: [11, 12, 13], ttkTrials: 30, journeySeeds: [11, 12, 13], journeyLimit: 600 };
+export const FULL_PROBE: ProbeOptions = { trials: 200, p0Trials: 100, ttkSeeds: [11, 12, 13], ttkTrials: 30, journeySeeds: [11, 12, 13, 14, 15], journeyLimit: 600 };
 export type ProbePart = 'p0' | 'p1' | 'p2' | 'p3' | 'p4' | 'p5' | 'p6' | 'p7-swimmer' | 'p7-crawler' | 'p8' | 'notes';
 export const PROBE_PARTS: readonly ProbePart[] = ['p0', 'p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7-swimmer', 'p7-crawler', 'p8', 'notes'];
 
