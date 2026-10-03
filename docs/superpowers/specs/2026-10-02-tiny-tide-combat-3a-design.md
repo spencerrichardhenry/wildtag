@@ -1297,11 +1297,11 @@ hull centre for `centre` attacks (§5.10, plan review R2). Shape numbers in `L_e
 | `crab-pinch` | cone .45, half 35° | .50 | .28 | 2.5 | .10 | .55 | 1.6 | 2 | 3 | .30 | yes | yes | yes | [0, .45] 3 |
 | `crab-lunge` | capsule (0,0,0)–(0,0,1.4) r .22; lunge 1.2 | .60 | .35 | 2.0 | .22 | .75 | 3.5 | 3 | 6 | .35 | yes | yes | windup | [.5, 1.4] 2 |
 | `crab-sweep` | cone .65, half 70° | .55 | .30 | 2.5 | .14 | .70 | 4.0 | 2 | 8 | .30 | yes | yes | yes | [0, .6] 1, flank 3 |
-| `mother-pinch` | cone .40, half 35° | .55 | .30 | 1.5 | .10 | .45 | 1.4 | 3 | 4 | .35 | yes | yes | no | [0, .4] 3; chain → `mother-pinch-2` after .2 s |
+| `mother-pinch` | cone .40, half 35° | .55 | .30 | 1.5 | .10 | .45 | 1.4 | 3 | 4 | .35 | yes | yes | no | [0, .4] 3; chain → `mother-pinch-2` after .55 s (T23, R13: was .2 s) |
 | `mother-pinch-2` | cone .40, half 35° | .55 | .30 | 1.5 | .10 | .90 | 1.4 | 3 | 4 | .35 | yes | yes | no | chain only |
 | `mother-lunge` | capsule (0,0,0)–(0,0,1.0) r .20; lunge .9 | .65 | .40 | 1.5 | .22 | .80 | 4.0 | 4 | 8 | .40 | yes | yes | no | [.4, 1.0] 1 |
 | `mother-emerge` | capsule start = end r .35, at the player's position at windup start (`fixed-at-start`, `origin: 'target'`, R4) | .70 | 0 | 0 | .15 | 1.10 | 2.0 | 4 | 10 | .40 | **no** | yes | no | burrow pattern |
-| `mother-sweep` | cone .60, half 75° | .60 | .35 | 1.5 | .14 | .40 | 3.0 | 3 | 9 | .35 | yes | yes | no | [0, .6] 2; chain → `mother-pinch-rage` after .1 s |
+| `mother-sweep` | cone .60, half 75° | .60 | .35 | 1.5 | .14 | .40 | 3.0 | 3 | 9 | .35 | yes | yes | no | [0, .6] 2; chain → `mother-pinch-rage` after .55 s (T23, R13: was .1 s) |
 | `mother-pinch-rage` | cone .40, half 35° | .55 | .30 | 1.5 | .10 | .80 | 1.4 | 3 | 4 | .35 | yes | yes | no | chain only |
 | `puffer-burst` | capsule start = end r 1.6 (`centre`) | .55 | 0 | 0 | .15 | 1.20 | 3.0 | 3 | 7 | .35 | yes | yes | no | [0, 1.35] 1 (T23: was [0, 1.6]; the ball reaches 1.35 past the hull surface) |
 | `squid-ink` | cone .90, half 30°; status `inked` | .45 | .25 | 2.0 | .30 | .60 | 6.0 | 1 | 0 | 0 | yes | **no** | yes | [.3, .9] 1 |

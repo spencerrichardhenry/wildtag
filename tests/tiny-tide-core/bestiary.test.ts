@@ -116,11 +116,11 @@ describe('bestiary data pinned to spec §11', () => {
     expect(list(BEHAVIOURS.crab!.attacks)).toEqual([['crab-pinch', [0, .45], 3, U, U, U], ['crab-lunge', [.5, 1.4], 2, U, U, U], ['crab-sweep', [0, .6], 1, 3, U, U]]);
     expect(list(BEHAVIOURS.squid!.attacks)).toEqual([['squid-ink', [.3, .9], 1, U, U, U], ['squid-grab', [.2, .75], 2, U, U, U], ['squid-lunge', [.6, 1.2], 2, U, U, U]]);
     expect(list(BEHAVIOURS.eel!.attacks)).toEqual([['eel-bite', [0, .45], 3, U, U, U], ['eel-wrap', [0, .6], 1, U, U, U]]);
-    const combo = ['mother-pinch', [0, .4], 3, U, 'mother-pinch-2', .2];
+    const combo = ['mother-pinch', [0, .4], 3, U, 'mother-pinch-2', .55];   // T23, R13: chain gap .2 → .55 s
     const cm = BEHAVIOURS.clawmother!.phases!, rt = BEHAVIOURS['reef-tyrant']!.phases!;
     expect(list(cm[0]!.attacks)).toEqual([combo, ['mother-lunge', [.4, 1.0], 1, U, U, U]]);
     expect(list(cm[1]!.attacks)).toEqual([combo]);
-    expect(list(cm[2]!.attacks)).toEqual([['mother-sweep', [0, .6], 2, U, 'mother-pinch-rage', .1], ['mother-pinch', [0, .4], 1, U, 'mother-pinch-2', .2]]);
+    expect(list(cm[2]!.attacks)).toEqual([['mother-sweep', [0, .6], 2, U, 'mother-pinch-rage', .55], ['mother-pinch', [0, .4], 1, U, 'mother-pinch-2', .55]]);
     expect(cm.map(p => p.patternAttackId)).toEqual([undefined, 'mother-emerge', undefined]);
     expect(list(rt[0]!.attacks)).toEqual([['tyrant-bite', [0, .4], 3, U, U, U], ['tyrant-den-lunge', [.4, 1.2], 2, U, U, U]]);
     expect(list(rt[1]!.attacks)).toEqual([]);

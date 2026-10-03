@@ -77,7 +77,9 @@ export const SPECIES_ATTACKS: Record<string, AttackSpec> = Object.fromEntries([
 const behaviour = (over: Partial<SpeciesBehaviour> & Pick<SpeciesBehaviour, 'id' | 'type' | 'reactionSeconds' | 'poise'>): SpeciesBehaviour =>
   ({ staggerResist: 0, knockbackResistance: 0, grabbable: true, attacks: [], gapSeconds: 0, repositionSeconds: [0, 0], repositionSpeedFactor: .6, ...over });
 const choice = (attackId: string, band: readonly [number, number], weight: number, more: Partial<AttackChoice> = {}): AttackChoice => ({ attackId, band, weight, ...more });
-const PINCH_COMBO = choice('mother-pinch', [0, .4], 3, { chainNextId: 'mother-pinch-2', chainGapSeconds: .2 });
+/** T23 probe, plan review R13: the chain gaps are .55 s (were .2 and .1), so the second hit comes after the starter Paddle tail Dash is ready again
+ *  (its press-to-ready cycle is 1.57 s; the combo's second active start was 1.30 s after the first). P5 Clawmother: every meat-build trial fainted. */
+const PINCH_COMBO = choice('mother-pinch', [0, .4], 3, { chainNextId: 'mother-pinch-2', chainGapSeconds: .55 });
 /** Species behaviours (spec §11.4, §11.6). The eel's ambush reaction is 0 (its den rule), its out-of-den reaction .35. */
 export const BEHAVIOURS: Record<string, SpeciesBehaviour> = Object.fromEntries([
   behaviour({ id: 'drifter', type: 'prey-flee', reactionSeconds: .2, poise: 99, flee: { seconds: 2.0, restSeconds: 1.2, speedFactor: 1.3 } }),
@@ -96,7 +98,7 @@ export const BEHAVIOURS: Record<string, SpeciesBehaviour> = Object.fromEntries([
     phases: [
       { aboveHpFraction: .6, attacks: [PINCH_COMBO, choice('mother-lunge', [.4, 1.0], 1)], speedFactor: 1.0, gapSeconds: 1.0, pattern: 'normal' },
       { aboveHpFraction: .3, attacks: [PINCH_COMBO], speedFactor: 1.0, gapSeconds: .8, pattern: 'burrow', patternAttackId: 'mother-emerge' },
-      { aboveHpFraction: 0, attacks: [choice('mother-sweep', [0, .6], 2, { chainNextId: 'mother-pinch-rage', chainGapSeconds: .1 }), { ...PINCH_COMBO, weight: 1 }], speedFactor: 1.3, gapSeconds: .7, pattern: 'normal' },
+      { aboveHpFraction: 0, attacks: [choice('mother-sweep', [0, .6], 2, { chainNextId: 'mother-pinch-rage', chainGapSeconds: .55 }), { ...PINCH_COMBO, weight: 1 }], speedFactor: 1.3, gapSeconds: .7, pattern: 'normal' },
     ] }),
   behaviour({ id: 'reef-tyrant', type: 'alpha', reactionSeconds: .35, poise: 16, staggerResist: .5, knockbackResistance: .6, grabbable: false, gapSeconds: 1.0, repositionSeconds: [.6, 1.0],
     // Plan review R15 (T19): lair radius ≤ .25 × PLAYER_HALF × SIZES[1] = 50 units; L_e = 35.84, so 1.4 L_e (50.18) is just over and 1.39 L_e = 49.8 units.
