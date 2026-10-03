@@ -322,11 +322,18 @@ export function sphereShape(s: SolidShape, x: number, y: number, z: number, r: n
 }
 
 /** True when the point lies inside the shape (grown by `margin`). */
+const POINT_CONTACT = newContact();
 export function pointInShape(s: SolidShape, x: number, y: number, z: number, margin = 0): boolean {
-  const c = newContact(); c.depth = 0;
+  const c = POINT_CONTACT; c.depth = 0;   // final review I3: a scratch contact (only its depth is read back, and only here)
   return sphereShape(s, x, y, z, margin + 1e-12, c);
 }
-export const pointInSolid = (solid: Solid, x: number, y: number, z: number, margin = 0) => solid.shapes.some(s => pointInShape(s, x, y, z, margin));
+/** True when the point lies inside one of the solid's shapes. A plain loop (final review I3: no closure per call; line of sight samples it
+ *  dozens of times per entity). */
+export function pointInSolid(solid: Solid, x: number, y: number, z: number, margin = 0): boolean {
+  const shapes = solid.shapes;
+  for (let i = 0; i < shapes.length; i++) if (pointInShape(shapes[i]!, x, y, z, margin)) return true;
+  return false;
+}
 
 // ---- grid index ----
 

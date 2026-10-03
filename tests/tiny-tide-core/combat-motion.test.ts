@@ -100,3 +100,20 @@ describe('combat motion of species', () => {
     expect(steps).toBeGreaterThan(1000);
   }, 120_000);
 });
+
+// Final review I3: the separation pre-check never skips a push that the full overlap test would make.
+import { deepestOverlap as _deepestOverlap, SEPARATION_SLOP as _SLOP, sphereOverlapsHull as _sphereOverlapsHull } from '../../src/tiny-tide/separation';
+describe('separation pre-check (final review I3)', () => {
+  it('is true whenever the full test finds an overlap past the slop', () => {
+    let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    const hull = [{ start: { x: 0, y: 1, z: -.4 }, end: { x: 0, y: 1, z: .4 }, radius: .3 }, { start: { x: 0, y: 1, z: .4 }, end: { x: 0, y: 1.1, z: .9 }, radius: .2 }];
+    let overlaps = 0;
+    for (let i = 0; i < 5000; i++) {
+      const x = (rnd() - .5) * 3, y = 1 + (rnd() - .5) * 3, z = (rnd() - .5) * 4, r = .05 + rnd() * 1.2, slop = _SLOP * 1.6;
+      const full = _deepestOverlap(hull, [{ start: { x, y, z }, end: { x, y, z }, radius: r }]).depth > slop;
+      if (full) { overlaps++; expect(_sphereOverlapsHull(hull, x, y, z, r, slop)).toBe(true); }
+      if (!_sphereOverlapsHull(hull, x, y, z, r, slop)) expect(full).toBe(false);
+    }
+    expect(overlaps).toBeGreaterThan(100);
+  });
+});

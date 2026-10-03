@@ -247,10 +247,14 @@ const vec = (x: number, y: number, z: number): Vec3 => ({ x, y, z });
 const solidContact = newContact();
 const fail = (constraint: Constraint, point: Vec3, normal: Vec3 | null): Admission => ({ ok: false, constraint, point, normal });
 
+/** The one admitted result (final review I3: no allocation per admitted pose; frozen, callers only read it). */
+const ADMITTED: Admission = Object.freeze({ ok: true, constraint: null, point: null, normal: null });
+/** The posed hull handed to `refugeOverlap` (final review I3: a reused buffer; the callback reads it during the call only). */
+const refugeHull: Capsule[] = [];
 /** The body of overlapHull: the first failing rule, in the order bounds, ground, solids, media, refuge. */
 export function admit(actor: Actor, at: Vec3, o: Orientation, ctx: AdmissionContext, t: Terrain, extras: WorldExtras = {}): Admission {
   const hab = actor.habitat, L = actor.bodyLength;
-  if (hab.isStaticProp) return { ok: true, constraint: null, point: null, normal: null };
+  if (hab.isStaticProp) return ADMITTED;
 
   // 1. Bounds, on the oriented capsules with their own radius and envelope.
   if (ctx.bounds) {
@@ -323,8 +327,9 @@ export function admit(actor: Actor, at: Vec3, o: Orientation, ctx: AdmissionCont
 
   // 5. Media at six extreme points of each sphere.
   const permit = ctx.permit, permitOn = !!permit && permit.startsAt <= ctx.time && ctx.time < permit.expiresAt;
-  const has = (m: 'water' | 'air' | 'land' | 'space') => hab.media.includes(m) || (permitOn && permit!.media.includes(m));
-  const water = has('water'), air = has('air'), land = has('land'), space = has('space');
+  const pm = permitOn ? permit!.media : null, media = hab.media;
+  const water = media.includes('water') || !!pm?.includes('water'), air = media.includes('air') || !!pm?.includes('air'), land = media.includes('land') || !!pm?.includes('land'),
+    space = media.includes('space') || !!pm?.includes('space');
   const maxDepth = hab.maxWaterDepthBodyLengths, maxGap = hab.maxFloorGapBodyLengths, band = hab.surfaceBandBodyLengths, wading = hab.wadingSupportBodyLengths;
   for (let s = 0; s < count; s++) {
     const i = s * STRIDE, cx = at.x + spheres[i]!, cy = at.y + spheres[i + 1]!, cz = at.z + spheres[i + 2]!;
@@ -354,16 +359,19 @@ export function admit(actor: Actor, at: Vec3, o: Orientation, ctx: AdmissionCont
 
   // 6. Refuge, for the whole posed hull with each radius grown by its envelope.
   if (extras.refugeOverlap) {
-    const world: Capsule[] = actor.hull.map(c => {
-      const bw = c.sway ?? 0, bv = c.heave ?? 0;
+    const world = refugeHull, h = actor.hull;
+    while (world.length < h.length) world.push({ start: { x: 0, y: 0, z: 0 }, end: { x: 0, y: 0, z: 0 }, radius: 0 });
+    world.length = h.length;
+    for (let k = 0; k < h.length; k++) {
+      const c = h[k]!, b = world[k]! as { start: MutVec3; end: MutVec3; radius: number }, bw = c.sway ?? 0, bv = c.heave ?? 0;
       rotateInto(o, c.start, sa); rotateInto(o, c.end, sb);
-      return { start: { x: at.x + sa.x, y: at.y + sa.y, z: at.z + sa.z }, end: { x: at.x + sb.x, y: at.y + sb.y, z: at.z + sb.z },
-        radius: c.radius + orientedSway(bw, bv, o.pitch) + orientedHeave(bw, bv, o.pitch) };
-    });
+      b.start.x = at.x + sa.x; b.start.y = at.y + sa.y; b.start.z = at.z + sa.z; b.end.x = at.x + sb.x; b.end.y = at.y + sb.y; b.end.z = at.z + sb.z;
+      b.radius = c.radius + orientedSway(bw, bv, o.pitch) + orientedHeave(bw, bv, o.pitch);
+    }
     const hit = extras.refugeOverlap(world);
     if (hit && !(extras.refugeAccess ? extras.refugeAccess(actor, hit.id) : true)) return fail('refuge', { x: at.x, y: at.y, z: at.z }, hit.normal);
   }
-  return { ok: true, constraint: null, point: null, normal: null };
+  return ADMITTED;
 }
 
 /** The largest height above (top) and below (bottom) the origin of any oriented sample sphere, using r' + heave. */

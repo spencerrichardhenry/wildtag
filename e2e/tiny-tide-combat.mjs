@@ -544,6 +544,8 @@ check('hints', async () => {
  *  on a ring of 3 L). Budgets: desktop median callback ≤ 16.7 ms (controller ruling); a phone with 4× CPU throttle ≤ 33.3 ms (set here: two
  *  60 Hz frames; the owner may change it). p95 budgets (fix round 1): desktop ≤ 33 ms, phone ≤ 50 ms. The heap growth per frame (positive JS heap deltas across the callback) estimates allocations. */
 const BUDGET = { desktop: 16.7, phone: 33.3 }, P95_BUDGET = { desktop: 33, phone: 50 };
+/** Final review I3: the heap growth bar (KB per frame) of the stage-1 crowd samples. */
+const HEAP_BAR_KB = 800;
 check('frame-time', async () => {
   facts.frames = {};
   const phone = viewport => ({ viewport, deviceScaleFactor: 2, isMobile: true, hasTouch: true }), STAGE1 = [{ stage: 1, line: 'swimmer' }, '1:sardine,1:puffer'], STAGE0 = [{}, '0:drifter,0:spiny_snail'];
@@ -579,6 +581,10 @@ check('frame-time', async () => {
     assert.equal(after.mode, 'playing', `${label}: the sample is play`);
     assert.ok(q(.5) <= budget, `${label}: median frame work ${q(.5).toFixed(2)} ms ≤ ${budget} ms`);
     assert.ok(q(.95) <= p95Budget, `${label}: p95 frame work ${q(.95).toFixed(2)} ms ≤ ${p95Budget} ms`);
+    // Final review I3: a regression bar on the per-frame heap growth of the stage-1 combat crowd (1340 KB before the I3 cuts, about 600 after;
+    // the stage-0 crowd is dominated by the older ground scan of admission and is reported only).
+    const heapKB = facts.frames[label].heapGrowthPerFrameKB;
+    if (label.includes('stage 1') && heapKB !== null) assert.ok(heapKB <= HEAP_BAR_KB, `${label}: heap growth ${heapKB} KB per frame ≤ ${HEAP_BAR_KB} KB`);
     assert.deepEqual(errors, []);
     await context.close();
   }

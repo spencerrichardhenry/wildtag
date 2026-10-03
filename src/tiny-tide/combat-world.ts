@@ -5,14 +5,14 @@ import * as T from 'three';
 import { advanceClock, bufferedPress, bufferPress, canStart, dashSpeed, endHold, endNow, holdingAction, liveActions, lungeSpeed, newPoise, startAction, sweepEnded, tickAction, windupLength, type PoiseMeter, type StartRefusal } from './action-engine';
 import { BEHAVIOURS, hostileSizes, SPECIES_ATTACKS, type SpeciesBehaviour } from './bestiary';
 import { SIZES } from './biomes';
-import { aiLandedHit, aiRefused, aiStarted, aiStep, newAiState, ROAR_SECONDS, schoolFlee, type AiState } from './combat-ai';
-import { actionShapes, aimFrame, closestOnSegment, crossingOk, hurtboxesHit, nearestTargets, obstructionClear, shapeCentroid, telegraphDescriptor, truncateCapsule, worldShape, type TelegraphDescriptor } from './combat-shapes';
-import { newRuntime, type ActionPhase, type TelegraphProfile, type ActionState, type ActiveSlot, type ActorId, type AttackShape, type AttackSpec, type CombatInput, type CombatPose, type CombatRuntime, type EmitterSource, type MovementMode, type ResolvedMove, type Vec3, type WorldQueries, type WorldShape } from './combat-types';
+import { aiLandedHit, aiRefused, aiStarted, aiStep, newAiState, ROAR_SECONDS, schoolFlee, type AiInput, type AiState } from './combat-ai';
+import { actionShapes, aimFrame, crossingOk, hurtboxesHit, nearestTargets, obstructionClear, shapeCentroid, telegraphDescriptor, truncateCapsule, worldShape, type TelegraphDescriptor } from './combat-shapes';
+import { newRuntime, type ActionPhase, type TelegraphProfile, type ActionState, type ActiveSlot, type ActorId, type AttackShape, type AttackSpec, type CombatInput, type CombatPose, type CombatRuntime, type EmitterSource, type MovementMode, type MutVec3, type ResolvedMove, type Vec3, type WorldQueries, type WorldShape } from './combat-types';
 import { engage, provoke, type Entity, type EntityMotion } from './ecosystem';
 import { biteDispatch } from './feeding';
 import { addBreakProgress, armCounters, isFlick, releaseHold, resolveAll, squeezesDue, type CombatEvent, type Fighter, type HitRequestIn } from './hit-resolver';
 import { basicRequested } from './input';
-import { speciesActor, speciesCombatPose } from './mount';
+import { speciesActor, speciesCombatPose, speciesHullSphereInto } from './mount';
 import { speciesMove, type GrantedMove, type MoveSet, type SlotAssignment } from './moves';
 import { forwardOf, orientationMatrix } from './orientation';
 import type { Diet } from './parts';
@@ -125,6 +125,25 @@ export interface TelegraphView extends TelegraphDescriptor {
 export const WINDUP_FLASH = .1;
 const statusOf = (id: string) => { const s = EFFECTS[id]?.status; return s ? { seconds: s.seconds, speedFactor: s.speedFactor } : null; };
 
+/** The AI's light view of a species body (final review I3): its hull centre and radius, body length and forward (speciesCombatPose's). */
+interface AiBody { centre: MutVec3; r: number; L: number; forward: MutVec3 }
+const HULL_SPHERE = { x: 0, y: 0, z: 0, r: 0, L: 0 };
+/** Writes the AI body of `e` into `b` (no allocation). */
+function aiBodyInto(e: Entity, b: AiBody): AiBody {
+  const s = speciesHullSphereInto(e, HULL_SPHERE);
+  b.centre.x = s.x; b.centre.y = s.y; b.centre.z = s.z; b.r = s.r; b.L = s.L; b.forward.x = Math.sin(e.heading); b.forward.y = 0; b.forward.z = Math.cos(e.heading);
+  return b;
+}
+/** Final review I3: one AI body and one AI input per combat entity, rewritten each tick (the AI copies what it keeps: `{ ...i.self.position }`,
+ *  and its outputs never point at these containers). `ctx`, `e` and `p` are this tick's, for the lazy line of sight. */
+interface AiScratch { body: AiBody; input: AiInput; ctx: AiTickContext | null; e: Entity | null; p: PlayerBody | null }
+/** The distance from a point to a segment with no allocation: the same arithmetic as closestOnSegment and Math.hypot (bit for bit). */
+function segmentDistance(c: Vec3, a: Vec3, b: Vec3): number {
+  const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z, l2 = dx * dx + dy * dy + dz * dz;
+  let qx = a.x, qy = a.y, qz = a.z;
+  if (l2 > 0) { const t = Math.max(0, Math.min(1, ((c.x - a.x) * dx + (c.y - a.y) * dy + (c.z - a.z) * dz) / l2)); qx = a.x + dx * t; qy = a.y + dy * t; qz = a.z + dz * t; }
+  return Math.hypot(qx - c.x, qy - c.y, qz - c.z);
+}
 type ConeShape = Extract<AttackShape, { kind: 'cone' }>;
 /** A player cone attack (Bite, Grab's pinch; final review I2): the apex is the player's hull centre and the range adds the centre-to-socket
  *  distance, so a creature pressed against the player (beside or under the mouth) is inside it. The half angle is the shape's. One helper for
@@ -142,9 +161,10 @@ export class CombatWorld {
   /** Attack tokens for wind-ups at the player (spec §9.4). */
   readonly director = new Director();
   private serial = 0;
-  /** Review R18: inside a tick, each entity's pose is sampled once (keyed by entity id); outside a tick nothing is cached. */
-  private readonly poses = new Map<number, { entity: Entity; pose: CombatPose }>();
-  private inTick = false;
+  /** Review R18, final review I3: one species pose per entity while it stays put. The pose depends only on the entity's place and heading, so
+   *  the cache is keyed by entity id and checked against the entity object, its position and heading: the combat tick, the AI tick, body
+   *  separation and the telegraphs share one sample per entity per frame (a body the ecosystem moved is sampled again). */
+  private readonly poses = new Map<number, { entity: Entity; x: number; y: number; z: number; heading: number; pose: CombatPose }>();
   constructor(private readonly behaviours: Record<string, SpeciesBehaviour> = BEHAVIOURS, private readonly attacks: Record<string, AttackSpec> = SPECIES_ATTACKS) {}
   /** A fresh state for a new run or a load (spec §13). */
   reset(): void { this.entities.clear(); this.log.length = 0; this.poses.clear(); this.director.releaseAll(); }
@@ -166,18 +186,31 @@ export class CombatWorld {
   forget(e: Entity): void {
     const c = this.entities.get(e.id);
     if (c) for (const a of c.rt.actions) if (this.director.holds(a.instanceId)) { endNow(c.rt, a, 0); this.director.release(a.instanceId); }
-    this.entities.delete(e.id);
+    this.entities.delete(e.id); this.poses.delete(e.id);
   }
   /** Forgets every combat entity that was eaten on any path (T11 fix round 1); the sim calls it at the end of each frame. */
   forgetEaten(): void { for (const c of [...this.entities.values()]) if (c.entity.eaten) this.forget(c.entity); }
   private nextId(actor: ActorId) { return `${actor}#${++this.serial}`; }
-  /** A species pose: sampled once per entity per tick inside a tick (review R18), fresh outside one. */
-  private poseOf(e: Entity, now: number): CombatPose {
-    const hit = this.inTick ? this.poses.get(e.id) : undefined;
-    if (hit && hit.entity === e) return hit.pose;
-    const pose = speciesCombatPose(e, now); this.poseSamples++;
-    if (this.inTick) this.poses.set(e.id, { entity: e, pose });
+  /** A species pose (review R18, final review I3): the cached one while the entity has not moved or turned, else a fresh sample (counted in
+   *  `poseSamples` unless `count` is false). Callers never mutate a pose. */
+  speciesPose(e: Entity, now: number, count = true): CombatPose {
+    const hit = this.poses.get(e.id);
+    if (hit && hit.entity === e && hit.x === e.x && hit.y === e.y && hit.z === e.z && hit.heading === e.heading) return hit.pose;
+    const pose = speciesCombatPose(e, now); if (count) this.poseSamples++;
+    if (hit) { hit.entity = e; hit.x = e.x; hit.y = e.y; hit.z = e.z; hit.heading = e.heading; hit.pose = pose; }
+    else this.poses.set(e.id, { entity: e, x: e.x, y: e.y, z: e.z, heading: e.heading, pose });
     return pose;
+  }
+  private poseOf(e: Entity, now: number): CombatPose { return this.speciesPose(e, now); }
+  private readonly aiScratch = new WeakMap<EntityCombat, AiScratch>();
+  private aiScratchOf(c: EntityCombat): AiScratch {
+    let sc = this.aiScratch.get(c); if (sc) return sc;
+    const v = (): MutVec3 => ({ x: 0, y: 0, z: 0 }), cooldownPrefix = `${c.id}:root:`;
+    const scratch: AiScratch = { body: { centre: v(), r: 0, L: 0, forward: v() }, ctx: null, e: null, p: null, input: {
+      now: 0, self: { position: v(), L: 0, forward: v(), hp: 0, maxHp: 0, staggered: false, held: false, busy: false, speed: 0 },
+      player: { position: v(), d: 0, get visible() { return scratch.ctx!.lineOfSight(scratch.e!, scratch.p!.centre); }, targetable: false, ground: false },
+      hostile: false, pursuit: 'calm', hit: false, fleeDistance: 0, ready: id => (c.rt.cooldowns.get(cooldownPrefix + id) ?? -Infinity) <= c.rt.actionClock + 1e-9 } };
+    this.aiScratch.set(c, scratch); return scratch;
   }
   /** Review R17: engaged with the player — hunting or angry, an action that targets the player, or a contact with it (any outcome) in the
    *  last ENGAGED_SECONDS. */
@@ -226,12 +259,9 @@ export class CombatWorld {
   }
 
   /** One combat tick (spec §6.1, §5): clocks, the player's starts, actions, hits, holds and kills.
-   *  The tick must never move a body: the pose cache (review R18) is keyed by entity id only, so a body moved inside the tick would keep
-   *  its stale pose. Combat motion leaves as requests (playerMotion, lunges) and is applied outside the tick. */
-  tick(ctx: CombatContext): CombatTick {
-    this.inTick = true; this.poses.clear();
-    try { return this.tickInner(ctx); } finally { this.inTick = false; this.poses.clear(); }
-  }
+   *  The tick never moves a body (the pose cache checks each entity's place anyway, final review I3). Combat motion leaves as requests
+   *  (playerMotion, lunges) and is applied outside the tick. */
+  tick(ctx: CombatContext): CombatTick { return this.tickInner(ctx); }
   private tickInner(ctx: CombatContext): CombatTick {
     const out: CombatTick = { events: [], chomp: false, killed: [], brokeFree: false, started: [] };
     const p = ctx.player, rt = p.rt, intent = ctx.intent, now = ctx.now;
@@ -292,6 +322,7 @@ export class CombatWorld {
       if (r.wasActive && a.resolved.attack) activeNow.push({ fighter: 'player', a });
     }
     live.forEach((c, i) => {
+      if (!c.rt.actions.length) return;   // final review I3: no pose for an entity with no action
       const pose = this.poseOf(c.entity, now), centre = pose.hull[0]!.start;
       for (const a of c.rt.actions) {
         // Review R3: toward the player's hurtbox centre, pitch clamped (ground species too). From the hull centre: once the aim points
@@ -309,18 +340,20 @@ export class CombatWorld {
     // Hits (spec §6.1): every active action's requests, resolved in the contract order.
     const playerFighter: Fighter = { id: PLAYER_ID, isPlayer: true, rt, centre: p.centre, forward: forwardOf(rt.orientation), L: p.L, mass: p.mass, knockbackResistance: p.knockbackResistance,
       armor: p.armor, ground: p.ground, grabbable: true, poise: null, poiseMax: 0, staggerResist: 0, health: p.health };
-    const fighters = new Map(live.map(c => [c, this.fighterOf(c, now)] as const)), requests: HitRequestIn[] = [];
+    // Final review I3: a species fighter only for an attacker or a hit target of this tick.
+    const fighters = new Map<EntityCombat, Fighter>(), requests: HitRequestIn[] = [];
+    const fighterFor = (c: EntityCombat): Fighter => { let f = fighters.get(c); if (!f) { f = this.fighterOf(c, now); fighters.set(c, f); } return f; };
     for (const { fighter, a } of activeNow) {
       const attack = a.resolved.attack as AttackSpec, shapes = this.hitShapes(fighter === 'player' ? null : fighter, a, p, now);
       if (!shapes.length) continue;
-      const attacker = fighter === 'player' ? playerFighter : fighters.get(fighter)!;
+      const attacker = fighter === 'player' ? playerFighter : fighterFor(fighter);
       const candidates = fighter === 'player'
         ? live.map(c => ({ id: c.id, c, hurt: this.poseOf(c.entity, now).hurtboxes }))   // the resolver skips an untargetable body (an alpha under the sand)
         : [{ id: PLAYER_ID, c: null, hurt: p.pose.hurtboxes }];
       const hits = candidates.flatMap(t => { const point = hurtboxesHit(t.hurt, shapes); if (!point) return []; const s = shapes[0]!, origin = s.kind === 'cone' ? s.apex : s.start;
         return [{ ...t, point, origin, distance: Math.hypot(point.x - origin.x, point.y - origin.y, point.z - origin.z) }]; });
       for (const t of nearestTargets(hits, attack.maxTargets)) {
-        const target = t.c ? fighters.get(t.c)! : playerFighter;
+        const target = t.c ? fighterFor(t.c) : playerFighter;
         const geometryOk = crossingOk(attack.crossing, ctx.queries, t.origin, t.point, attacker.L) && obstructionClear(ctx.queries, t.origin, t.point, attacker.L);
         requests.push({ attacker, target, action: a, attack, hitGroupId: a.grantId, origin: t.origin, point: t.point, geometryOk });
       }
@@ -466,7 +499,7 @@ export class CombatWorld {
   }
   /** The telegraphs of every species action in windup or active (spec §9.1): the shapes the hit test uses (the live aim before the lock,
    *  the locked shapes after it), the fill (τ − τ0) / (windup + extension), the depth ring, the colour code, the edge arrow and the flash.
-   *  Read-only: it samples poses directly (not through the tick's pose cache or its `poseSamples` counter) and keeps no memory.
+   *  Read-only: it reads poses through the shared pose cache without counting `poseSamples`, and keeps no other memory.
    *  `isOnScreen` takes a physical point. */
   telegraphs(now: number, isOnScreen: (p: Vec3) => boolean, groundAt: (x: number, z: number) => number): TelegraphView[] {
     const out: TelegraphView[] = [];
@@ -477,7 +510,7 @@ export class CombatWorld {
         const attack = a.resolved.attack; if (!attack) continue;
         const profile = TELEGRAPHS[attack.telegraphProfileId]; if (!profile || profile.color === 'none') continue;
         const windup = windupLength(a), elapsed = c.rt.actionClock - a.phaseStartedAt, fill = a.phase === 'windup' ? elapsed / Math.max(1e-9, windup) : 1;
-        const shapes = a.lockedShapes ?? this.shapesAt(a, speciesCombatPose(c.entity, now)), d = telegraphDescriptor(shapes, fill, profile.color, profile.pattern, a.aimLocked, groundAt), onScreen = isOnScreen(d.centroid);
+        const shapes = a.lockedShapes ?? this.shapesAt(a, this.speciesPose(c.entity, now, false)), d = telegraphDescriptor(shapes, fill, profile.color, profile.pattern, a.aimLocked, groundAt), onScreen = isOnScreen(d.centroid);
         const activeIn = a.phase === 'windup' ? Math.max(0, windup - elapsed) : 0;
         const flash = a.phase === 'windup' && (elapsed < WINDUP_FLASH - 1e-9 || activeIn <= profile.flashLeadSeconds + 1e-9);
         out.push({ ...d, actionId: a.instanceId, attackerId: c.id, entityId: c.entity.id, attackId: attack.id, phase: a.phase, onScreen, edgeArrow: profile.edgeArrow, targetsPlayer: a.targetId === PLAYER_ID, flash,
@@ -492,12 +525,13 @@ export class CombatWorld {
   aiTick(ctx: AiTickContext): AiTickResult {
     const res: AiTickResult = { engagements: [], roars: [], markers: [] }, p = ctx.player, now = ctx.now;
     // prey-school (spec §11.2): the live members of each schooling species, with their hull centres (one pose sample each, reused below).
-    const schools = new Map<string, SchoolMember[]>(), poses = new Map<Entity, CombatPose>();
+    // Final review I3: the AI reads a light body (hull centre, radius, L, forward), not a full pose; a pose is sampled only to start an attack.
+    const schools = new Map<string, SchoolMember[]>();
     for (const e of ctx.entities) {
       if (e.eaten || !e.active || !e.spec.behaviourId) continue;
       const c = this.stateOf(e); if (!c?.behaviour.school) continue;
-      const pose = speciesCombatPose(e, now); poses.set(e, pose);
-      const list = schools.get(e.spec.key) ?? []; list.push({ entity: e, state: c.ai ??= newAiState(ctx.runSeed, e.id, now), position: pose.hull[0]!.start, L: pose.bodyLength }); schools.set(e.spec.key, list);
+      const body = aiBodyInto(e, this.aiScratchOf(c).body);
+      const list = schools.get(e.spec.key) ?? []; list.push({ entity: e, state: c.ai ??= newAiState(ctx.runSeed, e.id, now), position: body.centre, L: body.L }); schools.set(e.spec.key, list);
     }
     for (const e of ctx.entities) {
       if (!e.spec.behaviourId) continue;
@@ -505,23 +539,24 @@ export class CombatWorld {
       const c = this.stateOf(e); if (!c) { e.combat = null; continue; }
       const ai = c.ai ??= newAiState(ctx.runSeed, e.id, now), hit = ctx.hitBy.has(e.id);
       if (hit && e.spec.fights) provoke(e, p.position, now, p.pose.hull);
-      const pose = poses.get(e) ?? speciesCombatPose(e, now), centre = pose.hull[0]!.start, r = pose.hull[0]!.radius, L = pose.bodyLength;
+      const sc = this.aiScratchOf(c), body = c.behaviour.school ? sc.body : aiBodyInto(e, sc.body), centre = body.centre, r = body.r, L = body.L;
       let dHurt = Infinity;
-      for (const h of p.pose.hurtboxes) { const q = closestOnSegment(centre, h.start, h.end); dHurt = Math.min(dHurt, Math.hypot(q.x - centre.x, q.y - centre.y, q.z - centre.z) - h.radius); }
+      for (const h of p.pose.hurtboxes) dHurt = Math.min(dHurt, segmentDistance(centre, h.start, h.end) - h.radius);
       const tierSize = SIZES[e.spec.tier]!, stageSize = SIZES[Math.min(ctx.stage, SIZES.length - 1)]!, engaged = e.mode === 'hunt' || e.mode === 'angry';
-      const out = aiStep(c.behaviour, ai, {
-        now,
-        self: { position: centre, L, forward: pose.forward, hp: e.hp, maxHp: c.maxHp, staggered: c.rt.actionClock < c.rt.staggerUntil, held: c.rt.heldBy !== null, busy: liveActions(c.rt).length > 0,
-          speed: e.spec.speed * tierSize },
-        player: { position: p.centre, d: Math.max(0, dHurt - r) / L, visible: ctx.lineOfSight(e, p.centre), targetable: ctx.playing && p.rt.targetable, ground: p.ground },
-        hostile: !ctx.givingUp && hostileSizes(e.spec).includes(ctx.stage),   // D27 (review ruling): no creature attacks the player in the window
-        pursuit: ctx.givingUp && engaged ? 'return' : e.mode, hit,
-        fleeDistance: 7 * Math.max(tierSize, stageSize) * ctx.stealthFactor,
-        ready: id => (c.rt.cooldowns.get(`${c.id}:root:${id}`) ?? -Infinity) <= c.rt.actionClock + 1e-9,
-        inLair: ai.home && c.behaviour.lair ? Math.hypot(p.centre.x - ai.home.x, p.centre.z - ai.home.z) <= c.behaviour.lair.radiusBodyLengths * L : undefined,
-        tokenRetryAt: c.tokenRetryAt,
-        schoolCentre: c.behaviour.school ? schoolCentre(schools.get(e.spec.key) ?? [], centre, 2 * c.behaviour.school.radiusBodyLengths * L) : undefined,
-      });
+      sc.ctx = ctx; sc.e = e; sc.p = p;
+      const i = sc.input, self = i.self, pl = i.player;
+      i.now = now;
+      self.position = centre; self.L = L; self.forward = body.forward; self.hp = e.hp; self.maxHp = c.maxHp; self.staggered = c.rt.actionClock < c.rt.staggerUntil; self.held = c.rt.heldBy !== null;
+      self.busy = c.rt.actions.some(a => a.phase !== 'interrupted'); self.speed = e.spec.speed * tierSize;
+      // Final review I3: line of sight only when the AI reads it (the eel's den trigger, after its distance test): `visible` is a getter.
+      pl.position = p.centre; pl.d = Math.max(0, dHurt - r) / L; pl.targetable = ctx.playing && p.rt.targetable; pl.ground = p.ground;
+      i.hostile = !ctx.givingUp && hostileSizes(e.spec).includes(ctx.stage);   // D27 (review ruling): no creature attacks the player in the window
+      i.pursuit = ctx.givingUp && engaged ? 'return' : e.mode; i.hit = hit;
+      i.fleeDistance = 7 * Math.max(tierSize, stageSize) * ctx.stealthFactor;
+      i.inLair = ai.home && c.behaviour.lair ? Math.hypot(p.centre.x - ai.home.x, p.centre.z - ai.home.z) <= c.behaviour.lair.radiusBodyLengths * L : undefined;
+      i.tokenRetryAt = c.tokenRetryAt;
+      i.schoolCentre = c.behaviour.school ? schoolCentre(schools.get(e.spec.key) ?? [], centre, 2 * c.behaviour.school.radiusBodyLengths * L) : undefined;
+      const out = aiStep(c.behaviour, ai, i);
       // An alpha has no ecosystem pursuit (its lair is its leash): its mode mirrors the AI, engaged ('angry') unless idle or resetting.
       if (e.spec.alpha) { const mode = ai.name === 'idle' || ai.name === 'reset' ? 'calm' : 'angry'; if (e.mode !== mode) { e.mode = mode; e.modeTime = 0; } }
       if (out.roar) {   // a phase change: the roar starts at once and cancels a busy action (its token returns; no cooldown)
@@ -532,7 +567,7 @@ export class CombatWorld {
       if (out.attack) {
         const attack = this.attacks[out.attack.attackId];
         const started = attack ? this.startSpecies(c, out.attack.attackId, attack, out.attack.aim, PLAYER_ID, now,
-          { targetAt: p.centre, onScreen: ctx.isOnScreen(this.startCentroid(attack, pose, p.centre)), playerHeld: p.rt.heldBy !== null, playing: ctx.playing, tick: ctx.dt }) : 'no-target';
+          { targetAt: p.centre, onScreen: ctx.isOnScreen(this.startCentroid(attack, this.speciesPose(e, now), p.centre)), playerHeld: p.rt.heldBy !== null, playing: ctx.playing, tick: ctx.dt }) : 'no-target';
         if (typeof started === 'string') aiRefused(ai, now, c.tokenRetryAt);
         else {
           aiStarted(ai, now);
@@ -544,7 +579,7 @@ export class CombatWorld {
       if (out.heal > 0) e.hp = Math.min(c.maxHp, e.hp + out.heal * c.maxHp * ctx.dt);
       if (out.marker) res.markers.push(e);
       if (out.engagementEnded) res.engagements.push({ entity: e, ...out.engagementEnded });
-      const lunging = liveActions(c.rt).find(a => a.phase === 'active' && !!a.resolved.attack?.lunge), speed = lunging ? lungeSpeed(lunging, L) : 0;
+      const lunging = c.rt.actions.find(a => a.phase === 'active' && !!a.resolved.attack?.lunge), speed = lunging ? lungeSpeed(lunging, L) : 0;
       const holder = c.rt.heldBy === PLAYER_ID ? holdingAction(p.rt, c.id) : undefined, claw = holder ? this.clawPoint(p, holder, L, now) : null;
       const motion: EntityMotion = { intent: out.intent, face: out.intent.kind === 'hold' && (ai.name === 'face' || ai.name === 'notice' || ai.name === 'attack') ? p.centre : null,
         lunge: lunging ? { x: lunging.aim.x * speed, y: lunging.aim.y * speed, z: lunging.aim.z * speed } : null, external: c.rt.externalVelocity, frozen: now < c.rt.hitStopUntil,

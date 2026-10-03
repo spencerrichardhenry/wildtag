@@ -52,6 +52,7 @@ function shortestArc(a: number, b: number): number {
   return d;
 }
 
+const MOTION_P: MutVec3 = { x: 0, y: 0, z: 0 }, MOTION_Q: MutVec3 = { x: 0, y: 0, z: 0 }, MOTION_M: MutVec3 = { x: 0, y: 0, z: 0 };
 export function resolveMotion(req: MotionRequest, ctx: LegalityContext & { actor: Actor; interval: { start: number; end: number } }): MotionResult {
   const actor = ctx.actor;
   if (req.hull !== actor.hull) throw new Error(`resolveMotion: request hull is not the hull of actor ${actor.id}`);
@@ -71,7 +72,8 @@ export function resolveMotion(req: MotionRequest, ctx: LegalityContext & { actor
 
   // Translation in legs.
   const s = minR / 2, dLen = Math.hypot(d.x, d.y, d.z);
-  const P: MutVec3 = { x: from.x, y: from.y, z: from.z }, Q: MutVec3 = { x: 0, y: 0, z: 0 }, M: MutVec3 = { x: 0, y: 0, z: 0 };
+  // Final review I3: scratch points (read only inside this call; the result copies P).
+  const P = MOTION_P, Q = MOTION_Q, M = MOTION_M; P.x = from.x; P.y = from.y; P.z = from.z;
   const contacts: Contact[] = [];
   let bx = from.x, by = from.y, bz = from.z, vx = d.x, vy = d.y, vz = d.z, t0 = start, time = start, travelled = 0, tests = 0;
   let remX = 0, remY = 0, remZ = 0, clamped = false;

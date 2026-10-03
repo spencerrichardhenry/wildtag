@@ -41,6 +41,18 @@ export function deepestOverlap(a: readonly Capsule[], b: readonly Capsule[]): { 
   return { depth, normal };
 }
 export const hullOverlap = (a: readonly Capsule[], b: readonly Capsule[]): number => deepestOverlap(a, b).depth;
+/** Final review I3: whether a hull and a sphere (a species hull: one sphere) overlap by more than `slop`, with no allocation. It equals
+ *  `deepestOverlap(hull, [sphere]).depth > slop` up to a hair of margin (true when in doubt), so the caller can skip a far species before it
+ *  samples a pose or builds a push. */
+export function sphereOverlapsHull(hull: readonly Capsule[], x: number, y: number, z: number, r: number, slop: number): boolean {
+  for (const c of hull) {
+    const ax = c.start.x, ay = c.start.y, az = c.start.z, dx = c.end.x - ax, dy = c.end.y - ay, dz = c.end.z - az, l2 = dx * dx + dy * dy + dz * dz;
+    const t = l2 > 1e-12 ? clamp01(((x - ax) * dx + (y - ay) * dy + (z - az) * dz) / l2) : 0;
+    const qx = ax + dx * t - x, qy = ay + dy * t - y, qz = az + dz * t - z;
+    if (c.radius + r - Math.sqrt(qx * qx + qy * qy + qz * qz) > slop - 1e-6 * (c.radius + r)) return true;   // a hair conservative: never skips a push
+  }
+  return false;
+}
 const centreOf = (h: readonly Capsule[]): Vec3 => {
   let x = 0, y = 0, z = 0;
   for (const c of h) { x += c.start.x + c.end.x; y += c.start.y + c.end.y; z += c.start.z + c.end.z; }

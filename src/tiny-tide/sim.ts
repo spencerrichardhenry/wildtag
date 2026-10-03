@@ -11,8 +11,8 @@ import type { BodyPlan } from './plans';
 import { basicRequested } from './input';
 import { beginRespawn, growthPose, RESPAWN_GRACE, newTrapWatch, recoverPlayer, resetRuntime, resolveHazards, resolveRespawn, rescueFreeRun, TRAP_MOVE, trapDue, trapFailed, trapRescued, rescueBudget, UnstickSearch, wedged, type TrapWatch } from './lifecycle';
 import { resolveMotion, startAnchor } from './motion';
-import { separationPush } from './separation';
-import { bodyLengthOf, hullFitOf, hullOffsets, massFor, sampleCombatPose, speciesCombatPose as sampleSpeciesPose } from './mount';
+import { SEPARATION_SLOP, separationPush, sphereOverlapsHull } from './separation';
+import { bodyLengthOf, hullFitOf, hullOffsets, massFor, sampleCombatPose, speciesHullSphereInto } from './mount';
 import { CombatWorld, PLAYER_ID, playerMatrix, type CombatTick, type EntityCombat, type MotionBody, type PlayerBody } from './combat-world';
 import { assignSlots, movesOf, type MoveSet, type SlotAssignment } from './moves';
 import { DROPS } from './parts';
@@ -347,19 +347,25 @@ const buried = (c: EntityCombat): boolean => {
  *  pose stays); the species' share goes into its motion for this tick's ecosystem step. Untargetable species and a player in Dash i-frames
  *  still separate; an alpha under the sand does not, nor a grab pair (the hold places the held body). Returns the player's new position (the
  *  caller installs it), or null. */
+const SEPARATION_SPHERE = { x: 0, y: 0, z: 0, r: 0 };
 function separate(s: SimState, w: SimWorld, actor: Actor, dt: number): Vec3 | null {
-  let at: Vec3 | null = null;
-  const plan = currentPlan(s.run), playerMass = massFor(plan, s.run.genome, actor.bodyLength), legal = w.legality(s.run.stage);
+  let at: Vec3 | null = null, hull = worldHullAt(s, actor, s.physical);
+  const slop = SEPARATION_SLOP * actor.bodyLength;
+  let plan: BodyPlan | null = null, playerMass = 0;
   for (const c of s.combat.entities.values()) {
     const e = c.entity;
     if (e.eaten || !e.active || buried(c) || s.rt.heldBy === c.id || c.rt.heldBy === PLAYER_ID) continue;
-    const pose = sampleSpeciesPose(e, s.time);
-    const from = at ?? s.physical, push = separationPush({ player: worldHullAt(s, actor, from), species: pose.hull, playerMass, speciesMass: pose.mass, speciesResistance: c.behaviour.knockbackResistance,
+    // Final review I3: a cheap overlap test first (no pose, no push) — most species are far from the player.
+    const sp = speciesHullSphereInto(e, SEPARATION_SPHERE);
+    if (!sphereOverlapsHull(hull, sp.x, sp.y, sp.z, sp.r, slop)) continue;
+    plan ??= currentPlan(s.run); if (!playerMass) playerMass = massFor(plan, s.run.genome, actor.bodyLength);
+    const legal = w.legality(s.run.stage), pose = s.combat.speciesPose(e, s.time, false);
+    const from = at ?? s.physical, push = separationPush({ player: hull, species: pose.hull, playerMass, speciesMass: pose.mass, speciesResistance: c.behaviour.knockbackResistance,
       horizontal: movement(e.spec.movementProfileId).mode === 'ground', speciesForward: pose.forward, playerL: actor.bodyLength, dt });
     if (!push) continue;
     const r = resolveMotion({ actorId: actor.id, from, displacement: push.player, orientation: s.rt.orientation, hull: actor.hull, habitatProfileId: actor.habitat.id, cause: 'knockback',
       traversalPermit: s.rt.permit }, { ...legal, actor, interval: { start: s.time, end: s.time + dt } });
-    if (r.status !== 'invalid-start' && r.status !== 'needs-recovery') at = r.position;
+    if (r.status !== 'invalid-start' && r.status !== 'needs-recovery') { at = r.position; hull = worldHullAt(s, actor, at); }
     if (e.combat) { const q = e.combat.separation ??= { x: 0, y: 0, z: 0 }; q.x += push.species.x; q.y += push.species.y; q.z += push.species.z; }
   }
   return at;

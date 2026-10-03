@@ -928,7 +928,7 @@ prints `PASSED: all 10 combat checks`. Pass check ids to run some.
 | `alpha` | The Clawmother goes through phases 0, 1 and 2, burrows and enrages. The defeat unlocks `claw_mother` and pays 40 DNA. After a reload it is gone. |
 | `editor-moves` | The moves panel changes with the size slider. A drag swap persists after Done and a reload. |
 | `hints` | The first telegraph hint shows once and not again after a reload. |
-| `frame-time` | The median and p95 of the game frame callback in a crowd (`qaCrowd`): desktop at most 16.7 ms median and 33 ms p95; a phone at 4 times CPU slowdown at most 33.3 ms median and 50 ms p95. |
+| `frame-time` | The median and p95 of the game frame callback in a crowd (`qaCrowd`): desktop at most 16.7 ms median and 33 ms p95; a phone at 4 times CPU slowdown at most 33.3 ms median and 50 ms p95. At stage 1 the JS heap grows by at most 800 KB per frame (about 600 KB after the final-review allocation cuts; 1340 KB before). |
 
 The check bots dodge: they strafe, press Dash once for each wind-up and aim with
 the pointer. The journey scripts (`tiny-tide.mjs`, `tiny-tide-pacing.mjs`) do the

@@ -158,6 +158,12 @@ export function playerActor(plan: BodyPlan, genome: Genome, stage: number, growt
   return { id: 'player', hull: hullOffsets(genome, scale, fit), habitat: habitat(plan.habitat), bodyLength: bodyLengthOf(genome) * scale, ...(fit === 'tight' ? { fit } : {}) };
 }
 /** One sphere standing on the origin (food models stand on their origin), × the species' bodyScale (spec §11.3). */
+/** A species' hull sphere (the one capsule of speciesActor: .35 × size above the origin, radius .35 × size), written into `out` with no
+ *  allocation (final review I3: the separation pre-check). */
+export function speciesHullSphereInto<T extends { x: number; y: number; z: number; r: number; L?: number }>(e: { spec: Pick<Species, 'tier' | 'bodyScale'>; x: number; y: number; z: number }, out: T): T {
+  const size = SIZES[e.spec.tier]! * (e.spec.bodyScale ?? 1), ro = .35 * size;
+  out.x = e.x; out.y = e.y + ro; out.z = e.z; out.r = ro; out.L = size * 1.4; return out;
+}
 export function speciesActor(e: { id: number; spec: Pick<Species, 'tier' | 'habitatProfileId' | 'bodyScale'> }): Actor {
   const size = SIZES[e.spec.tier]! * (e.spec.bodyScale ?? 1), ro = .35 * size, centre = { x: 0, y: ro, z: 0 };
   return { id: `e${e.id}`, hull: [{ start: centre, end: centre, radius: ro, sway: 0, heave: 0 }], habitat: habitat(e.spec.habitatProfileId), bodyLength: size * 1.4 };
