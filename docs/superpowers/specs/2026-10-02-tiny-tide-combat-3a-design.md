@@ -436,8 +436,14 @@ An actor can start an action only when all of these are true:
 - **Player cone** (Bite, Grab's pinch; final review I2): apex = the player's
   hull centre; range = `(range + m) × L`, where `m` is the centre-to-socket
   distance in L; the half angle is unchanged. A creature pressed against the
-  player (beside or under the mouth) is inside it. The dispatch cone (§8.3)
-  uses the same rule with `range × 1.25 + m`.
+  player (beside or under the mouth) is inside it. Fix round 3: the hit
+  test uses the hull-centre apex only when the aim's yaw is within the half
+  angle + 10° of the body's yaw (or the aim is nearly vertical); else the cone
+  starts at the socket with the plain range, so a target behind the body is hit
+  only after the body turns toward it (the action's aim turns the body at its
+  yaw rate during wind-up and active). The dispatch cone (§8.3) uses the
+  hull-centre apex in every direction, with `range × 1.25 + m`: a press toward a
+  creature behind the player starts a Bite that turns the body.
 - **Capsule:** start and end = origin + frame × (local × `L_a`); radius =
   `radius × L_a`.
 - A mirrored pair (`shared-cast`): one action; the shape is the union of the
@@ -901,8 +907,9 @@ keeps its eat-food meaning when no enemy is in the cone.
   16 L beyond the player). A point between the camera and the player is never
   used (it lies behind the player when the target is lower or higher). With
   no such point, the aim is the ray's own horizontal direction.
-- The no-pick pointer counts only when it is over the canvas and moved in the
-  last 4 s. Else the aim is the camera forward (keyboard-only, R2).
+- The pointer counts while it is over the canvas, moving or still (fix round 3:
+  the 4 s timeout is gone; the aim no longer drifts to the camera forward).
+  With the pointer off the canvas the aim is the camera forward (keyboard-only, R2).
 - **Phone drag:** a drag on the basic button beyond 12 px from the press
   point sets the aim yaw: screen up is the camera's horizontal forward. The
   same press starts the basic move at once; the drag then steers it until the
@@ -1514,7 +1521,7 @@ tokens, alpha state, `heldBy`, `breakProgress` and the shown hints.
 
 | Check | Pass |
 | --- | --- |
-| `desktop-controls` | A left click starts Bite with a crab in the cone; Space with only a plant in reach eats it; right mouse held keeps Brace active and release ends it; keys 1–4 start slots 1–4; the aim yaw is within 5° of the pointer direction; with no pointer movement for 4 s the aim is the camera forward; a middle drag turns the camera. |
+| `desktop-controls` | A left click starts Bite with a crab in the cone; Space with only a plant in reach eats it; right mouse held keeps Brace active and release ends it; keys 1–4 start slots 1–4; the aim yaw is within 5° of the pointer direction, also after 4.3 s with the pointer still; with the pointer off the canvas the aim is the camera forward; a middle drag turns the camera. |
 | `phone-controls` | At 320×568 and 844×390, for a swimmer, a crawler and a breacher (Darter fixture): every control box is inside the viewport; no two boxes overlap; slots ≥ 48×48, basic ≥ 80×80; two real touches move with the joystick and aim by the basic drag at once; a slot tap starts its move; a held slot keeps Brace; a `pointercancel` ends Brace and leaves no held input. |
 | `telegraph-before-hit` | With `qaEncounter=1:crab` and audio muted: the telegraph is visible at least 0.45 s before the first damage, and its shape equals the action's shape; every crab, squid and eel attack (9 attacks) shows its telegraph at least 0.35 s before active; with the camera turned away (a forced off-screen wind-up), the edge arrow is visible at least 0.6 s before active (the director's off-screen minimum; T24 fix round 1). |
 | `hit-stop` | On a player Bite hit, both actors' action clocks stop for 60–90 ms while world time advances, and a third entity moves during it. |

@@ -6,7 +6,7 @@ import { SIZES } from '../../src/tiny-tide/biomes';
 import { activeStartedAt, stagger } from '../../src/tiny-tide/action-engine';
 import { resetRuntime } from '../../src/tiny-tide/lifecycle';
 import { AIM_PITCH_LIMIT, clampAimPitch, CombatWorld } from '../../src/tiny-tide/combat-world';
-import type { AttackSpec, Vec3, WorldShape } from '../../src/tiny-tide/combat-types';
+import type { AttackSpec, CombatInput, Vec3, WorldShape } from '../../src/tiny-tide/combat-types';
 import type { Entity } from '../../src/tiny-tide/ecosystem';
 import { RELEASED } from '../../src/tiny-tide/input';
 import { playerActorCached, playerBody, playerMoves } from '../../src/tiny-tide/sim';
@@ -53,6 +53,32 @@ describe('combat world', () => {
       for (let i = 0; i < 40 && !hit; i++) { now += 1 / 60; hit = tick(s, [crab], now, { aim }).r.events[0] ?? null; }
       expect(hit, `gap ${gapL} L, ${deg}°`).toMatchObject({ outcome: 'hit', targetId: 'e9' });
     }
+  });
+  // Fix round 3 (re-review Important 1): the centre apex reached 1.07 L past the rear of the hull, so a Bite hit a crab touching the body from
+  // behind with no turn. The hit cone starts at the hull centre only when the aim is within the half angle (+ 10°) of the body's yaw; else it
+  // starts at the mouth. A rear Bite still starts (the body turns toward it) but hits nothing while the body faces away.
+  it('a Bite at a crab touching the player from behind does not hit while the body faces away (Grab too); a front contact still hits', () => {
+    const setup = (deg: number, extra: Parameters<typeof speck>[0] = []) => {
+      const s = speck(extra); s.run.stage = 1; s.actorCache = null; s.combat = new CombatWorld();
+      const actor = playerActorCached(s), body = playerBody(s, actor), L = body.L, pr = Math.max(...actor.hull.map(h => h.radius)), c = body.centre;
+      const spec = SPECIES.find(x => x.key === '1:crab')!, r = speciesCombatPose(entity(9, spec, c), 0).hull[0]!.radius;
+      const a = deg * Math.PI / 180, d = pr + r + .05 * L, crab = entity(9, spec, { x: c.x + Math.sin(a) * d, y: c.y - r, z: c.z + Math.cos(a) * d });
+      const hc = speciesCombatPose(crab, 0).hull[0]!.start, n = Math.hypot(hc.x - c.x, hc.y - c.y, hc.z - c.z);
+      return { s, crab, aim: { x: (hc.x - c.x) / n, y: (hc.y - c.y) / n, z: (hc.z - c.z) / n } };
+    };
+    const hits = (deg: number, press: Partial<CombatInput>, extra: Parameters<typeof speck>[0] = []) => {
+      const { s, crab, aim } = setup(deg, extra); let now = 0, hit = false;
+      for (let i = 0; i < 40; i++) { const r = tick(s, [crab], now, i === 0 ? { ...press, aim } : { aim }).r; if (r.events.some(e => e.targetId === 'e9' && e.outcome === 'hit')) hit = true; now += 1 / 60; }
+      return hit;   // the tick never turns the body (the player step does): the body faces +z throughout
+    };
+    for (const deg of [180, 145, 110]) expect(hits(deg, { basicPressed: true, basicHeld: true }), `Bite at ${deg}°`).toBe(false);
+    for (const deg of [0, 30]) expect(hits(deg, { basicPressed: true, basicHeld: true }), `Bite at ${deg}°`).toBe(true);
+    // Grab (the pincer's pinch cone): the same rule.
+    const pincer = [{ id: 'claw_pincer', t: .5, scale: 2 }] as Parameters<typeof speck>[0];
+    const grabSlot = (() => { const { s } = setup(0, pincer); return playerMoves(s).slots.slots.indexOf('grab'); })();
+    expect(grabSlot).toBeGreaterThanOrEqual(0);
+    const pressGrab = { activePressed: [0, 1, 2, 3].map(k => k === grabSlot) as CombatInput['activePressed'] };
+    expect(hits(180, pressGrab, pincer), 'Grab at 180°').toBe(false);
   });
   // Final review I1 (controller ruling): the player's Bite deals half poise damage, so a size-1 Snapper (6 HP, 3 poise per Bite) no longer
   // staggers a size-1 hunter (poise 6) with every Bite; the third or fourth quick Bite does (poise decays 4/s).

@@ -148,10 +148,18 @@ type ConeShape = Extract<AttackShape, { kind: 'cone' }>;
 /** A player cone attack (Bite, Grab's pinch; final review I2): the apex is the player's hull centre and the range adds the centre-to-socket
  *  distance, so a creature pressed against the player (beside or under the mouth) is inside it. The half angle is the shape's. One helper for
  *  the dispatch (biteCone) and the hit test (playerShapes). */
-function playerCone(p: PlayerBody, shape: ConeShape, socket: Vec3, aim: Vec3): WorldShape {
+function playerCone(p: PlayerBody, shape: ConeShape, socket: Vec3, aim: Vec3, anyDirection = false): WorldShape {
+  const forward = forwardOf(p.rt.orientation);
+  // Fix round 3 (re-review Important 1): the centre apex only for an aim in front of the body (its yaw within the half angle + 10° of the
+  // body's, or a nearly vertical aim); else the mouth apex and the plain range, so a target behind the body is hit only after it turns.
+  // The dispatch (`anyDirection`) keeps the centre apex in every direction: a press toward the rear starts a Bite that turns the body.
+  const h = Math.hypot(aim.x, aim.z), off = h < .2 ? 0 : Math.abs(Math.atan2(Math.sin(Math.atan2(aim.x, aim.z) - p.rt.orientation.yaw), Math.cos(Math.atan2(aim.x, aim.z) - p.rt.orientation.yaw)));
+  if (!anyDirection && off > shape.halfAngle + CENTRE_APEX_MARGIN) return worldShape(shape, aimFrame(socket, aim, forward), p.L);
   const m = Math.hypot(socket.x - p.centre.x, socket.y - p.centre.y, socket.z - p.centre.z) / p.L;
-  return worldShape({ ...shape, range: shape.range + m }, aimFrame(p.centre, aim, forwardOf(p.rt.orientation)), p.L);
+  return worldShape({ ...shape, range: shape.range + m }, aimFrame(p.centre, aim, forward), p.L);
 }
+/** Fix round 3: the hull-centre apex of a player cone needs the aim within its half angle plus this margin of the body's yaw. */
+export const CENTRE_APEX_MARGIN = 10 * Math.PI / 180;
 export class CombatWorld {
   readonly entities = new Map<number, EntityCombat>();
   /** The last EVENT_LOG hit outcomes (diagnostics). */
@@ -251,7 +259,7 @@ export class CombatWorld {
   biteCone(p: PlayerBody, moves: MoveSet, aim: Vec3): WorldShape | null {
     const b = moves.basic, attack = b?.resolved.attack; if (!b || !attack || attack.shape.kind !== 'cone') return null;
     const origin = p.pose.emitters.find(e => e.source.kind === 'part' && e.source.partUid === b.partUid && e.source.socketId === 'bite')?.origin ?? p.centre;
-    return playerCone(p, { ...attack.shape, range: attack.shape.range * 1.25 }, origin, aim);
+    return playerCone(p, { ...attack.shape, range: attack.shape.range * 1.25 }, origin, aim, true);
   }
   private releasePlayerHold(a: ActionState, rt: CombatRuntime, now: number) {
     const held = a.heldTarget === null ? undefined : [...this.entities.values()].find(c => c.id === a.heldTarget);
