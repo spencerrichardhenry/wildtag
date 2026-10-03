@@ -51,6 +51,18 @@ export function basicRequested(intent: CombatInput, slotAccepted = false): boole
   return !slotAccepted && (intent.basicPressed || intent.basicHeld);
 }
 
+// ---- desktop mouse buttons (spec §8.1) ----
+/** The mouse's basic (left) and slot 1 (right) state. */
+export interface MouseState { basic: boolean; slot1: boolean }
+export const NO_MOUSE: MouseState = Object.freeze({ basic: false, slot1: false });
+/** The mouse state from a pointer event's `buttons` bitmask (1 left, 2 right, 4 middle), with the new presses. Chorded presses and releases
+ *  arrive as pointermove events (only the first press is a pointerdown and only the last release a pointerup), so every mouse pointer
+ *  event goes through this. `leftIsLook`: the left button drives an Alt + left camera drag, not the basic input. */
+export function mouseButtons(prev: MouseState, buttons: number, leftIsLook = false): MouseState & { basicPressed: boolean; slot1Pressed: boolean } {
+  const basic = !leftIsLook && (buttons & 1) !== 0, slot1 = (buttons & 2) !== 0;
+  return { basic, slot1, basicPressed: basic && !prev.basic, slot1Pressed: slot1 && !prev.slot1 };
+}
+
 // ---- aim (spec §8.4) ----
 /** The desktop pointer counts for this long after it last moved over the canvas; then the aim is the camera forward. */
 export const POINTER_FRESH_SECONDS = 4;

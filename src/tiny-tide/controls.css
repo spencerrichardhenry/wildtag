@@ -21,3 +21,9 @@
 #game-ui .vertical-controls{right:calc(4.2% - 37.5px);bottom:285px;flex-direction:column;gap:8px}
 #game-ui .vertical-controls .special-button{width:64px;height:64px;margin:0}
 }
+/* Review fix round 1: the camera hint names the gesture of the device (a middle drag with a fine pointer, a swipe on touch), and the
+   desktop movement hint is readable. */
+.look-hint b{font-weight:inherit}
+@media (pointer:coarse){.look-hint .fine-only{display:none}}
+@media not (pointer:coarse){.look-hint .coarse-only{display:none}}
+#game-ui .desktop-hint>span{font-size:10px;letter-spacing:.9px;opacity:.85;white-space:nowrap}

@@ -1,4 +1,4 @@
-// Tiny Tide C11: paths, editor, gestures, limits, soft world edge, solid reef rocks, block hints, hazards, pose agreement, lifecycle and saves (18 checks, with 5b, 5c, 5d, 7b, 7c and 12b).
+// Tiny Tide C11: paths, editor, gestures, limits, soft world edge, solid reef rocks, block hints, hazards, pose agreement, lifecycle and saves (18 checks, with 5b, 5c, 5d, 7b, 7c, 10b and 12b).
 // Fixtures come from the dev-only fixture page (the game's own modules). Run one or more checks: node e2e/tiny-tide-paths.mjs 3 7b
 import assert from 'node:assert/strict';
 import { mkdirSync } from 'node:fs';
@@ -538,6 +538,21 @@ check('10', 'Gestures (desktop)', async () => {
   assert.deepEqual(errors, []);
 });
 
+check('10b', 'Chorded mouse buttons (desktop)', async () => {
+  // Left, right, release left, release right: Chrome sends the right press and the left release as pointermoves. Basic and slot 1 follow
+  // the buttons bitmask; nothing stays held (T9 review fix round 1).
+  const { page, errors } = await newPage();
+  await play(page, {});
+  const held = async () => { await frames(page, 2); const s = await state(page); return [s.input.basicHeld, s.input.activeHeld[0]]; };
+  await page.mouse.move(720, 430);
+  await page.mouse.down(); assert.deepEqual(await held(), [true, false], 'left holds the basic input');
+  await page.mouse.down({ button: 'right' }); assert.deepEqual(await held(), [true, true], 'a chorded right press holds slot 1');
+  await page.mouse.up(); assert.deepEqual(await held(), [false, true], 'a chorded left release ends the basic input');
+  await page.mouse.up({ button: 'right' }); assert.deepEqual(await held(), [false, false], 'the last release ends slot 1');
+  await page.mouse.down({ button: 'right' }); await page.mouse.down(); await page.mouse.up({ button: 'right' }); await page.mouse.up();
+  assert.deepEqual(await held(), [false, false], 'right, left, release right, release left: nothing stays held');
+  assert.deepEqual(errors, []);
+});
 check('11', 'Gestures (touch, 390x844)', async () => {
   const { context, page, errors } = await newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
   await play(page, {});
@@ -776,4 +791,4 @@ try {
   }
 } finally { await browser.close(); }
 if (failures.length) { console.log(`FAILED: ${failures.join(', ')}`); process.exit(1); }
-console.log(`PASSED: ${only.length ? `checks ${only.join(', ')}` : 'all 18 checks (with 5b, 5c, 5d, 7b, 7c and 12b)'}: path screen, customize fallback, submit failure, evolve editor, swimmer and crawler limits, soft world edge, solid reef rocks, block hints, high spawn recovery, bite at the floor, transformation path, diet lock, size pricing, desktop and touch gestures, allocation, lost abilities, hazards and invulnerability, pose agreement, faint during a Breach, pause, kept coast save, legacy keys.`);
+console.log(`PASSED: ${only.length ? `checks ${only.join(', ')}` : 'all 18 checks (with 5b, 5c, 5d, 7b, 7c, 10b and 12b)'}: path screen, customize fallback, submit failure, evolve editor, swimmer and crawler limits, soft world edge, solid reef rocks, block hints, high spawn recovery, bite at the floor, transformation path, diet lock, size pricing, desktop and touch gestures, chorded mouse buttons, allocation, lost abilities, hazards and invulnerability, pose agreement, faint during a Breach, pause, kept coast save, legacy keys.`);

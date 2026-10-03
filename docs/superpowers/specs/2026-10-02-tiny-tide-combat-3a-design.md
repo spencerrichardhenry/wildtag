@@ -902,8 +902,14 @@ keeps its eat-food meaning when no enemy is in the cone.
 - `InputSources` gets `activeTapped`, `activeHeld` and `activeCanceled` as
   `Tuple4<boolean>`, `aim` and `aimSource`.
 - `readIntent` builds the four-slot tuples with today's rules.
-  `basicPressed` stays false on a tick with any slot press.
-- `basicRequested` stays the one place the simulation asks for the basic move.
+  `basicPressed` is the raw basic press, also on a tick with a slot press
+  (T9, the T7 carry). `CombatWorld` suppresses the basic input of a tick
+  only when a slot press of that tick is accepted (the move starts, or it
+  is buffered behind a busy action). An empty, inactive, cooling or
+  refused slot does not suppress a Bite or the chomp fallback. A raw basic
+  press still counts toward break-free progress.
+- `basicRequested(intent, slotAccepted)` stays the one place the simulation
+  asks for the basic move.
 - `RELEASED` has four-slot tuples.
 
 ## 9. Telegraphs, hit feel and the director

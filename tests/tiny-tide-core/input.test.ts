@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { aimChevron, aimPitch, basicRequested, pitched, pointerAim, readIntent, RELEASED, type InputSources } from '../../src/tiny-tide/input';
+import { aimChevron, aimPitch, basicRequested, mouseButtons, NO_MOUSE, pitched, pointerAim, readIntent, RELEASED, type InputSources } from '../../src/tiny-tide/input';
 
 const src = (over: Partial<InputSources> = {}): InputSources => ({ stickX: 0, stickZ: 0, keys: new Set(), chompHeld: false, chompTapped: false, riseHeld: false, riseTapped: false, diveHeld: false, ...over });
 const read = (s: InputSources, prev = RELEASED, breach = false) => readIntent(s, prev, { breachOnRiseTap: breach });
@@ -71,3 +71,26 @@ describe('aim', () => {
     expect(p.x).toBeCloseTo(.6); expect(p.z).toBeCloseTo(.8);
   });
 });
+describe('mouse buttons (chorded presses come as pointermove; review fix round 1)', () => {
+  it('left, right, release left, release right: basic and slot 1 follow the buttons bitmask', () => {
+    const a = mouseButtons(NO_MOUSE, 1);   // pointerdown left
+    expect(a).toEqual({ basic: true, slot1: false, basicPressed: true, slot1Pressed: false });
+    const b = mouseButtons(a, 3);          // pointermove: right pressed too
+    expect(b).toEqual({ basic: true, slot1: true, basicPressed: false, slot1Pressed: true });
+    const c = mouseButtons(b, 2);          // pointermove: left released
+    expect(c).toEqual({ basic: false, slot1: true, basicPressed: false, slot1Pressed: false });
+    const d = mouseButtons(c, 0);          // pointerup: right released
+    expect(d).toEqual({ basic: false, slot1: false, basicPressed: false, slot1Pressed: false });
+  });
+  it('right then left gives one press each; a held button gives no new press', () => {
+    const a = mouseButtons(NO_MOUSE, 2), b = mouseButtons(a, 3), c = mouseButtons(b, 3);
+    expect([a.slot1Pressed, b.basicPressed, b.slot1Pressed, c.basicPressed, c.slot1Pressed]).toEqual([true, true, false, false, false]);
+  });
+  it('the left button of an Alt + left camera drag is not the basic input; the middle button is ignored', () => {
+    expect(mouseButtons(NO_MOUSE, 1, true)).toEqual({ basic: false, slot1: false, basicPressed: false, slot1Pressed: false });
+    expect(mouseButtons(NO_MOUSE, 4)).toEqual(NO_MOUSE_EDGES);
+    expect(mouseButtons(NO_MOUSE, 4 | 1).basicPressed).toBe(true);   // a left press during a middle drag is the basic input
+  });
+});
+const NO_MOUSE_EDGES = { basic: false, slot1: false, basicPressed: false, slot1Pressed: false };
+

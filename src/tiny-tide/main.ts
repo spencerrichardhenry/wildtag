@@ -16,7 +16,7 @@ import { renderPreview } from './preview';
 import { cardSummary, COAST_READY, eligibleChildren, leadsTo, type BodyPlan } from './plans';
 import { quoteDesign } from './economy';
 import { newRuntime, type Actor, type CombatInput, type Constraint, type Tuple4, type Vec3, type WorldQueries } from './combat-types';
-import { aimChevron, aimPitch, pitched, pointerAim, POINTER_FRESH_SECONDS, readIntent, RELEASED, type AimSource } from './input';
+import { aimChevron, aimPitch, mouseButtons, NO_MOUSE, pitched, pointerAim, POINTER_FRESH_SECONDS, readIntent, RELEASED, type AimSource, type MouseState } from './input';
 import { CombatHud, slotViews } from './combat-hud';
 import { forwardOf } from './orientation';
 import { blockHint, blockHintDue, newBlockHintGate, PITCH_LIMIT, type PlayerStepResult, newTapWatch, tapTargetStalled } from './player-motion';
@@ -80,7 +80,7 @@ app.innerHTML = `
     <button id="evolve" class="primary evolve-button" hidden>${icons.up}<span>Evolve!</span></button>
     <div class="stage-dots" aria-label="Evolution progress">${STAGES.map((s, i) => `<span data-stage="${i}" title="${s.title}">${species[i]}</span>`).join('<i></i>')}</div>
     <div id="joystick" aria-label="Drag to move" role="group"><div class="stick-cross"></div><span id="stick"></span></div><div class="movement-hint"><span class="desktop-hint"><kbd>W</kbd><br><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><span>TO MOVE · MOUSE TO AIM · MIDDLE-DRAG TO LOOK</span></span><span class="touch-hint">DRAG TO MOVE</span></div>
-    <div class="look-hint" id="look-hint"><span>↔</span> SWIPE TO LOOK AROUND</div><div class="depth-gauge"><span id="depth-label">SEAFLOOR</span><div><i id="depth-dot"></i></div><small id="depth-hint">LOOK UP. THERE’S A WHOLE WORLD.</small></div><div id="evolution-banner" hidden><span id="evolution-icon"></span><div><small>LOOK AT YOU GROW!</small><strong id="evolution-name"></strong><span id="evolution-detail">Same little soul. A bigger world to eat.</span></div></div><div class="actions"><div class="vertical-controls" id="vertical-controls" hidden><button id="special" class="special-button" aria-label="Rise" hidden>${icons.up}<span id="special-label">RISE</span><kbd>E</kbd></button><button id="dive" class="special-button dive-button" aria-label="Dive">${icons.up}<span>DIVE</span><kbd>Q</kbd></button></div><button id="chomp" class="chomp-button" aria-label="Chomp (hold to keep eating)">${icons.chomp}<strong>CHOMP</strong><span>HOLD <kbd>SPACE</kbd></span></button></div>
+    <div class="look-hint" id="look-hint"><span>↔</span><b class="fine-only">MIDDLE-DRAG TO LOOK AROUND</b><b class="coarse-only">SWIPE TO LOOK AROUND</b></div><div class="depth-gauge"><span id="depth-label">SEAFLOOR</span><div><i id="depth-dot"></i></div><small id="depth-hint">LOOK UP. THERE’S A WHOLE WORLD.</small></div><div id="evolution-banner" hidden><span id="evolution-icon"></span><div><small>LOOK AT YOU GROW!</small><strong id="evolution-name"></strong><span id="evolution-detail">Same little soul. A bigger world to eat.</span></div></div><div class="actions"><div class="vertical-controls" id="vertical-controls" hidden><button id="special" class="special-button" aria-label="Rise" hidden>${icons.up}<span id="special-label">RISE</span><kbd>E</kbd></button><button id="dive" class="special-button dive-button" aria-label="Dive">${icons.up}<span>DIVE</span><kbd>Q</kbd></button></div><button id="chomp" class="chomp-button" aria-label="Chomp (hold to keep eating)">${icons.chomp}<strong>CHOMP</strong><span>HOLD <kbd>SPACE</kbd></span></button></div>
     <div id="food-pointer" hidden><span id="pointer-arrow">↑</span><span id="pointer-label">SEA SPROUT</span></div>
     <div id="snack-label" hidden></div><div id="threats" aria-hidden="true"></div><div id="toast" role="status" aria-live="polite"></div>
     <div id="faint" hidden><strong>Gobbled!</strong><span>Your little one carries on.</span></div>
@@ -90,6 +90,8 @@ app.innerHTML = `
   <div class="corner-note" id="corner-note">MADE FOR A LITTLE ESCAPE <span>✳</span></div>
 `;
 const el = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
+/** A touch-first device (no fine pointer): the camera turns with a swipe, not a middle drag (spec §8.1). */
+const coarsePointer = () => matchMedia('(pointer: coarse)').matches;
 const combatHud = new CombatHud(document.querySelector<HTMLElement>('#game-ui .actions')!);
 const audio = new TideAudio();
 let world: TideWorld;
@@ -192,9 +194,11 @@ let stickX = 0, stickZ = 0, stickPointer: number | null = null;
 let holdingChomp = false, rising = false, diving = false, chompTapped = false, riseTapped = false;
 /** Slot sources (spec §8.1–§8.2): slot buttons, keys 1–4 (keydown taps; readIntent reads held keys) and the right mouse (slot 1). */
 let slotHeld: Tuple4<boolean> = [false, false, false, false], slotTapped: Tuple4<boolean> = [false, false, false, false], slotCanceled: Tuple4<boolean> = [false, false, false, false];
-/** The desktop pointer (spec §8.4): its last client position, when it last moved over the canvas (ms) and whether it is over the canvas;
- *  the left mouse holds the basic input. */
-let pointerX = 0, pointerY = 0, pointerAt = -Infinity, pointerOver = false, mouseBasic = false;
+/** The desktop pointer (spec §8.4): its last client position, when it last moved over the canvas (ms) and whether it is over the canvas. */
+let pointerX = 0, pointerY = 0, pointerAt = -Infinity, pointerOver = false;
+/** The mouse buttons (spec §8.1): left holds the basic input, right holds slot 1. `mouseButtonsDown` is the last `buttons` bitmask read;
+ *  `mouseLookBit` is the button that drives a mouse camera drag (4 middle, 1 Alt + left; 0 none). */
+let mouse: MouseState = NO_MOUSE, mouseButtonsDown = 0, mouseLookBit = 0;
 let lastIntent: CombatInput = RELEASED;
 let target: T.Vector3 | null = null;
 let time = 0, last = performance.now(), cooldown = 0, chompPulse = 0;
@@ -283,7 +287,7 @@ function renderRoot() {
 const admittedNow = (actor: Actor) => simAdmitted(sim, simWorld, actor);
 /** Writes the run to the write key only. A kept, unreadable or legacy key is never written. */
 function save() { try { if (writeKey) localStorage.setItem(writeKey, JSON.stringify(run)); saved = structuredClone(run); } catch { /* Continue without saving in private contexts. */ } }
-function clearInput() { slotHeld = [false, false, false, false]; slotTapped = [false, false, false, false]; slotCanceled = [false, false, false, false]; mouseBasic = false; combatHud.buttons.forEach(b => b.classList.remove('pressed')); keys.clear(); holdingChomp = false; rising = false; diving = false; chompTapped = false; riseTapped = false; lastIntent = RELEASED; stickX = 0; stickZ = 0; stickPointer = null; target = null; el('stick').style.transform = ''; el('chomp').classList.remove('pressed'); el('special').classList.remove('pressed'); el('dive').classList.remove('pressed'); }
+function clearInput() { slotHeld = [false, false, false, false]; slotTapped = [false, false, false, false]; slotCanceled = [false, false, false, false]; mouse = NO_MOUSE; mouseButtonsDown = 0; mouseLookBit = 0; combatHud.buttons.forEach(b => b.classList.remove('pressed')); keys.clear(); holdingChomp = false; rising = false; diving = false; chompTapped = false; riseTapped = false; lastIntent = RELEASED; stickX = 0; stickZ = 0; stickPointer = null; target = null; el('stick').style.transform = ''; el('chomp').classList.remove('pressed'); el('special').classList.remove('pressed'); el('dive').classList.remove('pressed'); }
 function syncSound() { el('sound').innerHTML = audio.muted ? icons.mute : icons.sound; el('sound').setAttribute('aria-label', audio.muted ? 'Unmute sound' : 'Mute sound'); el('sound').setAttribute('aria-pressed', String(audio.muted)); }
 syncSound();
 function syncHome() {
@@ -365,7 +369,7 @@ function objective() {
   if (foods.length === 0) return 'Explore to find a snack you can reach.';
   const list = foods.length > 3 ? `${foods.slice(0, 3).join(', ')} & more` : foods.join(' & ');
   const caps = capsOf(), move = caps.breach ? 'Breach for gulls!' : caps.rise ? 'Rise / Dive to explore.' : 'Graze along the seabed.';
-  return `Eat ${list}. ${run.stage === 0 ? 'Swipe the world to look around.' : run.stage === 3 ? 'Watch out for seaplanes.' : move}`;
+  return `Eat ${list}. ${run.stage === 0 ? (coarsePointer() ? 'Swipe the world to look around.' : 'Middle-drag the world to look around.') : run.stage === 3 ? 'Watch out for seaplanes.' : move}`;
 }
 function begin(fresh = false) {
   audio.init();
@@ -400,7 +404,7 @@ function confirmRestart() {
 function help() {
   if (mode === 'evolving' || mode === 'won' || mode === 'editing' || mode === 'fainted' || mode === 'stuck') return;
   dialogReturn = mode === 'playing' || mode === 'paused' ? 'playing' : 'menu'; if (mode === 'playing') simSuspend(sim, 'paused');
-  showDialog(`<div class="eyebrow">A RECIPE FOR BIG THINGS</div><h2 id="modal-title">Follow your tummy.</h2><p>Eat to earn DNA. Spend DNA on new parts. Grow from a speck to a cosmic giant.</p><div class="help-rows"><div><span>01</span><div><strong>A little wander</strong><p>Drag the left joystick or use WASD / arrow keys. Swipe the world to turn the camera. While swimming or flying, push forward to travel in the direction you’re looking.</p></div></div><div><span>02</span><div><strong>A little nibble</strong><p>Get close to food and hold Chomp or Space. Your mouth sets your diet: herbivores eat plants, carnivores eat meat, omnivores eat both for less DNA.</p></div></div><div><span>03</span><div><strong>A little danger</strong><p>Red <b>!</b> marks a hunter. Chomp back, swim away, or hide with stealth parts. If you lose every heart, you wake up at the start with most of your DNA.</p></div></div><div><span>04</span><div><strong>A whole new you</strong><p>Tap the pencil to edit your creature at any time. When the DNA bar is full, tap Evolve, pick new parts, and grow right where you are. Eat every planet to finish.</p></div></div></div><button id="got-it" class="primary">Got it. Let’s snack. ${icons.arrow}</button>`);
+  showDialog(`<div class="eyebrow">A RECIPE FOR BIG THINGS</div><h2 id="modal-title">Follow your tummy.</h2><p>Eat to earn DNA. Spend DNA on new parts. Grow from a speck to a cosmic giant.</p><div class="help-rows"><div><span>01</span><div><strong>A little wander</strong><p>Drag the left joystick or use WASD / arrow keys. ${coarsePointer() ? 'Swipe the world to turn the camera.' : 'Aim with the mouse; middle-drag (or Alt + drag) the world to turn the camera.'} While swimming or flying, push forward to travel in the direction you’re looking.</p></div></div><div><span>02</span><div><strong>A little nibble</strong><p>Get close to food and hold Chomp or Space. Your mouth sets your diet: herbivores eat plants, carnivores eat meat, omnivores eat both for less DNA.</p></div></div><div><span>03</span><div><strong>A little danger</strong><p>Red <b>!</b> marks a hunter. Chomp back, swim away, or hide with stealth parts. If you lose every heart, you wake up at the start with most of your DNA.</p></div></div><div><span>04</span><div><strong>A whole new you</strong><p>Tap the pencil to edit your creature at any time. When the DNA bar is full, tap Evolve, pick new parts, and grow right where you are. Eat every planet to finish.</p></div></div></div><button id="got-it" class="primary">Got it. Let’s snack. ${icons.arrow}</button>`);
   el('got-it').onclick = closeDialog;
 }
 async function edit(kind: 'edit' | 'evolve') {
@@ -598,22 +602,36 @@ const canvas = world.renderer.domElement;
 // Touch keeps swipes to look and taps to walk (ground plans).
 canvas.addEventListener('contextmenu', event => event.preventDefault());
 const notePointer = (event: PointerEvent) => { pointerX = event.clientX; pointerY = event.clientY; pointerAt = performance.now(); pointerOver = true; };
+/** Every mouse pointer event goes through here: a chorded press or release arrives as a pointermove (only the first press is a pointerdown
+ *  and only the last release a pointerup), so the state is read from the `buttons` bitmask, never from `button` (review fix round 1).
+ *  A middle press, or an Alt + left press, starts a camera drag that ends when that button is released. */
+function syncMouse(event: PointerEvent) {
+  const b = mode === 'playing' ? event.buttons : 0, pressed = b & ~mouseButtonsDown;
+  if (mouseLookBit && !(b & mouseLookBit)) mouseLookBit = 0;
+  if (!mouseLookBit && lookPointer === event.pointerId) lookPointer = null;   // also after clearInput ended a mouse drag
+  if (!mouseLookBit && (pressed & 4 || (pressed & 1 && event.altKey))) {
+    mouseLookBit = pressed & 4 ? 4 : 1;
+    lookPointer = event.pointerId; lookX = lookStartX = event.clientX; lookY = lookStartY = event.clientY; looked = false;
+  }
+  const m = mouseButtons(mouse, b, mouseLookBit === 1);
+  if (m.basicPressed) chompTapped = true;
+  if (m.slot1Pressed) slotTapped[0] = true;
+  if (m.basicPressed || m.slot1Pressed) audio.init();
+  mouse = { basic: m.basic, slot1: m.slot1 }; mouseButtonsDown = b;
+}
 canvas.addEventListener('pointerdown', event => {
   if (mode !== 'playing') return;
   endedPointers.delete(event.pointerId);
   if (event.pointerType === 'mouse') {
-    notePointer(event);
-    if (event.button === 0 && !event.altKey) { mouseBasic = true; chompTapped = true; canvas.setPointerCapture(event.pointerId); audio.init(); return; }
-    if (event.button === 2) { slotHeld[0] = true; slotTapped[0] = true; canvas.setPointerCapture(event.pointerId); audio.init(); return; }
-    if (event.button !== 1 && !(event.button === 0 && event.altKey)) return;
-    event.preventDefault();   // a middle press does not start the browser's autoscroll
+    notePointer(event); if (event.button === 1) event.preventDefault();   // a middle press does not start the browser's autoscroll
+    canvas.setPointerCapture(event.pointerId); syncMouse(event); return;
   }
   lookPointer = event.pointerId; lookX = lookStartX = event.clientX; lookY = lookStartY = event.clientY; looked = false;
   canvas.setPointerCapture(event.pointerId);
 });
 canvas.addEventListener('pointerleave', event => { if (event.pointerType === 'mouse') pointerOver = false; });
 canvas.addEventListener('pointermove', event => {
-  if (event.pointerType === 'mouse') notePointer(event);
+  if (event.pointerType === 'mouse') { notePointer(event); syncMouse(event); }
   if (event.pointerId !== lookPointer || mode !== 'playing') return;
   const dx = event.clientX - lookX, dy = event.clientY - lookY;
   if (Math.hypot(event.clientX - lookStartX, event.clientY - lookStartY) > 5) looked = true;
@@ -623,9 +641,9 @@ canvas.addEventListener('pointermove', event => {
 canvas.addEventListener('pointerup', event => {
   // Every pointer that ends normally is recorded, so its lostpointercapture is not read as a cancel.
   endedPointers.add(event.pointerId);
-  if (event.pointerType === 'mouse') { if (event.button === 0) mouseBasic = false; if (event.button === 2) slotHeld[0] = false; }
+  if (event.pointerType === 'mouse') { syncMouse(event); return; }   // the mouse never taps to walk (D7)
   if (event.pointerId !== lookPointer) return;
-  if (!looked && mode === 'playing' && capsOf().ground && event.pointerType !== 'mouse') {
+  if (!looked && mode === 'playing' && capsOf().ground) {
     target = world.groundPoint(event.clientX, event.clientY); tapWatch.best = Infinity; tapWatch.stalled = 0;
     if (target) { target.x = T.MathUtils.clamp(target.x, -SPAWN_HALF, SPAWN_HALF); target.z = T.MathUtils.clamp(target.z, -SPAWN_HALF, SPAWN_HALF); world.targetRing.position.copy(target); world.targetRing.position.y = world.groundAt(target.x, target.z) + .08; world.targetRing.scale.setScalar(.45); world.targetRing.visible = true; }
   }
@@ -713,8 +731,8 @@ function frame(now: number) {
     chompPulse = Math.max(0, chompPulse - dt * 5); wrongDietClock = Math.max(0, wrongDietClock - dt); hintClock = Math.max(0, hintClock - dt);
     // One input consumer: one intent per frame, then the tap flags are spent.
     const aim = currentAim(caps);
-    intent = readIntent({ stickX, stickZ, keys, chompHeld: holdingChomp || mouseBasic, chompTapped, riseHeld: rising, riseTapped, diveHeld: diving, aim: aim.aim, aimSource: aim.source,
-      activeTapped: slotTapped, activeHeld: slotHeld, activeCanceled: slotCanceled }, lastIntent, { breachOnRiseTap: caps.breach });
+    intent = readIntent({ stickX, stickZ, keys, chompHeld: holdingChomp || mouse.basic, chompTapped, riseHeld: rising, riseTapped, diveHeld: diving, aim: aim.aim, aimSource: aim.source,
+      activeTapped: slotTapped, activeHeld: [slotHeld[0] || mouse.slot1, slotHeld[1], slotHeld[2], slotHeld[3]], activeCanceled: slotCanceled }, lastIntent, { breachOnRiseTap: caps.breach });
     chompTapped = false; riseTapped = false; slotTapped = [false, false, false, false]; slotCanceled = [false, false, false, false]; lastIntent = intent;
     const p = world.player.position;
     if (Math.abs(intent.move.x) + Math.abs(intent.move.z) > .05) { target = null; world.targetRing.visible = false; }
@@ -825,7 +843,7 @@ function poseAgreement() {
 // Read-only diagnostics allow browser verification to steer with real controls.
 if (QA) {
   const copy = (v: Vec3) => ({ x: v.x, y: v.y, z: v.z });
-  Object.defineProperty(window, '__tinyTide', { get: () => ({ mode,
+  Object.defineProperty(window, '__tinyTide', { get: () => ({ mode, input: { basicHeld: lastIntent.basicHeld, activeHeld: [...lastIntent.activeHeld] },
     plan: currentPlan(run).id, plans: [...run.plans], zone: zoneNow(), velocity: copy(rt.controlledVelocity), externalVelocity: copy(rt.externalVelocity),
     orientation: { ...rt.orientation }, permit: rt.permit ? { ...rt.permit } : null, arc: rt.arc ? { ...rt.arc } : null, breachReadyAt: rt.breachReadyAt, invulnerableUntil: rt.invulnerableUntil,
     pendingRespawn: run.pendingRespawn, caps: capsOf(), physical: copy(physical), legal: mode === 'menu' ? null : admittedNow(playerActor(currentPlan(run), run.genome, run.stage, growthOf(run))), contactNow, lastContact: lastContact === null ? null : `${lastContact}`, lastContactSolid, trapRescues: sim.trapRescues, rescueLog: JSON.parse(JSON.stringify(sim.rescueLog)), contactSolids: [...sim.lastSolids], groundOffset: rt.groundOffset, solidOverlap: mode === 'menu' ? null : solidOverlap(), solidsNear: mode === 'menu' ? [] : solidsNear(32), edge: { inZone: edgeNow, hinted: edgeHinted, half: PLAYER_HALF, softStart: EDGE_SOFT_START * PLAYER_HALF }, hazardSources: hazardSources(), growth: growthOf(run), acceptedHits, rejectedHits,
