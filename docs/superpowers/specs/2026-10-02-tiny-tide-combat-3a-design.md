@@ -1036,9 +1036,10 @@ player (`lastThreatAt`). This replaces "1 heart every 2.5 s after 5 s".
 - `economy.ts`: `faintLegacy` is removed. New pure helper
   `faintLoss(e): { wallet: number; parts: number }` returns what
   `faintCombat` takes. `state.ts` loses `DEATH_KEEP`.
-- The faint overlay says: "Fainted! The N DNA you found as a <Size> is gone.
-  Your body and parts stay." N is `faintLoss(e).wallet`. <Size> is the stage
-  title in lower case ("tiny", "small").
+- The faint overlay says: "Fainted! You lost N DNA. Your body and parts
+  stay." N is the true loss: `faintLoss(e).wallet + faintLoss(e).parts` (the
+  at-risk wallet and the at-risk credit of the parts; T15 ruling). With no loss
+  it says "No DNA was lost."; with no known loss, "Waking up at the start."
 - After the respawn, the toast says: "You woke up at the start. Eat to grow
   again."
 - Respawn uses today's flow (validated anchor, 3 s grace). Also: every
@@ -1471,16 +1472,18 @@ every time the player is held, with a ring for `breakProgress`.
 
 ### 14.2 Browser checks (`e2e/tiny-tide-combat.mjs`)
 
-They need a running dev server. Agents do not start the server at
-`http://127.0.0.1:5199` (carried constraint). The script reads `TIDE_URL`
-and the controller or the owner runs it. Fixtures come from
-`tests-browser/fixtures.html`. Two QA parameters are added (read once at
-load, development or `?qa` only):
+They need a running dev server. The dev server already runs at
+`http://127.0.0.1:5199`. Agents do run the browser checks, against this server,
+and never start a second one or stop it. The script reads `TIDE_BASE` (default
+that address; not `TIDE_URL`), like every `e2e/tiny-tide*.mjs`, and `TIDE_SEED`
+(default 1501). Fixtures come from `tests-browser/fixtures.html`. Three QA
+parameters are added (read once at load, development or `?qa` only):
 
 | Parameter | Effect |
 | --- | --- |
 | `qaEncounter=<species key>` | At the first start, the nearest active instance of that species is installed (by recovery) 3 player L in front of the player, in `calm`. |
 | `qaAlphaHealth=<0..1>` | Alphas start with that fraction of their HP. |
+| `qaCrowd=<species keys>` | (T24, plan review R18) At the first start, every live non-alpha instance of those species is installed on a ring of 3 player L around the player, in `calm`. It gives the frame-time check 13 or more combat bodies. |
 
 `window.__tinyTide.combat` (read-only) gives: actions (actor, id, phase, aim,
 world shape), telegraphs (shape, fill, on-screen, arrow), action clocks, the
@@ -1491,12 +1494,13 @@ tokens, alpha state, `heldBy`, `breakProgress` and the shown hints.
 | --- | --- |
 | `desktop-controls` | A left click starts Bite with a crab in the cone; Space with only a plant in reach eats it; right mouse held keeps Brace active and release ends it; keys 1–4 start slots 1–4; the aim yaw is within 5° of the pointer direction; with no pointer movement for 4 s the aim is the camera forward; a middle drag turns the camera. |
 | `phone-controls` | At 320×568 and 844×390, for a swimmer, a crawler and a breacher (Darter fixture): every control box is inside the viewport; no two boxes overlap; slots ≥ 48×48, basic ≥ 80×80; two real touches move with the joystick and aim by the basic drag at once; a slot tap starts its move; a held slot keeps Brace; a `pointercancel` ends Brace and leaves no held input. |
-| `telegraph-before-hit` | With `qaEncounter=1:crab` and audio muted: the telegraph is visible at least 0.45 s before the first damage, and its shape equals the action's shape; with the camera turned away, the edge arrow is visible at least 0.35 s before active. |
+| `telegraph-before-hit` | With `qaEncounter=1:crab` and audio muted: the telegraph is visible at least 0.45 s before the first damage, and its shape equals the action's shape; every crab, squid and eel attack (9 attacks) shows its telegraph at least 0.35 s before active; with the camera turned away (a forced off-screen wind-up), the edge arrow is visible at least 0.6 s before active (the director's off-screen minimum; T24 fix round 1). |
 | `hit-stop` | On a player Bite hit, both actors' action clocks stop for 60–90 ms while world time advances, and a third entity moves during it. |
 | `faint-rule` | Fixture: 0.5 heart, 37 at-risk DNA, stageDna 37. A crab hit faints the player; the overlay text contains "37 DNA"; after the respawn the at-risk wallet and stageDna are 0, banked and the design are unchanged, and only the v4 key was written. |
 | `alpha` | `qaEncounter=1:clawmother&qaAlphaHealth=0.62`: phase 1 attacks; below 60 % the burrow pattern; below 30 % the enraged attacks; the defeat unlocks `claw_mother` and adds 40 DNA; the part is in the editor; after a reload the Clawmother is absent. |
 | `editor-moves` | The moves panel shows numbers that change with the size slider; the slot bar and an inactive chip show; a drag swap persists after Done and a reload. |
 | `hints` | The first telegraph hint shows once; after a reload it does not show again. |
+| `frame-time` | (T24, plan review R18) With `qaCrowd` bodies near the player: the median of the game's frame callback is at most 16.7 ms on a desktop and 33.3 ms on a phone at 4× CPU slowdown; the p95 is at most 33 ms and 50 ms. |
 
 The existing browser tests (`tiny-tide.mjs`, `-paths`, `-mobile`, `-replay`)
 must still pass. `tiny-tide-mobile.mjs` also checks the slot buttons at
@@ -1529,13 +1533,14 @@ field of view. It writes `.codex-drafts/tiny-tide-qa/combat-probe.json` and
 
 | Id | Measure | Pass bar |
 | --- | --- | --- |
+| P0 | (T23) A still player is hit at the near, middle and far point of each attack band (5 % inside each edge) | ≥ 90 %, and ≥ 20 trials for a point |
 | P1 | Avoided share per attack id, dash-only build (Speck: Side fin pair at scale 1; Swimmer at size 1: Side fin pair at scale 1), 200 seeded trials from the band midpoint | ≥ 95 % for every hunter and fighter attack; ≥ 90 % for every alpha attack |
 | P2 | Brace build (Shell plate at scale 1, size 1): avoided or mitigated (damage ≤ half of raw) per blockable attack | ≥ 95 % |
 | P3 | Counter build (Spike at scale 1): countered share per parryable attack | ≥ 85 % |
 | P4 | Movement-only build (no moves) | Reported, no bar |
 | P5 | Median time-to-kill, fight bot, meat build (Snapper at scale 1 + starter parts), seeds 11–13, 30 trials each | Drifter ≤ 6 s; spiny snail ≤ 8 s; crab ≤ 20 s; sardine ≤ 6 s; puffer ≤ 10 s; squid ≤ 30 s; eel ≤ 30 s; Clawmother ≤ 90 s; Reef Tyrant ≤ 120 s |
 | P6 | Median time-to-kill, plant build (Nibbler at scale 1) | Crab ≤ 45 s; squid ≤ 75 s; the rest reported |
-| P7 | Completion: journey bot on Speck → Swimmer and Speck → Crawler, × three diet plans: herbivore (Nibbler at sizes 0 and 1), carnivore (Snapper at sizes 0 and 1), omnivore (Snapper at size 0, then the Beak from the evolution to size 1), × seeds 11, 12, 13 (18 runs) | Every run becomes evolve-ready at size 0 and at size 1 within 600 s of active time per size, with at most 3 faints per size |
+| P7 | Completion: journey bot on Speck → Swimmer and Speck → Crawler, × three diet plans: herbivore (Nibbler at sizes 0 and 1), carnivore (Snapper at sizes 0 and 1), omnivore (Snapper at size 0, then the Beak from the evolution to size 1), × seeds 11–15 (30 runs; T23 fix round 1) | Every run becomes evolve-ready at size 0 and at size 1 within 600 s of active time per size, with at most 3 faints per size |
 | P8 | Director invariants over every probe run | Never more than 2 wind-ups at the player at once; active starts ≥ 0.25 s apart; off-screen wind-ups ≥ 0.6 s |
 
 The probe also reports, per run and size: active time, faints, kills by
@@ -1543,6 +1548,8 @@ species, damage taken, DNA by source (meals, kills, survivor, alpha) and the
 time spent held. It proposes no tuning. If a bar fails, the plan changes
 species numbers (not the floors of §11.1) and reports the change to the
 owner.
+
+Last result (after `ce1bb1b`): every bar passes except P7, which passes 29 of 30 runs (crawler omnivore, seed 14, size 1: 600 s, no faints, 142 of 150 DNA, 465 s in skipped sardine chases). This is the owner decision R14 (3); no number was changed for it.
 
 ### 14.4 Review focus
 

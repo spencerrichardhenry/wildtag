@@ -11,9 +11,12 @@ The design of this update is in [TINY-TIDE-EVOLUTION.md](TINY-TIDE-EVOLUTION.md)
 Run `npm run dev` and open `http://localhost:5199/tiny-tide.html`.
 
 - **Move:** drag the left joystick, or use WASD / arrow keys.
-- **Look:** swipe or drag the world. Swimming/flying forward follows the camera,
+- **Look:** swipe the world on a phone. On a desktop, use a middle drag or Alt + left drag. Swimming/flying forward follows the camera,
   including its pitch, so the habitat can be explored in three dimensions.
-- **Eat or bite back:** hold Chomp / Space near food or near a creature that attacks you.
+- **Eat or fight:** Chomp / Space / left mouse. With a fighting creature in front of your mouth it bites (Bite); otherwise it eats the food in reach.
+- **Moves:** your parts give up to four moves in slots 1–4 (keys 1–4, the slot buttons; the right mouse is slot 1). See [Combat](#combat).
+- **Aim (desktop):** the mouse pointer. Turn the camera with a middle drag or Alt + left drag.
+- **Aim (phone):** drag from the Chomp button; without a drag, moves aim at the nearest threat in front.
 - **Change depth:** hold Rise / E or Dive / Q. Releasing the controls hovers.
 - **Orca-size breach:** at the Big size, tap Breach / E and hold Chomp to catch seabirds.
 - **Edit your creature:** the pencil button. **Evolve:** the Evolve button when the DNA bar is full.
@@ -39,23 +42,25 @@ The mouth sets the diet. Herbivores eat plants, carnivores eat meat, and
 omnivores eat both for 70% of the DNA. Everyone eats the Huge-size landmarks
 and the planets. Parts also give stats: speed, bite, reach, armor, health
 (hearts), sense (how far away you notice hunters) and stealth (how close a
-hunter must be to notice you).
+hunter must be to notice you). Some parts also give a move (see [Combat](#combat)).
 
 ## The living ocean
 
 | Size | Plants | Meat | Danger |
 | --- | --- | --- | --- |
-| Tiny (2 cm) | sprouts, kelp, grapes, lettuce | copepods, bristle worms | crabs hunt you, jellies sting |
-| Small (30 cm) | grape clusters, lettuce beds | shrimp, crabs, jellies, snails | squid hunt you, crabs pinch back, rays sting |
+| Tiny (2 cm) | sprouts, kelp, grapes, lettuce | copepods, bristle worms, drifter shrimp, spiny snails | Peach crabs hunt you, the Old Clawmother guards her lair, spiny snails fight back |
+| Small (30 cm) | grape clusters, lettuce beds | shrimp, crabs, jellies, snails, sunny sardines, puffers | Berry squid and moray eels hunt you, the Reef Tyrant guards its lair, crabs and puffers fight back, jellies and rays sting |
 | Big (8 m) | kelp fronds, sprout groves | tuna, squid, rays, gulls | squid hunt you, rays sting |
 | Huge (120 m) | palms, sailboats, seaplanes, balloons, lighthouses (any diet) | | seaplanes chase you |
 | Cosmic | 12 planets | | — |
 
 Prey runs away from a creature that can eat it, but it tires quickly. Food
-regrows out of sight. Hunters show a red **!** marker. Chomp a creature that
-attacks you to bite back. Defeating a crab, jelly, squid or seaplane can unlock
-a part before its size. When you lose every heart, you wake up at the size's
-start point with 70% of your DNA. Your stage and your design stay.
+regrows out of sight. Hunters show a red **!** marker. At sizes 0 and 1 the
+crab, squid, eel, puffer, snail and the two alphas fight with telegraphed
+attacks (see [Combat](#combat)); the jelly, ray and seaplane still sting on
+contact. Defeating a crab, jelly, squid or seaplane can unlock a part before
+its size. When you lose every heart you faint: see [Combat](#combat). Your
+stage and your design stay.
 
 Every new adventure has a seed. The seed places biomes such as kelp forests,
 coral gardens, crab flats and squid deeps. Biomes change the food and the
@@ -468,7 +473,7 @@ DNA has provenance (`src/tiny-tide/economy.ts`):
   refund can return). A design change releases credit before it buys parts.
 - Unchanged parts cost 0. A smaller part releases
   `floor(credit × (oldBasis − newBasis) / oldBasis)`.
-- A faint keeps 70% of each wallet part. Stage and design stay.
+- A faint loses every at-risk credit (the wallet and the parts) and empties the growth bar. Banked DNA, the stage and the design stay.
 - Every commit checks the result. An invalid or unaffordable design changes
   nothing.
 
@@ -495,11 +500,299 @@ automatic adaptation. Done is enabled only for a valid, affordable design with
 a start anchor. If the commit fails, the editor stays open with its draft and
 undo history.
 
+---
+
+## Combat
+
+Combat is in sizes 0 and 1 (Tiny and Small). Sizes 2 to 4 keep the old
+contact rules until sub-project 3b. The design is in
+[the combat 3a spec](superpowers/specs/2026-10-02-tiny-tide-combat-3a-design.md).
+The idea: parts give moves, you aim each move, and every enemy attack shows a
+warning (a telegraph) before it lands. You win with timing: a dodge, a block
+or a counter.
+
+### Controls
+
+| Input (desktop) | Action |
+| --- | --- |
+| W A S D, arrow keys | Move |
+| Mouse pointer | Aim. The aim is the point where the pointer meets the flat plane through your creature. After 4 s without a pointer move, the aim is the camera direction. |
+| Left mouse, Space | Chomp: Bite or eat (see below) |
+| Right mouse | Slot 1. Hold it for Brace. |
+| 1, 2, 3, 4 | Slots 1 to 4 |
+| E / Q | Rise (or Breach) / Dive |
+| Middle drag, Alt + left drag | Turn the camera |
+| Escape, P | Pause |
+
+On a phone, the left thumb moves with the joystick. The right thumb uses the
+Chomp button and up to four slot buttons in an arc next to it. An empty slot
+has no button. Each slot button shows the move icon and a cooldown ring.
+Tap a slot button to use the move. Hold it for Brace. A canceled touch ends
+Brace. Rise / Breach and Dive stay in a column at the right edge. Swipe the
+world to turn the camera.
+
+Phone aim: drag from the Chomp button (more than 12 px) to aim. The same press
+starts the move at once, and the drag steers it. With no drag, a move aims at
+the best threat inside 60 degrees in front of you, within 3 times the Bite
+reach. The order is: an enemy that winds up at you, then hunters and fighters,
+then prey. While you Brace, the search covers 90 degrees on each side. Ink
+(from the Berry squid) switches auto-aim off for 1.5 s. A small chevron
+shows the aim while a fighting creature is within 4 body lengths.
+
+### Eat or fight
+
+Chomp, Space and the left mouse all use one rule.
+
+1. A fighting creature of your size (or one size up) has a part inside the Bite
+   cone (the Bite shape with 1.25 times the reach). Your creature uses Bite.
+2. Otherwise Chomp eats the food in reach. Fighting creatures are never
+   Chomp targets.
+
+A herbivore uses Bite only on a creature that is engaged with it: the creature
+hunts or is angry at you, it winds up an attack at you, or it touched you
+(any result) in the last 3 s. A calm crab is not a Bite target for a herbivore,
+so Chomp eats the plant. A carnivore or an omnivore bites any fighting
+creature in the cone. A slot press that starts (or is buffered) takes the
+place of the Bite on that tick. An empty, inactive or cooling slot does not.
+
+### Moves
+
+Each move comes from a part. The mouth gives the Bite. These parts give the
+other moves (numbers at part size 1, and at size 1.8 for a comparison):
+
+| Part | Move | Size 1 | Size 1.8 |
+| --- | --- | --- | --- |
+| Side fin | Dash | 1.60 L in .18 s, cooldown 1.1 s | 1.98 L in .21 s, 1.36 s |
+| Dorsal fin | Dash | 1.40 L in .18 s, 1.0 s | 1.74 L in .21 s, 1.24 s |
+| Frill fin | Dash | 1.50 L in .18 s, 1.1 s | 1.86 L in .21 s, 1.36 s |
+| Paddle tail | Dash | 1.80 L in .20 s, 1.3 s | 2.23 L in .23 s, 1.61 s |
+| Little leg | Scuttle (a ground Dash) | 1.30 L in .16 s, .9 s | 1.61 L in .19 s, 1.12 s |
+| Crab leg | Scuttle | 1.40 L in .18 s, 1.0 s | 1.74 L in .21 s, 1.24 s |
+| Pincer | Grab | holds 1.00 s, 2 damage, cooldown 3.0 s | holds 1.28 s, 3 damage, 3.48 s |
+| Clawmother pincer (rare) | Grab | holds 1.30 s, 3 damage, 3.0 s | holds 1.66 s, 4 damage, 3.48 s |
+| Spike | Counter | .22 s window, reflects 3, 1.2 s | .27 s window, reflects 4, 1.44 s |
+| Shell plate | Brace | blocks 75 %, breaks at 4 half-hearts, speed x .45 | blocks 87 %, breaks at 6, speed x .36 |
+| Fan tail | Sweep | 3 damage, reach .90 L, wind-up .22 s, 2.2 s | 4 damage, 1.12 L, .26 s, 2.64 s |
+| Fluke | Sweep | 4 damage, reach 1.00 L, wind-up .24 s, 2.4 s | 6 damage, 1.24 L, .28 s, 2.88 s |
+
+L is your body length. Damage on a Bite or Sweep is HP of the enemy.
+
+**Bite** is a cone at your mouth. Its active time is .08 s.
+
+| Mouth | Damage | Reach (L) | Wind-up (s) | Recovery (s) |
+| --- | --- | --- | --- | --- |
+| Nibbler, Filter grin | 2 | .55 | .10 | .14 |
+| Snapper, Fangs | 4 | .60 | .16 | .22 |
+| Beak, Maw | 3 | .60 | .13 | .18 |
+| Tyrant jaw (rare) | 6 | .70 | .20 | .26 |
+
+The `bite` stat of your other parts adds its whole part to the Bite damage
+(rounded down).
+
+**How each move plays:**
+
+- **Dash.** You are safe from all hits while you travel. A hit that meets a
+  Dash is "evaded". Cancel the recovery of a Bite or Sweep with a Dash. You
+  keep 30 % of the speed at the end.
+- **Scuttle.** The same as a Dash, but only along the ground.
+- **Brace.** Hold the button. After .10 s, blockable hits from the front (70
+  degrees each side) lose the block share of their damage (after armor). A
+  hit that does at least the "breaks at" number of half-hearts breaks the
+  guard: you stagger and cannot Brace for 2.0 s. Grabs and red attacks
+  ignore Brace. You move at the slow speed while you hold it.
+- **Counter.** Press just before a hit lands. The window starts .04 s after the
+  press and covers every direction. A countered hit does no damage to you. The
+  attacker takes the reflect damage and staggers for 1.0 s (even when it
+  cannot normally be interrupted). A Counter that catches nothing leaves .40 s
+  of recovery. Counter beats a Grab. It does not work on unparryable attacks.
+- **Grab.** A short cone at your pincer. It cannot be blocked. The creature
+  must be no longer than the size limit times your length, and it must be
+  grabbable (alphas are not). A held creature cannot act. The hold ends when
+  the time ends or the creature is staggered.
+- **Sweep.** A wide cone (75 degrees each side) behind you. It hits up to four
+  creatures and knocks them back. You move at half speed during it.
+
+**Part size.** The editor size slider (.4 to 1.8) scales every number. A bigger
+part is stronger and slower: longer reach, damage, hold, window or distance,
+and also a longer wind-up, recovery or cooldown. Each number follows
+`base x (1 + k x (size - 1))` with its own k, then rounds once. The details
+panel and the slider show "old -> new". A **mirrored pair** of Side fins, Frill
+fins, Little legs or Crab legs gives a Dash with 20 % more distance and a
+cooldown x .85. A pair of Pincers or Clawmother pincers gives a Grab with
+hold x 1.3, damage x 1.5 and the size limit .25 higher. Counter, Brace and
+Sweep have no pair bonus. The editor shows the tradeoff of each move.
+
+**Slots.** You have four slots. There are five kinds of move: Brace, Counter,
+Dash, Grab and Sweep. When two parts give the same kind, the part with the
+bigger main number (hold, window, block share, distance or damage) is used.
+Slots fill in this order: Brace, Counter, Dash, Grab, Sweep. A fifth kind is
+inactive and has no button. The editor shows the slot bar. To swap, drag a
+move chip onto a slot, or tap a chip and then a slot (or press 1 to 4); the
+move that was there moves to the old slot. A swap is a pin, and it is kept with the design (and in
+the undo history). A pin for a move that the design no longer gives is cleared
+when you commit.
+
+A press in the last .12 s of a recovery (or during a hit-stop) is kept and
+starts when the move can start.
+
+### Telegraphs
+
+Every enemy attack shows its hit shape before it lands. The warning and the
+hit use the same shape and the same clock. A test proves it for every attack.
+
+- **Amber, solid:** you can block the attack with Brace.
+- **Red, striped:** you cannot block it. Dash, Counter (when the attack allows it) or leave.
+  The stripes show the difference without colour.
+- The shape fills from the attacker outward, so you can see the time left.
+  After the aim lock, the shape stays fixed. A ring on the seabed shows the
+  height of the shape.
+- The attacker shows a pose cue (it rears back, crouches, inflates, coils,
+  sinks or spins) and flashes .12 s before the active time.
+- An arrow at the screen edge shows an attack that is off screen.
+
+The first wind-up at you and the first red wind-up each show one hint. See the
+hints note in [Verification](#verification).
+
+### Hit feel
+
+A hit stops the two fighters for a moment (hit-stop). A hit on you stops them
+for 60 ms plus 10 ms for each half-heart after the first (90 ms at most). A hit
+of yours stops for 60 to 90 ms by the damage. A block or a guard break stops
+for 60 ms, a grab for 70 ms and a Counter for 90 ms. A Dash and immunity do not
+stop. The hurt creature flashes white for .08 s and shows 10 impact particles.
+Numbers show the result: "-4" (enemy HP), "-½ ♥", "-1 ♥" and so on for you,
+and "BLOCK", "COUNTER!", "DODGE" and "IMMUNE". The camera shakes only for a
+hit on you and for your Sweep and Counter (not with reduced motion). A phone
+vibrates on a hit. A creature that you hurt shows an HP bar for 4 s. An alpha
+shows a bar at the top with its name, its HP and phase marks.
+
+After a hit you cannot be hit again for .4 s. A knock is limited to a short
+distance, and every knock goes through the same pose check as all movement.
+
+### Health and faint
+
+Health is in half-hearts (the display shows hearts). An enemy attack takes
+half-hearts. Armor removes `floor(armor / 2)` from each hit, but a hit always
+takes at least 1. A hit that you block takes its damage after that, times
+(1 - the block share). You regain half a heart every 2 s, after 6 s with no
+damage and no attack wound up at you.
+
+When you lose every heart you faint:
+
+1. You lose all DNA you found at this size: the at-risk wallet and the
+   at-risk credit of your parts. The growth bar goes to 0.
+2. Banked DNA, your body and your parts stay.
+3. The overlay says "Fainted! You lost N DNA. Your body and parts stay." N is
+   the whole loss (wallet plus parts).
+4. You wake at the start point with 3 s of grace, and the toast says "You woke
+   up at the start. Eat to grow again."
+5. Every creature that hunted you gives up. No creature attacks you or
+   notices you until 6 s after the grace ends (9 s in all), and that includes
+   fighting prey.
+
+Grabs on you end at the faint. Evolving also ends attacks on you.
+
+### DNA from combat
+
+- **Carnivores and omnivores:** a kill pays the meal DNA of the creature (an
+  omnivore gets 70 %). It counts for the growth bar when the creature is of
+  your size or hunts your size.
+- **Herbivores:** a kill pays 0 DNA. You drive the creature off.
+- **Survivor bonus (herbivores):** a hunter chases you for at least 4 s with at
+  least one wind-up, and then gives up. You get 35 % of its DNA (rounded),
+  and it counts for the growth bar. One bonus for each chase. A DNA number and
+  a toast show it.
+- **Alphas:** the first defeat pays 40 DNA (Old Clawmother) or 60 DNA (Reef
+  Tyrant) and unlocks a rare part. That part is usable at any size.
+- Some kills still unlock a part early: a crab gives the Crab leg, a squid
+  the Long tentacle.
+- A defeated creature comes back after 14 to 22 s (a hunter of your size
+  after 30 to 40 s). An alpha never comes back. A creature that returns to
+  calm heals fully, but only after 8 s without damage.
+
+### Enemies
+
+HP is enemy HP. DNA is the meal value. "Hits" are in half-hearts.
+
+| Size | Creature | Role | HP | DNA | Attacks (wind-up in s, hits) |
+| --- | --- | --- | --- | --- | --- |
+| 0 | Drifter shrimp | prey, flees (2 s, then rests 1.2 s) | 3 | 14 | none |
+| 0 | Spiny snail | prey, fights when hit or cornered | 6 | 16 | poke .50 s, 2 |
+| 0 | Peach crab (one size up) | hunter | 20 | 24 | pinch .50 s, 2; lunge .60 s, 3; sweep .55 s, 2 |
+| 0 | Old Clawmother | alpha | 80 | 40 reward | see below |
+| 1 | Sunny sardine | prey, flees in schools of 4 | 4 | 15 | none |
+| 1 | Puffer | prey, bursts when you come close | 10 | 20 | burst .55 s, 3 (ball, reach 1.35 L) |
+| 1 | Peach crab | fights back | 20 | 24 | as above |
+| 1 | Berry squid | hunter | 26 | 30 | ink .45 s, 1 (blinds); grab .55 s, 2 (red); lunge .45 s, 3 |
+| 1 | Moray eel | ambush hunter from a den | 22 | 28 | ambush .45 s, 3; bite .45 s, 2; wrap .60 s, 1 (red) |
+| 1 | Reef Tyrant | alpha | 110 | 60 reward | see below |
+
+Prey that fights starts a fight only when hit or cornered, then backs off.
+Hunters notice you, approach, pick an attack by distance, and then move
+around you. Two rules hold for every attack. The wind-up is at least .45 s at
+size 0 and .40 s at size 1 (.55 s for an alpha). An attack must be avoidable
+by at least one move at a .35 s reaction (the eel bite was raised from .40 s
+to .45 s for this).
+
+Squid ink does 1 half-heart, turns auto-aim off and slows you to 70 % for
+1.5 s. A blocked ink has no effect. The jelly, ray and seaplane still sting on
+contact and have no telegraph.
+
+**Grabs on you.** The squid grab and the eel wrap hold you if you are no
+longer than 1.2 times the attacker. You cannot move or act. A grab is red and
+cannot be blocked. A Counter or a Dash stops a grab. To break free: press
+Chomp (25 %), Dash (35 %) or flick the stick the other way (20 %) until the
+bar is full. You then get .5 s of immunity. The hold also ends when the
+grabber staggers or the time ends (squid 1.0 s, eel 1.2 s). The hold squeezes
+you for half-hearts at fixed intervals.
+
+**The director.** At most two enemies wind up an attack at you at the same
+time. Two attacks never start within .25 s of each other (the second waits
+at most .5 s). A wind-up that is off screen lasts at least .6 s. A grab never
+starts while another enemy winds up an attack at you. Creatures also push
+softly out of your body, so you cannot stand inside an enemy.
+
+### Alphas
+
+An alpha lives at a seeded lair. You meet it only at its own size, and it
+notices you only inside its lair radius. It never leaves the lair disc. When
+you stay outside 1.5 times the lair radius for 3 s, the alpha goes home and
+heals 4 % of its HP each second. When the alpha dies,
+you get its reward once; it is gone for the run. An alpha with its part
+already unlocked does not appear. A phase change gives a .8 s roar (the alpha
+is stagger-immune) and the toast "The <name> is getting angry!".
+
+| Alpha | Phase (HP) | What it does |
+| --- | --- | --- |
+| Old Clawmother (80 HP) | 1 (above 60 %) | Pinch combos (a second pinch follows .55 s after the first), and a lunge |
+| | 2 (above 30 %) | Burrow ambush: it sinks, moves under the sand where nothing can hit it, and rises under you with a red wind-up (.70 s). It does this twice, then a pinch combo. |
+| | 3 (below 30 %) | Enraged (speed x1.3): a sweep then a pinch (.55 s between them), and pinch combos |
+| Reef Tyrant (110 HP) | 1 (above 66 %) | Bites and den lunges near the lair |
+| | 2 (above 33 %) | Charge laps (speed x1.4): it circles the lair and charges twice, then rests 1.5 s |
+| | 3 (below 33 %) | Whirl (red, striped, hits twice, reaches .3 L from the body) and bites (speed x1.2) |
+
+The Clawmother pincer gives a strong Grab. The Tyrant jaw gives the strongest
+Bite (6 damage).
+
+### Combat checks
+
+- **Unit tests** are in `tests/tiny-tide-core` (the default unit suite).
+- **The balance probe** runs the real simulation with bots. See
+  [Verification](#verification) for the command and the bars.
+- **The browser checks** are `node e2e/tiny-tide-combat.mjs`. See
+  [Verification](#verification).
+
 ## Saves
 
 - Version 4 (key `tiny-tide-adventure-v4`). It adds `nextPartSerial`,
   `pendingRespawn`, `mechanics`, `archive`, `notices` and the DNA ledger. Load
   and every commit use the same strict validator.
+- **Combat fields.** The save keeps the move slots as `loadout.slots`: four
+  entries, each `null` or a move kind (the pins of the editor). Health can
+  have half-hearts. An old `loadout.active` loads as four empty pins. A pin
+  that is invalid or names a move the design does not give is repaired (that
+  pin is cleared); it never rejects the save. An alpha defeat is the rare part
+  in `unlocked`; no other field is added. The hints are not in the save.
 - **Migration.** A v2 save (`tiny-tide-adventure-v2`), or a v1 save
   (`tiny-tide-adventure-v1`) through the v1 reader, migrates once at load:
   1. The original design is repaired and archived.
@@ -595,6 +888,7 @@ node e2e/tiny-tide-paths.mjs               # 18 checks with 5b, 5c, 5d, 7b, 7c a
 node e2e/tiny-tide-mobile.mjs              # also the phone triangle budget (1.6M per frame) at stages 0–3
 node e2e/tiny-tide-replay.mjs
 node e2e/tiny-tide-combat.mjs             # 10 combat checks (spec §14.2 and the frame-time check); pass check ids to run some; TIDE_SEED=<n> (default 1501)
+npx vitest run tests/tiny-tide-core/combat-balance.test.ts   # the probe smoke test (about 1 s); the full probe: see "Combat balance probe"
 node e2e/tiny-tide-pacing.mjs              # the pacing study (a diagnostic, not a gate; long: run in the background)
 ```
 
@@ -606,11 +900,84 @@ the Colossus walks (3 and 7 segments, 5 foods) and the pocket holds (every
 pocket of two solids near the start, 3 seeds, starter and 7-segment bodies).
 Run the slow tier before a merge.
 
-The browser tests need the dev server (`npm run dev`, port 5199). Their save
+The browser tests need the dev server (`npm run dev`, port 5199). Every
+`e2e/tiny-tide*.mjs` script reads the server address from `TIDE_BASE` (default
+`http://127.0.0.1:5199`). Run the scripts against the server that already
+runs. Do not start a second server. Their save
 fixtures come from the development-only page `tests-browser/fixtures.html`,
 which builds runs with the game's own modules (`makeFixture(spec)`) and finds
 hazard encounters (`pickHazard(spec)`). The tests write a fixture into
 `localStorage` before they open the game.
+
+### Combat browser checks
+
+`node e2e/tiny-tide-combat.mjs` runs 10 checks with real mouse, keyboard and
+touch events. Each check has a time cap and prints its seed (`TIDE_SEED`,
+default 1501) and the numbers it measured. A full run takes 3 to 5 minutes. It
+prints `PASSED: all 10 combat checks`. Pass check ids to run some.
+
+| Check | What it proves |
+| --- | --- |
+| `desktop-controls` | A left click starts Bite with a crab in the cone. Right mouse held keeps Brace up. Keys 1 to 4 start slots 1 to 4. The aim is within 5 degrees of the pointer. With no pointer move for 4 s, the aim is the camera direction. A middle drag turns the camera. |
+| `desktop-chomp` | Space with only a plant in reach eats it. |
+| `phone-controls` | At 320 x 568 and 844 x 390, for a swimmer, a crawler and a Darter: every control is on screen and none overlap. Slots are at least 48 x 48 px and Chomp at least 80 x 80 px. Two real touches move and aim at once. A slot tap starts its move. A canceled touch ends Brace. |
+| `telegraph-before-hit` | Each crab, squid and eel attack shows its telegraph at least .35 s before it lands (the first one at least .45 s), and the shape equals the action shape. An attack that is off screen for its whole wind-up shows the edge arrow at least .6 s before it lands. |
+| `hit-stop` | On a Bite hit the two action clocks stand still for 60 to 90 ms while a third creature moves. |
+| `faint-rule` | A faint with 37 DNA at risk shows "37 DNA" in the overlay. After the respawn the wallet and the growth bar are 0, the banked DNA and the design stay, and only the v4 key was written. |
+| `alpha` | The Clawmother goes through phases 0, 1 and 2, burrows and enrages. The defeat unlocks `claw_mother` and pays 40 DNA. After a reload it is gone. |
+| `editor-moves` | The moves panel changes with the size slider. A drag swap persists after Done and a reload. |
+| `hints` | The first telegraph hint shows once and not again after a reload. |
+| `frame-time` | The median and p95 of the game frame callback in a crowd (`qaCrowd`): desktop at most 16.7 ms median and 33 ms p95; a phone at 4 times CPU slowdown at most 33.3 ms median and 50 ms p95. |
+
+The check bots dodge: they strafe, press Dash once for each wind-up and aim with
+the pointer. The journey scripts (`tiny-tide.mjs`, `tiny-tide-pacing.mjs`) do the
+same, and they skip a hunter that a ground creature cannot reach.
+
+### Combat balance probe
+
+The probe plays the real simulation with bots at a fixed 1/30 s step. It is
+`src/tiny-tide/combat-probe.ts`. Run the smoke test with the default suite. For
+the full probe:
+
+```sh
+TIDE_COMBAT_PROBE=1 npx vitest run tests/tiny-tide-core/combat-balance.test.ts   # one process, about 15 min
+TIDE_COMBAT_PROBE=1 TIDE_PROBE_PARTS=p5 npx vitest run tests/tiny-tide-core/combat-balance.test.ts -t meets   # one part
+TIDE_COMBAT_PROBE=1 TIDE_PROBE_MERGE=1 npx vitest run tests/tiny-tide-core/combat-balance.test.ts    # merge the part files and check the bars
+```
+
+The parts are `p0` to `p6`, `p7-swimmer`, `p7-crawler`, `p8` and `notes`; run
+them in parallel, one process each. Each part writes
+`.codex-drafts/tiny-tide-qa/combat-probe-part-<part>.json`. The merge writes
+`combat-probe.json` and `combat-probe.md`. The probe does not tune anything.
+
+| Measure | Bar |
+| --- | --- |
+| P0 | A still player is hit at the near, middle and far point of every attack band: at least 90 %. |
+| P1 | A Dash-only build avoids each attack: at least 95 % (90 % for an alpha attack). |
+| P2 | A Brace build avoids or halves each blockable attack: at least 95 %. |
+| P3 | A Counter build counters each parryable attack: at least 85 %. |
+| P4 | Movement only. Reported, no bar. |
+| P5 | The median time to kill with a meat build: drifter 6 s, snail 8, crab 20, sardine 6, puffer 10, squid 30, eel 30, Clawmother 90, Reef Tyrant 120. |
+| P6 | The same with a plant build: crab 45 s, squid 75. Others are reported. |
+| P7 | A journey bot becomes ready to evolve at size 0 and at size 1 within 600 s of play with at most 3 faints for each size. Swimmer and crawler lines, three diets, seeds 11 to 15 (30 runs). |
+| P8 | At most 2 wind-ups at you at once, active starts at least .25 s apart, and off-screen wind-ups at least .6 s. |
+
+The probe also reports the largest bot reaction time at which each attack still
+meets the P1, P2 and P3 bar, P1 with a reaction of .25 to .45 s, and DNA by
+source.
+
+Result at the last probe run (after commit `ce1bb1b`): P0 to P6 and P8
+pass. P7 passes 29 of 30 runs. The one failure is the crawler omnivore, seed 14,
+size 1: 600 s, no faints, 142 of 150 DNA. That bot spends 465 s on chases of
+sardines that it then skips. A crawler that hunts meat at size 1 has little
+prey in reach. This is open for the owner; no other number was changed for it.
+Tuned numbers from the probe: the eel bite wind-up is .45 s (a .35 s reaction
+must have one move that avoids every attack), the Clawmother chain gap is
+.55 s, the puffer burst band is 0 to 1.35 L and the Tyrant whirl band is 0
+to .3 L (an attack that starts at the body centre reaches .25 L less than its
+shape). Median time to kill (meat build): Clawmother 28.4 s, Reef Tyrant 42.7 s,
+crab 5.5 s, eel 5.8 s. With ideal dodging the alphas fall with no faints. A bot
+that never dodges faints in every alpha fight.
 
 QA-only URL parameters work in development or with `?qa`. The game reads each
 one once, at load. None of them changes a running game from outside.
@@ -670,7 +1037,9 @@ telegraph on screen, so no arrow appears. The live look caught one only at
 
 The unit tests cover parts, genomes, stats, diets, DNA, evolution, health,
 seeded worlds, creature behavior (hunting, fleeing, provoking, stealth,
-regrowth) and v1/v2 saves. The full browser test uses real controls. It edits
+regrowth), v1/v2 saves and combat (moves, the action engine, hit shapes, hit
+results, the AI, the director, the faint rule, DNA from kills, the editor
+moves and the hints). The full browser test uses real controls. It edits
 the creature (place, undo, paint, body, name), changes the diet at two
 evolutions, plays all five sizes, checks in-place transformations, the ending,
 a new seeded world, save and resume, and the mobile layout. The mobile test
