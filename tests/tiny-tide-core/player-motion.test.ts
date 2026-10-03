@@ -233,3 +233,17 @@ describe('player step: seabed slopes (playtest stalls)', () => {
     }
   });
 });
+
+// Fix round 3 (re-review Minor 3): a Swimmer resting on a slope at seed 1501's start could not yaw 15–120° (the seabed), so a Bite toward a
+// crab 145° behind it never turned the body. A refused large turn now goes the other way round toward the same target (every pose admitted).
+describe('player step: a refused turn goes the long way round', () => {
+  it('turns toward a target behind it the other way when the short way is blocked', () => {
+    const base = makeWorldQueries(deep), DEG = Math.PI / 180;
+    const blocked = (yaw: number) => { const d = ((yaw / DEG) % 360 + 360) % 360; return d > 10 && d < 120; };
+    const queries = { ...base, overlapHull: (a: Actor, at: Vec3, o: { yaw: number; pitch: number }, c: never) => blocked(o.yaw) ? { ok: false, constraint: 'ground' as const, point: at, normal: { x: 0, y: 1, z: 0 } } : base.overlapHull(a, at, o, c) };
+    const rt = newRuntime(), target = 145 * DEG, face = { dir: { x: Math.sin(target), y: 0, z: Math.cos(target) }, yawRateFactor: 1 };
+    const ctx = ctxFor('swimmer', rod, deep, { queries, dt: 1 / 60, combat: { speedFactor: 1, face, dashVelocity: null, forcedDisplacement: null, frozen: false } });
+    for (let i = 0; i < 240; i++) { stepPlayer({ x: 0, y: 0, z: 0 }, rt, intent(), ctx); expect(blocked(rt.orientation.yaw)).toBe(false); }
+    expect(Math.abs(Math.atan2(Math.sin(rt.orientation.yaw - target), Math.cos(rt.orientation.yaw - target)))).toBeLessThan(2 * DEG);
+  });
+});

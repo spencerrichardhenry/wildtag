@@ -31,14 +31,23 @@ const FACES: MutVec3[] = [];
 const SLIDE = { x: 0, y: 0, z: 0, ax: 0, ay: 0, az: 0, changed: false };
 const TURN: { yaw: number; pitch: number } = { yaw: 0, pitch: 0 };
 /** Turns `o` toward `target` at `at` in steps of at most `step` radians (yaw and pitch), stopping at the last admitted orientation. The
- *  last step lands exactly on the target. */
+ *  last step lands exactly on the target. Fix round 3: when a step that also pitches is refused (a swimmer resting on the seabed asked to
+ *  pitch down into it), the rest of the yaw is tried at the current pitch, so a refused pitch no longer freezes the yaw. */
 function turnAt(q: WorldQueries, actor: Actor, at: Vec3, o: { yaw: number; pitch: number }, target: Orientation, time: number, step: number): void {
   const y0 = o.yaw, p0 = o.pitch, dy = shortestArc(y0, target.yaw), dp = target.pitch - p0;
   const m = step > 0 ? Math.ceil(Math.max(Math.abs(dy), Math.abs(dp)) / step) : 0;
   for (let k = 1; k <= m; k++) {
     TURN.yaw = k === m ? y0 + dy : y0 + dy * k / m; TURN.pitch = k === m ? target.pitch : p0 + dp * k / m;
-    if (!admAt(q, actor, at, TURN, time).ok) break;
-    o.yaw = TURN.yaw; o.pitch = TURN.pitch;
+    if (admAt(q, actor, at, TURN, time).ok) { o.yaw = TURN.yaw; o.pitch = TURN.pitch; continue; }
+    if (TURN.pitch === o.pitch) break;
+    // Yaw only, from here to the target yaw, at the pitch already held.
+    const ys = o.yaw, rest = shortestArc(ys, target.yaw), n = Math.ceil(Math.abs(rest) / step);
+    for (let j = 1; j <= n; j++) {
+      TURN.yaw = j === n ? ys + rest : ys + rest * j / n; TURN.pitch = o.pitch;
+      if (!admAt(q, actor, at, TURN, time).ok) break;
+      o.yaw = TURN.yaw;
+    }
+    break;
   }
 }
 /** One admission at a time, through the scratch context. */

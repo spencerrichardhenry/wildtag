@@ -183,7 +183,9 @@ export interface CombatRuntime { targetable: boolean; perceivable: boolean; dama
   buffered: { input: 'basic' | ActiveSlot; at: number } | null;
   heldBy: ActorId | null; breakProgress: number;
   status: { id: 'inked'; until: number; speedFactor: number } | null;
-  lastDamageAt: number; lastThreatAt: number }
+  lastDamageAt: number; lastThreatAt: number;
+  /** Fix round 3: a large yaw turn the short way was refused, so the body turns the other way (`sign`) toward `target`; null otherwise. */
+  turnWay?: { target: number; sign: 1 | -1 } | null }
 export interface HitRequest { source: ActorId; target: ActorId; actionInstanceId: string; attackId: string; emitter: EmitterSource; hitGroupId: string; point: Vec3; normal: Vec3; damage: number; impulse: Vec3 }
 /** One tick's intent. The four active tuples are indexed by ActiveSlot (keys 1–4 / slot buttons). `aimSource` is 'none' when `aim` is null. */
 export interface CombatInput { move: Vec3; aim: Vec3 | null; aimSource: 'pointer' | 'drag' | 'auto' | 'camera' | 'none';

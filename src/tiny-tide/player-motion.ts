@@ -118,8 +118,13 @@ export function stepPlayer(position: Vec3, rt: CombatRuntime, intent: CombatInpu
     if (Math.hypot(f.x, f.z) > FACING_MIN) yawTarget = Math.atan2(f.x, f.z);
     if (caps.pitch && fLen > 0) pitchTarget = clampAbs(Math.asin(clampAbs(f.y / fLen, 1)), PITCH_LIMIT);
   }
+  // Fix round 3: after a refused large turn, turn the other way round toward the same target (cleared when the target moves or is reached).
+  let turnArc = shortestArc(o.yaw, yawTarget);
+  const way = rt.turnWay;
+  if (way && (Math.abs(shortestArc(way.target, yawTarget)) > .35 || Math.abs(turnArc) < 1e-3)) rt.turnWay = null;
+  else if (way && Math.sign(turnArc) !== way.sign) turnArc += way.sign * 2 * Math.PI;
   const desired: Orientation = {
-    yaw: o.yaw + clampAbs(shortestArc(o.yaw, yawTarget), yawRate * dt),
+    yaw: o.yaw + clampAbs(turnArc, yawRate * dt),
     pitch: o.pitch + clampAbs(pitchTarget - o.pitch, profile.maxPitchRate * dt),
   };
 
@@ -182,6 +187,8 @@ export function stepPlayer(position: Vec3, rt: CombatRuntime, intent: CombatInpu
   const asked = Math.max(Math.hypot(d.x, d.y, d.z), Math.hypot(w.x, w.y, w.z) * k * dt), p = result.position;
   const progress = asked > 1e-12 ? Math.hypot(p.x - position.x, p.y - position.y, p.z - position.z) / asked : 1;
   const turnRefused = Math.abs(shortestArc(result.orientation.yaw, desired.yaw)) > 1e-6 || Math.abs(result.orientation.pitch - desired.pitch) > 1e-6;
+  // A large yaw turn refused the short way: try the other way from the next step (once per target, so the body never flips back and forth).
+  if (!rt.turnWay && Math.abs(shortestArc(result.orientation.yaw, desired.yaw)) > 1e-6 && Math.abs(turnArc) > Math.PI / 4) rt.turnWay = { target: yawTarget, sign: turnArc > 0 ? -1 : 1 };
   return { position: result.position, status: result.status, contacts: result.contacts, progress, needsRecovery, breachStarted, arcEnded, permitEnded, turnRefused };
 }
 
