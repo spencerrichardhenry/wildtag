@@ -95,7 +95,6 @@ export function startAction(rt: CombatRuntime, s: StartSpec): ActionState {
     aimLocked: mode === 'fixed-at-start' || mode === 'centre', resolved: s.resolved, targetId: s.targetId, heldTarget: null, windupExtension: 0, released: false, countered: false,
     connected: false, lungeDone: 0, lockedShapes: null, squeezes: 0, cooldownKey: s.cooldownKey };
   rt.actions.push(a);
-  if (s.resolved.guard?.kind === 'brace') rt.guardProfileId = s.resolved.guard.id;
   return a;
 }
 /** Ends an action now: it is interrupted, and its cooldown starts at this clock time (`cooldown` overrides the length). */
@@ -171,6 +170,7 @@ export function tickAction(rt: CombatRuntime, a: ActionState, dTau: number, inpu
       const len = windupLength(a);
       if (elapsed < len - 1e-9) break;
       a.phase = 'active'; a.phaseStartedAt += len; out.enteredActive = true; out.wasActive = true;
+      if (isBrace(a)) rt.guardProfileId = a.resolved.guard!.id;   // a Brace guards only while active, not in its startup
       if (!a.aimLocked) { a.aimLocked = true; out.locked = true; }
       continue;
     }

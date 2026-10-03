@@ -1,6 +1,6 @@
 // tests/tiny-tide-core/action-engine.test.ts — clocks in seconds; every expected time is the sum of the phase lengths named beside it.
 import { describe, expect, it } from 'vitest';
-import { addPoise, advanceClock, applyHitStop, bufferedPress, bufferPress, canStart, clearBuffer, endHold, interruptible, newPoise, phaseRemaining, stagger, startAction, sweepEnded, tickAction, type ActionInput, type StartCheck } from '../../src/tiny-tide/action-engine';
+import { addPoise, advanceClock, applyHitStop, bufferedPress, bufferPress, canStart, clearBuffer, dashSpeed, lungeSpeed, endHold, interruptible, newPoise, phaseRemaining, stagger, startAction, sweepEnded, tickAction, type ActionInput, type StartCheck } from '../../src/tiny-tide/action-engine';
 import { newRuntime, type ActionState, type CombatRuntime, type ResolvedMove } from '../../src/tiny-tide/combat-types';
 import { resolveMove, speciesMove } from '../../src/tiny-tide/moves';
 import { POKE, WRAP } from './combat-fixture';
@@ -158,5 +158,72 @@ describe('action engine', () => {
     expect(firstTau(log, 'recovery')).toBeCloseTo(.28); expect(firstTau(log, 'interrupted')).toBeCloseTo(.73);   // .18 + .10, then whiff .45
     const c = newRuntime(), k = start(c, counter, { key: 'player:p3:counter' }); run(c, k, .1); k.countered = true; run(c, k, .01, {}, { t: .1 });
     expect(k.phase).toBe('interrupted'); expect(c.cooldowns.get('player:p3:counter')).toBeCloseTo(.41);   // ended at .11, success cooldown .3
+  });
+
+  it('D11: during a Bite recovery only Dash starts; grab, brace and bite are busy', () => {
+    const rt = newRuntime(), a = start(rt, bite); run(rt, a, .30); expect(a.phase).toBe('recovery');
+    for (const kind of ['grab', 'brace', 'bite', 'counter', 'sweep'] as const) expect(canStart(rt, check({ kind })), kind).toEqual({ ok: false, reason: 'busy' });
+    expect(canStart(rt, check({ kind: 'dash' })).ok).toBe(true);
+  });
+  it('§5.5: brace released at .20 (active since .10) recovers at .35 and ends at .50', () => {
+    const rt = newRuntime(), a = start(rt, brace), now = { t: 0 };
+    const first = run(rt, a, .20, { held: true }, now), after = run(rt, a, .5, { held: false }, now);
+    expect(first.at(-1)!.phase).toBe('active');
+    expect(firstTau(after, 'recovery')).toBeCloseTo(.35); expect(firstTau(after, 'interrupted')).toBeCloseTo(.50);
+  });
+  it('phase changes land at exact times whatever the step', () => {
+    for (const dt of [1 / 60, .07]) {
+    const rt = newRuntime(), a = start(rt, poke); let tau = 0, rec: number | null = null;
+    for (let i = 0; i < 100 && a.phase !== 'interrupted'; i++) {
+      advanceClock(rt, i * dt, dt); tickAction(rt, a, dt, idle); tau = rt.actionClock;
+      if (a.phase === 'recovery' && rec === null) rec = a.phaseStartedAt;
+    }
+    expect(rec).toBeCloseTo(.62, 9); expect(a.phaseStartedAt).toBeCloseTo(1.42, 9); expect(tau).toBeGreaterThanOrEqual(1.42);
+    expect(rt.cooldowns.get('e1:root:m')).toBeCloseTo(1.42 + 2.5, 9);
+    }
+  });
+  it('one large step crosses several phases with exact cooldown', () => {
+    const rt = newRuntime(), a = start(rt, poke); rt.actionClock = 2;
+    const r = tickAction(rt, a, 2, idle);
+    expect(r.enteredActive && r.enteredRecovery && r.ended).toBe(true); expect(a.phase).toBe('interrupted');
+    expect(rt.cooldowns.get('e1:root:m')).toBeCloseTo(1.42 + 2.5, 9);
+  });
+  it('stagger releases a grab hold (and a forced one ends it)', () => {
+    for (const force of [false, true]) {
+      const rt = newRuntime(), g = start(rt, speciesMove(WRAP)); run(rt, g, .65); g.heldTarget = 'player'; run(rt, g, .1, {}, { t: .65 });
+      expect(g.phase).toBe('hold');
+      const r = stagger(rt, .3, force); expect(r.releasedTargets).toEqual(['player']);
+      expect(g.phase).toBe(force ? 'interrupted' : 'recovery'); expect(g.heldTarget).toBeNull(); expect(r.interrupted).toEqual(force ? [g] : []);
+    }
+  });
+  it('§5.4 fixed-at-start locks at start and never turns', () => {
+    const rt = newRuntime(), a = start(rt, speciesMove({ ...POKE, aimMode: 'fixed-at-start' }));
+    expect(a.aimLocked).toBe(true);
+    const r = run(rt, a, .3, { wantedAim: X }); expect(a.aim).toEqual(Z); expect(r.length).toBe(30);
+  });
+  it('§5.4 body-back turns toward the reverse of bodyForward and ignores wantedAim', () => {
+    const rt = newRuntime(), a = start(rt, speciesMove({ ...POKE, aimMode: 'body-back', maxTrackingRadiansPerSecond: 100, aimLockAtSeconds: .3 }));
+    run(rt, a, .3, { wantedAim: X, bodyForward: { x: 0, y: 0, z: 1 } }); expect(a.aim.z).toBeCloseTo(-1, 5); expect(Math.abs(a.aim.x)).toBeLessThan(1e-6);
+  });
+  it('TickResult flags and brace guard state', () => {
+    const rt = newRuntime(), a = start(rt, brace), now = { t: 0 }; expect(rt.guardProfileId).toBeNull();
+    let entered = 0, wasActiveAtEntry = false;
+    for (let i = 0; i < 12; i++) { const d = advanceClock(rt, now.t, DT); now.t += DT; const r = tickAction(rt, a, d, { ...idle, held: true }); if (r.enteredActive) { entered++; wasActiveAtEntry = r.wasActive; } }
+    expect(entered).toBe(1); expect(wasActiveAtEntry).toBe(true); expect(rt.guardProfileId).toBe(brace.guard!.id);
+    run(rt, a, .5, { held: false }, now); expect(rt.guardProfileId).toBeNull();
+    const rt2 = newRuntime(), b = start(rt2, brace); run(rt2, b, .36, { held: true }); tickAction(rt2, b, 0, { ...idle, held: false }); expect(b.phase).toBe('recovery'); expect(rt2.guardProfileId).toBeNull();
+  });
+  it('dash and lunge speeds are distance × L / seconds', () => {
+    expect(dashSpeed(start(newRuntime(), dash), 2)).toBeCloseTo(dash.evasion!.distanceBodyLengths * 2 / dash.evasion!.travelSeconds);
+    const lunge = speciesMove({ ...POKE, lunge: { distanceBodyLengths: 1.2 } });
+    expect(lungeSpeed(start(newRuntime(), lunge), 3)).toBeCloseTo(1.2 * 3 / .12); expect(lungeSpeed(start(newRuntime(), poke), 3)).toBe(0); expect(dashSpeed(start(newRuntime(), poke), 3)).toBe(0);
+  });
+  it('a short stagger after a long one keeps the longer end', () => {
+    const rt = newRuntime(); stagger(rt, 1); stagger(rt, .2); expect(rt.staggerUntil).toBeCloseTo(1);
+  });
+  it('aim lock with a coarse step turns exactly up to aimLockAtSeconds', () => {
+    const rt = newRuntime(), a = start(rt, bite), now = { t: 0 }; let locks = 0;
+    for (let i = 0; i < 7; i++) { const d = advanceClock(rt, now.t, .03); now.t += .03; if (tickAction(rt, a, d, { ...idle, wantedAim: X }).locked) locks++; }
+    expect(locks).toBe(1); expect(Math.acos(a.aim.z)).toBeCloseTo(1, 5);
   });
 });
