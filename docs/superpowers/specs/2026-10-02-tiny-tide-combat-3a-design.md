@@ -976,6 +976,17 @@ Before the lock they follow the live aim; after the lock they are fixed.
   makes a wind-up longer, never shorter. The check repeats against each held
   token. The extension is at most 0.5 s; if more is needed, the token is
   refused.
+- **The estimate** (plan review R6): a new token's active start is
+  `now + one tick + the attacker's remaining hit-stop + windup + extension`
+  (the action's clock starts on the next combat tick). After each combat
+  tick, every held wind-up's active start is estimated again (remaining
+  wind-up plus remaining hit-stop), so a hit-stop moves it.
+- **Spacing holds after the grant** (plan review R6): after each combat
+  tick, in order of active start, a wind-up less than 0.25 s after an
+  earlier token's active start grows by the missing time. If its total
+  extension would then be more than 0.5 s, the wind-up **ends**: its token
+  returns, its cooldown is not spent, and its attacker asks again after
+  0.2 s. Two active starts at the player are never less than 0.25 s apart.
 - **Off-screen:** when the shape centroid is off-screen at the request,
   `windup + extension ≥ 0.6 s`. `sim.ts` gets an `isOnScreen(p)` function
   from `main.ts`; the probe uses a fixed camera model (§14.3).

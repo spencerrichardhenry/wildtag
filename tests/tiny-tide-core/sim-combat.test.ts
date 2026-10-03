@@ -9,8 +9,8 @@ import { RELEASED } from '../../src/tiny-tide/input';
 import { applyHitStop, bufferPress } from '../../src/tiny-tide/action-engine';
 import { stageBounds } from '../../src/tiny-tide/world-queries';
 import type { CombatInput } from '../../src/tiny-tide/combat-types';
-import { playerActorCached, playerMotionBody, simBegin, simFrame, simSuspend, type SimEvent, type SimState, type SimWorld } from '../../src/tiny-tide/sim';
-import { FX_BEHAVIOURS, FX_FLEER, FX_HUNTER, WRAP } from './combat-fixture';
+import { playerActorCached, playerMotionBody, simBegin, simEvolve, simFrame, simSuspend, type SimEvent, type SimState, type SimWorld } from '../../src/tiny-tide/sim';
+import { FX_BEHAVIOURS, FX_FLEER, FX_HUNTER, POKE, WRAP } from './combat-fixture';
 import { entity, FLAT, speck } from './combat-fixture-world';
 
 const DT = 1 / 60;
@@ -45,11 +45,22 @@ describe('the combat tick in simFrame', () => {
     const squid = entity(2, FX_HUNTER, { x: 0, y: 0, z: 0 }), { s, w } = begun([squid]);
     Object.assign(squid, ahead(s, 1.2, 1)); s.run.health = .5;
     const c = s.combat.stateOf(squid)!, centre = playerMotionBody(s, playerActorCached(s)).centre;
-    expect(typeof s.combat.startSpecies(c, 'wrap', WRAP, { x: 0, y: 0, z: -1 }, 'player', s.time, true, true, centre)).toBe('object');
+    expect(typeof s.combat.startSpecies(c, 'wrap', WRAP, { x: 0, y: 0, z: -1 }, 'player', s.time, { targetAt: centre })).toBe('object');
     const events: SimEvent[] = [];
     for (let i = 0; i < 60 && s.mode === 'playing'; i++) events.push(...frame(s, w));
     expect(events.filter(e => e.type === 'fainted')).toHaveLength(1);
     expect(s.mode).toBe('fainted'); expect(s.run.deaths).toBe(1); expect(s.faintLog).toHaveLength(1);
+    // Spec §9.4, §13: the faint ends every attack at the player and returns its token.
+    expect(s.combat.director.tokens).toEqual([]); expect(c.rt.actions.filter(a => a.phase !== 'interrupted')).toEqual([]);
+  });
+  it('an evolution ends every attack at the player and returns its token (spec §9.4, §13)', () => {
+    const crab = entity(3, FX_HUNTER, { x: 0, y: 0, z: 0 }), { s, w } = begun([crab]);
+    Object.assign(crab, ahead(s, 4, 1));
+    const c = s.combat.stateOf(crab)!, centre = playerMotionBody(s, playerActorCached(s)).centre;
+    expect(typeof s.combat.startSpecies(c, 'poke', POKE, { x: 0, y: 0, z: -1 }, 'player', s.time, { targetAt: centre })).toBe('object');
+    frame(s, w); expect(s.combat.director.tokens).toHaveLength(1);
+    simEvolve(s, { position: s.physical, orientation: s.rt.orientation });
+    expect(s.combat.director.tokens).toEqual([]); expect(c.rt.actions.filter(a => a.phase !== 'interrupted')).toEqual([]);
   });
   it('samples the player\'s combat pose once per playing frame (review R18)', () => {
     const { s, w } = begun([]);

@@ -2,7 +2,7 @@
 // action clocks, the action engine, world shapes, hit requests, the resolver, holds and kills. Pure: positions are read from the bodies it
 // is given; it never moves a body (combat motion goes to the player step and the ecosystem as requests).
 import * as T from 'three';
-import { advanceClock, bufferedPress, bufferPress, canStart, dashSpeed, endHold, endNow, holdingAction, liveActions, newPoise, startAction, sweepEnded, tickAction, type PoiseMeter, type StartRefusal } from './action-engine';
+import { advanceClock, bufferedPress, bufferPress, canStart, dashSpeed, endHold, endNow, holdingAction, liveActions, newPoise, startAction, sweepEnded, tickAction, windupLength, type PoiseMeter, type StartRefusal } from './action-engine';
 import { BEHAVIOURS, type SpeciesBehaviour } from './bestiary';
 import { actionShapes, aimFrame, crossingOk, hurtboxesHit, nearestTargets, obstructionClear, truncateCapsule, worldShape } from './combat-shapes';
 import { newRuntime, type ActionState, type ActiveSlot, type ActorId, type AttackSpec, type CombatInput, type CombatPose, type CombatRuntime, type EmitterSource, type MovementMode, type ResolvedMove, type Vec3, type WorldQueries, type WorldShape } from './combat-types';
@@ -17,6 +17,7 @@ import type { Diet } from './parts';
 import type { CombatMotion } from './player-motion';
 import { EFFECTS } from './combat-profiles';
 import { damageAfterArmor } from './state';
+import { Director, MAX_EXTENSION, RETRY_SECONDS, spacedExtension } from './director';
 
 export const PLAYER_ID: ActorId = 'player';
 export const entityActorId = (e: { id: number }): ActorId => `e${e.id}`;
@@ -28,10 +29,17 @@ export const EVENT_LOG = 20;
 export const AIM_PITCH_LIMIT = .6;
 /** Review R17: a species that made contact with the player (any outcome) in the last ENGAGED_SECONDS (world time) is engaged with it. */
 export const ENGAGED_SECONDS = 3;
+/** The combat tick length that a species start assumes when the caller gives none (the action's clock starts on the next tick). */
+export const DEFAULT_TICK = 1 / 60;
 
 /** `lastAttackedPlayerAt`: world time of the last event in which this species made contact with the player, any outcome (hit, blocked,
- *  evaded, countered…; review R17 engagement). */
-export interface EntityCombat { id: ActorId; entity: Entity; rt: CombatRuntime; poise: PoiseMeter; behaviour: SpeciesBehaviour; maxHp: number; lastDamagedAt: number; lastAttackedPlayerAt: number }
+ *  evaded, countered…; review R17 engagement). `tokenRetryAt`: world time before which a new wind-up at the player is refused (a refused
+ *  token or a wind-up the director ended; spec §9.4: ask again after RETRY_SECONDS). */
+export interface EntityCombat { id: ActorId; entity: Entity; rt: CombatRuntime; poise: PoiseMeter; behaviour: SpeciesBehaviour; maxHp: number; lastDamagedAt: number; lastAttackedPlayerAt: number; tokenRetryAt: number }
+/** A species start's options. `targetAt`: the target's hurtbox centre (see startSpecies). `onScreen`: the shape's centroid is on screen;
+ *  `playerHeld`: the player is in a hold (spec §9.4). `playing`: start rule 1. `tick`: the combat tick length (plan review R6: the action's
+ *  clock starts on the next tick, so the director's estimate adds one). */
+export interface SpeciesStartOptions { targetAt?: Vec3 | null; onScreen?: boolean; playerHeld?: boolean; playing?: boolean; tick?: number }
 /** The player's body this tick (physical units). `health` is in hearts; the combat world writes it back to the run. */
 export interface PlayerBody {
   rt: CombatRuntime; position: Vec3; centre: Vec3; L: number; mass: number; knockbackResistance: number; armor: number;
@@ -92,19 +100,26 @@ export class CombatWorld {
   readonly log: CombatEvent[] = [];
   /** Species poses sampled so far (diagnostics, review R18: at most one per live entity per tick). */
   poseSamples = 0;
+  /** Attack tokens for wind-ups at the player (spec §9.4). */
+  readonly director = new Director();
   private serial = 0;
   /** Review R18: inside a tick, each entity's pose is sampled once (keyed by entity id); outside a tick nothing is cached. */
   private readonly poses = new Map<number, { entity: Entity; pose: CombatPose }>();
   private inTick = false;
   constructor(private readonly behaviours: Record<string, SpeciesBehaviour> = BEHAVIOURS) {}
   /** A fresh state for a new run or a load (spec §13). */
-  reset(): void { this.entities.clear(); this.log.length = 0; this.poses.clear(); }
+  reset(): void { this.entities.clear(); this.log.length = 0; this.poses.clear(); this.director.releaseAll(); }
+  /** Faint and evolve (spec §10.3, §13): every species action at the player ends, its token returns, and holds on the player end. */
+  cancelAttacksOnPlayer(playerRt: CombatRuntime): void {
+    for (const c of this.entities.values()) for (const a of c.rt.actions) if (a.targetId === PLAYER_ID && a.phase !== 'interrupted') { if (a.heldTarget === PLAYER_ID) endHold(c.rt, a); endNow(c.rt, a); }
+    this.director.releaseAll(); playerRt.heldBy = null; playerRt.breakProgress = 0;
+  }
   /** The combat state of a combat species (created on first use), or null for a legacy species. */
   stateOf(e: Entity): EntityCombat | null {
     let c = this.entities.get(e.id);
     if (c && c.entity === e) return c;
     const b = e.spec.behaviourId ? this.behaviours[e.spec.behaviourId] : undefined; if (!b) return null;
-    c = { id: entityActorId(e), entity: e, rt: newRuntime({ yaw: e.heading, pitch: 0 }), poise: newPoise(), behaviour: b, maxHp: e.spec.hp, lastDamagedAt: -Infinity, lastAttackedPlayerAt: -Infinity };
+    c = { id: entityActorId(e), entity: e, rt: newRuntime({ yaw: e.heading, pitch: 0 }), poise: newPoise(), behaviour: b, maxHp: e.spec.hp, lastDamagedAt: -Infinity, lastAttackedPlayerAt: -Infinity, tokenRetryAt: -Infinity };
     this.entities.set(e.id, c); return c;
   }
   /** A combat entity that respawned or was consumed starts over (its actions, clock and holds). */
@@ -282,6 +297,7 @@ export class CombatWorld {
     }
     for (const k of out.killed) { const c = live.find(x => x.entity === k); if (c) this.releaseAllOf(c, rt); }
     this.reconcileHolds(rt, live);
+    this.followTokens(live, rt, now, ctx.dt);
     sweepEnded(rt); for (const c of live) sweepEnded(c.rt);
     for (const e of out.events) { this.log.push(e); if (this.log.length > EVENT_LOG) this.log.shift(); }
     return out;
@@ -361,21 +377,64 @@ export class CombatWorld {
     }
     return { speedFactor: speed, face, dashVelocity: dash, forcedDisplacement: forced, frozen: now < rt.hitStopUntil };
   }
-  /** Starts a species attack (the AI asks; spec §5.3). `token` is the director's answer for an attack that targets the player. `targetAt`
-   *  (the target's hurtbox centre): the aim points from the hull centre at it (review R3); a target-origin attack is centred on it (R4).
-   *  Without it the given aim is used. Either way the pitch is clamped to ±AIM_PITCH_LIMIT. `targetAt` is required (else 'no-target')
-   *  for an attack on the player and for a target-origin attack. */
-  startSpecies(c: EntityCombat, attackId: string, attack: AttackSpec, aim: Vec3, targetId: ActorId | null, now: number, token = true, playing = true, targetAt: Vec3 | null = null): ActionState | SpeciesRefusal {
-    if (!targetAt && (targetId === PLAYER_ID || attack.origin === 'target')) return 'no-target';
-    const key = `${c.id}:root:${attackId}`, d = canStart(c.rt, { playing, isPlayer: false, kind: 'species', cooldownKey: key, mode: 'swim', allowedModes: ['swim'], inBreachArc: false, token, worldNow: now });
+  /** Starts a species attack (the AI asks; spec §5.3). `targetAt` (the target's hurtbox centre): the aim points from the hull centre at it
+   *  (review R3); a target-origin attack is centred on it (R4). Without it the given aim is used. Either way the pitch is clamped to
+   *  ±AIM_PITCH_LIMIT. `targetAt` is required (else 'no-target') for an attack on the player and for a target-origin attack.
+   *  An attack at the player needs a director token (start rule 7, spec §9.4): the token's extension lengthens the wind-up. A refusal
+   *  ('token') sets `tokenRetryAt`; until then every attack at the player is refused. */
+  startSpecies(c: EntityCombat, attackId: string, attack: AttackSpec, aim: Vec3, targetId: ActorId | null, now: number, opts: SpeciesStartOptions = {}): ActionState | SpeciesRefusal {
+    const targetAt = opts.targetAt ?? null, atPlayer = targetId === PLAYER_ID;
+    if (!targetAt && (atPlayer || attack.origin === 'target')) return 'no-target';
+    const key = `${c.id}:root:${attackId}`, d = canStart(c.rt, { playing: opts.playing ?? true, isPlayer: false, kind: 'species', cooldownKey: key, mode: 'swim', allowedModes: ['swim'], inBreachArc: false,
+      token: !atPlayer || now >= c.tokenRetryAt - 1e-9, worldNow: now });
     if (!d.ok) return d.reason;
+    const id = `${c.id}#${this.serial + 1}`;
+    let extension = 0;
+    if (atPlayer) {
+      const tick = opts.tick ?? DEFAULT_TICK, delay = tick + Math.max(0, c.rt.hitStopUntil - now - tick);   // review R6: one tick and the remaining hit-stop
+      const t = this.director.request({ actionInstanceId: id, attackerId: c.id, windupSeconds: attack.windupSeconds, now, grab: !!attack.hold, onScreen: opts.onScreen ?? true,
+        playerHeld: opts.playerHeld ?? false, delay });
+      if (!t.ok) { c.tokenRetryAt = t.retryAt; return 'token'; }
+      extension = t.extension;
+    }
+    this.serial++;
     if (d.replaces) endNow(c.rt, d.replaces);
     const pose = this.poseOf(c.entity, now), centre = pose.hull[0]!.start;
     const dir = clampAimPitch(targetAt ? { x: targetAt.x - centre.x, y: targetAt.y - centre.y, z: targetAt.z - centre.z } : aim, pose.forward);
-    const a = startAction(c.rt, { instanceId: this.nextId(c.id), definitionId: attackId, grantId: attackId, source: { kind: 'actor', actorId: c.id, mountId: 'root', socketId: 'centre' },
+    const a = startAction(c.rt, { instanceId: id, definitionId: attackId, grantId: attackId, source: { kind: 'actor', actorId: c.id, mountId: 'root', socketId: 'centre' },
       resolved: speciesMove(attack), aim: dir, targetId, cooldownKey: key, worldNow: now });
+    a.windupExtension = extension;
     if (attack.origin === 'target' && targetAt) a.originPoint = { x: targetAt.x, y: targetAt.y, z: targetAt.z };
     if (a.aimLocked) a.lockedShapes = this.speciesShapes(c, a, now);
     return a;
+  }
+  /** Tokens follow their actions (spec §9.4, plan review R6), at the end of each tick (`now`, length `dt`; the clocks cover the tick):
+   *  - a token is held to the end of active (to the end of hold for a grab), and returns when the action ends or its attacker is gone;
+   *  - each wind-up's active start is estimated again: the remaining wind-up plus the attacker's hit-stop after this tick;
+   *  - in order of start, a wind-up less than ACTIVE_GAP after an earlier token grows (within MAX_EXTENSION in all); when more would be
+   *    needed, it ends: its token returns, its cooldown is not spent, and its attacker asks again after RETRY_SECONDS.
+   *  Each wind-up at the player marks the player as threatened (`lastThreatAt`). */
+  private followTokens(live: readonly EntityCombat[], playerRt: CombatRuntime, now: number, dt: number) {
+    const windups: { a: ActionState; c: EntityCombat; start: number }[] = [];
+    for (const c of live) for (const a of c.rt.actions) {
+      if (!this.director.holds(a.instanceId)) continue;
+      if (a.phase === 'recovery' || a.phase === 'interrupted') { this.director.release(a.instanceId); continue; }
+      if (a.phase !== 'windup') continue;
+      const remaining = Math.max(0, windupLength(a) - (c.rt.actionClock - a.phaseStartedAt));
+      windups.push({ a, c, start: now + dt + remaining + Math.max(0, c.rt.hitStopUntil - now - dt) });
+      playerRt.lastThreatAt = now;
+    }
+    for (const t of [...this.director.tokens]) if (!live.some(c => c.rt.actions.some(a => a.instanceId === t.actionInstanceId && a.phase !== 'interrupted'))) this.director.release(t.actionInstanceId);
+    const placed = this.director.tokens.filter(t => !windups.some(w => w.a.instanceId === t.actionInstanceId)).map(t => t.activeStart);
+    windups.sort((x, y) => x.start - y.start);
+    for (const w of windups) {
+      const need = spacedExtension(w.start, 0, placed);
+      if (need > 0 && w.a.windupExtension + need > MAX_EXTENSION + 1e-9) {
+        endNow(w.c.rt, w.a, 0); this.director.release(w.a.instanceId); w.c.tokenRetryAt = now + RETRY_SECONDS;
+        continue;
+      }
+      w.a.windupExtension += need; w.start += need;
+      this.director.update(w.a.instanceId, w.start); placed.push(w.start);
+    }
   }
 }

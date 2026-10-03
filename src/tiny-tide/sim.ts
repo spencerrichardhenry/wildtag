@@ -182,6 +182,7 @@ export function playerBody(s: SimState, actor: Actor): PlayerBody {
 function faintNow(s: SimState): boolean {
   const hadPermit = s.rt.permit !== null, hadArc = s.rt.arc !== null;
   if (!beginRespawn(s.run, s.rt)) return false;
+  s.combat.cancelAttacksOnPlayer(s.rt);   // spec §9.4, §13: every attack at the player ends and its token returns
   s.mode = 'fainted'; s.faintLog.push({ time: s.time, hadPermit, hadArc }); s.respawnClock = 1.8;
   return true;
 }
@@ -311,7 +312,7 @@ export function simBegin(s: SimState, w: SimWorld, run: Run, forced: Vec3 | null
 export function simSuspend(s: SimState, mode: 'paused' | 'editing'): void { s.mode = mode; clearBuffer(s.rt); }
 /** A committed evolution: the runtime resets with the destination's orientation; the body goes to the destination. */
 export function simEvolve(s: SimState, destination: { position: Vec3; orientation: Orientation }): void {
-  resetRuntime(s.rt, destination.orientation); s.genomeRevision++; refreshDerived(s);
+  resetRuntime(s.rt, destination.orientation); s.combat.cancelAttacksOnPlayer(s.rt); s.genomeRevision++; refreshDerived(s);
   cancelRescue(s); s.physical = { ...destination.position };
 }
 export { evolveReady };
