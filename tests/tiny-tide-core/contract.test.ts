@@ -11,7 +11,7 @@ import { SPECIES } from '../../src/tiny-tide/species';
 import { HABITAT_FACTS, plan, PLANS } from '../../src/tiny-tide/plans';
 import { starterGenome, type Genome } from '../../src/tiny-tide/genome';
 import { fixtureCatalogs } from './combat-fixture';
-import { forwardReach } from '../../src/tiny-tide/combat-shapes';
+import { bandReach, forwardReach } from '../../src/tiny-tide/combat-shapes';
 
 const synthetic = (): Catalogs => fixtureCatalogs();
 const mutate = (f: (c: Catalogs) => void) => { const c = structuredClone(synthetic()); f(c); return validateContract(c); };
@@ -163,15 +163,20 @@ describe('combat contract', () => {
       [c => { c.behaviours['fx-hunter']!.attacks = [{ attackId: 'poke', band: [0, 1.3], weight: 3 }, { attackId: 'wrap', band: [0, .6], weight: 1 }]; }, 'behaviour fx-hunter: reach poke'],
       [c => { c.behaviours['fx-hunter']!.attacks = [{ attackId: 'poke', band: [0, 1.2], weight: 3 }, { attackId: 'wrap', band: [0, .81], weight: 1 }]; }, 'behaviour fx-hunter: reach wrap'],
       [c => { c.behaviours['fx-alpha']!.phases = c.behaviours['fx-alpha']!.phases!.map(p => ({ ...p, attacks: [{ attackId: 'smash', band: [0, 1.01], weight: 1 }] })); }, 'behaviour fx-alpha: reach smash'],
+      // V21 (T23 probe, P0): a `centre` attack starts at the hull centre, so its band ends a hull radius (.25 L_e) inside its shape.
+      [c => { c.attacks.poke = { ...c.attacks.poke!, aimMode: 'centre', aimLockAtSeconds: 0, maxTrackingRadiansPerSecond: 0 }; }, 'behaviour fx-hunter: reach poke'],
       // V20
       [c => { c.species = c.species.map(s => s.key === '0:fx_fleer' ? { ...s, model: 'eel' as never } : s); }, 'species 0:fx_fleer: model eel'],
     ];
     for (const [f, message] of cases) expect(mutate(f), message).toContain(message);
   });
-  it('V21 measures the forward reach of a shape: cone range, capsule far end + radius, the full lunge capsule', () => {
+  it('V21 measures the forward reach of a shape: cone range, capsule far end + radius, the full lunge capsule; a centre attack less the hull radius', () => {
     expect(forwardReach({ kind: 'cone', range: 1.2, halfAngle: .5 })).toBe(1.2);
     expect(forwardReach({ kind: 'capsule', start: { x: 0, y: 0, z: .1 }, end: { x: 0, y: 0, z: .75 }, radius: .12 })).toBeCloseTo(.87, 9);
     expect(forwardReach({ kind: 'capsule', start: { x: 0, y: 0, z: 0 }, end: { x: 0, y: 0, z: 0 }, radius: 1.6 })).toBe(1.6);
+    expect(bandReach({ shape: { kind: 'capsule', start: { x: 0, y: 0, z: 0 }, end: { x: 0, y: 0, z: 0 }, radius: 1.6 }, aimMode: 'centre' })).toBeCloseTo(1.35, 9);
+    expect(bandReach({ shape: { kind: 'cone', range: .4, halfAngle: .5 }, aimMode: 'input' })).toBe(.4);
+    expect(bandReach({ shape: { kind: 'capsule', start: { x: 0, y: 0, z: 0 }, end: { x: 0, y: 0, z: 0 }, radius: .35 }, aimMode: 'fixed-at-start', origin: 'target' })).toBe(Infinity);
     const lunge = (band: number) => mutate(c => { c.attacks.wrap = { ...c.attacks.wrap!, lunge: { distanceBodyLengths: .5 } };
       c.behaviours['fx-hunter']!.attacks = [{ attackId: 'poke', band: [0, 1.2], weight: 3 }, { attackId: 'wrap', band: [.2, band], weight: 1 }]; });
     expect(lunge(.8)).toEqual([]); expect(lunge(.81)).toContain('behaviour fx-hunter: reach wrap');   // a lunge reaches its full committed capsule

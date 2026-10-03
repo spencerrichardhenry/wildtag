@@ -276,7 +276,7 @@ catalog must report nothing).
 | V18 | Species: a species with `behaviourId` has no `contactHazardId`; a species with `hunts` or `stingsStages` has a `contactHazardId` or a hunter, ambush or alpha behaviour (replaces today's "hazard missing" rule). |
 | V19 | Species: `bodyScale` finite and in `[0.3, 3]`; `alpha.size` in `[0, 4]`; `alpha.rewardDna` a non-negative safe integer; an alpha species has `count: 1` and an alpha behaviour. |
 | V20 | Species: `model` names a food kind that has a GLB. |
-| V21 | Behaviour (plan review R2): every `AttackChoice.band[1]` ≤ the forward reach of its attack's shape from the hull front (cone: `range`; capsule: the far end's `z` + `radius`; a lunge: the full committed capsule). |
+| V21 | Behaviour (plan review R2): every `AttackChoice.band[1]` ≤ the forward reach of its attack's shape from the hull front (cone: `range`; capsule: the far end's `z` + `radius`; a lunge: the full committed capsule). A `centre` attack starts at the hull centre, so its reach is that value minus the species hull radius (0.25 L_e; T23 probe, P0). |
 
 ## 5. The action engine (`action-engine.ts`)
 
@@ -1303,7 +1303,7 @@ hull centre for `centre` attacks (§5.10, plan review R2). Shape numbers in `L_e
 | `mother-emerge` | capsule start = end r .35, at the player's position at windup start (`fixed-at-start`, `origin: 'target'`, R4) | .70 | 0 | 0 | .15 | 1.10 | 2.0 | 4 | 10 | .40 | **no** | yes | no | burrow pattern |
 | `mother-sweep` | cone .60, half 75° | .60 | .35 | 1.5 | .14 | .40 | 3.0 | 3 | 9 | .35 | yes | yes | no | [0, .6] 2; chain → `mother-pinch-rage` after .1 s |
 | `mother-pinch-rage` | cone .40, half 35° | .55 | .30 | 1.5 | .10 | .80 | 1.4 | 3 | 4 | .35 | yes | yes | no | chain only |
-| `puffer-burst` | capsule start = end r 1.6 (`centre`) | .55 | 0 | 0 | .15 | 1.20 | 3.0 | 3 | 7 | .35 | yes | yes | no | [0, 1.6] 1 |
+| `puffer-burst` | capsule start = end r 1.6 (`centre`) | .55 | 0 | 0 | .15 | 1.20 | 3.0 | 3 | 7 | .35 | yes | yes | no | [0, 1.35] 1 (T23: was [0, 1.6]; the ball reaches 1.35 past the hull surface) |
 | `squid-ink` | cone .90, half 30°; status `inked` | .45 | .25 | 2.0 | .30 | .60 | 6.0 | 1 | 0 | 0 | yes | **no** | yes | [.3, .9] 1 |
 | `squid-grab` | capsule (0,0,.1)–(0,0,.75) r .12; hold 1.0 s, size factor 1.2, start 2, squeeze 1 every .5 s | .55 | .30 | 1.8 | .12 | .70 | 4.5 | 2 | 0 | 0 | **no** | yes | yes | [.2, .75] 2 |
 | `squid-lunge` | capsule (0,0,0)–(0,0,1.1) r .18; lunge 1.0 | .45 | .25 | 1.8 | .22 | .80 | 3.5 | 3 | 6 | .35 | yes | yes | windup | [.6, 1.2] 2 |
@@ -1313,7 +1313,7 @@ hull centre for `centre` attacks (§5.10, plan review R2). Shape numbers in `L_e
 | `tyrant-bite` | cone .40, half 35° | .60 | .35 | 1.5 | .10 | .60 | 1.5 | 3 | 4 | .35 | yes | yes | no | [0, .4] 3 |
 | `tyrant-den-lunge` | capsule (0,0,0)–(0,0,1.2) r .14; lunge 1.1 | .70 | .45 | 1.5 | .25 | .90 | 4.0 | 4 | 8 | .40 | yes | yes | no | [.4, 1.2] 2 |
 | `tyrant-charge` | capsule (0,0,0)–(0,0,1.6) r .16; lunge 1.5 (`fixed-at-start`) | .65 | 0 | 0 | .30 | .50 | 2.0 | 4 | 10 | .40 | yes | yes | no | laps pattern |
-| `tyrant-whirl` | capsule start = end r .55 (`centre`); max 2 hits per target, repeat .30 s | .80 | 0 | 0 | .60 | 1.20 | 5.0 | 3 | 8 | .35 | **no** | **no** | no | [0, .55] 2 (V21: the ball's reach is .55) |
+| `tyrant-whirl` | capsule start = end r .55 (`centre`); max 2 hits per target, repeat .30 s | .80 | 0 | 0 | .60 | 1.20 | 5.0 | 3 | 8 | .35 | **no** | **no** | no | [0, .3] 2 (T23: was [0, .55]; V21: the ball (.55) reaches .3 past the hull surface) |
 
 `inked` status (`effect ink`): 1.5 s, player speed × 0.7, darker screen edges,
 auto-aim off. A blocked ink applies no status.

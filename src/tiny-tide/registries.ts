@@ -8,7 +8,7 @@ import { EVASIONS, GUARDS, PLAYER_ABILITIES, PLAYER_ATTACKS } from './moves';
 import { PLANS, type BodyPlan } from './plans';
 import { FOOD_GLBS, SPECIES, type Species } from './species';
 import { PART_RIG, type RigNode } from './rig';
-import { forwardReach } from './combat-shapes';
+import { bandReach } from './combat-shapes';
 
 type Entry = Record<string, { id: string }>;
 export interface Catalogs {
@@ -202,9 +202,10 @@ export function validateContract(c: Catalogs = defaultCatalogs()): string[] {
       for (const ch of list) {
         ref(ch.attackId, where); ref(ch.chainNextId, `${where} chain`);
         if (!(fin(ch.band[0]) && fin(ch.band[1]) && ch.band[0] >= 0 && ch.band[0] < ch.band[1])) out.push(`behaviour ${k}: band ${ch.attackId}`);
-        // V21 (review R2): the shape starts at the hull front, so the band's far end must lie within its forward reach.
+        // V21 (review R2): the shape starts at the hull front (a `centre` attack at the hull centre, T23), so the band's far end must lie within
+        // its reach from the hull surface (bandReach).
         const at = c.attacks[ch.attackId];
-        if (at && fin(ch.band[1]) && ch.band[1] > forwardReach(at.shape) + 1e-9) out.push(`behaviour ${k}: reach ${ch.attackId}`);
+        if (at && fin(ch.band[1]) && ch.band[1] > bandReach(at) + 1e-9) out.push(`behaviour ${k}: reach ${ch.attackId}`);
         if (!(fin(ch.weight) && ch.weight > 0) || (ch.flankWeight !== undefined && !(fin(ch.flankWeight) && ch.flankWeight > 0))) out.push(`behaviour ${k}: weight ${ch.attackId}`);
         if (ch.chainGapSeconds !== undefined && !nonNeg(ch.chainGapSeconds)) out.push(`behaviour ${k}: chainGapSeconds`);
       }

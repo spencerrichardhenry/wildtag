@@ -1,7 +1,7 @@
 // tests/tiny-tide-core/bestiary.test.ts — spec §11.4–§11.6: every species attack row and behaviour as the tables give them.
 import { describe, expect, it } from 'vitest';
 import { BEHAVIOURS, BURROW, LAPS, MIN_WINDUP, minWindup, SPECIES_ATTACKS } from '../../src/tiny-tide/bestiary';
-import { forwardReach } from '../../src/tiny-tide/combat-shapes';
+import { bandReach } from '../../src/tiny-tide/combat-shapes';
 import { TELEGRAPHS } from '../../src/tiny-tide/combat-profiles';
 
 // [id, windup, lock, track, active, recovery, cooldown, damage, impulse, stagger, block, parry, interruptible]
@@ -47,7 +47,7 @@ describe('bestiary', () => {
   });
   it('V21: every band ends within the forward reach of its attack; the emerge is placed at the target', () => {
     for (const b of Object.values(BEHAVIOURS)) for (const c of [...b.attacks, ...(b.phases ?? []).flatMap(p => p.attacks)])
-      expect(c.band[1], c.attackId).toBeLessThanOrEqual(forwardReach(SPECIES_ATTACKS[c.attackId]!.shape) + 1e-9);
+      expect(c.band[1], c.attackId).toBeLessThanOrEqual(bandReach(SPECIES_ATTACKS[c.attackId]!) + 1e-9);
     expect(SPECIES_ATTACKS['mother-emerge']!.origin).toBe('target');
   });
   it('gives the behaviours the §11.4 and §11.6 numbers', () => {
@@ -58,7 +58,7 @@ describe('bestiary', () => {
     expect(BEHAVIOURS.eel).toMatchObject({ type: 'hunter-ambush', den: { triggerBodyLengths: .9, outSeconds: 4, attackId: 'eel-ambush' }, repositionSeconds: [.5, 1] });
     expect(BEHAVIOURS.clawmother!.phases!.map(p => [p.aboveHpFraction, p.pattern, p.speedFactor, p.gapSeconds])).toEqual([[.6, 'normal', 1, 1], [.3, 'burrow', 1, .8], [0, 'normal', 1.3, .7]]);
     expect(BEHAVIOURS['reef-tyrant']!.phases!.map(p => [p.aboveHpFraction, p.pattern, p.speedFactor, p.gapSeconds, p.lairFraction])).toEqual([[.66, 'normal', 1, 1, .6], [.33, 'laps', 1.4, .6, undefined], [0, 'normal', 1.2, .8, undefined]]);
-    expect(BEHAVIOURS['reef-tyrant']!.phases![2]!.attacks[0]!.band).toEqual([0, .55]);
+    expect(BEHAVIOURS['reef-tyrant']!.phases![2]!.attacks[0]!.band).toEqual([0, .3]);   // T23 (V21 for centre attacks): the ball (.55) reaches .3 past the hull surface
     expect(BEHAVIOURS.clawmother!.lair).toEqual({ radiusBodyLengths: 1.2, resetOutsideFactor: 1.5, resetDelaySeconds: 3, healPerSecond: .04 });
   });
 });
@@ -112,7 +112,7 @@ describe('bestiary data pinned to spec §11', () => {
   it('attack lists: bands, weights, flank weights, chains', () => {
     const U = undefined;
     expect(list(BEHAVIOURS['spiny-snail']!.attacks)).toEqual([['snail-poke', [0, 1.2], 1, U, U, U]]);
-    expect(list(BEHAVIOURS.puffer!.attacks)).toEqual([['puffer-burst', [0, 1.6], 1, U, U, U]]);
+    expect(list(BEHAVIOURS.puffer!.attacks)).toEqual([['puffer-burst', [0, 1.35], 1, U, U, U]]);
     expect(list(BEHAVIOURS.crab!.attacks)).toEqual([['crab-pinch', [0, .45], 3, U, U, U], ['crab-lunge', [.5, 1.4], 2, U, U, U], ['crab-sweep', [0, .6], 1, 3, U, U]]);
     expect(list(BEHAVIOURS.squid!.attacks)).toEqual([['squid-ink', [.3, .9], 1, U, U, U], ['squid-grab', [.2, .75], 2, U, U, U], ['squid-lunge', [.6, 1.2], 2, U, U, U]]);
     expect(list(BEHAVIOURS.eel!.attacks)).toEqual([['eel-bite', [0, .45], 3, U, U, U], ['eel-wrap', [0, .6], 1, U, U, U]]);
@@ -124,7 +124,7 @@ describe('bestiary data pinned to spec §11', () => {
     expect(cm.map(p => p.patternAttackId)).toEqual([undefined, 'mother-emerge', undefined]);
     expect(list(rt[0]!.attacks)).toEqual([['tyrant-bite', [0, .4], 3, U, U, U], ['tyrant-den-lunge', [.4, 1.2], 2, U, U, U]]);
     expect(list(rt[1]!.attacks)).toEqual([]);
-    expect(list(rt[2]!.attacks)).toEqual([['tyrant-whirl', [0, .55], 2, U, U, U], ['tyrant-bite', [0, .4], 2, U, U, U]]);
+    expect(list(rt[2]!.attacks)).toEqual([['tyrant-whirl', [0, .3], 2, U, U, U], ['tyrant-bite', [0, .4], 2, U, U, U]]);
     expect(rt.map(p => p.patternAttackId)).toEqual([undefined, 'tyrant-charge', undefined]);
   });
 });

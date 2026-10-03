@@ -83,7 +83,7 @@ export const BEHAVIOURS: Record<string, SpeciesBehaviour> = Object.fromEntries([
   behaviour({ id: 'drifter', type: 'prey-flee', reactionSeconds: .2, poise: 99, flee: { seconds: 2.0, restSeconds: 1.2, speedFactor: 1.3 } }),
   behaviour({ id: 'sardine', type: 'prey-school', reactionSeconds: .2, poise: 99, flee: { seconds: 2.5, restSeconds: 1.5, speedFactor: 1.3 }, school: { radiusBodyLengths: 6, groupSize: 4 } }),
   behaviour({ id: 'spiny-snail', type: 'prey-fighter', reactionSeconds: .1, poise: 4, attacks: [choice('snail-poke', [0, 1.2], 1)], gapSeconds: 2.5, trigger: { radiusBodyLengths: 1.2, seconds: 1.0 } }),
-  behaviour({ id: 'puffer', type: 'prey-fighter', reactionSeconds: .1, poise: 6, knockbackResistance: .2, attacks: [choice('puffer-burst', [0, 1.6], 1)], gapSeconds: 3.0, trigger: { radiusBodyLengths: 1.1, seconds: .8 } }),
+  behaviour({ id: 'puffer', type: 'prey-fighter', reactionSeconds: .1, poise: 6, knockbackResistance: .2, attacks: [choice('puffer-burst', [0, 1.35], 1)], gapSeconds: 3.0, trigger: { radiusBodyLengths: 1.1, seconds: .8 } }),
   behaviour({ id: 'crab', type: 'hunter', reactionSeconds: .35, poise: 6, knockbackResistance: .2, gapSeconds: 1.0, repositionSeconds: [.6, 1.2],
     attacks: [choice('crab-pinch', [0, .45], 3), choice('crab-lunge', [.5, 1.4], 2), choice('crab-sweep', [0, .6], 1, { flankWeight: 3 })] }),
   behaviour({ id: 'squid', type: 'hunter', reactionSeconds: .35, poise: 7, knockbackResistance: .3, gapSeconds: .8, repositionSeconds: [.6, 1.2],
@@ -104,7 +104,7 @@ export const BEHAVIOURS: Record<string, SpeciesBehaviour> = Object.fromEntries([
     phases: [
       { aboveHpFraction: .66, attacks: [choice('tyrant-bite', [0, .4], 3), choice('tyrant-den-lunge', [.4, 1.2], 2)], speedFactor: 1.0, gapSeconds: 1.0, pattern: 'normal', lairFraction: .6 },
       { aboveHpFraction: .33, attacks: [], speedFactor: 1.4, gapSeconds: .6, pattern: 'laps', patternAttackId: 'tyrant-charge' },
-      { aboveHpFraction: 0, attacks: [choice('tyrant-whirl', [0, .55], 2), choice('tyrant-bite', [0, .4], 2)], speedFactor: 1.2, gapSeconds: .8, pattern: 'normal' },
+      { aboveHpFraction: 0, attacks: [choice('tyrant-whirl', [0, .3], 2), choice('tyrant-bite', [0, .4], 2)], speedFactor: 1.2, gapSeconds: .8, pattern: 'normal' },
     ] }),
 ].map(b => [b.id, b]));
 /** The Clawmother's burrow (spec §11.6): sink .4 s, travel 1.2 s at × 1.6 under the sand (untargetable), then emerge; two emerges, then one pinch combo.
