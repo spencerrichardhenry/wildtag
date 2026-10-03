@@ -1,10 +1,12 @@
 // tests/tiny-tide-core/combat-shapes.test.ts
 import { describe, expect, it } from 'vitest';
-import { actionShapes, aimFrame, crossingOk, horizontalExtent, hurtboxesHit, hurtboxHit, nearestTargets, obstructionClear, pointInShape, shapeCentroid, sphereHitsShape, telegraphDescriptor, truncateCapsule, worldShape } from '../../src/tiny-tide/combat-shapes';
+import { SPECIES_HULL_RADIUS, actionShapes, aimFrame, crossingOk, horizontalExtent, hurtboxesHit, hurtboxHit, nearestTargets, obstructionClear, pointInShape, shapeCentroid, sphereHitsShape, telegraphDescriptor, truncateCapsule, worldShape } from '../../src/tiny-tide/combat-shapes';
 import { ATTACKS } from '../../src/tiny-tide/registries';
 import { makeWorldQueries } from '../../src/tiny-tide/world-queries';
 import { solidOf, SolidIndex } from '../../src/tiny-tide/solids';
 import type { Terrain, Vec3, WorldShape } from '../../src/tiny-tide/combat-types';
+import { speciesActor } from '../../src/tiny-tide/mount';
+import { SPECIES } from '../../src/tiny-tide/species';
 
 const O: Vec3 = { x: 0, y: 10, z: 0 }, Z: Vec3 = { x: 0, y: 0, z: 1 };
 const DEG = Math.PI / 180;
@@ -12,6 +14,9 @@ const cone = (range: number, half: number): WorldShape => ({ kind: 'cone', apex:
 const flat = (surface = 85): Terrain => ({ groundAt: () => 0, surface, space: false, slopeBound: 0 });
 
 describe('combat shapes', () => {
+  it('SPECIES_HULL_RADIUS is the hull radius of every species in its own body lengths (mount.ts speciesActor; V21 and the chain reach use it)', () => {
+    for (const spec of SPECIES) { const a = speciesActor({ id: 0, spec }); expect(a.hull[0]!.radius / a.bodyLength, spec.key).toBeCloseTo(SPECIES_HULL_RADIUS, 12); }
+  });
   it('sphere-cone hits at the edges', () => {
     const c = cone(1, 30);
     expect(sphereHitsShape({ x: 0, y: 10, z: 1.09 }, .1, c)).toBe(true);    // range + r = 1.1
