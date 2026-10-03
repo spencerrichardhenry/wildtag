@@ -257,7 +257,7 @@ catalog must report nothing).
 | # | Check |
 | --- | --- |
 | V1 | Every registry key equals its entry's `id` (telegraphs, effects, evasions, guards, behaviours). |
-| V2 | Attack: `damageUnit` and `aimMode` are in their enums; `moveSpeedFactor` is in `[0, 1]`; `poiseDamageMultiplier ≥ 0`. |
+| V2 | Attack: `damageUnit` and `aimMode` are in their enums; the optional `origin` is `'target'` only with `aimMode: 'fixed-at-start'` (plan review R4); `moveSpeedFactor` is in `[0, 1]`; `poiseDamageMultiplier ≥ 0`. |
 | V3 | Attack: `lunge.distanceBodyLengths > 0`; `hold.seconds > 0`; `hold.sizeFactor > 0`; hold numbers non-negative; `squeezeEverySeconds > 0` when `squeezeHalfHearts > 0`. |
 | V4 | Attack: `statusEffectId` exists and has `kind: 'status'`. |
 | V5 | Attack: every `scaling` and `pair` key names a numeric field of the attack or of its `lunge`/`hold`; every value is finite; every pair multiplier is `≥ 1`. |
@@ -276,7 +276,7 @@ catalog must report nothing).
 | V18 | Species: a species with `behaviourId` has no `contactHazardId`; a species with `hunts` or `stingsStages` has a `contactHazardId` or a hunter, ambush or alpha behaviour (replaces today's "hazard missing" rule). |
 | V19 | Species: `bodyScale` finite and in `[0.3, 3]`; `alpha.size` in `[0, 4]`; `alpha.rewardDna` a non-negative safe integer; an alpha species has `count: 1` and an alpha behaviour. |
 | V20 | Species: `model` names a food kind that has a GLB. |
-| V21 | Behaviour (plan review R2): every `AttackChoice.band[1]` ≤ the forward reach of its attack's shape from the hull front (cone: `range`; capsule: the far end's `z` + `radius`; a lunge: the full committed capsule). An attack's optional `origin` is `'target'` only with `aimMode: 'fixed-at-start'` (R4). |
+| V21 | Behaviour (plan review R2): every `AttackChoice.band[1]` ≤ the forward reach of its attack's shape from the hull front (cone: `range`; capsule: the far end's `z` + `radius`; a lunge: the full committed capsule). |
 
 ## 5. The action engine (`action-engine.ts`)
 
@@ -868,7 +868,8 @@ When the basic input is pressed or held:
 
 Herbivores (plan review R17): in step 2, a herbivore takes only a combat
 species that is engaged with it: its mode is `hunt` or `angry`, it has an
-action that targets the player, or it hit the player in the last 3 s
+action that targets the player, or it made contact with the player (any
+outcome: hit, blocked, evaded, countered) in the last 3 s
 (`ENGAGED_SECONDS`). Otherwise CHOMP eats. Meat and omnivore diets keep the
 rule above.
 

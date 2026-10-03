@@ -26,11 +26,12 @@ export const HOLDING_SPEED = .6, STAGGERED_SPEED = .5, CLAW_REACH = .5;
 export const EVENT_LOG = 20;
 /** Review R3 (amends spec §5.4): a species aim never pitches more than this (radians), ground species included. */
 export const AIM_PITCH_LIMIT = .6;
-/** Review R17: a species that hit the player in the last ENGAGED_SECONDS (world time) is engaged with it. */
+/** Review R17: a species that made contact with the player (any outcome) in the last ENGAGED_SECONDS (world time) is engaged with it. */
 export const ENGAGED_SECONDS = 3;
 
-/** `lastHitPlayerAt`: world time of the last event in which this species hit the player (review R17). */
-export interface EntityCombat { id: ActorId; entity: Entity; rt: CombatRuntime; poise: PoiseMeter; behaviour: SpeciesBehaviour; maxHp: number; lastDamagedAt: number; lastHitPlayerAt: number }
+/** `lastAttackedPlayerAt`: world time of the last event in which this species made contact with the player, any outcome (hit, blocked,
+ *  evaded, countered…; review R17 engagement). */
+export interface EntityCombat { id: ActorId; entity: Entity; rt: CombatRuntime; poise: PoiseMeter; behaviour: SpeciesBehaviour; maxHp: number; lastDamagedAt: number; lastAttackedPlayerAt: number }
 /** The player's body this tick (physical units). `health` is in hearts; the combat world writes it back to the run. */
 export interface PlayerBody {
   rt: CombatRuntime; position: Vec3; centre: Vec3; L: number; mass: number; knockbackResistance: number; armor: number;
@@ -74,6 +75,8 @@ export function clampAimPitch(v: Vec3, forward: Vec3): Vec3 {
   const heading = h > 1e-9 ? { x: v.x / h, z: v.z / h } : horizontal(forward), p = Math.sign(pitch) * AIM_PITCH_LIMIT, c = Math.cos(p);
   return { x: heading.x * c, y: Math.sin(p), z: heading.z * c };
 }
+/** A species start refusal: the engine's, or 'no-target' (an attack on the player or a target-origin attack without the target point). */
+export type SpeciesRefusal = StartRefusal | 'no-target';
 const statusOf = (id: string) => { const s = EFFECTS[id]?.status; return s ? { seconds: s.seconds, speedFactor: s.speedFactor } : null; };
 
 export class CombatWorld {
@@ -94,7 +97,7 @@ export class CombatWorld {
     let c = this.entities.get(e.id);
     if (c && c.entity === e) return c;
     const b = e.spec.behaviourId ? this.behaviours[e.spec.behaviourId] : undefined; if (!b) return null;
-    c = { id: entityActorId(e), entity: e, rt: newRuntime({ yaw: e.heading, pitch: 0 }), poise: newPoise(), behaviour: b, maxHp: e.spec.hp, lastDamagedAt: -Infinity, lastHitPlayerAt: -Infinity };
+    c = { id: entityActorId(e), entity: e, rt: newRuntime({ yaw: e.heading, pitch: 0 }), poise: newPoise(), behaviour: b, maxHp: e.spec.hp, lastDamagedAt: -Infinity, lastAttackedPlayerAt: -Infinity };
     this.entities.set(e.id, c); return c;
   }
   /** A combat entity that respawned or was consumed starts over (its actions, clock and holds). */
@@ -108,10 +111,11 @@ export class CombatWorld {
     if (this.inTick) this.poses.set(e.id, { entity: e, pose });
     return pose;
   }
-  /** Review R17: engaged with the player — hunting or angry, an action that targets the player, or a hit on it in the last ENGAGED_SECONDS. */
+  /** Review R17: engaged with the player — hunting or angry, an action that targets the player, or a contact with it (any outcome) in the
+   *  last ENGAGED_SECONDS. */
   engaged(c: EntityCombat, now: number): boolean {
     const e = c.entity;
-    return e.mode === 'hunt' || e.mode === 'angry' || c.rt.actions.some(a => a.phase !== 'interrupted' && a.targetId === PLAYER_ID) || now - c.lastHitPlayerAt <= ENGAGED_SECONDS + 1e-9;
+    return e.mode === 'hunt' || e.mode === 'angry' || c.rt.actions.some(a => a.phase !== 'interrupted' && a.targetId === PLAYER_ID) || now - c.lastAttackedPlayerAt <= ENGAGED_SECONDS + 1e-9;
   }
 
   // ---- the player's moves ----
@@ -151,7 +155,9 @@ export class CombatWorld {
     if (held) releaseHold(rt, a, held.rt, now, false);
   }
 
-  /** One combat tick (spec §6.1, §5): clocks, the player's starts, actions, hits, holds and kills. */
+  /** One combat tick (spec §6.1, §5): clocks, the player's starts, actions, hits, holds and kills.
+   *  The tick must never move a body: the pose cache (review R18) is keyed by entity id only, so a body moved inside the tick would keep
+   *  its stale pose. Combat motion leaves as requests (playerMotion, lunges) and is applied outside the tick. */
   tick(ctx: CombatContext): CombatTick {
     this.inTick = true; this.poses.clear();
     try { return this.tickInner(ctx); } finally { this.inTick = false; this.poses.clear(); }
@@ -185,7 +191,7 @@ export class CombatWorld {
         return false;
       };
       const buffered = bufferedPress(rt);
-      if (buffered !== null && rt.heldBy === null) { if (press(buffered)) rt.buffered = null; }
+      if (buffered !== null) { if (press(buffered)) rt.buffered = null; }   // a held player's buffered Bite starts too (canStart allows it)
       for (let i = 0; i < 4; i++) if (intent.activePressed[i]) press(i as ActiveSlot);
       // The basic dispatch rule (spec §8.3): Bite when a combat species is in the Bite cone, else today's chomp. A held input repeats Bite.
       // A herbivore Bites only a species engaged with it (review R17); otherwise its basic input eats.
@@ -250,7 +256,7 @@ export class CombatWorld {
       out.events.push(e);
       if (e.killed && e.killed !== PLAYER_ID) { const c = live.find(x => x.id === e.killed); if (c && !out.killed.includes(c.entity)) out.killed.push(c.entity); }
       const hurt = live.find(x => x.id === e.targetId); if (hurt && e.amount > 0) hurt.lastDamagedAt = now;
-      if (e.targetId === PLAYER_ID) { const by = live.find(x => x.id === e.attackerId); if (by) by.lastHitPlayerAt = now; }
+      if (e.targetId === PLAYER_ID) { const by = live.find(x => x.id === e.attackerId); if (by) by.lastAttackedPlayerAt = now; }
     }
     p.health = playerFighter.health;
     for (const [c, f] of fighters) c.entity.hp = f.health;
@@ -346,8 +352,10 @@ export class CombatWorld {
   }
   /** Starts a species attack (the AI asks; spec §5.3). `token` is the director's answer for an attack that targets the player. `targetAt`
    *  (the target's hurtbox centre): the aim points from the hull centre at it (review R3); a target-origin attack is centred on it (R4).
-   *  Without it the given aim is used. Either way the pitch is clamped to ±AIM_PITCH_LIMIT. */
-  startSpecies(c: EntityCombat, attackId: string, attack: AttackSpec, aim: Vec3, targetId: ActorId | null, now: number, token = true, playing = true, targetAt: Vec3 | null = null): ActionState | StartRefusal {
+   *  Without it the given aim is used. Either way the pitch is clamped to ±AIM_PITCH_LIMIT. `targetAt` is required (else 'no-target')
+   *  for an attack on the player and for a target-origin attack. */
+  startSpecies(c: EntityCombat, attackId: string, attack: AttackSpec, aim: Vec3, targetId: ActorId | null, now: number, token = true, playing = true, targetAt: Vec3 | null = null): ActionState | SpeciesRefusal {
+    if (!targetAt && (targetId === PLAYER_ID || attack.origin === 'target')) return 'no-target';
     const key = `${c.id}:root:${attackId}`, d = canStart(c.rt, { playing, isPlayer: false, kind: 'species', cooldownKey: key, mode: 'swim', allowedModes: ['swim'], inBreachArc: false, token, worldNow: now });
     if (!d.ok) return d.reason;
     if (d.replaces) endNow(c.rt, d.replaces);

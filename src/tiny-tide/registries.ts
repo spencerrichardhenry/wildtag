@@ -93,7 +93,7 @@ export function validateContract(c: Catalogs = defaultCatalogs()): string[] {
     // V2
     if (a.damageUnit !== 'hp' && a.damageUnit !== 'half-heart') out.push(`attack ${k}: damageUnit`);
     if (!AIM_MODES.includes(a.aimMode)) out.push(`attack ${k}: aimMode`);
-    if (a.origin !== undefined && (a.origin !== 'target' || a.aimMode !== 'fixed-at-start')) out.push(`attack ${k}: origin`);   // review R4
+    if (a.origin !== undefined && (a.origin !== 'target' || a.aimMode !== 'fixed-at-start')) out.push(`attack ${k}: origin`);   // V2 (review R4)
     if (!fin(a.moveSpeedFactor) || a.moveSpeedFactor < 0 || a.moveSpeedFactor > 1) out.push(`attack ${k}: moveSpeedFactor`);
     if (!nonNeg(a.poiseDamageMultiplier)) out.push(`attack ${k}: poiseDamageMultiplier`);
     // V3
