@@ -1,8 +1,8 @@
 // tests/tiny-tide-core/moves.test.ts — every expected number is the spec §7.4 table value (computed there with the §7.3 formula).
 import { describe, expect, it } from 'vitest';
-import { assignSlots, clearMissingPins, movesOf, NO_PINS, nonMouthBite, placeKinds, resolveMove } from '../../src/tiny-tide/moves';
+import { assignSlots, basicLine, clearMissingPins, swapPins, lostMoveText, moveDiff, moveLine, movesOf, NO_PINS, nonMouthBite, partMoveLine, placeKinds, resolveMove } from '../../src/tiny-tide/moves';
 import { starterGenome, type Genome, type PlacedPart } from '../../src/tiny-tide/genome';
-import { PARTS } from '../../src/tiny-tide/parts';
+import { PARTS, part } from '../../src/tiny-tide/parts';
 import type { MoveKind } from '../../src/tiny-tide/combat-types';
 
 const S = [.4, 1, 1.8] as const;
@@ -118,5 +118,23 @@ describe('moves', () => {
   it('pins for missing kinds are cleared at commit', () => {
     expect(clearMissingPins(['sweep', null, 'dash', null], ['dash'])).toEqual({ pins: [null, null, 'dash', null], cleared: ['sweep'] });
     expect(clearMissingPins(NO_PINS, [])).toEqual({ pins: [null, null, null, null], cleared: [] });
+  });
+});
+describe('move text (spec §12)', () => {
+  it('summarises, compares and explains moves', () => {
+    expect(moveLine(resolveMove({ attackId: 'bite-snapper' }, 1))).toBe('Bite · 4 damage · reach .60 L · wind-up .16 s');
+    expect(moveLine(resolveMove({ abilityId: 'dash-side-fin' }, 1))).toBe('Dash · 1.60 L · .18 s dodge');
+    expect(moveLine(resolveMove({ abilityId: 'brace-shell' }, 1))).toBe('Brace · blocks 75 % · breaks at 4 ½♥');
+    expect(moveDiff(resolveMove({ attackId: 'bite-snapper' }, 1), resolveMove({ attackId: 'bite-snapper' }, 1.2))).toBe('Range .60 → .63 L · Wind-up .16 → .17 s · Recovery .22 → .23 s');   // .6 × 1.05; .16 × 1.05; .22 × 1.05 (damage 4.2 rounds to 4)
+    expect(basicLine(resolveMove({ attackId: 'bite-snapper' }, 1), 'Snapper')).toBe('Bite (Snapper): 4 damage · reach .60 L · wind-up .16 s');
+    expect(partMoveLine(part('fin_side')!)).toBe('Move: Dash · 1.60 L · .18 s dodge'); expect(partMoveLine(part('eye_bead')!)).toBeNull();
+    expect(lostMoveText('dash')).toBe('Dash (no fin, leg or Paddle tail left)'); expect(lostMoveText('brace')).toBe('Brace (no Shell plate left)');
+  });
+});
+describe('swap (spec §12.2)', () => {
+  it('pins the dragged kind; the kind shown there moves to its old slot, or is unpinned when it was inactive', () => {
+    expect(swapPins([null, null, null, null], ['brace', 'counter', 'dash', 'grab'], 'grab', 0)).toEqual(['grab', null, null, 'brace']);
+    expect(swapPins([null, null, null, null], ['brace', 'counter', 'dash', 'grab'], 'sweep', 1)).toEqual([null, 'sweep', null, null]);   // sweep was inactive: counter is unpinned
+    expect(placeKinds(['brace', 'counter', 'dash', 'grab', 'sweep'], [null, 'sweep', null, null])).toEqual({ slots: ['brace', 'sweep', 'counter', 'dash'], inactive: ['grab'] });
   });
 });

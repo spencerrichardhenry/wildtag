@@ -30,6 +30,11 @@ describe('run v4', () => {
     if (!('planId' in p)) throw new Error('prepare'); commitEvolution(r, p);
     expect(r.plans).toEqual(['speck', 'swimmer']); expect(r.diet).toBe('carnivore'); expect(r.economy.wallet.atRisk).toBe(0); expect(validateRun(r, build)).toEqual([]);
   });
+  it('an evolution carries the editor pins (T21)', () => {
+    const r = ready(), p = prepareEvolution(r, 'crawler', r.genome, r.name, build, r.nextPartSerial, undefined, { slots: [null, null, 'dash', null] });
+    if (!('planId' in p)) throw new Error(p.reason); expect(r.loadout).toEqual({ slots: [null, null, null, null] });
+    commitEvolution(r, p); expect(r.loadout).toEqual({ slots: [null, null, 'dash', null] }); expect(validateRun(r, build)).toEqual([]);
+  });
   it('rejects an evolution whose body has no start anchor, without changing the run', () => {
     const r = ready(), snapshot = JSON.stringify(r), g = design(r.genome, 'crawler');
     expect(prepareEvolution(r, 'crawler', g, r.name, { coast: false, anchorCheck: () => false }, r.nextPartSerial)).toMatchObject({ ok: false, reason: "This body can't fit anywhere at this size." });
@@ -161,4 +166,12 @@ it('validates pins: granted kinds only, no kind twice, four entries, no extra ke
 it('pins for missing kinds are cleared at commit', () => {
   const r = clawRun(), g = structuredClone(r.genome); g.parts = g.parts.filter(p => p.uid !== 'p5');
   expect(applyDesign(r, g, r.name, build, r.nextPartSerial)).toEqual({ ok: true, clearedPins: ['grab'] }); expect(r.loadout).toEqual({ slots: [null, null, null, 'dash'] });
+});
+it('the editor pins go through applyDesign; pins of kinds the design drops are cleared (T21)', () => {
+  const r = clawRun();
+  expect(applyDesign(r, structuredClone(r.genome), r.name, build, r.nextPartSerial, undefined, { slots: [null, 'dash', 'grab', null] })).toEqual({ ok: true, clearedPins: [] });
+  expect(r.loadout).toEqual({ slots: [null, 'dash', 'grab', null] });
+  const s = clawRun(), g = structuredClone(s.genome); g.parts = g.parts.filter(p => p.uid !== 'p5');
+  expect(applyDesign(s, g, s.name, build, s.nextPartSerial, undefined, { slots: ['dash', null, 'grab', null] })).toEqual({ ok: true, clearedPins: ['grab'] });
+  expect(s.loadout).toEqual({ slots: ['dash', null, null, null] });
 });

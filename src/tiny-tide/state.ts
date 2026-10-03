@@ -5,7 +5,7 @@ import { closedLinesOf, commitmentsOf, eligibleChildren, plan, ROOT_PLAN, violat
 import { PLANET_COUNT } from './biomes';
 import type { FoodTag, Species } from './species';
 import { MOVE_PRIORITY, type CombatLoadout, type MoveKind } from './combat-types';
-import { clearMissingPins, grantedKinds, movesOf } from './moves';
+import { clearMissingPins, grantedKinds, movesOf, repairPins } from './moves';
 
 export { PLANET_COUNT, SIZES, WATER_LEVEL, random, seabedHeight } from './biomes';
 export interface Stage {
@@ -39,7 +39,8 @@ export interface Build { coast: boolean; anchorCheck?: DesignContext['anchorChec
 export type Commit = { ok: true; clearedPins: MoveKind[] } | { ok: false; reason: string; shortfall?: number };
 /** Four empty slot pins (spec §10.5). */
 export const emptyLoadout = (): CombatLoadout => ({ slots: [null, null, null, null] });
-export interface Prepared { planId: string; genome: Genome; name: string; economy: Economy; diet: Diet; nextSerial: number }
+/** `loadout`: the editor's slot pins (spec §12.2); the commit clears the pins of kinds the new design does not grant. */
+export interface Prepared { planId: string; genome: Genome; name: string; economy: Economy; diet: Diet; nextSerial: number; loadout: CombatLoadout }
 export const newSeed = () => Math.floor(Math.random() * 2 ** 31);
 export const dnaOf = (run: Run) => walletTotal(run.economy);
 export const currentPlan = (run: Run): BodyPlan => plan(run.plans.at(-1)!)!;
@@ -138,20 +139,21 @@ function candidate(run: Run, change: (c: Run) => void, build: Build, catalog: re
 }
 const notEnough = (tx: { shortfall: number; invalid?: string[] }): Failure =>
   tx.invalid ? { ok: false, reason: `Internal check failed: ${tx.invalid[0]}` } : { ok: false, reason: 'Not enough DNA.', shortfall: tx.shortfall };
-/** Applies an editor design on the current plan. The ledger pays for it. Nothing changes unless every check passes. */
-export function applyDesign(run: Run, g: Genome, name: string, build: Build, nextSerial: number, catalog: readonly PartSpec[] = PARTS): Commit {
+/** Applies an editor design on the current plan. The ledger pays for it. Nothing changes unless every check passes.
+ *  `loadout`: the editor's pins (spec §12.2); pins of kinds the design does not grant are cleared. */
+export function applyDesign(run: Run, g: Genome, name: string, build: Build, nextSerial: number, catalog: readonly PartSpec[] = PARTS, loadout: CombatLoadout = run.loadout): Commit {
   const before = validateRun(run, build, catalog); if (before.length) return { ok: false, reason: `Internal check failed: ${before[0]}` };
   const issue = problems(g, currentPlan(run), { unlocked: run.unlocked, diet: run.diet, anchorCheck: build.anchorCheck }, catalog).find(x => x.code !== 'dna');
   if (issue) return { ok: false, reason: issue.message };
   const tx = commitDesign(run.economy, run.genome, g);
   if (!tx.ok) return notEnough(tx);
-  const next = candidate(run, c => { c.economy = tx.economy; c.genome = cloneGenome(g); c.name = name.trim().slice(0, 24) || c.name;
+  const next = candidate(run, c => { c.economy = tx.economy; c.genome = cloneGenome(g); c.name = name.trim().slice(0, 24) || c.name; c.loadout = { slots: [...loadout.slots] as CombatLoadout['slots'] };
     c.nextPartSerial = serialAfter(g, c.nextPartSerial, nextSerial); c.health = Math.min(c.health, maxHealthOf(c)); }, build, catalog);
   if ('ok' in next) return next;
   Object.assign(run, next.run); return { ok: true, clearedPins: next.cleared };
 }
 /** Checks an evolution and prices it. It never changes `run`. */
-export function prepareEvolution(run: Run, planId: string, g: Genome, name: string, build: Build, nextSerial: number, catalog: readonly PartSpec[] = PARTS): Prepared | Failure {
+export function prepareEvolution(run: Run, planId: string, g: Genome, name: string, build: Build, nextSerial: number, catalog: readonly PartSpec[] = PARTS, loadout: CombatLoadout = run.loadout): Prepared | Failure {
   const before = validateRun(run, build, catalog); if (before.length) return { ok: false, reason: `Internal check failed: ${before[0]}` };
   if (!evolveReady(run)) return { ok: false, reason: 'Not ready to evolve.' };
   const next = eligibleChildren(run.plans, build).find(p => p.id === planId); if (!next) return { ok: false, reason: 'That path is not open.' };
@@ -159,12 +161,13 @@ export function prepareEvolution(run: Run, planId: string, g: Genome, name: stri
   if (issue) return { ok: false, reason: issue.message };
   const tx = commitDesign(run.economy, run.genome, g);
   if (!tx.ok) return notEnough(tx);
-  const prepared: Prepared = { planId, genome: cloneGenome(g), name: name.trim().slice(0, 24) || run.name, economy: tx.economy, diet, nextSerial: serialAfter(g, run.nextPartSerial, nextSerial) };
+  const prepared: Prepared = { planId, genome: cloneGenome(g), name: name.trim().slice(0, 24) || run.name, economy: tx.economy, diet, nextSerial: serialAfter(g, run.nextPartSerial, nextSerial),
+    loadout: { slots: [...loadout.slots] as CombatLoadout['slots'] } };
   const check = candidate(run, c => applyEvolution(c, prepared), build, catalog);
   return 'ok' in check ? check : prepared;
 }
 function applyEvolution(c: Run, p: Prepared) {
-  c.economy = bankAll(p.economy); c.genome = cloneGenome(p.genome); c.name = p.name; c.diet = p.diet; c.plans.push(p.planId);
+  c.economy = bankAll(p.economy); c.genome = cloneGenome(p.genome); c.name = p.name; c.diet = p.diet; c.plans.push(p.planId); c.loadout = { slots: [...p.loadout.slots] as CombatLoadout['slots'] };
   c.stage++; c.stageDna = 0; c.nextPartSerial = Math.max(c.nextPartSerial, p.nextSerial); c.health = maxHealthOf(c);
 }
 /** Applies a validated Prepared atomically. Returns the kinds whose pins it cleared. */
@@ -353,6 +356,8 @@ export function parseSaveWithNotes(raw: string | null, build: Build, catalog: re
   if (!isObject(v)) return null;
   if (v.version === 4) {
     const run = readV4(v); if (!run) return null;
+    // Repair, do not reject (T20 carry): a pin that is not a granted kind, or a kind pinned twice, is cleared. Commits stay strict.
+    run.loadout = { slots: repairPins(run.loadout.slots, grantedKinds(movesOf(run.genome, catalog))) };
     const issues = validateRun(run, build, catalog);
     if (issues.length === 1 && issues[0] === 'needs coast') return { status: 'kept', message: COAST_KEPT };
     return issues.length ? null : { status: 'ok', run, notes: run.notices };

@@ -188,3 +188,81 @@ export function clearMissingPins(pins: Readonly<Tuple4<SlotPin>>, granted: reado
   const cleared: MoveKind[] = [], out = pins.map(p => { if (p && !granted.includes(p)) { cleared.push(p); return null; } return p; }) as Tuple4<SlotPin>;
   return { pins: out, cleared };
 }
+
+// ---- editor text (spec §12) ----
+const f2 = (v: number) => v.toFixed(2).replace(/^0\./, '.');
+const KIND_NAMES: Readonly<Record<MoveKind, string>> = { grab: 'Grab', counter: 'Counter', brace: 'Brace', dash: 'Dash', sweep: 'Sweep' };
+/** A move's key numbers, in display order: label, value and text (the details panel and the size slider's "old → new"). */
+export function moveNumbers(r: ResolvedMove): { label: string; value: number; text: string }[] {
+  const out: { label: string; value: number; text: string }[] = [], n = (label: string, value: number, text: string) => { out.push({ label, value, text }); };
+  const a = r.attack, g = r.guard, e = r.evasion;
+  if (a) {
+    n('Damage', a.damage, String(a.damage));
+    if (a.shape.kind === 'cone') n('Range', a.shape.range, `${f2(a.shape.range)} L`);
+    n('Wind-up', a.windupSeconds, `${f2(a.windupSeconds)} s`); n('Recovery', a.recoverySeconds, `${f2(a.recoverySeconds)} s`);
+    if (a.hold) { n('Hold', a.hold.seconds, `${f2(a.hold.seconds)} s`); n('Size limit', a.hold.sizeFactor, `× ${f2(a.hold.sizeFactor)}`); }
+    if (r.kind === 'sweep') n('Knockback', a.impulse, String(a.impulse));
+  }
+  if (g?.kind === 'counter') { n('Window', g.windowSeconds ?? 0, `${f2(g.windowSeconds ?? 0)} s`); n('Reflect', g.reflectDamage, String(g.reflectDamage)); n('Stagger', g.attackerStaggerSeconds, `${f2(g.attackerStaggerSeconds)} s`); }
+  if (g?.kind === 'brace') { n('Block', g.blockFraction, `${Math.round(g.blockFraction * 100)} %`); n('Breaks at', g.breakHalfHearts ?? 0, `${g.breakHalfHearts ?? 0} ½♥`); n('Move speed', g.moveSpeedFactor, `× ${f2(g.moveSpeedFactor)}`); n('Startup', g.startupSeconds, `${f2(g.startupSeconds)} s`); }
+  if (e) { n('Distance', e.distanceBodyLengths, `${f2(e.distanceBodyLengths)} L`); n('Dodge', e.travelSeconds, `${f2(e.travelSeconds)} s`); }
+  if (r.kind !== 'bite') n('Cooldown', r.cooldownSeconds, `${f2(r.cooldownSeconds)} s`);
+  return out;
+}
+/** The short line of a move (a chip, a part card): "Dash · 1.60 L · .18 s dodge". */
+export function moveLine(r: ResolvedMove): string {
+  const a = r.attack, g = r.guard, e = r.evasion;
+  if (e) return `${r.label} · ${f2(e.distanceBodyLengths)} L · ${f2(e.travelSeconds)} s dodge`;
+  if (g?.kind === 'brace') return `${r.label} · blocks ${Math.round(g.blockFraction * 100)} % · breaks at ${g.breakHalfHearts ?? 0} ½♥`;
+  if (g?.kind === 'counter') return `${r.label} · ${f2(g.windowSeconds ?? 0)} s window · reflects ${g.reflectDamage}`;
+  if (a?.hold) return `${r.label} · holds ${f2(a.hold.seconds)} s · ${a.damage} damage`;
+  if (a && a.shape.kind === 'cone') return `${r.label} · ${a.damage} damage · reach ${f2(a.shape.range)} L · wind-up ${f2(a.windupSeconds)} s`;
+  return r.label;
+}
+/** The size slider's comparison (spec §12.2): the numbers that changed, "Range .60 → .66 L · Wind-up .16 → .17 s". */
+export function moveDiff(before: ResolvedMove, after: ResolvedMove): string {
+  const a = moveNumbers(before), b = moveNumbers(after);
+  return a.flatMap((x, i) => { const y = b[i]; return y && y.label === x.label && y.value !== x.value ? [`${x.label} ${x.text.replace(/ (L|s)$/, '')} → ${y.text}`] : []; }).join(' · ');
+}
+/** The tradeoff line of a move kind (spec §12.1 item 4). */
+export const TRADEOFF: Readonly<Record<MoveKind | 'bite', string>> = {
+  bite: 'Bigger: more reach and damage, slower wind-up.', sweep: 'Bigger: more reach and knockback, slower swing and longer cooldown.',
+  grab: 'Bigger: longer hold and bigger prey, slower grab and longer cooldown.', counter: 'Bigger: wider window and harder reflect, longer cooldown.',
+  brace: 'Bigger: blocks more and breaks later, but you move slower.', dash: 'Bigger: dashes farther and stays safe longer, longer cooldown.',
+};
+/** The move line of a catalog part at scale 1 (spec §12.2), or null for a part that gives no move. */
+export function partMoveLine(spec: PartSpec, c: MoveCatalogs = MOVE_CATALOGS): string | null {
+  const g = spec.activeGrants[0], b = spec.basicAttacks[0];
+  if (g && c.abilities[g.abilityId]) return `Move: ${moveLine(resolveMove({ abilityId: g.abilityId }, 1, {}, c))}`;
+  if (b && c.attacks[b.attackId]) return `Move: ${moveLine(resolveMove({ attackId: b.attackId }, 1, {}, c))}`;
+  return null;
+}
+/** Why a kind is lost (spec §12.2): the move name and the parts that give it, by part kind (a kind with several parts is named by its
+ *  kind), the larger groups first: "Dash (no fin, leg or Paddle tail left)". Rare parts are not named. */
+export function lostMoveText(kind: MoveKind, catalog: readonly PartSpec[] = PARTS): string {
+  const givers = catalog.filter(p => !p.rare && p.activeGrants[0]?.id === kind), groups = new Map<string, PartSpec[]>();
+  for (const p of givers) groups.set(p.kind, [...(groups.get(p.kind) ?? []), p]);
+  const names = [...groups.values()].sort((x, y) => y.length - x.length).map(g => g.length > 1 ? g[0]!.kind : g[0]!.name);
+  return `${KIND_NAMES[kind]} (no ${names.length > 1 ? `${names.slice(0, -1).join(', ')} or ${names.at(-1)}` : names[0] ?? 'part'} left)`;
+}
+/** The basic line of the moves panel (spec §12.1 item 1): "Bite (Snapper): 4 damage · reach .60 L · wind-up .16 s". */
+export function basicLine(r: ResolvedMove, partName: string): string {
+  const a = r.attack!; return `Bite (${partName}): ${a.damage} damage · reach ${f2(a.shape.kind === 'cone' ? a.shape.range : 0)} L · wind-up ${f2(a.windupSeconds)} s`;
+}
+/** Spec §7.2 swap: the dragged kind goes to `slot`; the kind shown there moves to the dragged kind's old slot (or is unpinned when the
+ *  dragged kind was inactive). */
+export function swapPins(pins: Readonly<Tuple4<SlotPin>>, shown: Readonly<Tuple4<MoveKind | null>>, kind: MoveKind, slot: number): Tuple4<SlotPin> {
+  const from = shown.indexOf(kind), occupant = shown[slot] ?? null, out = pins.map(p => p === kind || p === occupant ? null : p) as Tuple4<SlotPin>;
+  out[slot] = kind;
+  if (occupant && occupant !== kind && from >= 0) out[from] = occupant;
+  return out;
+}
+/** Repairs saved pins (T20 carry): four entries; a pin that is not a granted kind, or a kind pinned a second time, becomes null. */
+export function repairPins(slots: readonly unknown[], granted: readonly MoveKind[]): Tuple4<SlotPin> {
+  const seen = new Set<MoveKind>(), out: Tuple4<SlotPin> = [null, null, null, null];
+  for (let i = 0; i < 4; i++) {
+    const k = slots[i];
+    if (typeof k === 'string' && (granted as readonly string[]).includes(k) && !seen.has(k as MoveKind)) { out[i] = k as MoveKind; seen.add(k as MoveKind); }
+  }
+  return out;
+}

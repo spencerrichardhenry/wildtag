@@ -323,6 +323,11 @@ describe('a slot press next to a same-tick basic press (T7 carry)', () => {
     s.rt.cooldowns.set(`player:${dash.partUid}:${dash.grantId}`, 99);
     expect(tick(s, [crab(61)], 0, both(0)).r).toMatchObject({ started: ['bite'], chomp: false });
   });
+  it('a pin-only change (no genome revision) rebuilds the slots (T20 carry)', () => {
+    const s = speck(), revision = s.genomeRevision; expect(playerMoves(s).slots.slots).toEqual(['dash', null, null, null]);
+    s.run.loadout = { slots: [null, null, 'dash', null] };
+    expect(s.genomeRevision).toBe(revision); expect(playerMoves(s).slots.slots).toEqual([null, null, 'dash', null]);
+  });
   it('an empty slot press does not swallow the chomp fallback', () => {
     expect(tick(speck(), [], 0, both(2)).r).toMatchObject({ started: [], chomp: true });
   });

@@ -470,7 +470,7 @@ async function chooseEvolution() {
 }
 /** Prepares, places and commits an evolution with no await in between (Prepared's economy is trusted at commit). */
 function submitEvolution(next: BodyPlan, r: EditorResult): SubmitOutcome {
-  const prepared = prepareEvolution(run, next.id, r.genome, r.name, BUILD, r.nextSerial, CATALOG);
+  const prepared = prepareEvolution(run, next.id, r.genome, r.name, BUILD, r.nextSerial, CATALOG, r.loadout);
   if (!('planId' in prepared)) return { ok: false, reason: prepared.reason };
   const nextActor = playerActor(next, prepared.genome, next.size, 1), nextLegality = legality(next.size), anchor = startAnchor(nextActor, next.size, nextLegality);
   const destination = evolutionDestination(nextActor, physical, { ...nextLegality, orientation: { yaw: rt.orientation.yaw, pitch: 0 }, time }, anchor.ok ? anchor.position : physical);
@@ -486,7 +486,7 @@ async function editDesign() {
     onSubmit: async r => {
       const rejected = qaRejection(); if (rejected) return rejected;
       const before = run.genome, oldLoadout = structuredClone(run.loadout);
-      const applied = applyDesign(run, r.genome, r.name, BUILD, r.nextSerial, CATALOG);
+      const applied = applyDesign(run, r.genome, r.name, BUILD, r.nextSerial, CATALOG, r.loadout);
       if (!applied.ok) return { ok: false, reason: applied.reason };
       // Cooldowns are action-clock times (spec §5.1); the action clock is stopped while editing.
       reconcileAfterCommit(rt, designDelta(before, run.genome, oldLoadout, CATALOG), run.genome, 'player', rt.actionClock); genomeRevision++; refreshDerived(); committed = true;

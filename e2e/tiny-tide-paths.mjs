@@ -1,4 +1,4 @@
-// Tiny Tide C11: paths, editor, gestures, limits, soft world edge, solid reef rocks, block hints, hazards, pose agreement, lifecycle and saves (18 checks, with 5b, 5c, 5d, 7b, 7c, 10b, 12b and 13b).
+// Tiny Tide C11: paths, editor, gestures, limits, soft world edge, solid reef rocks, block hints, hazards, pose agreement, lifecycle and saves (18 checks, with 5b, 5c, 5d, 7b, 7c, 10b, 12b, 12c and 13b).
 // Fixtures come from the dev-only fixture page (the game's own modules). Run one or more checks: node e2e/tiny-tide-paths.mjs 3 7b
 import assert from 'node:assert/strict';
 import { mkdirSync } from 'node:fs';
@@ -629,20 +629,57 @@ check('12', 'Allocation and rig invalidation', async () => {
 
 check('12b', 'Lost moves (a pinned Pincer removed)', async () => {
   // The Pincer pair grants Grab (a real grant since sub-project 3a; `?qaGrantCatalog` is gone, D32). The save pins Grab to slot 1.
-  // T21 replaces this check with the full lost-moves line.
   const { page, errors } = await newPage();
   const fx = await play(page, { add: { 0: [{ id: 'claw_pincer', t: .5 }] }, pins: ['grab', null, null, null] });
   const claw = fx.info.parts.find(p => p.id === 'claw_pincer').uid;
   await openEdit(page);
-  assert.equal(await page.locator('#editor .ed-lost-abilities').isHidden(), true, 'no lost moves before the change');
+  assert.equal(await page.locator('#editor .ed-lost-moves').isHidden(), true, 'no lost moves before the change');
+  assert.ok(await page.locator('#editor .ed-moves .ed-move-chip[data-kind="grab"]').count() >= 1, 'the Pincer gives a Grab chip');
   await selectPart(page, claw);
   await page.locator('#editor .ed-delete').click(); await frames(page, 2);
-  const lost = page.locator('#editor .ed-lost-abilities');
+  const lost = page.locator('#editor .ed-lost-moves');
   assert.equal(await lost.isVisible(), true, 'removing the pinned Pincer shows the lost moves');
-  assert.match(await lost.textContent(), /You lose: grab/);
+  assert.equal((await lost.textContent()).trim(), 'You lose: Grab (no Pincer left)', 'the line names the move, not the kind id');
+  assert.equal(await page.locator('#editor .ed-moves .ed-move-chip[data-kind="grab"]').count(), 0, 'the Grab chip is gone');
   await page.locator('#editor .ed-done').click(); await page.locator('#editor').waitFor({ state: 'detached' });
   const s = await state(page), saved = JSON.parse(await storageOf(page, s.saveKey));
   assert.deepEqual(saved.loadout, { slots: [null, null, null, null] }, 'the commit clears the Grab pin in the save');
+  assert.deepEqual(errors, []);
+});
+
+check('12c', 'Moves panel: details, swap by tap, key and drag, undo, save', async () => {
+  const { page, errors } = await newPage();
+  const fx = await play(page, { add: { 0: [{ id: 'claw_pincer', t: .5 }] } });
+  await openEdit(page);
+  // The size slider shows the part's move numbers as "old → new" (spec §12.2).
+  await selectPart(page, fx.info.parts.find(p => p.id === 'claw_pincer').uid);
+  await page.locator('#editor .ed-scale').fill('1.4');
+  assert.match(await page.locator('#editor .ed-move-diff').textContent(), /^Damage \d+ → \d+ · Range \.\d\d → \.\d\d L · Wind-up \.\d\d → \.\d\d s/, 'live size numbers');
+  await page.locator('#editor .ed-undo').click(); await page.keyboard.press('Escape');
+  const chips = () => page.locator('#editor .ed-slot-bar .ed-slot').evaluateAll(els => els.map(e => e.querySelector('.ed-move-chip')?.dataset.kind ?? null));
+  assert.deepEqual(await chips(), ['dash', 'grab', null, null], 'priority order with no pins');
+  assert.match(await page.locator('#editor .ed-basic').textContent(), /^Bite \(.+\): \d+ damage · reach \.\d\d L · wind-up \.\d\d s$/);
+  assert.match(await page.locator('#editor .ed-card[data-part="mouth_snapper"] .ed-move-line').textContent(), /^Move: Bite · 4 damage · reach \.60 L/, 'a part card shows its move');
+  // Tap Grab, then tap slot 1: Grab takes slot 1 and Dash moves to Grab's old slot.
+  await page.locator('#editor .ed-move-chip[data-kind="grab"]').click();
+  assert.equal(await page.locator('#editor .ed-move-chip.picked').count(), 1, 'the tapped chip is picked');
+  assert.equal(await page.locator('#editor .ed-move-details tr').count() > 2, true, 'the details table shows the numbers');
+  assert.match(await page.locator('#editor .ed-move-details').textContent(), /Size \.4.*Size 1\.8.*Bigger:/s);
+  await page.locator('#editor .ed-slot[data-slot="0"]').click();
+  assert.deepEqual(await chips(), ['grab', 'dash', null, null], 'tap swap');
+  await page.locator('#editor .ed-undo').click();
+  assert.deepEqual(await chips(), ['dash', 'grab', null, null], 'undo restores the pins');
+  // Keyboard: pick Grab, press 3.
+  await page.locator('#editor .ed-move-chip[data-kind="grab"]').click(); await page.keyboard.press('3');
+  assert.deepEqual(await chips(), ['dash', null, 'grab', null], 'key 3 puts the picked move in slot 3');
+  // Drag Dash onto slot 4.
+  const from = await page.locator('#editor .ed-move-chip[data-kind="dash"]').boundingBox(), to = await page.locator('#editor .ed-slot[data-slot="3"]').boundingBox();
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2); await page.mouse.down();
+  await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 6 }); await page.mouse.up(); await frames(page, 2);
+  assert.deepEqual(await chips(), [null, null, 'grab', 'dash'], 'drag swap');
+  await page.locator('#editor .ed-done').click(); await page.locator('#editor').waitFor({ state: 'detached' });
+  const s = await state(page), saved = JSON.parse(await storageOf(page, s.saveKey));
+  assert.deepEqual(saved.loadout, { slots: [null, null, 'grab', 'dash'] }, 'Done saves the pins');
   assert.deepEqual(errors, []);
 });
 
@@ -829,4 +866,4 @@ try {
   }
 } finally { await browser.close(); }
 if (failures.length) { console.log(`FAILED: ${failures.join(', ')}`); process.exit(1); }
-console.log(`PASSED: ${only.length ? `checks ${only.join(', ')}` : 'all 18 checks (with 5b, 5c, 5d, 7b, 7c, 10b, 12b and 13b)'}: path screen, customize fallback, submit failure, evolve editor, swimmer and crawler limits, soft world edge, solid reef rocks, block hints, high spawn recovery, bite at the floor, transformation path, diet lock, size pricing, desktop and touch gestures, chorded mouse buttons, allocation, lost abilities, hazards and invulnerability, pose agreement, faint during a Breach, pause, kept coast save, legacy keys.`);
+console.log(`PASSED: ${only.length ? `checks ${only.join(', ')}` : 'all 18 checks (with 5b, 5c, 5d, 7b, 7c, 10b, 12b, 12c and 13b)'}: path screen, customize fallback, submit failure, evolve editor, swimmer and crawler limits, soft world edge, solid reef rocks, block hints, high spawn recovery, bite at the floor, transformation path, diet lock, size pricing, desktop and touch gestures, chorded mouse buttons, allocation, lost moves, the moves panel and swap, hazards and invulnerability, pose agreement, faint during a Breach, pause, kept coast save, legacy keys.`);

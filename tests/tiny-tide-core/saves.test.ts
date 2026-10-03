@@ -42,7 +42,16 @@ describe('v4 saves', () => {
   it('new loadout round-trips', () => {
     const r = freshRun(1); r.loadout = { slots: [null, 'dash', null, null] };   // the Speck starter grants Dash
     expect(parseSave(JSON.stringify(r), build)!.loadout).toEqual({ slots: [null, 'dash', null, null] });
-    expect(parseSave(JSON.stringify({ ...r, loadout: { slots: ['sweep', null, null, null] } }), build)).toBeNull();   // a kind the design does not grant
+  });
+  it('repairs bad pins on load instead of rejecting the save (T20 carry)', () => {
+    const r = freshRun(1), load = (slots: unknown) => parseSave(JSON.stringify({ ...r, loadout: { slots } }), build)?.loadout;
+    expect(load(['sweep', null, 'dash', null])).toEqual({ slots: [null, null, 'dash', null] });   // a kind the design does not grant
+    expect(load([7, 'zap', null, 'dash'])).toEqual({ slots: [null, null, null, 'dash'] });       // not a kind
+    expect(load(['dash', 'dash', null, null])).toEqual({ slots: ['dash', null, null, null] });   // a kind twice keeps its first pin
+    expect(load(['dash'])).toEqual({ slots: ['dash', null, null, null] });                       // a short list is padded
+    expect(load([null, null, null, null, 'dash'])).toEqual({ slots: [null, null, null, null] }); // a long list is cut to four
+    const repaired = parseSave(JSON.stringify({ ...r, loadout: { slots: ['sweep', null, null, null] } }), build)!;
+    expect(validateRun(repaired, build)).toEqual([]);
   });
   it('loads a pre-3a v4 save (T15-era format) as a valid run with four empty pins, and never writes the old key back', () => {
     // A save as the build before slot pins wrote it: a crawler with half-heart health and the two-slot `loadout.active`.

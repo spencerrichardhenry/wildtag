@@ -8,7 +8,9 @@ import { CreatureModel, locate, profile, surface, zAt } from './creature';
 import { adaptToPlan, badMirror, cloneGenome, derive, effectiveStats, instanceCount, isUnlocked, nextUid, PART_LIMITS, PATTERNS, partCost, partSlots, problems, SCALE_RANGE, SPINE_RANGE, type GenomeProblem, type Genome, type PlacedPart } from './genome';
 import { quoteDesign, walletTotal, type Economy, type Quote } from './economy';
 import { designDelta } from './design-delta';
-import type { CombatLoadout } from './combat-types';
+import type { CombatLoadout, MoveKind, SlotPin, Tuple4 } from './combat-types';
+import { basicLine, grantedKinds, lostMoveText, moveDiff, moveLine, moveNumbers, movesOf, nonMouthBite, placeKinds, partMoveLine, resolveMove, swapPins, TRADEOFF, type GrantedMove, type MoveRef } from './moves';
+import { MOVE_ICONS } from './combat-hud';
 import { regionOf, segmentRule, type BodyPlan, type Region } from './plans';
 import { KIND_LABELS, PARTS, part, type Diet, type PartKind, type PartSpec, type Stats } from './parts';
 import { STAGES, type Build } from './state';
@@ -28,7 +30,7 @@ export interface EditorOptions {
   nextSerial: number;
   /** The caller's build. The anchor check runs only on Done, inside `onSubmit`. */
   build: Build;
-  /** The current ability bindings, for the lost-abilities preview. */
+  /** The committed slot pins (spec §7.2): the slot bar starts from them, and Undo all restores them. */
   loadout: CombatLoadout;
   /** The part catalog for problems and ability grants (tests pass a synthetic one). */
   catalog?: readonly PartSpec[];
@@ -36,7 +38,8 @@ export interface EditorOptions {
    *  gesture state, and shows the reason in `.ed-submit-error`. It closes only after `{ ok: true }` or Cancel. */
   onSubmit(result: EditorResult): Promise<SubmitOutcome>;
 }
-export interface EditorResult { genome: Genome; name: string; nextSerial: number }
+/** `loadout`: the pins the player set in the slot bar (spec §12.2). */
+export interface EditorResult { genome: Genome; name: string; nextSerial: number; loadout: CombatLoadout }
 export type SubmitOutcome = { ok: true } | { ok: false; reason: string };
 type Tab = 'parts' | 'body' | 'paint';
 /** The one owner of the current pointer gesture (spec §6). `consumed` means the gesture once had two pointers:
@@ -49,7 +52,8 @@ const TAP_SLOP = 8;
 /** A card press becomes a card drag after this distance (px). */
 const CARD_DRAG_SLOP = 12;
 const centre = (a: TrackedPointer, b: TrackedPointer) => ({ cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2, distance: Math.hypot(a.x - b.x, a.y - b.y) });
-interface Snapshot { genome: Genome; changes: string[] }
+/** One undo step: the design, the change list and the slot pins (pin changes are in the history, spec §12.2). */
+interface Snapshot { genome: Genome; changes: string[]; pins: Tuple4<SlotPin> }
 const SWATCHES = ['#ffad92', '#ffc769', '#ffe1b8', '#ef8a80', '#d4b1f5', '#bfc0ff', '#b4e7ed', '#7fd1b9', '#9fd36b', '#f6e27a', '#f59ac0', '#8fb3ff', '#6c7bd9', '#4d9c8e', '#3b5b6e', '#fff6e3'];
 const STAT_ROWS: [keyof Stats, string, number][] = [['speed', 'Speed', 6], ['bite', 'Bite', 6], ['reach', 'Reach', 3], ['armor', 'Armor', 6], ['health', 'Health', 6], ['sense', 'Sense', 8], ['stealth', 'Stealth', 4]];
 const KIND_ORDER: PartKind[] = ['mouth', 'eye', 'fin', 'tail', 'leg', 'arm', 'armor', 'sense', 'wing', 'jet', 'cosmic'];
@@ -110,6 +114,12 @@ class Editor {
   private serial: number;
   private name: string;
   private history: Snapshot[] = [];
+  /** The slot pins of the draft (spec §7.2); a picked chip waits for a slot tap or a key 1–4 (touch and keyboard swap). */
+  private pins: Tuple4<SlotPin> = [null, null, null, null];
+  private picked: MoveKind | null = null;
+  /** The move whose details are open, and the size slider's comparison (shown while its part is selected; a discrete edit clears it). */
+  private detailKind: MoveKind | 'bite' | null = null;
+  private sizeDiff: { uid: string; text: string } | null = null;
   /** A snapshot taken when a drag or slider gesture starts; it enters the history on the first real change. */
   private pending: Snapshot | null = null;
   private tab: Tab = 'parts';
@@ -156,7 +166,7 @@ class Editor {
   private readonly onKey = (event: KeyboardEvent) => this.key(event);
 
   constructor(private options: EditorOptions, private done: (result: EditorResult | null) => void) {
-    this.draft = cloneGenome(options.genome); this.original = cloneGenome(options.original); this.name = options.name;
+    this.draft = cloneGenome(options.genome); this.original = cloneGenome(options.original); this.name = options.name; this.pins = [...options.loadout.slots] as Tuple4<SlotPin>;
     this.changes = [...options.changes]; this.catalog = options.catalog ?? PARTS;
     this.serial = options.nextSerial;
     renderThumbnails();
@@ -172,7 +182,7 @@ class Editor {
       </header>
       <nav class="ed-tabs" role="tablist">${(['parts', 'body', 'paint'] as Tab[]).map(t => `<button role="tab" data-tab="${t}">${t[0]!.toUpperCase() + t.slice(1)}</button>`).join('')}</nav>
       <div class="ed-panel"></div>
-      <aside class="ed-stats"><div class="ed-stats-body"></div>${evolve ? `
+      <aside class="ed-stats"><div class="ed-stats-body"></div><section class="ed-moves" aria-label="Moves"></section>${evolve ? `
         <section class="ed-evolve" aria-label="Changes for a ${esc(plan.name)}">
           <details class="ed-changes-box"${innerWidth > 900 ? ' open' : ''}><summary>Changes</summary><ul class="ed-changes"></ul></details>
           <div class="ed-evolve-actions"><button class="ed-undo-all ghost-button">Undo all</button><button class="ed-fix ghost-button">Fix for me</button></div>
@@ -180,7 +190,7 @@ class Editor {
       <div class="ed-regions" aria-label="Slots per body region">${REGIONS.map(r => `<span class="ed-region" data-region="${r}"></span>`).join('')}</div>
       <div class="ed-alerts">
         <p class="ed-problem-line" role="status" hidden></p>
-        <div class="ed-lost-abilities" hidden></div>
+        <div class="ed-lost-moves" role="status" hidden></div>
         <p class="ed-submit-error" role="alert" hidden></p>
       </div>
       <div class="ed-tool" hidden></div>
@@ -206,7 +216,7 @@ class Editor {
     this.root.querySelector<HTMLButtonElement>('.ed-cancel')!.onclick = () => { if (!this.submitting) this.close(null); };
     this.root.querySelector<HTMLButtonElement>('.ed-done')!.onclick = () => void this.finish();
     const undoAll = this.root.querySelector<HTMLButtonElement>('.ed-undo-all'), fix = this.root.querySelector<HTMLButtonElement>('.ed-fix');
-    if (undoAll) undoAll.onclick = () => this.replace(cloneGenome(this.original), []);
+    if (undoAll) undoAll.onclick = () => { this.pushHistory(); this.pins = [...this.options.loadout.slots] as Tuple4<SlotPin>; this.picked = null; this.draft = cloneGenome(this.original); this.changes = []; this.afterEdit(); };
     if (fix) fix.onclick = () => this.fixForMe();
     this.root.querySelector<HTMLButtonElement>('.ed-confirm-yes')!.onclick = () => { const placed = this.pairPrompt; this.showPairPrompt(null); if (placed) this.addPart({ ...placed, mirror: false }); };
     this.root.querySelector<HTMLButtonElement>('.ed-confirm-no')!.onclick = () => this.showPairPrompt(null);
@@ -294,22 +304,24 @@ class Editor {
   }
   private pushHistory() {
     this.pending = null;
-    this.history.push({ genome: cloneGenome(this.draft), changes: [...this.changes] }); if (this.history.length > 60) this.history.shift();
+    this.history.push(this.snapshot()); if (this.history.length > 60) this.history.shift();
   }
   /** Starts a gesture: its snapshot enters the history only if the gesture changes something. */
-  private beginGesture() { this.pending = { genome: cloneGenome(this.draft), changes: [...this.changes] }; }
+  private beginGesture() { this.pending = this.snapshot(); }
+  private snapshot(): Snapshot { return { genome: cloneGenome(this.draft), changes: [...this.changes], pins: [...this.pins] as Tuple4<SlotPin> }; }
   private touchGesture() {
     if (this.pending) { this.history.push(this.pending); if (this.history.length > 60) this.history.shift(); this.pending = null; }
     this.showSubmitError(null);
   }
   private afterEdit() {
+    this.sizeDiff = null;
     this.model.setGenome(this.draft);
     if (this.selected !== null && !this.placedBy(this.selected)) this.selected = null;
     this.showSubmitError(null); this.render();
   }
   private undo() {
     const prior = this.history.pop(); if (!prior) return;
-    this.pending = null; this.draft = prior.genome; this.changes = prior.changes; this.afterEdit();
+    this.pending = null; this.draft = prior.genome; this.changes = prior.changes; this.pins = prior.pins; this.picked = null; this.afterEdit();
   }
   private fixForMe() {
     const a = adaptToPlan(this.draft, this.options.plan, { unlocked: this.options.unlocked, diet: this.options.diet }, this.serial);
@@ -322,7 +334,7 @@ class Editor {
     if (this.submitting || this.closed) return;
     const issue = this.issues()[0];
     if (issue) { this.hint(issue.message); return; }
-    const result: EditorResult = { genome: cloneGenome(this.draft), name: this.name.trim() || this.options.name, nextSerial: this.serial };
+    const result: EditorResult = { genome: cloneGenome(this.draft), name: this.name.trim() || this.options.name, nextSerial: this.serial, loadout: { slots: [...this.pins] as Tuple4<SlotPin> } };
     this.submitting = true; this.showSubmitError(null); this.renderStatsOnly();
     let outcome: SubmitOutcome;
     try { outcome = await this.options.onSubmit(result); }
@@ -359,6 +371,8 @@ class Editor {
     }
     if ((event.key === 'Delete' || event.key === 'Backspace') && this.selected !== null) this.removeSelected();
     if (event.key === 'z' && (event.metaKey || event.ctrlKey)) { event.preventDefault(); this.undo(); }
+    // Keyboard swap (spec §12.2): a picked chip goes to slot 1–4.
+    if (this.picked && !this.submitting && /^[1-4]$/.test(event.key)) { event.preventDefault(); this.swap(this.picked, Number(event.key) - 1); }
   }
   private hint(text: string) { const el = this.root.querySelector<HTMLElement>('.ed-hint')!; el.textContent = text; el.classList.add('show'); clearTimeout(Number(el.dataset.timer)); el.dataset.timer = String(setTimeout(() => el.classList.remove('show'), 2600)); }
 
@@ -673,7 +687,7 @@ class Editor {
         const reason = this.cardReason(spec), found = isUnlocked(spec.id, this.options.plan.size, this.options.unlocked), early = found && spec.stage > this.options.plan.size;
         return `<button class="ed-card ${this.placing === spec.id ? 'active' : ''}" data-part="${spec.id}" ${reason ? `disabled data-reason="${esc(reason)}"` : ''} aria-label="${esc(spec.name)}, ${spec.cost} DNA${reason ? `. ${esc(reason)}` : ''}">
           <img src="${thumbnails.get(spec.id) ?? ''}" alt=""><strong>${esc(spec.name)}</strong><span class="ed-cost">${found ? `${spec.cost} DNA` : `🔒 ${STAGES[spec.stage]!.title}`}</span>
-          <small>${reason && found ? `<span class="ed-reason">${esc(reason)}</span>` : `${statLine(spec.stats)}${spec.diet ? ` · ${spec.diet}` : ''}`}</small>${spec.rare ? '<em class="ed-rare">RARE</em>' : early ? '<em>FOUND!</em>' : ''}</button>`;
+          <small>${reason && found ? `<span class="ed-reason">${esc(reason)}</span>` : `${statLine(spec.stats)}${spec.diet ? ` · ${spec.diet}` : ''}`}</small>${moveLineOf(spec)}${spec.rare ? '<em class="ed-rare">RARE</em>' : early ? '<em>FOUND!</em>' : ''}</button>`;
       }).join('')}</div>
       <p class="ed-tip">${this.placing ? 'Tap your creature to place it. Tap the card again to stop.' : 'Choose a part, then tap your creature. Turn it with two fingers or a right-drag.'}</p>`;
     panel.querySelectorAll<HTMLButtonElement>('[data-kind]').forEach(button => button.onclick = () => { this.kind = button.dataset.kind as PartKind; this.disarm(); this.render(); });
@@ -693,6 +707,66 @@ class Editor {
       // Drag a card onto the creature to place it.
       button.addEventListener('pointerdown', e => { if (!button.disabled) this.pointerDown(e, button.dataset.part!); });
     });
+  }
+  /** The moves panel (spec §12.1): the Bite line, the slot bar (four slots, keys 1–4), the inactive kinds, a move's details and the
+   *  size slider's comparison. A chip swaps by a drag onto a slot, or a tap on the chip and then on a slot or a key 1–4 (touch and keyboard). */
+  private renderMoves() {
+    const box = this.root.querySelector<HTMLElement>('.ed-moves'); if (!box) return;
+    const m = movesOf(this.draft, this.catalog), place = placeKinds(grantedKinds(m), this.pins);
+    if (this.picked && !m.byKind[this.picked]) this.picked = null;
+    if (this.detailKind && (this.detailKind === 'bite' ? !m.basic : !m.byKind[this.detailKind])) this.detailKind = null;
+    const partName = (g: GrantedMove) => this.catalog.find(s => s.id === g.partId)?.name ?? '';
+    const chip = (g: GrantedMove) => {
+      const kind = g.kind as MoveKind, nums = moveNumbers(g.resolved).slice(0, 2).map(n => n.text).join(' · ');
+      return `<button class="ed-move-chip${this.picked === kind ? ' picked' : ''}" data-kind="${kind}" aria-pressed="${this.picked === kind}" aria-label="${esc(g.resolved.label)} from ${esc(partName(g))}: ${esc(moveLine(g.resolved))}">${MOVE_ICONS[kind]}<b>${esc(g.resolved.label)}</b><span>${esc(partName(g))}</span><small>${esc(nums)}</small></button>`;
+    };
+    const basic = m.basic ? `<button class="ed-basic${this.detailKind === 'bite' ? ' open' : ''}" aria-expanded="${this.detailKind === 'bite'}">${esc(basicLine(m.basic.resolved, partName(m.basic)))}</button>` : '';
+    const slots = place.slots.map((k, i) => { const g = k ? m.byKind[k] : undefined; return `<div class="ed-slot${g ? '' : ' empty'}" data-slot="${i}" role="button" tabindex="0" aria-label="Slot ${i + 1}${g ? `: ${esc(g.resolved.label)}` : ', empty'}"><kbd>${i + 1}</kbd>${g ? chip(g) : '<em>—</em>'}</div>`; }).join('');
+    const inactive = place.inactive.map(k => m.byKind[k]!).map(g => `<div class="ed-inactive">${chip(g)}<small>Inactive — no free slot</small></div>`).join('');
+    const d = this.detailKind === 'bite' ? m.basic : this.detailKind ? m.byKind[this.detailKind] : undefined;
+    let details = '';
+    if (d) {
+      const spec = this.catalog.find(s => s.id === d.partId), ref = spec ? moveRefOf(spec, d.kind === 'bite') : null;
+      const opts = { mirrored: d.mirrored, nonMouthBite: d.kind === 'bite' ? nonMouthBite(this.draft, this.catalog) : 0 };
+      const at = (sc: number) => ref ? moveNumbers(resolveMove(ref, sc, opts)).map(n => n.text) : [], small = at(SCALE_RANGE[0]), big = at(SCALE_RANGE[1]);
+      details = `<div class="ed-move-details"><b>${esc(moveLine(d.resolved))}</b><table><tr><th></th><th>Now</th><th>Size ${f1(SCALE_RANGE[0])}</th><th>Size ${f1(SCALE_RANGE[1])}</th></tr>${moveNumbers(d.resolved).map((n, i) => `<tr><th>${esc(n.label)}</th><td>${esc(n.text)}</td><td>${esc(small[i] ?? '')}</td><td>${esc(big[i] ?? '')}</td></tr>`).join('')}</table><p>${esc(TRADEOFF[d.kind])}</p></div>`;
+    }
+    const tip = this.picked ? 'Tap a slot or press 1–4 to put it there.' : place.slots.some(Boolean) ? 'Drag a move to a slot, or tap it, then tap a slot.' : 'No slot moves yet. Fins, legs, claws, spikes and shells give moves.';
+    box.innerHTML = `<div class="eyebrow">MOVES</div>${basic}<div class="ed-slot-bar">${slots}</div>${inactive}${this.sizeDiff && this.sizeDiff.uid === this.selected ? `<p class="ed-move-diff" aria-live="polite">${esc(this.sizeDiff.text)}</p>` : ''}${details}<p class="ed-move-tip">${tip}</p>`;
+    let drag: { kind: MoveKind; x: number; y: number; id: number } | null = null;
+    box.querySelectorAll<HTMLButtonElement>('.ed-move-chip').forEach(b => {
+      const kind = b.dataset.kind as MoveKind, slotOf = b.closest<HTMLElement>('.ed-slot');
+      b.addEventListener('pointerdown', e => { delete b.dataset.dragged; drag = { kind, x: e.clientX, y: e.clientY, id: e.pointerId }; try { b.setPointerCapture(e.pointerId); } catch { /* the pointer already ended */ } });
+      b.addEventListener('pointerup', e => {
+        const d0 = drag; drag = null; if (!d0 || d0.id !== e.pointerId || Math.hypot(e.clientX - d0.x, e.clientY - d0.y) < CARD_DRAG_SLOP) return;
+        b.dataset.dragged = '1';
+        const slot = document.elementFromPoint(e.clientX, e.clientY)?.closest<HTMLElement>('.ed-slot');
+        if (slot && box.contains(slot) && !this.submitting) this.swap(kind, Number(slot.dataset.slot));
+      });
+      b.addEventListener('pointercancel', () => { drag = null; });
+      b.onclick = e => {
+        e.stopPropagation(); if (b.dataset.dragged) { delete b.dataset.dragged; return; }
+        // A tap on a slotted chip while another kind is picked puts the picked kind there.
+        if (this.picked && this.picked !== kind && slotOf && !this.submitting) { this.swap(this.picked, Number(slotOf.dataset.slot)); return; }
+        this.picked = this.picked === kind ? null : kind; this.detailKind = this.picked ?? this.detailKind; this.renderMoves();
+        // The phone layout hides the details: the hint gives the move line and what to do next.
+        const g = movesOf(this.draft, this.catalog).byKind[kind];
+        if (this.picked && g && innerWidth <= 900) this.hint(`${moveLine(g.resolved)}. Tap a slot to put it there.`);
+      };
+    });
+    box.querySelectorAll<HTMLElement>('.ed-slot').forEach(sl => {
+      const go = () => { if (this.picked && !this.submitting) this.swap(this.picked, Number(sl.dataset.slot)); };
+      sl.onclick = go; sl.onkeydown = e => { if (e.target === sl && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); go(); } };
+    });
+    const b = box.querySelector<HTMLButtonElement>('.ed-basic'); if (b) b.onclick = () => { this.detailKind = this.detailKind === 'bite' ? null : 'bite'; this.renderMoves(); };
+  }
+  /** Spec §7.2 swap against the slots shown now. A pin change goes into the undo history (spec §12.2). */
+  private swap(kind: MoveKind, slot: number) {
+    const shown = placeKinds(grantedKinds(movesOf(this.draft, this.catalog)), this.pins).slots, next = swapPins(this.pins, shown, kind, slot);
+    this.picked = null;
+    if (next.join() === this.pins.join()) { this.renderMoves(); return; }
+    this.pushHistory(); this.pins = next; this.showSubmitError(null); this.renderStatsOnly();
+    this.hint(`${movesOf(this.draft, this.catalog).byKind[kind]?.resolved.label ?? kind} is in slot ${slot + 1}.`);
   }
   private sizeCost(p: PlacedPart) { const slots = partSlots(p); return `${partCost(p)} DNA · ${slots} slot${slots === 1 ? '' : 's'}`; }
   private renderTool() {
@@ -716,6 +790,10 @@ class Editor {
       // A size the region or the DNA can't take keeps the old value.
       const why = this.refusal(this.with(g => { g.parts.find(p => p.uid === uid)!.scale = value; }));
       if (why) { scale.value = String(current.scale); cost.textContent = this.sizeCost(current); this.hint(why); return; }
+      // Live move numbers (spec §12.2): the part's move as "old → new" from the gesture's start.
+      const before = this.pending?.genome.parts.find(p => p.uid === uid)?.scale ?? this.history.at(-1)?.genome.parts.find(p => p.uid === uid)?.scale ?? current.scale;
+      const ref = moveRefOf(spec), opts = { mirrored: current.mirror, nonMouthBite: spec.kind === 'mouth' ? nonMouthBite(this.draft, this.catalog) : 0 };
+      this.sizeDiff = ref ? { uid, text: moveDiff(resolveMove(ref, before, opts), resolveMove(ref, value, opts)) || 'No move number changes at this size.' } : null;
       this.touchGesture(); current.scale = value; cost.textContent = this.sizeCost(current);
       this.model.updatePart(uid); this.renderStatsOnly();
     };
@@ -807,15 +885,18 @@ class Editor {
       const r = chip.dataset.region as Region, slots = plan.regions[r].slots;
       chip.textContent = `${REGION_LABEL[r]} ${used[r]} / ${slots}`; chip.classList.toggle('over', used[r] >= slots);
     });
-    // Moves this design would lose (T21 gives the full lost-moves line).
-    const lostKinds = designDelta(this.original, this.draft, this.options.loadout, this.catalog).lostKinds, lost = this.root.querySelector<HTMLElement>('.ed-lost-abilities')!;
+    // Moves this design would lose (spec §12.2), by move name.
+    const lostKinds = designDelta(this.original, this.draft, this.options.loadout, this.catalog).lostKinds, lost = this.root.querySelector<HTMLElement>('.ed-lost-moves')!;
     lost.hidden = !lostKinds.length;
-    lost.innerHTML = lostKinds.length ? `<strong>You lose: ${lostKinds.map(k => esc(k)).join(', ')}</strong>` : '';
+    lost.textContent = lostKinds.length ? `You lose: ${lostKinds.map(k => lostMoveText(k, this.catalog)).join(', ')}` : '';
+    this.renderMoves();
+    // The phone layout puts the alerts under the stats box, whose height changes with the moves row.
+    this.root.style.setProperty('--stats-bottom', `${Math.round(this.root.querySelector<HTMLElement>('.ed-stats')!.getBoundingClientRect().bottom)}px`);
     const changes = this.root.querySelector<HTMLElement>('.ed-changes');
     if (changes) {
       changes.innerHTML = (this.changes.length ? this.changes : ['No changes from your design.']).map(c => `<li><span aria-hidden="true">• </span>${esc(c)}</li>`).join('');
       this.root.querySelector('.ed-changes-box summary')!.textContent = `Changes (${this.changes.length})`;
-      this.root.querySelector<HTMLButtonElement>('.ed-undo-all')!.disabled = this.submitting || JSON.stringify(this.draft) === JSON.stringify(this.original);
+      this.root.querySelector<HTMLButtonElement>('.ed-undo-all')!.disabled = this.submitting || (JSON.stringify(this.draft) === JSON.stringify(this.original) && this.pins.join() === this.options.loadout.slots.join());
       const fix = this.root.querySelector<HTMLButtonElement>('.ed-fix')!;
       fix.hidden = !issues.some(i => i.code !== 'dna'); fix.disabled = this.submitting;
     }
@@ -828,4 +909,15 @@ class Editor {
 }
 function statLine(stats: Partial<Stats>) {
   return Object.entries(stats).map(([key, value]) => `${value! > 0 ? '+' : ''}${value} ${key}`).join(' · ');
+}
+/** The move a catalog part gives: its active grant, or (`basic`, or a part with no active grant) its Bite. */
+function moveRefOf(spec: PartSpec, basic = false): MoveRef | null {
+  const g = spec.activeGrants[0], b = spec.basicAttacks[0];
+  return !basic && g ? { abilityId: g.abilityId } : b ? { attackId: b.attackId } : g ? { abilityId: g.abilityId } : null;
+}
+const f1 = (v: number) => String(v).replace(/^0\./, '.');
+/** A part card's move line (spec §12.2), or nothing for a part with no move. */
+function moveLineOf(spec: PartSpec): string {
+  let line: string | null = null; try { line = partMoveLine(spec); } catch { line = null; }
+  return line ? `<small class="ed-move-line">${esc(line)}</small>` : '';
 }
