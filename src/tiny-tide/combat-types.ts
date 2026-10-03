@@ -165,6 +165,8 @@ export interface ActionState { instanceId: string; definitionId: string; grantId
   lockedShapes: WorldShape[] | null;
   /** Squeezes dealt in the hold phase. */
   squeezes: number;
+  /** A Counter only: the instance ids of the parryable attacker actions it was open at the active start of (review R5, hit-resolver.ts armCounters). */
+  armedAgainst?: string[];
   /** The cooldown key (contract: `${actorId}:${partUid}:${grantId}`; species `${actorId}:root:${attackId}`). */
   cooldownKey: string }
 /** `endY`: the height the arc ends at, fixed when it starts (player-motion.ts `breachEndY`). */
