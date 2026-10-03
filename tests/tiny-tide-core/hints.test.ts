@@ -57,3 +57,19 @@ describe('hints', () => {
     expect(new Hints(memory({ [HINTS_KEY]: 'not json' })).shown.size).toBe(0);
   });
 });
+
+// Final review I5: the help's danger row matches the faint rule (state.ts: a faint takes the DNA collected at this size) and names the combat
+// controls instead of "Chomp back".
+import { helpDangerText } from '../../src/tiny-tide/hints';
+describe('help danger text (final review I5)', () => {
+  it('states the faint rule and the combat controls', () => {
+    for (const touch of [false, true]) {
+      const t = helpDangerText(touch);
+      expect(t).toContain('If you lose every heart, you faint. You wake up at the start and lose the DNA you collected at this size. Your body and parts stay.');
+      expect(t).not.toContain('most of your DNA'); expect(t).not.toContain('Chomp back');
+      expect(t).toContain('amber and red shapes');
+    }
+    expect(helpDangerText(false)).toContain('click or Space to Bite'); expect(helpDangerText(false)).toContain('1–4');
+    expect(helpDangerText(true)).toContain('Chomp to Bite');
+  });
+});

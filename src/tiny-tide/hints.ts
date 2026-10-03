@@ -65,3 +65,11 @@ export class Hints {
     return h;
   }
 }
+
+/** The help dialog's danger row (final review I5): the faint rule as state.ts applies it (a faint takes the DNA collected at this size and
+ *  resets the growth bar; the body and parts stay) and the combat controls. Plain text; the caller adds the "!" markup. */
+export function helpDangerText(touch: boolean): string {
+  const controls = touch ? 'Tap Chomp to Bite; tap the slot buttons for your moves.' : 'Use a click or Space to Bite; right click and keys 1–4 for your moves.';
+  return `marks a hunter. ${controls} Read the amber and red shapes: they show where an attack will land. You can also swim away or hide with stealth parts. `
+    + 'If you lose every heart, you faint. You wake up at the start and lose the DNA you collected at this size. Your body and parts stay.';
+}
