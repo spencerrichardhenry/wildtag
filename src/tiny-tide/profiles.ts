@@ -35,7 +35,7 @@ export const PURSUITS: Record<string, PursuitPolicy> = {
 };
 
 const ids = (...names: string[]): Record<string, { id: string }> => Object.fromEntries(names.map(id => [id, { id }]));
-export const HULLS = ids('sphere', 'spine-capsules'), MOUNTS = ids('root'), POSES = ids('rest'), TELEGRAPHS = ids('basic'), EFFECTS = ids('dash'), EVASIONS = ids(), GUARDS = ids();
+export const HULLS = ids('sphere', 'spine-capsules'), MOUNTS = ids('root'), POSES = ids('rest');
 
 export const habitat = (id: string): HabitatProfile => HABITATS[id]!;
 export const movement = (id: string): MovementProfile => MOVEMENTS[id]!;

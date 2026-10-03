@@ -15,6 +15,14 @@ export interface Species extends SpeciesCombatFields {
   stingsStages: readonly number[];
   /** Fights back when bitten. */
   fights: boolean;
+  /** Body size factor (default 1): the hull, the body length and the model scale. */
+  bodyScale?: number;
+  /** The food GLB this species draws (default `kind`). */
+  model?: FoodKind;
+  /** A material colour multiply on the model. */
+  tint?: string;
+  /** An alpha: present only while the player's size equals `size`; defeating it unlocks `rewardPartId` and pays `rewardDna`. */
+  alpha?: { size: number; rewardPartId: string; rewardDna: number };
 }
 const habitatOf = (behavior: Behavior) => behavior === 'flyer' ? 'sp-air' : behavior === 'still' || behavior === 'graze' ? 'sp-seabed' : 'sp-water';
 const movementOf = (behavior: Behavior) => behavior === 'flyer' ? 'sp-fly' : behavior === 'still' ? 'sp-still' : behavior === 'graze' ? 'sp-ground' : 'sp-swim';
@@ -50,4 +58,6 @@ export const SPECIES: readonly Species[] = [
 const byKey = new Map(SPECIES.map(spec => [spec.key, spec]));
 export const species = (tier: number, kind: FoodKind) => byKey.get(`${tier}:${kind}`)!;
 export const tierSpecies = (tier: number) => SPECIES.filter(spec => spec.tier === tier);
+/** Food kinds with a GLB (`public/tiny-tide/models/<kind>.glb`); planets use `planet_XX`. */
+export const FOOD_GLBS: readonly FoodKind[] = ['plant', 'kelp_snack', 'seagrape', 'lettuce', 'copepod', 'worm', 'shrimp', 'crab', 'jellyfish', 'snail', 'fish', 'squid', 'ray', 'bird', 'tree', 'boat', 'plane', 'balloon', 'lighthouse'];
 export const FOOD_MODEL_KINDS = [...new Set(SPECIES.filter(spec => spec.kind !== 'planet').map(spec => spec.kind))];

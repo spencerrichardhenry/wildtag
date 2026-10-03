@@ -1,18 +1,18 @@
 // tests/tiny-tide-core/contract.test.ts
 import { describe, expect, it } from 'vitest';
 import { newRuntime } from '../../src/tiny-tide/combat-types';
-import { defaultCatalogs, validateContract, type Catalogs } from '../../src/tiny-tide/registries';
+import { validateContract, type Catalogs } from '../../src/tiny-tide/registries';
+import { hostileSizes, minWindup } from '../../src/tiny-tide/bestiary';
+import { damageText, hitStopFor } from '../../src/tiny-tide/combat-profiles';
 import { breachPermit, habitat, HABITATS, movementCapabilities, MOVEMENTS, PURSUITS } from '../../src/tiny-tide/profiles';
 import { designDelta, emittersOf } from '../../src/tiny-tide/design-delta';
 import { PARTS, type PartSpec } from '../../src/tiny-tide/parts';
 import { SPECIES } from '../../src/tiny-tide/species';
 import { HABITAT_FACTS, plan, PLANS } from '../../src/tiny-tide/plans';
 import { starterGenome, type Genome } from '../../src/tiny-tide/genome';
+import { fixtureCatalogs } from './combat-fixture';
 
-const attack = { id: 'pinch', shape: { kind: 'cone' as const, range: 1, halfAngle: .6 }, poseProfileId: 'rest', windupSeconds: .3, activeSeconds: .1, recoverySeconds: .4, cooldownSeconds: 1,
-  aimLockAtSeconds: .2, maxTrackingRadiansPerSecond: 2, damage: 1, impulse: 2, staggerSeconds: .2, blockable: true, parryable: false, interruptible: true, maxTargets: 1,
-  hitGroup: 'shared-grant' as const, maxHitsPerTarget: 1, repeatHitSeconds: .5, crossing: 'same-medium' as const, obstruction: 'terrain-and-cover' as const, telegraphProfileId: 'basic' };
-const synthetic = (): Catalogs => { const c = defaultCatalogs(); return { ...c, attacks: { pinch: attack }, abilities: { dash: { id: 'dash', cooldownSeconds: 3, allowedMotionModes: ['swim'], effectProfileId: 'dash' } } }; };
+const synthetic = (): Catalogs => fixtureCatalogs();
 const mutate = (f: (c: Catalogs) => void) => { const c = structuredClone(synthetic()); f(c); return validateContract(c); };
 const claw = (c: Catalogs) => c.parts.find(p => p.id === 'claw_pincer') as { -readonly [K in keyof PartSpec]: PartSpec[K] };
 
@@ -57,8 +57,118 @@ describe('combat contract', () => {
       [c => { c.rig.tail_paddle!['seg:0'] = { ...c.rig.tail_paddle!['seg:0']!, parent: 'seg:3' }; }, 'rig tail_paddle seg:0: cycle'],
       [c => { c.rig.tail_paddle!['seg:2'] = { ...c.rig.tail_paddle!['seg:2']!, pre: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 2] }; }, 'rig tail_paddle seg:2: pre'],
       [c => { c.rig.tail_paddle!['seg:2'] = { ...c.rig.tail_paddle!['seg:2']!, q: [0, 0, 0, 2] }; }, 'rig tail_paddle seg:2: q'],
+      // V1
+      [c => { c.telegraphs['amber-rear'] = { ...c.telegraphs['amber-rear']!, id: 'x' }; }, 'telegraph amber-rear: id'],
+      [c => { c.effects.hit = { ...c.effects.hit!, id: 'x' }; }, 'effect hit: id'],
+      [c => { c.evasions['fx-dash'] = { ...c.evasions['fx-dash']!, id: 'x' }; }, 'evasion fx-dash: id'],
+      [c => { c.guards['fx-brace'] = { ...c.guards['fx-brace']!, id: 'x' }; }, 'guard fx-brace: id'],
+      [c => { c.behaviours['fx-hunter'] = { ...c.behaviours['fx-hunter']!, id: 'x' }; }, 'behaviour fx-hunter: id'],
+      // V2
+      [c => { c.attacks.poke!.damageUnit = 'hearts' as never; }, 'attack poke: damageUnit'],
+      [c => { c.attacks.poke!.aimMode = 'psychic' as never; }, 'attack poke: aimMode'],
+      [c => { c.attacks.poke!.moveSpeedFactor = 1.2; }, 'attack poke: moveSpeedFactor'],
+      [c => { c.attacks.poke!.poiseDamageMultiplier = -1; }, 'attack poke: poiseDamageMultiplier'],
+      // V3
+      [c => { c.attacks.poke!.lunge = { distanceBodyLengths: 0 }; }, 'attack poke: lunge'],
+      [c => { c.attacks.wrap!.hold = { ...c.attacks.wrap!.hold!, seconds: 0 }; }, 'attack wrap: hold'],
+      [c => { c.attacks.wrap!.hold = { ...c.attacks.wrap!.hold!, sizeFactor: -1 }; }, 'attack wrap: hold'],
+      [c => { c.attacks.wrap!.hold = { ...c.attacks.wrap!.hold!, squeezeEverySeconds: 0 }; }, 'attack wrap: hold'],
+      // V4
+      [c => { c.attacks.poke!.statusEffectId = 'hit'; }, 'attack poke: status hit'],
+      [c => { c.attacks.poke!.statusEffectId = 'nope'; }, 'attack poke: status nope'],
+      // V5
+      [c => { c.attacks.pinch!.scaling = { reach: .5 }; }, 'attack pinch: scaling key reach'],
+      [c => { c.attacks.pinch!.scaling = { 'shape.range': Number.NaN }; }, 'attack pinch: scaling value shape.range'],
+      [c => { c.attacks.pinch!.pair = { multiply: { damage: .9 }, add: {} }; }, 'attack pinch: pair multiplier damage'],
+      [c => { c.attacks.pinch!.scaling = { 'hold.seconds': .3 }; }, 'attack pinch: scaling key hold.seconds'],
+      // V6
+      [c => { c.attacks.wrap!.telegraphProfileId = 'amber-coil'; }, 'attack wrap: telegraph colour'],
+      [c => { c.attacks.poke!.telegraphProfileId = 'red-coil'; }, 'attack poke: telegraph colour'],
+      [c => { c.attacks.pinch!.telegraphProfileId = 'amber-rear'; }, 'attack pinch: telegraph colour'],
+      // V7
+      [c => { c.attacks.poke!.aimLockAtSeconds = .31; }, 'attack poke: lock before active'],
+      [c => { c.attacks.poke!.aimMode = 'centre'; }, 'attack poke: lock before active'],
+      // V8
+      [c => { c.attacks.poke!.windupSeconds = .44; c.attacks.poke!.aimLockAtSeconds = .2; }, 'attack poke: windup below 0.45 at size 0 (1:fx_hunter)'],
+      [c => { c.attacks.smash!.windupSeconds = .5; c.attacks.smash!.aimLockAtSeconds = .3; }, 'attack smash: windup below 0.55 at size 0 (1:fx_alpha)'],
+      // V9
+      [c => { c.abilities.dash!.kind = 'teleport' as never; }, 'ability dash: kind'],
+      [c => { c.abilities.dash!.input = 'hold'; }, 'ability dash: input'],
+      [c => { c.abilities.brace!.input = 'press'; }, 'ability brace: input'],
+      [c => { c.abilities.grab!.attackId = 'nope'; }, 'ability grab: attack nope'],
+      [c => { c.abilities.counter!.guardProfileId = 'fx-brace'; }, 'ability counter: guard fx-brace'],
+      [c => { c.abilities.dash!.evasionProfileId = undefined; }, 'ability dash: evasion undefined'],
+      [c => { c.abilities.dash!.attackId = 'pinch'; }, 'ability dash: attack pinch'],
+      // V10
+      [c => { c.abilities.dash!.scaling = { 'guard.blockFraction': .2 }; }, 'ability dash: scaling key guard.blockFraction'],
+      [c => { c.abilities.grab!.scaling = { 'attack.nope': .2 }; }, 'ability grab: scaling key attack.nope'],
+      [c => { c.abilities.grab!.pair = { multiply: { 'attack.damage': .5 }, add: {} }; }, 'ability grab: pair multiplier attack.damage'],
+      [c => { c.abilities.dash!.scaling = { cooldownSeconds: Infinity }; }, 'ability dash: scaling value cooldownSeconds'],
+      // V11
+      [c => { c.guards['fx-brace']!.blockFraction = 1.2; }, 'guard fx-brace: blockFraction'],
+      [c => { c.guards['fx-brace']!.frontHalfAngle = 0; }, 'guard fx-brace: frontHalfAngle'],
+      [c => { c.guards['fx-brace']!.windowSeconds = .2; }, 'guard fx-brace: windowSeconds'],
+      [c => { c.guards['fx-counter']!.breakHalfHearts = 3; }, 'guard fx-counter: breakHalfHearts'],
+      [c => { c.guards['fx-counter']!.startupSeconds = -1; }, 'guard fx-counter: startupSeconds'],
+      // V12
+      [c => { c.evasions['fx-dash']!.travelSeconds = 0; }, 'evasion fx-dash: travelSeconds'],
+      [c => { c.evasions['fx-dash']!.distanceBodyLengths = 0; }, 'evasion fx-dash: distanceBodyLengths'],
+      [c => { c.evasions['fx-dash']!.endSpeedCarry = 2; }, 'evasion fx-dash: endSpeedCarry'],
+      // V13
+      [c => { c.telegraphs['amber-rear']!.poseCue = 'dance' as never; }, 'telegraph amber-rear: enum'],
+      [c => { c.telegraphs['amber-rear']!.flashLeadSeconds = .5; }, 'telegraph amber-rear: flashLeadSeconds'],
+      [c => { c.effects.ink!.status = { id: 'inked', seconds: 0, speedFactor: .7 }; }, 'effect ink: status'],
+      [c => { c.effects.hit!.sound = 'boom' as never; }, 'effect hit: enum'],
+      // V14
+      [c => { c.behaviours['fx-hunter']!.type = 'boss' as never; }, 'behaviour fx-hunter: type'],
+      [c => { c.behaviours['fx-hunter']!.attacks = [{ attackId: 'nope', band: [0, 1], weight: 1 }, { attackId: 'wrap', band: [0, .6], weight: 1 }]; }, 'behaviour fx-hunter: attack nope missing'],
+      [c => { c.behaviours['fx-hunter']!.attacks = [{ attackId: 'pinch', band: [0, 1], weight: 1 }, { attackId: 'wrap', band: [0, .6], weight: 1 }]; }, 'behaviour fx-hunter: attack pinch unit'],
+      [c => { c.behaviours['fx-hunter']!.attacks = [{ attackId: 'poke', band: [0, 1.2], weight: 3 }]; }, 'behaviour fx-hunter: 1:fx_hunter attack wrap unused'],
+      [c => { c.behaviours['fx-hunter']!.attacks = [{ attackId: 'poke', band: [0, 1.2], weight: 3 }, { attackId: 'wrap', band: [0, .6], weight: 1, chainNextId: 'smash' }]; }, 'behaviour fx-hunter: smash not in 1:fx_hunter attackIds'],
+      [c => { c.behaviours['fx-hunter']!.attacks = [{ attackId: 'poke', band: [1, 1], weight: 3 }, { attackId: 'wrap', band: [0, .6], weight: 1 }]; }, 'behaviour fx-hunter: band poke'],
+      [c => { c.behaviours['fx-hunter']!.attacks = [{ attackId: 'poke', band: [0, 1.2], weight: 0 }, { attackId: 'wrap', band: [0, .6], weight: 1 }]; }, 'behaviour fx-hunter: weight poke'],
+      [c => { c.behaviours['fx-hunter']!.gapSeconds = -1; }, 'behaviour fx-hunter: durations'],
+      [c => { c.behaviours['fx-hunter']!.repositionSeconds = [1.2, .6]; }, 'behaviour fx-hunter: repositionSeconds'],
+      // V15
+      [c => { c.behaviours['fx-fleer']!.flee = undefined; }, 'behaviour fx-fleer: flee'],
+      [c => { c.behaviours['fx-fleer']!.school = { radiusBodyLengths: 6, groupSize: 4 }; }, 'behaviour fx-fleer: school'],
+      [c => { c.behaviours['fx-hunter']!.den = { triggerBodyLengths: .9, outSeconds: 4, attackId: 'poke' }; }, 'behaviour fx-hunter: den'],
+      [c => { c.behaviours['fx-hunter']!.lair = { radiusBodyLengths: 2, resetOutsideFactor: 1.5, resetDelaySeconds: 3, healPerSecond: .04 }; }, 'behaviour fx-hunter: lair'],
+      [c => { c.behaviours['fx-alpha']!.phases = [...c.behaviours['fx-alpha']!.phases!].reverse(); }, 'behaviour fx-alpha: phase order'],
+      [c => { c.behaviours['fx-alpha']!.phases = c.behaviours['fx-alpha']!.phases!.map(p => ({ ...p, pattern: 'burrow' as const })); }, 'behaviour fx-alpha: phase 0 pattern'],
+      // V17
+      [c => { c.species = c.species.filter(s => s.key !== '1:fx_alpha'); }, 'part fx_rare: rare without one alpha'],
+      [c => { c.parts = c.parts.map(p => p.id === 'fx_rare' ? { ...p, model: 'fx_rare' } : p); }, 'part fx_rare: model fx_rare'],
+      [c => { c.species = c.species.map(s => s.key === '1:fx_alpha' ? { ...s, alpha: { ...s.alpha!, rewardPartId: 'claw_pincer' } } : s); }, 'species 1:fx_alpha: reward claw_pincer'],
+      // V18
+      [c => { c.species = c.species.map(s => s.key === '1:fx_hunter' ? { ...s, contactHazardId: 'crab-pinch' } : s); }, 'species 1:fx_hunter: behaviour and hazard'],
+      [c => { c.species = c.species.map(s => s.key === '1:fx_hunter' ? { ...s, behaviourId: 'fx-fleer' } : s); }, 'species 1:fx_hunter: hazard missing'],
+      [c => { c.species = c.species.map(s => s.key === '1:fx_hunter' ? { ...s, behaviourId: 'nope' } : s); }, 'species 1:fx_hunter: behaviour nope'],
+      // V19
+      [c => { c.species = c.species.map(s => s.key === '1:fx_alpha' ? { ...s, bodyScale: 3.5 } : s); }, 'species 1:fx_alpha: bodyScale'],
+      [c => { c.species = c.species.map(s => s.key === '1:fx_alpha' ? { ...s, alpha: { ...s.alpha!, size: 5 } } : s); }, 'species 1:fx_alpha: alpha'],
+      [c => { c.species = c.species.map(s => s.key === '1:fx_alpha' ? { ...s, alpha: { ...s.alpha!, rewardDna: 1.5 } } : s); }, 'species 1:fx_alpha: alpha'],
+      [c => { c.species = c.species.map(s => s.key === '1:fx_alpha' ? { ...s, count: 2 } : s); }, 'species 1:fx_alpha: alpha count or behaviour'],
+      // V20
+      [c => { c.species = c.species.map(s => s.key === '0:fx_fleer' ? { ...s, model: 'eel' as never } : s); }, 'species 0:fx_fleer: model eel'],
     ];
     for (const [f, message] of cases) expect(mutate(f), message).toContain(message);
+  });
+  it('names the hostile sizes and their minimum wind-ups (spec §11.1)', () => {
+    expect(hostileSizes(SPECIES.find(s => s.key === '1:crab')!)).toEqual([0, 1]);   // hunts 0; fights at its own tier 1
+    expect(hostileSizes(SPECIES.find(s => s.key === '2:squid')!)).toEqual([1, 2]);
+    expect(hostileSizes({ hunts: [0], fights: true, tier: 1, alpha: { size: 0, rewardPartId: 'x', rewardDna: 1 } })).toEqual([0]);
+    expect([minWindup(0, false), minWindup(1, false), minWindup(2, false), minWindup(0, true), minWindup(1, true)]).toEqual([.45, .40, .40, .55, .55]);
+  });
+  it('gives the hit-stop of every outcome and the damage text (spec §5.9, §9.2)', () => {
+    expect(hitStopFor('hit', { targetIsPlayer: true, amount: 1 })).toBeCloseTo(.06); expect(hitStopFor('hit', { targetIsPlayer: true, amount: 3 })).toBeCloseTo(.08);
+    expect(hitStopFor('hit', { targetIsPlayer: true, amount: 9 })).toBeCloseTo(.09);
+    expect(hitStopFor('hit', { targetIsPlayer: false, amount: 4 })).toBeCloseTo(.075);   // 60 + round(30 × .5) = 75 ms
+    expect(hitStopFor('hit', { targetIsPlayer: false, amount: 20 })).toBeCloseTo(.09);
+    expect([hitStopFor('countered', { targetIsPlayer: false, amount: 0 }), hitStopFor('blocked', { targetIsPlayer: true, amount: 0 }), hitStopFor('guard-broken', { targetIsPlayer: true, amount: 2 }),
+      hitStopFor('grabbed', { targetIsPlayer: true, amount: 1 }), hitStopFor('evaded', { targetIsPlayer: true, amount: 2 }), hitStopFor('immune', { targetIsPlayer: true, amount: 2 })]).toEqual([.09, .06, .06, .07, 0, 0]);
+    expect([damageText('hit', 'hp', 4), damageText('hit', 'half-heart', 1), damageText('hit', 'half-heart', 2), damageText('hit', 'half-heart', 3), damageText('blocked', 'half-heart', 1), damageText('countered', 'hp', 0), damageText('evaded', 'half-heart', 2)])
+      .toEqual(['−4', '−½ ♥', '−1 ♥', '−1½ ♥', 'BLOCK', 'COUNTER!', 'DODGE']);
   });
   it('gives parts combat fields with unit sockets bound to real pivots', () => {
     for (const p of PARTS) for (const s of p.sockets) expect(Math.hypot(s.forward.x, s.forward.y, s.forward.z)).toBeCloseTo(1);

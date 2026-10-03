@@ -6,7 +6,14 @@
 import type { Medium } from './plans';
 export type Vec3 = Readonly<{ x: number; y: number; z: number }>;
 export type MutVec3 = { x: number; y: number; z: number };
-export type PartUid = string; export type ActorId = string; export type ActiveSlot = 0 | 1;
+export type PartUid = string; export type ActorId = string; export type ActiveSlot = 0 | 1 | 2 | 3;
+export type Tuple4<T> = [T, T, T, T];
+export type MoveKind = 'grab' | 'counter' | 'brace' | 'dash' | 'sweep';
+export type SlotClass = 'defense' | 'movement' | 'attack';
+/** The fixed slot priority (R1): defense, then movement, then attack. */
+export const MOVE_PRIORITY: readonly MoveKind[] = ['brace', 'counter', 'dash', 'grab', 'sweep'];
+export const SLOT_CLASS: Readonly<Record<MoveKind, SlotClass>> = { brace: 'defense', counter: 'defense', dash: 'movement', grab: 'attack', sweep: 'attack' };
+export type SlotPin = MoveKind | null;
 export type CombatTrait = 'weapon' | 'protection' | 'locomotion' | 'concealment';
 export type MovementMode = 'ground' | 'swim' | 'surface' | 'glide' | 'fly' | 'burrow' | 'space';
 export interface PivotRef { kind: 'jaw' | 'seg' | 'flap' | 'swing'; index: number }
@@ -16,18 +23,76 @@ export interface ActiveGrant { id: string; abilityId: string; socketIds: readonl
 export interface PartCombatFields { traits: readonly CombatTrait[]; sockets: readonly CombatSocket[]; basicAttacks: readonly AttackGrant[]; activeGrants: readonly ActiveGrant[] }
 export interface AbilityBinding { partUid: PartUid; grantId: string }
 export interface CombatLoadout { active: [AbilityBinding | null, AbilityBinding | null] }
-export type AttackShape = { kind: 'cone'; range: number; halfAngle: number } | { kind: 'capsule'; start: Vec3; end: Vec3; radius: number };   // part-local units, scaled once by the mount
+/** Shape numbers are in attacker body lengths (L_a), in the aim frame (z = aim). A capsule with start = end is a sphere. */
+export type AttackShape = { kind: 'cone'; range: number; halfAngle: number } | { kind: 'capsule'; start: Vec3; end: Vec3; radius: number };
+/** value = base × (1 + k × (scale − 1)); one k per parameter key (moves.ts `resolveMove` names the key syntax). */
+export type MoveScaling = Readonly<Record<string, number>>;
+/** A mirrored pair: value × multiply[key] + add[key], applied before the one rounding. */
+export interface PairBonus { multiply: Readonly<Record<string, number>>; add: Readonly<Record<string, number>> }
+export type AimMode = 'input' | 'body-back' | 'centre' | 'fixed-at-start';
+export interface AttackHold { seconds: number; sizeFactor: number; startHalfHearts: number; squeezeHalfHearts: number; squeezeEverySeconds: number }
 export interface AttackSpec { id: string; shape: AttackShape; poseProfileId: string; windupSeconds: number; activeSeconds: number; recoverySeconds: number; cooldownSeconds: number;
   aimLockAtSeconds: number; maxTrackingRadiansPerSecond: number; damage: number; impulse: number; staggerSeconds: number; blockable: boolean; parryable: boolean; interruptible: boolean;
-  maxTargets: number; hitGroup: 'shared-grant' | 'per-emitter'; maxHitsPerTarget: number; repeatHitSeconds: number; crossing: 'same-medium' | 'water-surface' | 'any-medium'; obstruction: 'terrain-and-cover'; telegraphProfileId: string }
-export interface AbilitySpec { id: string; cooldownSeconds: number; allowedMotionModes: readonly MovementMode[]; effectProfileId: string }
+  maxTargets: number; hitGroup: 'shared-grant' | 'per-emitter'; maxHitsPerTarget: number; repeatHitSeconds: number; crossing: 'same-medium' | 'water-surface' | 'any-medium'; obstruction: 'terrain-and-cover'; telegraphProfileId: string;
+  /** 'hp' for player attacks, 'half-heart' for species attacks. */
+  damageUnit: 'hp' | 'half-heart'; aimMode: AimMode;
+  /** Locomotion factor during windup and active. */
+  moveSpeedFactor: number; poiseDamageMultiplier: number;
+  /** The attacker moves along the aim during active. */
+  lunge?: { distanceBodyLengths: number };
+  hold?: AttackHold;
+  /** Recovery when the attack hit nothing (grabs). */
+  whiffRecoverySeconds?: number;
+  /** A status applied on hit (ink). */
+  statusEffectId?: string;
+  /** Player attacks only. */
+  scaling?: MoveScaling; pair?: PairBonus | null }
+export interface AbilitySpec { id: string; cooldownSeconds: number; allowedMotionModes: readonly MovementMode[]; effectProfileId: string;
+  kind: MoveKind; label: string; input: 'press' | 'hold';
+  /** grab, sweep */
+  attackId?: string;
+  /** brace, counter */
+  guardProfileId?: string;
+  /** dash */
+  evasionProfileId?: string;
+  scaling: MoveScaling; pair: PairBonus | null }
+export interface GuardProfile {
+  id: string; kind: 'brace' | 'counter';
+  startupSeconds: number; minActiveSeconds: number;
+  /** Counter only. */
+  windowSeconds: number | null;
+  /** Brace only; radians. */
+  frontHalfAngle: number | null;
+  blockFraction: number;
+  /** Brace only. */
+  breakHalfHearts: number | null; breakStaggerSeconds: number; brokenCooldownSeconds: number;
+  moveSpeedFactor: number; yawRateFactor: number;
+  /** Counter only. */
+  reflectDamage: number; attackerStaggerSeconds: number;
+  recoverySeconds: number; whiffRecoverySeconds: number; successCooldownSeconds: number;
+}
+export interface EvasionProfile { id: string; distanceBodyLengths: number; startupSeconds: number; travelSeconds: number; recoverySeconds: number; plane: 'free' | 'horizontal'; endSpeedCarry: number }
+export interface TelegraphProfile { id: string; color: 'amber' | 'red' | 'none'; pattern: 'solid' | 'stripes'; poseCue: 'rear' | 'crouch' | 'inflate' | 'coil' | 'burrow' | 'spin' | 'none'; flashLeadSeconds: number; edgeArrow: boolean }
+export interface EffectProfile { id: string; kind: 'feedback' | 'status'; status?: { id: 'inked'; seconds: number; speedFactor: number }; sound: 'hit' | 'block' | 'counter' | 'dash' | 'grab' | 'break' | 'none'; particles: string }
+/** The numbers of one move after size and pair (spec §7.3): resolved copies of the specs it came from, with their own field names.
+ *  A species attack resolves to itself (kind 'species'). */
+export interface ResolvedMove {
+  kind: MoveKind | 'bite' | 'species';
+  /** The ability of a slot move, else null. */
+  abilityId: string | null;
+  label: string; input: 'press' | 'hold';
+  attack: AttackSpec | null; guard: GuardProfile | null; evasion: EvasionProfile | null;
+  cooldownSeconds: number; allowedMotionModes: readonly MovementMode[];
+}
 export interface ContactHazard { id: string; damage: number; cadenceSeconds: number; invulnerabilitySeconds: number; impulse: number }
 export interface HabitatProfile { id: string; media: readonly Medium[]; maxWaterDepthBodyLengths: number | null; maxFloorGapBodyLengths: number | null; maxLandSlopeRadians: number;
   surfaceBandBodyLengths: number | null; wadingSupportBodyLengths: number | null; refugeTags: readonly string[]; isStaticProp?: boolean }
 export interface MovementProfile { id: string; mode: MovementMode; speedMultiplier: number; acceleration: number; braking: number; maxYawRate: number; maxPitchRate: number;
   facing: 'move' | 'aim' | 'lock-during-action'; evasionProfileId?: string }
 export interface PursuitPolicy { id: string; memorySeconds: number; blockedWaitSeconds: number; reacquireSeconds: number; leashBodyLengths: number; giveUpBodyLengths: number }
-export interface SpeciesCombatFields { movementProfileId: string; habitatProfileId: string; hullProfileId: string; attackMountProfileId: string; attackIds: readonly string[]; contactHazardId?: string; pursuitId: string }
+export interface SpeciesCombatFields { movementProfileId: string; habitatProfileId: string; hullProfileId: string; attackMountProfileId: string; attackIds: readonly string[]; contactHazardId?: string; pursuitId: string;
+  /** Only combat species (with a behaviour) use the action engine (bestiary.ts). */
+  behaviourId?: string }
 export interface EnvironmentSample { medium: Medium; groundHeight: number; surfaceHeight: number | null; waterDepth: number; groundClearance: number; groundNormal: Vec3; coverIds: readonly string[]; refugeId: string | null }
 /** sway: horizontal and heave: vertical animation envelope. The swept volume is the capsule moved by any such offset. Against the
  *  solids, admission holds each sample sphere r as the ellipsoid of semi-axes r + sway (horizontal) and r + heave (vertical)
@@ -68,18 +133,48 @@ export interface WorldQueries {
 }
 export interface LegalityContext { queries: WorldQueries; bounds?: { half: number; maxY?: number } }
 export interface MotionRequest { actorId: ActorId; from: Vec3; displacement: Vec3; orientation: Orientation; turn?: Orientation; hull: readonly Capsule[]; habitatProfileId: string;
-  cause: 'locomotion' | 'dash' | 'knockback' | 'recovery'; traversalPermit?: TraversalPermit | null;
+  cause: 'locomotion' | 'dash' | 'knockback' | 'recovery' | 'lunge' | 'grab'; traversalPermit?: TraversalPermit | null;
   /** When set, a slide after a contact never lifts the body more than this above `from` (a ground body's support-following rise). */
   riseCap?: number }
 export interface Contact { point: Vec3; normal: Vec3; constraint: Constraint; distanceFraction: number; time: number; solidId?: string }
 export interface MotionResult { status: 'moved' | 'blocked' | 'clamped' | 'invalid-start' | 'needs-recovery'; position: Vec3; orientation: Orientation; contacts: readonly Contact[]; unconsumed: Vec3; time: number }
 export type RecoveryResult = { ok: true; position: Vec3; orientation: Orientation } | { ok: false; reason: string };
-export interface ActionState { instanceId: string; definitionId: string; grantId: string; source: EmitterSource; phase: 'windup' | 'active' | 'recovery' | 'interrupted'; startedAt: number; aim: Vec3; committedPose: CombatPose | null; hitCounts: Map<string, number>; lastHitAt: Map<string, number> }
+export type ActionPhase = 'windup' | 'active' | 'hold' | 'recovery' | 'interrupted';
+export type WorldShape = { kind: 'cone'; apex: Vec3; axis: Vec3; range: number; halfAngle: number } | { kind: 'capsule'; start: Vec3; end: Vec3; radius: number };
+export type HitOutcome = 'countered' | 'blocked' | 'guard-broken' | 'evaded' | 'immune' | 'hit' | 'grabbed';
+/** `startedAt` is world time (the resolver's processing order); every other time is the actor's action clock.
+ *  Ledger keys (hitCounts, lastHitAt) are `${instanceId}:${hitGroupId}:${targetId}`. */
+export interface ActionState { instanceId: string; definitionId: string; grantId: string; source: EmitterSource; phase: ActionPhase; startedAt: number; aim: MutVec3; committedPose: CombatPose | null;
+  hitCounts: Map<string, number>; lastHitAt: Map<string, number>;
+  /** Action-clock seconds. */
+  phaseStartedAt: number; aimLocked: boolean;
+  /** Numbers after size and pair (§7.3); species: the spec itself. */
+  resolved: ResolvedMove;
+  /** The actor the attacker aimed at (director, telegraph). */
+  targetId: ActorId | null;
+  heldTarget: ActorId | null; windupExtension: number; released: boolean;
+  /** A Counter that countered a hit (it ends with no recovery). */
+  countered: boolean;
+  /** Body lengths a lunge has moved. */
+  lungeDone: number;
+  /** The world shapes fixed at the lock (a mirrored pair has two), or null before it. */
+  lockedShapes: WorldShape[] | null;
+  /** Squeezes dealt in the hold phase. */
+  squeezes: number;
+  /** The cooldown key (contract: `${actorId}:${partUid}:${grantId}`; species `${actorId}:root:${attackId}`). */
+  cooldownKey: string }
 /** `endY`: the height the arc ends at, fixed when it starts (player-motion.ts `breachEndY`). */
 export interface BreachArc { startedAt: number; duration: number; fromY: number; endY: number }
+/** `invulnerableUntil`, `hitStopUntil`, `status.until`, `lastDamageAt` and `lastThreatAt` are world time; `staggerUntil`, cooldown ready times and
+ *  `buffered.at` are action-clock seconds (spec §5.1). */
 export interface CombatRuntime { targetable: boolean; perceivable: boolean; damageable: boolean; invulnerableUntil: number; staggerUntil: number; guardProfileId: string | null;
   controlledVelocity: MutVec3; externalVelocity: MutVec3; orientation: Orientation; cooldowns: Map<string, number>; actions: ActionState[]; permit: TraversalPermit | null;
-  arc: BreachArc | null; breachReadyAt: number; groundOffset: number }
+  arc: BreachArc | null; breachReadyAt: number; groundOffset: number;
+  actionClock: number; hitStopUntil: number;
+  buffered: { input: 'basic' | ActiveSlot; at: number } | null;
+  heldBy: ActorId | null; breakProgress: number;
+  status: { id: 'inked'; until: number; speedFactor: number } | null;
+  lastDamageAt: number; lastThreatAt: number }
 export interface HitRequest { source: ActorId; target: ActorId; actionInstanceId: string; attackId: string; emitter: EmitterSource; hitGroupId: string; point: Vec3; normal: Vec3; damage: number; impulse: Vec3 }
 export interface CombatInput { move: Vec3; aim: Vec3 | null; basicHeld: boolean; basicPressed: boolean; activePressed: [boolean, boolean]; activeHeld: [boolean, boolean]; activeReleased: [boolean, boolean]; activeCanceled: [boolean, boolean]; traversal: 'none' | 'rise' | 'dive' | 'breach' }
 export type { DnaCredit } from './economy';
@@ -87,5 +182,6 @@ export type { DnaCredit } from './economy';
 export function newRuntime(orientation: Orientation = { yaw: 0, pitch: 0 }): CombatRuntime {
   return { targetable: true, perceivable: true, damageable: true, invulnerableUntil: 0, staggerUntil: 0, guardProfileId: null,
     controlledVelocity: { x: 0, y: 0, z: 0 }, externalVelocity: { x: 0, y: 0, z: 0 }, orientation: { yaw: orientation.yaw, pitch: orientation.pitch },
-    cooldowns: new Map(), actions: [], permit: null, arc: null, breachReadyAt: 0, groundOffset: 0 };
+    cooldowns: new Map(), actions: [], permit: null, arc: null, breachReadyAt: 0, groundOffset: 0,
+    actionClock: 0, hitStopUntil: 0, buffered: null, heldBy: null, breakProgress: 0, status: null, lastDamageAt: -Infinity, lastThreatAt: -Infinity };
 }

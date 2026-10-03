@@ -1,6 +1,6 @@
 // Creature parts for the editor. Each part is a Blender GLB named `part_<id>`.
 // See docs/TINY-TIDE-EVOLUTION.md for the attach conventions.
-import type { CombatSocket, CombatTrait, PartCombatFields, PivotRef } from './combat-types';
+import type { CombatSocket, CombatTrait, MoveKind, PartCombatFields, PivotRef } from './combat-types';
 export type PartKind = 'mouth' | 'eye' | 'fin' | 'tail' | 'leg' | 'wing' | 'jet' | 'arm' | 'armor' | 'sense' | 'cosmic';
 export type Diet = 'herbivore' | 'carnivore' | 'omnivore';
 export type TintSlot = 'base' | 'belly' | 'accent';
@@ -10,7 +10,17 @@ export interface PartSpec extends PartCombatFields {
   tint: TintSlot; mirror: boolean; diet?: Diet; blurb: string;
   /** Where the editor puts a new part: t along the body, angle around it. */
   t: number; angle: number;
+  /** An alpha reward: in the editor only when unlocked (spec §7.6). */
+  rare?: true;
+  /** The part whose GLB, rig and sockets this part uses (default `id`). */
+  model?: string;
 }
+/** The move kind each move-giving part grants (spec §7.1). Mouths give the basic Bite instead. */
+export const PART_MOVES: Readonly<Record<string, MoveKind>> = {
+  claw_pincer: 'grab', claw_mother: 'grab', spike: 'counter', shell_plate: 'brace',
+  fin_side: 'dash', fin_dorsal: 'dash', fin_frill: 'dash', tail_paddle: 'dash', leg_little: 'dash', leg_crab: 'dash',
+  tail_fan: 'sweep', tail_fluke: 'sweep',
+};
 const W: CombatTrait[] = ['weapon'], WL: CombatTrait[] = ['weapon', 'locomotion'], PR: CombatTrait[] = ['protection'], L: CombatTrait[] = ['locomotion'];
 const TRAITS: Record<string, readonly CombatTrait[]> = {
   claw_pincer: W, horn: W, tentacle: W, tentacle_long: W, tail_paddle: WL, tail_fan: WL, tail_fluke: WL,
