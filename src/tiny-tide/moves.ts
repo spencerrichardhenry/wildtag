@@ -11,9 +11,12 @@ export const ALL_MODES: readonly MovementMode[] = ['ground', 'swim', 'surface', 
 const playerAttack = (over: Partial<AttackSpec> & Pick<AttackSpec, 'id' | 'shape' | 'windupSeconds' | 'activeSeconds' | 'recoverySeconds' | 'aimLockAtSeconds' | 'maxTrackingRadiansPerSecond' | 'damage'>): AttackSpec => ({
   poseProfileId: 'rest', cooldownSeconds: 0, impulse: 1, staggerSeconds: .35, blockable: true, parryable: true, interruptible: true, maxTargets: 1, hitGroup: 'shared-grant', maxHitsPerTarget: 1,
   repeatHitSeconds: 0, crossing: 'same-medium', obstruction: 'terrain-and-cover', telegraphProfileId: 'none', damageUnit: 'hp', aimMode: 'input', moveSpeedFactor: 1, poiseDamageMultiplier: 1, ...over });
-/** Bite (spec §7.4): a cone at the `bite` socket; the numbers at scale 1. Active .08 s and the half angle do not scale. */
+/** Bite (spec §7.4): a cone at the `bite` socket; the numbers at scale 1. Active .08 s and the half angle do not scale. Poise damage × .5
+ *  (final review I1, controller ruling): a size-1 Snapper Bite (6 HP) no longer staggers a size-1 hunter (poise 6) on every hit, so mashing
+ *  Bite is not a stun-lock; Sweep (× 2) is the stagger tool. */
+export const BITE_POISE_MULTIPLIER = .5;
 const bite = (id: string, damage: number, range: number, halfAngleDeg: number, windup: number, recovery: number, lock: number, tracking: number): AttackSpec => playerAttack({
-  id, shape: { kind: 'cone', range, halfAngle: halfAngleDeg * DEG }, windupSeconds: windup, activeSeconds: .08, recoverySeconds: recovery, aimLockAtSeconds: lock, maxTrackingRadiansPerSecond: tracking, damage,
+  id, shape: { kind: 'cone', range, halfAngle: halfAngleDeg * DEG }, windupSeconds: windup, activeSeconds: .08, recoverySeconds: recovery, aimLockAtSeconds: lock, maxTrackingRadiansPerSecond: tracking, damage, poiseDamageMultiplier: BITE_POISE_MULTIPLIER,
   scaling: { damage: .5, 'shape.range': .25, windupSeconds: .25, recoverySeconds: .25, aimLockAtSeconds: .25 }, pair: null });
 /** Sweep (spec §7.4): a cone at the `slap` socket, behind the body. The aim follows the body until .15 s (plan decision: the spec gives no lock). */
 const sweep = (id: string, damage: number, range: number, impulse: number, windup: number, recovery: number): AttackSpec => playerAttack({

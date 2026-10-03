@@ -4,7 +4,7 @@
 // parallel); TIDE_PROBE_MERGE=1 merges every part file into the report and checks the bars.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { attackSetup, attackTrial, hostileAttacks, journey, mergeReports, newWatch, onScreenFrom, probeMarkdown, PROBE_PARTS, runProbe, timeToKill, FULL_PROBE, type ProbePart, type ProbeReport } from '../../src/tiny-tide/combat-probe';
+import { attackSetup, attackTrial, hostileAttacks, isProbeHunter, P5_HUNTER_FLOOR, ttkPass, journey, mergeReports, newWatch, onScreenFrom, probeMarkdown, PROBE_PARTS, runProbe, timeToKill, FULL_PROBE, type ProbePart, type ProbeReport } from '../../src/tiny-tide/combat-probe';
 
 const FULL = process.env.TIDE_COMBAT_PROBE === '1';
 const OUT = '.codex-drafts/tiny-tide-qa';
@@ -23,6 +23,18 @@ describe('combat probe (smoke)', () => {
     const part = JSON.parse(JSON.stringify({ p8: { maxTokens: 2, minActiveGap: Infinity, minOffScreenWindup: Infinity, windups: 3, offScreen: 0, gapPair: '', pass: true } })) as Partial<ProbeReport>;
     const p8 = mergeReports([part, { p8: { maxTokens: 1, minActiveGap: .3, minOffScreenWindup: Infinity, windups: 1, offScreen: 0, gapPair: 'a → b', pass: true } }]).p8;
     expect(p8).toMatchObject({ maxTokens: 2, minActiveGap: .3, minOffScreenWindup: Infinity, windups: 4, pass: true });
+  });
+  // Final review I1: P5 has a lower bar for the hunters so the stun-lock cannot come back: with the skilled meat bot, each hunter's median
+  // time to kill is at least 8 s and the hunter starts at least one attack after its first stagger (median over fights).
+  it('applies the P5 hunter floor to the hunters only', () => {
+    expect(['1:crab', '2:squid', '2:eel'].every(isProbeHunter)).toBe(true);
+    expect(['1:puffer', '1:sardine', '0:drifter', '1:clawmother', '2:reef_tyrant'].some(isProbeHunter)).toBe(false);
+    expect(P5_HUNTER_FLOOR).toEqual({ minMedianSeconds: 8, minAttacksAfterStagger: 1 });
+    expect(ttkPass('1:crab', 20, 5.5, 3)).toBe(false);    // too quick: the review's stun-lock median
+    expect(ttkPass('1:crab', 20, 9, 0)).toBe(false);      // no attack after the first stagger
+    expect(ttkPass('1:crab', 20, 9, 1)).toBe(true);
+    expect(ttkPass('1:crab', 20, 21, 1)).toBe(false);     // the upper bar still holds
+    expect(ttkPass('1:puffer', 10, 3, 0)).toBe(true);     // not a hunter: upper bar only
   });
   it('runs one trial of each measure', () => {
     const watch = newWatch();

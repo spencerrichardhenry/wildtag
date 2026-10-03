@@ -498,6 +498,19 @@ export function journey(line: 'swimmer' | 'crawler', diet: JourneyReport['diet']
 export const SPECIES_SIZE: Readonly<Record<string, 0 | 1>> = { '0:drifter': 0, '0:spiny_snail': 0, '1:crab': 0, '1:clawmother': 0, '1:sardine': 1, '1:puffer': 1, '2:squid': 1, '2:eel': 1, '2:reef_tyrant': 1 };
 /** P5 bars (seconds, median time to kill with the meat build). */
 export const P5_BARS: Readonly<Record<string, number>> = { '0:drifter': 6, '0:spiny_snail': 8, '1:crab': 20, '1:sardine': 6, '1:puffer': 10, '2:squid': 30, '2:eel': 30, '1:clawmother': 90, '2:reef_tyrant': 120 };
+/** Final review I1: the P5 lower bar ("floor") of every hunter (a non-alpha `hunter` or `hunter-ambush`): with the skilled meat bot the median
+ *  time to kill is at least `minMedianSeconds`, and the median count of attacks the hunter starts after its first stagger (all its attacks
+ *  in a fight with no stagger) is at least `minAttacksAfterStagger`. It keeps the Bite stun-lock from coming back. */
+export const P5_HUNTER_FLOOR = { minMedianSeconds: 8, minAttacksAfterStagger: 1 } as const;
+export function isProbeHunter(speciesKey: string): boolean {
+  const spec = SPECIES.find(x => x.key === speciesKey), b = spec?.behaviourId ? BEHAVIOURS[spec.behaviourId] : undefined;
+  return !!b && !spec!.alpha && (b.type === 'hunter' || b.type === 'hunter-ambush');
+}
+/** A P5 row passes: the median within the upper bar and, for a hunter, the floor. */
+export function ttkPass(speciesKey: string, bar: number | null, median: number, attacksAfterStagger: number): boolean {
+  if (bar !== null && !(median <= bar)) return false;
+  return !isProbeHunter(speciesKey) || (median >= P5_HUNTER_FLOOR.minMedianSeconds && attacksAfterStagger >= P5_HUNTER_FLOOR.minAttacksAfterStagger);
+}
 /** P6 bars (plant build); the other species are reported only. */
 export const P6_BARS: Readonly<Record<string, number>> = { '1:crab': 45, '2:squid': 75 };
 const dashBuild = (stage: 0 | 1): ProbeBuild => ({ label: `dash ${stage}`, stage, line: 'swimmer', mouths: ['mouth_nibbler', 'mouth_nibbler'], add: [{ id: 'fin_side', scale: 1, mirror: true }] });
@@ -515,7 +528,10 @@ export interface P0Row { attackId: string; species: string; size: number; band: 
   /** A band point with fewer than P0_MIN_TRIALS trials: the row does not pass. */
   insufficient: boolean; pass: boolean }
 export const P0_MIN_TRIALS = 20;
-export interface TtkRow { species: string; build: 'meat' | 'plant'; median: number; bar: number | null; pass: boolean; trials: number; faints: number; times: number[] }
+export interface TtkRow { species: string; build: 'meat' | 'plant'; median: number; bar: number | null; pass: boolean; trials: number; faints: number; times: number[];
+  /** Final review I1 (every row): per fight, the attacks the subject started after its first stagger (all its attacks with no stagger), the
+   *  fights with at least one stagger, and the median of the first; `floor` true when the P5 hunter floor applies. */
+  attacksAfterStagger?: number[]; staggeredFights?: number; afterStaggerMedian?: number; floor?: boolean }
 export interface ProbeReport { p0: P0Row[]; p1: AttackRow[]; p2: AttackRow[]; p3: AttackRow[]; p4: AttackRow[]; p5: TtkRow[]; p6: TtkRow[]; p7: JourneyReport[];
   p8: { maxTokens: number; minActiveGap: number; minOffScreenWindup: number; windups: number; offScreen: number; gapPair: string; pass: boolean; mix?: Record<string, number> };
   /** The balance notes of earlier reviews, measured (controller list; no bar). */
@@ -604,9 +620,23 @@ function p0Rows(trials: number, watch: DirectorWatch, flush: (rows: P0Row[]) => 
 function ttkRows(o: ProbeOptions, build: (size: 0 | 1) => ProbeBuild, bars: Readonly<Record<string, number>>, kind: 'meat' | 'plant', watch: DirectorWatch, flush: (rows: TtkRow[]) => void): TtkRow[] {
   const rows: TtkRow[] = [];
   for (const species of Object.keys(SPECIES_SIZE)) {
-    const bar = bars[species] ?? null, cap = 3 * (bar ?? 60), times: number[] = [], stats = { faints: 0, damage: 0 };
-    for (const seed of o.ttkSeeds) for (let i = 0; i < o.ttkTrials; i++) { const t = timeToKill(seed * 1000 + i, build(SPECIES_SIZE[species]!), species, cap, watch, stats); if (!Number.isNaN(t)) times.push(t); }
-    const m = median(times); rows.push({ species, build: kind, median: m, bar, pass: bar === null || m <= bar, trials: times.length, faints: stats.faints, times: times.map(t => Number.isFinite(t) ? Math.round(t * 10) / 10 : -1) });
+    const bar = bars[species] ?? null, cap = 3 * (bar ?? 60), times: number[] = [], stats = { faints: 0, damage: 0 }, after: number[] = [];
+    let staggeredFights = 0;
+    for (const seed of o.ttkSeeds) for (let i = 0; i < o.ttkTrials; i++) {
+      // Final review I1: count the subject's attack starts, and those after its first stagger.
+      const seen = new Set<string>(); let staggeredAt = -1, total = 0, later = 0;
+      const trace = (p: ProbeWorld, subject: Entity) => {
+        const c = p.s.combat.stateOf(subject); if (!c) return;
+        if (staggeredAt < 0 && c.rt.staggerUntil > c.rt.actionClock) staggeredAt = p.s.time;
+        for (const a of c.rt.actions) if (!seen.has(a.instanceId)) { seen.add(a.instanceId); total++; if (staggeredAt >= 0) later++; }
+      };
+      const t = timeToKill(seed * 1000 + i, build(SPECIES_SIZE[species]!), species, cap, watch, stats, trace);
+      if (Number.isNaN(t)) continue;
+      times.push(t); after.push(staggeredAt >= 0 ? later : total); if (staggeredAt >= 0) staggeredFights++;
+    }
+    const m = median(times), am = median(after), floor = kind === 'meat' && isProbeHunter(species);
+    rows.push({ species, build: kind, median: m, bar, pass: floor ? ttkPass(species, bar, m, am) : bar === null || m <= bar, trials: times.length, faints: stats.faints,
+      times: times.map(t => Number.isFinite(t) ? Math.round(t * 10) / 10 : -1), attacksAfterStagger: after, staggeredFights, afterStaggerMedian: am, floor });
     flush(rows);
   }
   return rows;
@@ -756,7 +786,8 @@ export function probeMarkdown(r: ProbeReport): string {
     ...list.map(x => `| ${x.attackId} | ${x.species} | ${x.size} | ${x.kind} | ${x.bandSource ?? ''} | ${x.trials} | ${x.skipped} | ${pct(x.share)} | ${x.bar === null ? '—' : pct(x.bar)} | ${x.pass ? 'yes' : '**no**'} |`), ''];
   const p0 = ['## P0 Still player hit at the band points (bar 90 %)', '', '| Attack | Species | Size | Band (L_e) | Band source | Near | Mid | Far | Trials n/m/f | Pass |', '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
     ...r.p0.map(x => `| ${x.attackId} | ${x.species} | ${x.size} | ${x.band[0]}–${x.band[1]} | ${x.bandSource} | ${pct(x.near)} | ${pct(x.mid)} | ${pct(x.far)} | ${x.trials.near}/${x.trials.mid}/${x.trials.far} | ${x.pass ? 'yes' : x.insufficient ? '**insufficient**' : '**no**'} |`), ''];
-  const ttk = (title: string, list: TtkRow[]) => [`## ${title}`, '', '| Species | Median | Bar | Trials | Faints | Pass |', '| --- | --- | --- | --- | --- | --- |', ...list.map(x => `| ${x.species} | ${sec(x.median)} | ${x.bar === null ? '—' : sec(x.bar)} | ${x.trials} | ${x.faints} | ${x.pass ? 'yes' : '**no**'} |`), ''];
+  const ttk = (title: string, list: TtkRow[]) => [`## ${title}`, '', '| Species | Median | Bar | Hunter floor (≥ 8 s, ≥ 1 attack after stagger) | Staggered fights | Attacks after 1st stagger (median) | Trials | Faints | Pass |', '| --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+    ...list.map(x => `| ${x.species} | ${sec(x.median)} | ${x.bar === null ? '—' : sec(x.bar)} | ${x.floor ? 'yes' : '—'} | ${x.staggeredFights ?? '—'} | ${x.afterStaggerMedian ?? '—'} | ${x.trials} | ${x.faints} | ${x.pass ? 'yes' : '**no**'} |`), ''];
   const per = (o: Record<string, number>) => Object.entries(o).map(([k, n]) => `${k} ${n}`).join(', ') || '—';
   const perMin = (s: SizeReport) => { const m = Math.max(1e-9, s.activeSeconds / 60); return `${(s.dna.meals / m).toFixed(1)} / ${(s.dna.kills / m).toFixed(1)} / ${(s.dna.survivor / m).toFixed(1)} / ${(s.dna.alpha / m).toFixed(1)}`; };
   const journeys = ['## P7 Completion', '', '| Line | Diet | Seed | Size | Ready | Active | Faints | Damage ½♥ | Held | DNA meals / kills / survivor / alpha | DNA per min (same order) | Kills | Damage by | Faints by | Unreachable chase |', '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',

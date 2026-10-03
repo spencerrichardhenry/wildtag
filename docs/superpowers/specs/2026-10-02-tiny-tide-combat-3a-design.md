@@ -680,8 +680,10 @@ and the Swimmer starter (Paddle tail) have Dash.
 ### 7.4 Move numbers
 
 **Bite** (cone at the `bite` socket; `aimMode: 'input'`; `maxTargets` 1;
-`hitGroup: 'shared-grant'`; `staggerSeconds` 0.35; `poiseDamageMultiplier` 1;
-`impulse` 1; no cooldown; `moveSpeedFactor` 1).
+`hitGroup: 'shared-grant'`; `staggerSeconds` 0.35; `poiseDamageMultiplier` 0.5
+(final review I1: with 1, every size-1 Snapper Bite staggered every size-1
+hunter, a stun-lock; with 0.5 a hunter staggers on about the third or fourth
+quick Bite); `impulse` 1; no cooldown; `moveSpeedFactor` 1).
 Scaling k: damage 0.5, range 0.25, windup 0.25, recovery 0.25, lock 0.25.
 Active 0.08 s and the half angle do not scale.
 

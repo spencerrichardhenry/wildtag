@@ -54,6 +54,23 @@ describe('combat world', () => {
       expect(hit, `gap ${gapL} L, ${deg}°`).toMatchObject({ outcome: 'hit', targetId: 'e9' });
     }
   });
+  // Final review I1 (controller ruling): the player's Bite deals half poise damage, so a size-1 Snapper (6 HP, 3 poise per Bite) no longer
+  // staggers a size-1 hunter (poise 6) with every Bite; the third or fourth quick Bite does (poise decays 4/s).
+  it('two quick size-1 Bites do not stagger a size-1 crab; it staggers only after more', () => {
+    const s = speck(); s.run.stage = 1; s.run.genome.parts.find(x => x.id === 'mouth_snapper')!.scale = 2; s.actorCache = null; s.moves = null; s.combat = new CombatWorld();   // a size-1 Snapper: 6 HP per Bite
+    const actor = playerActorCached(s), body = playerBody(s, actor), pr = Math.max(...actor.hull.map(h => h.radius)), c = body.centre;
+    const spec = SPECIES.find(x => x.key === '1:crab')!, r = speciesCombatPose(entity(9, spec, c), 0).hull[0]!.radius;
+    const crab = entity(9, spec, { x: c.x, y: c.y - r, z: c.z + pr + r + .1 * body.L }), cc = s.combat.stateOf(crab)!, aim = { x: 0, y: 0, z: 1 };
+    let now = 0; const staggeredAfter: boolean[] = [];
+    for (let bite = 0; bite < 4 && crab.hp > 0; bite++) {
+      let hit = null;
+      for (let i = 0; i < 90 && !hit; i++) { hit = tick(s, [crab], now, i === 0 ? { basicPressed: true, basicHeld: true, aim } : { aim }).r.events.find(e => e.targetId === 'e9') ?? null; now += 1 / 60; }
+      expect(hit, `bite ${bite + 1} lands`).toMatchObject({ outcome: 'hit', amount: 6 });
+      staggeredAfter.push(cc.rt.staggerUntil > cc.rt.actionClock);
+      for (let i = 0; i < 30; i++) { tick(s, [crab], now, { aim }); now += 1 / 60; }   // recovery: the next Bite is about .44 s after the last
+    }
+    expect(staggeredAfter.slice(0, 2)).toEqual([false, false]);
+  });
   it('kills once and reports the kill', () => {
     const s = speck(), prey = entity(2, { ...FX_FLEER, hp: 3 }, { x: 0, y: .65, z: 2.1 });   // in front of the bite socket (z 1.61)
     tick(s, [prey], 0, { basicPressed: true, basicHeld: true });
