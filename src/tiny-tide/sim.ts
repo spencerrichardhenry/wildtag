@@ -2,6 +2,7 @@
 // watch and the rescue glide), the combat tick (T8: new, after the step and before the chomp), the chomp, the stuck retry, the ecosystem, hazards and faint, the respawn timer, and the game clock.
 // main.ts and the combat probe both call it. It returns events; main.ts turns them into sound, particles, toasts and saves.
 import { SIZES } from './biomes';
+import { clearBuffer } from './action-engine';
 import { newRuntime, type Actor, type Capsule, type CombatInput, type CombatRuntime, type MutVec3, type Orientation, type RecoveryResult, type Vec3, type WorldQueries } from './combat-types';
 import type { Ecosystem, EcoEvent } from './ecosystem';
 import { chomp, CHOMP_COOLDOWN, type ChompResult } from './feeding';
@@ -305,6 +306,9 @@ export function simBegin(s: SimState, w: SimWorld, run: Run, forced: Vec3 | null
   }
   return events;
 }
+/** The game stops for a pause, a help dialog or the editor (spec §5.7, review R19): nothing is buffered across it, so the buffered press is
+ *  dropped (the action clock is stopped while the game is stopped, so the press would otherwise survive). */
+export function simSuspend(s: SimState, mode: 'paused' | 'editing'): void { s.mode = mode; clearBuffer(s.rt); }
 /** A committed evolution: the runtime resets with the destination's orientation; the body goes to the destination. */
 export function simEvolve(s: SimState, destination: { position: Vec3; orientation: Orientation }): void {
   resetRuntime(s.rt, destination.orientation); s.genomeRevision++; refreshDerived(s);

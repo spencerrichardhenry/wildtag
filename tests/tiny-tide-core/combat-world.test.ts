@@ -8,7 +8,7 @@ import { resetRuntime } from '../../src/tiny-tide/lifecycle';
 import { AIM_PITCH_LIMIT, clampAimPitch } from '../../src/tiny-tide/combat-world';
 import type { AttackSpec, Vec3, WorldShape } from '../../src/tiny-tide/combat-types';
 import { RELEASED } from '../../src/tiny-tide/input';
-import { playerActorCached, playerBody } from '../../src/tiny-tide/sim';
+import { playerActorCached, playerBody, playerMoves } from '../../src/tiny-tide/sim';
 import { POKE, WRAP, FX_HUNTER, FX_FLEER } from './combat-fixture';
 import { entity, speck, tick } from './combat-fixture-world';
 
@@ -297,5 +297,27 @@ describe('poses per tick (review R18)', () => {
       tick(s, [a, b], now, i === 0 ? { basicPressed: true, basicHeld: true } : {});
       expect(s.combat.poseSamples - before, `tick ${i}`).toBeLessThanOrEqual(2);
     }
+  });
+});
+
+describe('a slot press next to a same-tick basic press (T7 carry)', () => {
+  const crab = (id: number) => entity(id, FX_HUNTER, ahead(2.5));
+  const both = (slot: 0 | 1 | 2 | 3) => { const p: [boolean, boolean, boolean, boolean] = [false, false, false, false]; p[slot] = true; return { basicPressed: true, basicHeld: true, activePressed: p }; };
+  it('an empty slot press does not swallow the Bite', () => {
+    const s = speck(); expect(playerMoves(s).slots.slots[3]).toBeNull();
+    expect(tick(s, [crab(60)], 0, both(3)).r).toMatchObject({ started: ['bite'], chomp: false });
+  });
+  it('a slot press on cooldown does not swallow the Bite', () => {
+    const s = speck(), dash = playerMoves(s).set.byKind.dash!; expect(playerMoves(s).slots.slots[0]).toBe('dash');
+    s.rt.cooldowns.set(`player:${dash.partUid}:${dash.grantId}`, 99);
+    expect(tick(s, [crab(61)], 0, both(0)).r).toMatchObject({ started: ['bite'], chomp: false });
+  });
+  it('an empty slot press does not swallow the chomp fallback', () => {
+    expect(tick(speck(), [], 0, both(2)).r).toMatchObject({ started: [], chomp: true });
+  });
+  it('a slot move that starts suppresses the basic input for that tick only', () => {
+    const s = speck();
+    expect(tick(s, [crab(62)], 0, both(0)).r).toMatchObject({ started: ['dash'], chomp: false });
+    expect(s.rt.buffered).toBeNull();   // the Bite is not buffered behind the Dash either
   });
 });

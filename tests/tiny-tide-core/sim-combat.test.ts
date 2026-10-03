@@ -6,9 +6,10 @@ import { SIZES } from '../../src/tiny-tide/biomes';
 import { CombatWorld } from '../../src/tiny-tide/combat-world';
 import type { Ecosystem, Entity } from '../../src/tiny-tide/ecosystem';
 import { RELEASED } from '../../src/tiny-tide/input';
+import { applyHitStop, bufferPress } from '../../src/tiny-tide/action-engine';
 import { stageBounds } from '../../src/tiny-tide/world-queries';
 import type { CombatInput } from '../../src/tiny-tide/combat-types';
-import { playerActorCached, playerMotionBody, simBegin, simFrame, type SimEvent, type SimState, type SimWorld } from '../../src/tiny-tide/sim';
+import { playerActorCached, playerMotionBody, simBegin, simFrame, simSuspend, type SimEvent, type SimState, type SimWorld } from '../../src/tiny-tide/sim';
 import { FX_BEHAVIOURS, FX_FLEER, FX_HUNTER, WRAP } from './combat-fixture';
 import { entity, FLAT, speck } from './combat-fixture-world';
 
@@ -56,5 +57,17 @@ describe('the combat tick in simFrame', () => {
     const spy = vi.spyOn(mount, 'sampleCombatPose').mockImplementation(i => { n++; return original(i); });
     try { for (let i = 0; i < 10; i++) frame(s, w, { basicHeld: true }); } finally { spy.mockRestore(); }
     expect(n).toBe(10);
+  });
+  it('an empty slot press next to a basic press still chomps (T7 carry)', () => {
+    const { s, w } = begun([]);
+    expect(frame(s, w, { basicPressed: true, basicHeld: true, activePressed: [false, false, false, true] }).map(e => e.type)).toContain('chomp');
+  });
+  it('a pause or an edit drops the buffered press (spec §5.7, review R19)', () => {
+    for (const mode of ['paused', 'editing'] as const) {
+      const { s } = begun([]);
+      applyHitStop(s.rt, s.time, .07); expect(bufferPress(s.rt, 0, s.time)).toBe(true);
+      simSuspend(s, mode);
+      expect(s.mode).toBe(mode); expect(s.rt.buffered).toBeNull();
+    }
   });
 });

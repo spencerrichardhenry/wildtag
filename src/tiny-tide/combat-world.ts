@@ -183,21 +183,24 @@ export class CombatWorld {
           out.brokeFree = true;
         }
       }
-      const press = (input: 'basic' | ActiveSlot): boolean => {
+      const press = (input: 'basic' | ActiveSlot): 'started' | 'buffered' | null => {
         const m = input === 'basic' ? ctx.moves.basic : (() => { const k = ctx.slots.slots[input]; return k ? ctx.moves.byKind[k] ?? null : null; })();
-        if (!m) return false;
+        if (!m) return null;
         const held = input === 'basic' ? intent.basicHeld : intent.activeHeld[input] && !intent.activeCanceled[input];
         const r = this.tryStart(ctx, m, aim, held);
-        if (r === 'started') { out.started.push(m.resolved.kind); return true; }
-        if (r === 'busy' || r === 'hit-stop') bufferPress(rt, input, now);
-        return false;
+        if (r === 'started') { out.started.push(m.resolved.kind); return 'started'; }
+        if ((r === 'busy' || r === 'hit-stop') && bufferPress(rt, input, now)) return 'buffered';
+        return null;
       };
       const buffered = bufferedPress(rt);
-      if (buffered !== null) { if (press(buffered)) rt.buffered = null; }   // a held player's buffered Bite starts too (canStart allows it)
-      for (let i = 0; i < 4; i++) if (intent.activePressed[i]) press(i as ActiveSlot);
+      if (buffered !== null) { if (press(buffered) === 'started') rt.buffered = null; }   // a held player's buffered Bite starts too (canStart allows it)
+      // T7 carry: only an accepted slot press (the move started, or it was buffered behind a busy action) suppresses this tick's basic input.
+      // An empty, inactive, cooling or refused slot does not swallow a same-tick Bite or chomp.
+      let slotAccepted = false;
+      for (let i = 0; i < 4; i++) if (intent.activePressed[i] && press(i as ActiveSlot) !== null) slotAccepted = true;
       // The basic dispatch rule (spec §8.3): Bite when a combat species is in the Bite cone, else today's chomp. A held input repeats Bite.
       // A herbivore Bites only a species engaged with it (review R17); otherwise its basic input eats.
-      if (basicRequested(intent)) {
+      if (basicRequested(intent, slotAccepted)) {
         const cone = this.biteCone(p, ctx.moves, aim), herbivore = ctx.diet === 'herbivore';
         const isCombat = (e: Entity) => { const c = this.stateOf(e); return c !== null && (!herbivore || this.engaged(c, now)); };
         if (cone && biteDispatch(cone, ctx.entities, ctx.stage, isCombat, e => this.poseOf(e, now).hurtboxes)) {

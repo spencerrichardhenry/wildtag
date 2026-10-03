@@ -97,9 +97,9 @@ try {
   } else {
     // Look controls change yaw and pitch with a real canvas drag.
     const lookBefore = (await state()).world;
-    await page.mouse.move(900, 380); await page.mouse.down(); await page.mouse.move(970, 405, { steps: 8 }); await page.mouse.up();
+    await page.mouse.move(900, 380); await page.mouse.down({ button: 'middle' }); await page.mouse.move(970, 405, { steps: 8 }); await page.mouse.up({ button: 'middle' });
     const lookAfter = (await state()).world; assert.ok(Math.abs(lookAfter.yaw - lookBefore.yaw) > .3); assert.ok(lookAfter.pitch > lookBefore.pitch);
-    await page.mouse.move(970, 405); await page.mouse.down(); await page.mouse.move(900, 380, { steps: 8 }); await page.mouse.up();
+    await page.mouse.move(970, 405); await page.mouse.down({ button: 'middle' }); await page.mouse.move(900, 380, { steps: 8 }); await page.mouse.up({ button: 'middle' });
     const universeId = (await state()).world.worldId;
     assert.ok((await state()).landmarks.some(f => f.kind === 'fish'), 'Larger fish coexist with the tiny creature');
     let transforms = 0;

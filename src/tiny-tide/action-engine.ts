@@ -249,7 +249,7 @@ export function bufferedPress(rt: CombatRuntime): 'basic' | ActiveSlot | null {
   if (rt.actionClock - b.at > BUFFER_SECONDS + 1e-9) { rt.buffered = null; return null; }
   return b.input;
 }
-/** Spec §5.7: the buffer is cleared when the game pauses. The game calls this on pause (wired in T7/T9). */
+/** Spec §5.7: the buffer is cleared when the game pauses. The game calls it through simSuspend on pause, help and edit (T9). */
 export function clearBuffer(rt: CombatRuntime): void { rt.buffered = null; }
 /** Velocity (physical units per second) of a lunge during active: distance × L / activeSeconds along the aim. */
 export function lungeSpeed(a: ActionState, L: number): number {

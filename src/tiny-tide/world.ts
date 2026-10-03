@@ -19,6 +19,9 @@ const particleGeometry = new T.SphereGeometry(.09, 6, 4);
 const circleGeometry = new T.CircleGeometry(1, 40);
 const ringGeometry = new T.RingGeometry(1, 1.025, 56);
 const shadowMaterial = new T.MeshBasicMaterial({ color: '#103e4f', transparent: true, opacity: .2, depthWrite: false });
+/** A flat chevron in the xz plane pointing along +z (unit size; the world scales it to the body length). */
+const chevronGeometry = new T.ShapeGeometry(new T.Shape([new T.Vector2(0, .5), new T.Vector2(.55, -.1), new T.Vector2(.3, -.1), new T.Vector2(0, .22), new T.Vector2(-.3, -.1), new T.Vector2(-.55, -.1)])).rotateX(Math.PI / 2);
+const chevronMaterial = new T.MeshBasicMaterial({ color: '#fff1c4', transparent: true, opacity: .85, side: T.DoubleSide, depthWrite: false, depthTest: false });
 const ringMaterial = new T.MeshBasicMaterial({ color: '#e0f6ad', transparent: true, opacity: .75, side: T.DoubleSide, depthWrite: false });
 const UP = new T.Vector3(0, 1, 0);
 // The soft world edge (edge.ts): in the push zone the water gets darker and foggier, and scenery past the hard bound
@@ -65,6 +68,8 @@ export class TideWorld {
   readonly shadow = new T.Mesh(circleGeometry, shadowMaterial);
   readonly biteRing = new T.Mesh(ringGeometry, ringMaterial);
   readonly targetRing = new T.Mesh(ringGeometry, ringMaterial);
+  /** The aim chevron (spec §8.4): drawn over the scene, pointing along its local +z. */
+  readonly aimChevron = new T.Mesh(chevronGeometry, chevronMaterial);
   creature: CreatureModel | null = null;
   avatar = new T.Group();
   foods: FoodObject[] = [];
@@ -123,7 +128,8 @@ export class TideWorld {
     Object.assign(this.sun.shadow.camera, { left: -23, right: 23, top: 23, bottom: -23, near: .1, far: 90 }); this.sun.shadow.normalBias = .035; this.sun.shadow.bias = -.001;
     this.scene.add(this.sun, this.sun.target);
     const rim = new T.DirectionalLight('#84e7ea', 1.1); rim.position.set(8, 5, -20); this.scene.add(rim);
-    this.scene.add(this.universe, this.effects, this.player, this.shadow, this.biteRing, this.targetRing);
+    this.scene.add(this.universe, this.effects, this.player, this.shadow, this.biteRing, this.targetRing, this.aimChevron);
+    this.aimChevron.visible = false; this.aimChevron.renderOrder = 10;
     this.universe.add(this.environment, this.actors);
     this.shadow.rotation.x = -Math.PI / 2; this.biteRing.rotation.x = -Math.PI / 2; this.targetRing.rotation.x = -Math.PI / 2;
     this.biteRing.visible = false; this.targetRing.visible = false;
@@ -325,6 +331,16 @@ export class TideWorld {
   screenPoint(position: T.Vector3) {
     const v = position.clone().project(this.camera); const forward = position.clone().sub(this.camera.position).dot(this.camera.getWorldDirection(new T.Vector3()));
     return { x: (v.x + 1) * this.width / 2, y: (1 - v.y) * this.height / 2, visible: v.z < 1 && forward > 0 };
+  }
+  /** The camera ray through a client point (render units). */
+  pointerRay(x: number, y: number): { origin: T.Vector3; dir: T.Vector3 } { const ray = new T.Raycaster(); ray.setFromCamera(new T.Vector2(x / this.width * 2 - 1, -y / this.height * 2 + 1), this.camera); return { origin: ray.ray.origin.clone(), dir: ray.ray.direction.clone() }; }
+  /** The camera's horizontal forward (the keyboard-only aim, spec §8.4). */
+  cameraForward(): { x: number; y: number; z: number } { const d = this.camera.getWorldDirection(new T.Vector3()), l = Math.hypot(d.x, d.z) || 1; return { x: d.x / l, y: 0, z: d.z / l }; }
+  /** The aim chevron (spec §8.4) at `at` (render units), pointing along `aim`, `L` (render units) long; null hides it. */
+  showAimChevron(at: { x: number; y: number; z: number } | null, aim: { x: number; y: number; z: number }, L: number) {
+    const c = this.aimChevron; c.visible = at !== null; if (!at) return;
+    c.position.set(at.x, at.y, at.z); c.scale.setScalar(Math.max(L, 1e-3) * .35);
+    c.lookAt(at.x + aim.x, at.y + aim.y, at.z + aim.z);
   }
   groundPoint(x: number, y: number): T.Vector3 | null { const ray = new T.Raycaster(); ray.setFromCamera(new T.Vector2(x / this.width * 2 - 1, -y / this.height * 2 + 1), this.camera); return ray.ray.intersectPlane(new T.Plane(UP, -this.player.position.y), new T.Vector3()); }
   update(dt: number, time: number, menu: boolean, moving: boolean, chomping: number, growth: number) {

@@ -15,11 +15,13 @@ import { openPathScreen, type PathChoice } from './path-screen';
 import { renderPreview } from './preview';
 import { cardSummary, COAST_READY, eligibleChildren, leadsTo, type BodyPlan } from './plans';
 import { quoteDesign } from './economy';
-import { newRuntime, type Actor, type CombatInput, type Constraint, type Vec3, type WorldQueries } from './combat-types';
-import { readIntent, RELEASED } from './input';
-import { blockHint, blockHintDue, newBlockHintGate, type PlayerStepResult, newTapWatch, tapTargetStalled } from './player-motion';
+import { newRuntime, type Actor, type CombatInput, type Constraint, type Tuple4, type Vec3, type WorldQueries } from './combat-types';
+import { aimChevron, aimPitch, pitched, pointerAim, POINTER_FRESH_SECONDS, readIntent, RELEASED, type AimSource } from './input';
+import { CombatHud, slotViews } from './combat-hud';
+import { forwardOf } from './orientation';
+import { blockHint, blockHintDue, newBlockHintGate, PITCH_LIMIT, type PlayerStepResult, newTapWatch, tapTargetStalled } from './player-motion';
 import { canChooseNextPlan, evolutionDestination, reconcileAfterCommit } from './lifecycle';
-import { admitted as simAdmitted, checkPose, playerActorCached as simActor, refreshDerived as simRefreshDerived, simBegin, simEvolve, simFrame, simOwnedState, type GameMode, type SimEvent, type SimState, type SimWorld } from './sim';
+import { admitted as simAdmitted, checkPose, playerActorCached as simActor, refreshDerived as simRefreshDerived, simBegin, simEvolve, simFrame, simOwnedState, simSuspend, type GameMode, type SimEvent, type SimState, type SimWorld } from './sim';
 import type { ChompResult } from './feeding';
 import { PLAYER_ID, type CombatTick } from './combat-world';
 import { damageText } from './combat-profiles';
@@ -77,7 +79,7 @@ app.innerHTML = `
     <div id="objective"><span class="objective-dot"></span><span id="objective-text"></span></div>
     <button id="evolve" class="primary evolve-button" hidden>${icons.up}<span>Evolve!</span></button>
     <div class="stage-dots" aria-label="Evolution progress">${STAGES.map((s, i) => `<span data-stage="${i}" title="${s.title}">${species[i]}</span>`).join('<i></i>')}</div>
-    <div id="joystick" aria-label="Drag to move" role="group"><div class="stick-cross"></div><span id="stick"></span></div><div class="movement-hint"><span class="desktop-hint"><kbd>W</kbd><br><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><span>TO MOVE · DRAG TO LOOK</span></span><span class="touch-hint">DRAG TO MOVE</span></div>
+    <div id="joystick" aria-label="Drag to move" role="group"><div class="stick-cross"></div><span id="stick"></span></div><div class="movement-hint"><span class="desktop-hint"><kbd>W</kbd><br><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><span>TO MOVE · MOUSE TO AIM · MIDDLE-DRAG TO LOOK</span></span><span class="touch-hint">DRAG TO MOVE</span></div>
     <div class="look-hint" id="look-hint"><span>↔</span> SWIPE TO LOOK AROUND</div><div class="depth-gauge"><span id="depth-label">SEAFLOOR</span><div><i id="depth-dot"></i></div><small id="depth-hint">LOOK UP. THERE’S A WHOLE WORLD.</small></div><div id="evolution-banner" hidden><span id="evolution-icon"></span><div><small>LOOK AT YOU GROW!</small><strong id="evolution-name"></strong><span id="evolution-detail">Same little soul. A bigger world to eat.</span></div></div><div class="actions"><div class="vertical-controls" id="vertical-controls" hidden><button id="special" class="special-button" aria-label="Rise" hidden>${icons.up}<span id="special-label">RISE</span><kbd>E</kbd></button><button id="dive" class="special-button dive-button" aria-label="Dive">${icons.up}<span>DIVE</span><kbd>Q</kbd></button></div><button id="chomp" class="chomp-button" aria-label="Chomp (hold to keep eating)">${icons.chomp}<strong>CHOMP</strong><span>HOLD <kbd>SPACE</kbd></span></button></div>
     <div id="food-pointer" hidden><span id="pointer-arrow">↑</span><span id="pointer-label">SEA SPROUT</span></div>
     <div id="snack-label" hidden></div><div id="threats" aria-hidden="true"></div><div id="toast" role="status" aria-live="polite"></div>
@@ -88,6 +90,7 @@ app.innerHTML = `
   <div class="corner-note" id="corner-note">MADE FOR A LITTLE ESCAPE <span>✳</span></div>
 `;
 const el = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
+const combatHud = new CombatHud(document.querySelector<HTMLElement>('#game-ui .actions')!);
 const audio = new TideAudio();
 let world: TideWorld;
 try {
@@ -187,6 +190,11 @@ startAnalytics('tiny-tide', () => mode === 'playing' || mode === 'evolving');
 let keys = new Set<string>();
 let stickX = 0, stickZ = 0, stickPointer: number | null = null;
 let holdingChomp = false, rising = false, diving = false, chompTapped = false, riseTapped = false;
+/** Slot sources (spec §8.1–§8.2): slot buttons, keys 1–4 (keydown taps; readIntent reads held keys) and the right mouse (slot 1). */
+let slotHeld: Tuple4<boolean> = [false, false, false, false], slotTapped: Tuple4<boolean> = [false, false, false, false], slotCanceled: Tuple4<boolean> = [false, false, false, false];
+/** The desktop pointer (spec §8.4): its last client position, when it last moved over the canvas (ms) and whether it is over the canvas;
+ *  the left mouse holds the basic input. */
+let pointerX = 0, pointerY = 0, pointerAt = -Infinity, pointerOver = false, mouseBasic = false;
 let lastIntent: CombatInput = RELEASED;
 let target: T.Vector3 | null = null;
 let time = 0, last = performance.now(), cooldown = 0, chompPulse = 0;
@@ -275,7 +283,7 @@ function renderRoot() {
 const admittedNow = (actor: Actor) => simAdmitted(sim, simWorld, actor);
 /** Writes the run to the write key only. A kept, unreadable or legacy key is never written. */
 function save() { try { if (writeKey) localStorage.setItem(writeKey, JSON.stringify(run)); saved = structuredClone(run); } catch { /* Continue without saving in private contexts. */ } }
-function clearInput() { keys.clear(); holdingChomp = false; rising = false; diving = false; chompTapped = false; riseTapped = false; lastIntent = RELEASED; stickX = 0; stickZ = 0; stickPointer = null; target = null; el('stick').style.transform = ''; el('chomp').classList.remove('pressed'); el('special').classList.remove('pressed'); el('dive').classList.remove('pressed'); }
+function clearInput() { slotHeld = [false, false, false, false]; slotTapped = [false, false, false, false]; slotCanceled = [false, false, false, false]; mouseBasic = false; combatHud.buttons.forEach(b => b.classList.remove('pressed')); keys.clear(); holdingChomp = false; rising = false; diving = false; chompTapped = false; riseTapped = false; lastIntent = RELEASED; stickX = 0; stickZ = 0; stickPointer = null; target = null; el('stick').style.transform = ''; el('chomp').classList.remove('pressed'); el('special').classList.remove('pressed'); el('dive').classList.remove('pressed'); }
 function syncSound() { el('sound').innerHTML = audio.muted ? icons.mute : icons.sound; el('sound').setAttribute('aria-label', audio.muted ? 'Unmute sound' : 'Mute sound'); el('sound').setAttribute('aria-pressed', String(audio.muted)); }
 syncSound();
 function syncHome() {
@@ -381,7 +389,7 @@ function showDialog(content: string, closable = true) { clearInput(); el('modal-
 function closeDialog() { modal.close(); if (mode === 'paused') mode = dialogReturn === 'playing' ? 'playing' : 'menu'; clearInput(); syncUI(); }
 function pause() {
   if (mode !== 'playing') return;
-  mode = 'paused'; dialogReturn = 'playing'; save();
+  simSuspend(sim, 'paused'); dialogReturn = 'playing'; save();
   showDialog(`<span class="modal-art">${species[run.stage]}</span><div class="eyebrow">TAKE A LITTLE BREATHER</div><h2 id="modal-title">Small pause.<br>Big dreams.</h2><p>Your little adventure is saved.<br>The snacks will wait for you.</p><button id="resume" class="primary">Keep munching ${icons.play}</button><button id="restart" class="text-button">Start a fresh adventure</button>`);
   el('resume').onclick = closeDialog; el('restart').onclick = confirmRestart;
 }
@@ -391,17 +399,17 @@ function confirmRestart() {
 }
 function help() {
   if (mode === 'evolving' || mode === 'won' || mode === 'editing' || mode === 'fainted' || mode === 'stuck') return;
-  dialogReturn = mode === 'playing' || mode === 'paused' ? 'playing' : 'menu'; if (mode === 'playing') mode = 'paused';
+  dialogReturn = mode === 'playing' || mode === 'paused' ? 'playing' : 'menu'; if (mode === 'playing') simSuspend(sim, 'paused');
   showDialog(`<div class="eyebrow">A RECIPE FOR BIG THINGS</div><h2 id="modal-title">Follow your tummy.</h2><p>Eat to earn DNA. Spend DNA on new parts. Grow from a speck to a cosmic giant.</p><div class="help-rows"><div><span>01</span><div><strong>A little wander</strong><p>Drag the left joystick or use WASD / arrow keys. Swipe the world to turn the camera. While swimming or flying, push forward to travel in the direction you’re looking.</p></div></div><div><span>02</span><div><strong>A little nibble</strong><p>Get close to food and hold Chomp or Space. Your mouth sets your diet: herbivores eat plants, carnivores eat meat, omnivores eat both for less DNA.</p></div></div><div><span>03</span><div><strong>A little danger</strong><p>Red <b>!</b> marks a hunter. Chomp back, swim away, or hide with stealth parts. If you lose every heart, you wake up at the start with most of your DNA.</p></div></div><div><span>04</span><div><strong>A whole new you</strong><p>Tap the pencil to edit your creature at any time. When the DNA bar is full, tap Evolve, pick new parts, and grow right where you are. Eat every planet to finish.</p></div></div></div><button id="got-it" class="primary">Got it. Let’s snack. ${icons.arrow}</button>`);
   el('got-it').onclick = closeDialog;
 }
 async function edit(kind: 'edit' | 'evolve') {
   if (mode !== 'playing' || (kind === 'evolve' && !canChooseNextPlan(run, BUILD))) return;
-  mode = 'editing'; clearInput(); save(); el('game-ui').classList.add('dimmed');
+  simSuspend(sim, 'editing'); clearInput(); save(); el('game-ui').classList.add('dimmed');
   if (kind === 'evolve') await chooseEvolution(); else await editDesign();
   el('game-ui').classList.remove('dimmed');
   // A committed evolution is already transforming (mode 'evolving').
-  if (mode === 'editing') { mode = 'playing'; save(); }
+  if ((mode as GameMode) === 'editing') { mode = 'playing'; save(); }
   syncUI();
 }
 /** The path screen, then the evolve editor. Cancel in the editor returns to the path screen; "Not yet" returns to play. */
@@ -557,18 +565,20 @@ document.querySelector('.brand')!.addEventListener('click', event => { event.pre
 const endedPointers = new Set<number>();
 function releasedNormally(event: PointerEvent) { return endedPointers.delete(event.pointerId); }
 /** Buttons only set input sources; the frame reads one intent from them. `tap` records a press that may end before the next frame. */
-function holdButton(id: string, setter: (value: boolean) => void, tap?: () => void) {
+function holdButton(id: string, setter: (value: boolean) => void, tap?: () => void, cancel?: () => void) {
   const button = el(id);
   button.addEventListener('pointerdown', event => { if (mode !== 'playing') return; event.preventDefault(); endedPointers.delete(event.pointerId); button.setPointerCapture(event.pointerId); setter(true); tap?.(); button.classList.add('pressed'); audio.init(); });
   const release = () => { setter(false); button.classList.remove('pressed'); };
   button.addEventListener('pointerup', event => { endedPointers.add(event.pointerId); release(); });
-  button.addEventListener('pointercancel', () => { release(); clearInput(); });
-  button.addEventListener('lostpointercapture', event => { release(); if (!releasedNormally(event)) clearInput(); });
+  // A touch cancel clears every input source; on a slot button it also marks that slot canceled (Brace ends with no buffered press).
+  button.addEventListener('pointercancel', () => { release(); clearInput(); cancel?.(); });
+  button.addEventListener('lostpointercapture', event => { release(); if (!releasedNormally(event)) { clearInput(); cancel?.(); } });
   button.addEventListener('click', event => { if (event.detail === 0 && mode === 'playing') tap?.(); });
 }
 holdButton('chomp', value => holdingChomp = value, () => chompTapped = true);
 holdButton('special', value => rising = value, () => riseTapped = true);
 holdButton('dive', value => diving = value);
+combatHud.buttons.forEach((b, i) => holdButton(b.id, value => slotHeld[i] = value, () => slotTapped[i] = true, () => slotCanceled[i] = true));
 const joystick = el('joystick');
 function moveStick(event: PointerEvent) {
   const rect = joystick.getBoundingClientRect(), limit = rect.width * .3;
@@ -584,12 +594,26 @@ joystick.addEventListener('pointerup', event => { endedPointers.add(event.pointe
 joystick.addEventListener('lostpointercapture', event => { stopStick(); if (!releasedNormally(event)) clearInput(); });
 let lookPointer: number | null = null, lookX = 0, lookY = 0, lookStartX = 0, lookStartY = 0, looked = false;
 const canvas = world.renderer.domElement;
+// Desktop (spec §8.1, D7): the left mouse is the basic input and the right mouse slot 1; the camera turns with a middle drag or Alt + left drag.
+// Touch keeps swipes to look and taps to walk (ground plans).
+canvas.addEventListener('contextmenu', event => event.preventDefault());
+const notePointer = (event: PointerEvent) => { pointerX = event.clientX; pointerY = event.clientY; pointerAt = performance.now(); pointerOver = true; };
 canvas.addEventListener('pointerdown', event => {
   if (mode !== 'playing') return;
-  endedPointers.delete(event.pointerId); lookPointer = event.pointerId; lookX = lookStartX = event.clientX; lookY = lookStartY = event.clientY; looked = false;
+  endedPointers.delete(event.pointerId);
+  if (event.pointerType === 'mouse') {
+    notePointer(event);
+    if (event.button === 0 && !event.altKey) { mouseBasic = true; chompTapped = true; canvas.setPointerCapture(event.pointerId); audio.init(); return; }
+    if (event.button === 2) { slotHeld[0] = true; slotTapped[0] = true; canvas.setPointerCapture(event.pointerId); audio.init(); return; }
+    if (event.button !== 1 && !(event.button === 0 && event.altKey)) return;
+    event.preventDefault();   // a middle press does not start the browser's autoscroll
+  }
+  lookPointer = event.pointerId; lookX = lookStartX = event.clientX; lookY = lookStartY = event.clientY; looked = false;
   canvas.setPointerCapture(event.pointerId);
 });
+canvas.addEventListener('pointerleave', event => { if (event.pointerType === 'mouse') pointerOver = false; });
 canvas.addEventListener('pointermove', event => {
+  if (event.pointerType === 'mouse') notePointer(event);
   if (event.pointerId !== lookPointer || mode !== 'playing') return;
   const dx = event.clientX - lookX, dy = event.clientY - lookY;
   if (Math.hypot(event.clientX - lookStartX, event.clientY - lookStartY) > 5) looked = true;
@@ -599,8 +623,9 @@ canvas.addEventListener('pointermove', event => {
 canvas.addEventListener('pointerup', event => {
   // Every pointer that ends normally is recorded, so its lostpointercapture is not read as a cancel.
   endedPointers.add(event.pointerId);
+  if (event.pointerType === 'mouse') { if (event.button === 0) mouseBasic = false; if (event.button === 2) slotHeld[0] = false; }
   if (event.pointerId !== lookPointer) return;
-  if (!looked && mode === 'playing' && capsOf().ground) {
+  if (!looked && mode === 'playing' && capsOf().ground && event.pointerType !== 'mouse') {
     target = world.groundPoint(event.clientX, event.clientY); tapWatch.best = Infinity; tapWatch.stalled = 0;
     if (target) { target.x = T.MathUtils.clamp(target.x, -SPAWN_HALF, SPAWN_HALF); target.z = T.MathUtils.clamp(target.z, -SPAWN_HALF, SPAWN_HALF); world.targetRing.position.copy(target); world.targetRing.position.y = world.groundAt(target.x, target.z) + .08; world.targetRing.scale.setScalar(.45); world.targetRing.visible = true; }
   }
@@ -616,6 +641,7 @@ window.addEventListener('keydown', event => {
   keys.add(event.code);
   if (event.code === 'KeyE' && !event.repeat) riseTapped = true;
   if (event.code === 'Space' && !event.repeat) chompTapped = true;
+  const digit = ['Digit1', 'Digit2', 'Digit3', 'Digit4'].indexOf(event.code); if (digit >= 0 && !event.repeat) slotTapped[digit] = true;
   if (event.code === 'KeyP' && !event.repeat) pause();
 });
 window.addEventListener('keyup', event => keys.delete(event.code));
@@ -655,6 +681,25 @@ function updateGuide() {
   }).join('');
 }
 const NO_WISH: Vec3 = Object.freeze({ x: 0, y: 0, z: 0 });
+/** The live combat species of the combat tiers (the stage and the stage + 1), as world objects. */
+const combatFoods = () => world.foods.filter(f => f.entity.active && !f.entity.eaten && f.tier >= run.stage && f.tier <= run.stage + 1 && sim.combat.stateOf(f.entity) !== null);
+/** The aim (spec §8.4): the desktop pointer while it is over the canvas and moved in the last 4 s, else the camera forward. Free movers pitch
+ *  toward a soft-lock target (D9); ground movers aim level. Render units: only directions leave this function. */
+function currentAim(caps: { pitch: boolean }): { aim: Vec3; source: AimSource } {
+  const p = world.player.position, fresh = pointerOver && performance.now() - pointerAt < POINTER_FRESH_SECONDS * 1000;
+  let flat: Vec3 | null = null, source: AimSource = 'camera';
+  if (fresh) { const ray = world.pointerRay(pointerX, pointerY); flat = pointerAim(p, ray.origin, ray.dir); if (flat) source = 'pointer'; }
+  flat ??= world.cameraForward();
+  if (!caps.pitch) return { aim: flat, source };
+  return { aim: pitched(flat, aimPitch(p, flat, combatFoods().map(f => f.data), rt.orientation.pitch, PITCH_LIMIT)), source };
+}
+/** The aim chevron (spec §8.4): 1 L along the aim while a combat species is within 4 L (physical units in, render units to the world). */
+function syncAimChevron(intent: CombatInput) {
+  if (mode !== 'playing') { world.showAimChevron(null, NO_WISH, 0); return; }
+  const L = playerActorCached().bodyLength, aim = intent.aim ?? forwardOf(rt.orientation);
+  const at = aimChevron(physical, aim, L, combatFoods().map(f => f.entity));
+  world.showAimChevron(at && { x: at.x / world.scale, y: at.y / world.scale, z: at.z / world.scale }, aim, L / world.scale);
+}
 function frame(now: number) {
   requestAnimationFrame(frame);
   const dt = Math.min((now - last) / 1000, .05); last = now;
@@ -667,8 +712,10 @@ function frame(now: number) {
   if (playing) {
     chompPulse = Math.max(0, chompPulse - dt * 5); wrongDietClock = Math.max(0, wrongDietClock - dt); hintClock = Math.max(0, hintClock - dt);
     // One input consumer: one intent per frame, then the tap flags are spent.
-    intent = readIntent({ stickX, stickZ, keys, chompHeld: holdingChomp, chompTapped, riseHeld: rising, riseTapped, diveHeld: diving }, lastIntent, { breachOnRiseTap: caps.breach });
-    chompTapped = false; riseTapped = false; lastIntent = intent;
+    const aim = currentAim(caps);
+    intent = readIntent({ stickX, stickZ, keys, chompHeld: holdingChomp || mouseBasic, chompTapped, riseHeld: rising, riseTapped, diveHeld: diving, aim: aim.aim, aimSource: aim.source,
+      activeTapped: slotTapped, activeHeld: slotHeld, activeCanceled: slotCanceled }, lastIntent, { breachOnRiseTap: caps.breach });
+    chompTapped = false; riseTapped = false; slotTapped = [false, false, false, false]; slotCanceled = [false, false, false, false]; lastIntent = intent;
     const p = world.player.position;
     if (Math.abs(intent.move.x) + Math.abs(intent.move.z) > .05) { target = null; world.targetRing.visible = false; }
     if (target && caps.ground) {
@@ -681,6 +728,8 @@ function frame(now: number) {
     }
   }
   presentSim(simFrame(sim, simWorld, { dt, intent, wish, held }), dt);
+  if (mode !== 'menu' && sim.moves) combatHud.sync(slotViews(sim.moves.slots, sim.moves.set, rt));
+  syncAimChevron(intent);
   if (playing) {
     const v = rt.controlledVelocity; moving = Math.hypot(v.x, v.y, v.z) > .5 * SIZES[stage]!;
     saveClock += dt; if (saveClock >= 5) { save(); saveClock = 0; }

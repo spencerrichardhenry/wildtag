@@ -35,8 +35,9 @@ export function readIntent(s: InputSources, previous: CombatInput, opts: { breac
   const activeReleased = four(i => previous.activeHeld[i] && !held[i] && !canceled[i]);
 
   const basicHeld = s.chompHeld || k.has('Space');
-  const edge = s.chompTapped || (basicHeld && !previous.basicHeld);
-  const basicPressed = edge && !activePressed.some(Boolean);
+  // T7 carry (amends spec §8.5): a same-tick slot press no longer hides the basic press here. The combat world suppresses the basic input
+  // only when the slot move is accepted (it starts or is buffered); an empty, inactive, cooling or refused slot does not swallow a Bite.
+  const basicPressed = s.chompTapped || (basicHeld && !previous.basicHeld);
 
   const rise = s.riseHeld || k.has('KeyE'), dive = s.diveHeld || k.has('KeyQ');
   const traversal: CombatInput['traversal'] = opts.breachOnRiseTap && s.riseTapped ? 'breach' : rise && !dive ? 'rise' : dive && !rise ? 'dive' : 'none';
@@ -44,7 +45,46 @@ export function readIntent(s: InputSources, previous: CombatInput, opts: { breac
   return { move: { x, y: 0, z }, aim, aimSource: aim ? s.aimSource ?? 'none' : 'none', basicHeld, basicPressed, activePressed, activeHeld: held, activeReleased, activeCanceled: four(i => canceled[i]), traversal };
 }
 
-/** The one place the simulation asks for a bite. An active press suppresses basic initiation for that tick only. */
-export function basicRequested(intent: CombatInput): boolean {
-  return !intent.activePressed.some(Boolean) && (intent.basicPressed || intent.basicHeld);
+/** The one place the simulation asks for a bite. `slotAccepted`: a slot move was accepted this tick (started or buffered); it suppresses
+ *  basic initiation for that tick only. */
+export function basicRequested(intent: CombatInput, slotAccepted = false): boolean {
+  return !slotAccepted && (intent.basicPressed || intent.basicHeld);
+}
+
+// ---- aim (spec §8.4) ----
+/** The desktop pointer counts for this long after it last moved over the canvas; then the aim is the camera forward. */
+export const POINTER_FRESH_SECONDS = 4;
+/** The horizontal aim from `origin` toward where the pointer ray (render units) meets the horizontal plane through `origin`; null when the
+ *  ray does not meet that plane in front of the camera (the caller uses the camera forward). */
+export function pointerAim(origin: Vec3, rayOrigin: Vec3, rayDir: Vec3): Vec3 | null {
+  if (Math.abs(rayDir.y) < 1e-9) return null;
+  const t = (origin.y - rayOrigin.y) / rayDir.y; if (t <= 0) return null;
+  const dx = rayOrigin.x + rayDir.x * t - origin.x, dz = rayOrigin.z + rayDir.z * t - origin.z, l = Math.hypot(dx, dz);
+  return l > 1e-6 ? { x: dx / l, y: 0, z: dz / l } : null;
+}
+/** The soft-lock cone (D9): a target within 30° of yaw of the aim sets the pitch. */
+export const SOFT_LOCK_HALF_ANGLE = 30 * Math.PI / 180;
+/** The aim pitch of a free mover (D9): toward the nearest target within SOFT_LOCK_HALF_ANGLE of yaw of the horizontal aim, else the creature's
+ *  pitch; clamped to ±limit. */
+export function aimPitch(origin: Vec3, aim: Vec3, targets: readonly Vec3[], creaturePitch: number, limit: number): number {
+  const yaw = Math.atan2(aim.x, aim.z);
+  let best: Vec3 | null = null, bestD = Infinity;
+  for (const t of targets) {
+    const dx = t.x - origin.x, dz = t.z - origin.z; if (Math.hypot(dx, dz) < 1e-9) continue;
+    const d = Math.atan2(dx, dz) - yaw, off = Math.abs(Math.atan2(Math.sin(d), Math.cos(d))), dist = Math.hypot(dx, t.y - origin.y, dz);
+    if (off <= SOFT_LOCK_HALF_ANGLE + 1e-9 && dist < bestD) { best = t; bestD = dist; }
+  }
+  const pitch = best ? Math.atan2(best.y - origin.y, Math.hypot(best.x - origin.x, best.z - origin.z)) : creaturePitch;
+  return Math.max(-limit, Math.min(limit, pitch));
+}
+/** A horizontal aim tilted to `pitch` (positive is up). */
+export const pitched = (aim: Vec3, pitch: number): Vec3 => ({ x: aim.x * Math.cos(pitch), y: Math.sin(pitch), z: aim.z * Math.cos(pitch) });
+/** The aim chevron shows while a combat species is within this many body lengths (spec §8.4). */
+export const AIM_CHEVRON_RANGE = 4;
+/** Where the aim chevron goes: 1 L from `origin` along the aim, while a combat species (`combatants`, same units as `origin`) is within
+ *  AIM_CHEVRON_RANGE × L; else null (hidden). */
+export function aimChevron(origin: Vec3, aim: Vec3, L: number, combatants: readonly Vec3[]): Vec3 | null {
+  const range = AIM_CHEVRON_RANGE * L, l = Math.hypot(aim.x, aim.y, aim.z);
+  if (l < 1e-9 || !combatants.some(c => Math.hypot(c.x - origin.x, c.y - origin.y, c.z - origin.z) <= range)) return null;
+  return { x: origin.x + aim.x / l * L, y: origin.y + aim.y / l * L, z: origin.z + aim.z / l * L };
 }
