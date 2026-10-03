@@ -73,13 +73,17 @@ async function dragSliderToMax(page, selector) {
   const x0 = box.x + 8 + (box.width - 16) * (value - min) / (max - min), y = box.y + box.height / 2;
   await page.mouse.move(x0, y); await page.mouse.down(); await page.mouse.move(box.x + box.width + 30, y, { steps: 12 }); await page.mouse.up();
 }
-/** A point on the editor canvas that no panel covers, far from the creature. */
+/** A point on the editor canvas that no panel covers, far from the creature. The creature's centre is a visible point at
+ *  mid-body on the side facing the camera: the top line (angle 0) is near the silhouette in the default view, so the idle
+ *  sway hides it for half of each wave cycle and `editorProjection` rightly returns null there. The point keeps 16 px from
+ *  any panel, and the drags that the checks start there ((+60, +30) and (−60, +10)) stay on the canvas. */
 async function emptyCanvasPoint(page) {
-  const centre = await project(page, { t: .5, angle: 0 });
+  const centre = await side(page, .5);
   return page.evaluate(c => {
     let best = null;
+    const offsets = [[0, 0], [-16, -16], [16, -16], [-16, 16], [16, 16], [60, 30], [-60, 10]];
     for (let x = 40; x < innerWidth - 40; x += 40) for (let y = 120; y < innerHeight - 40; y += 40) {
-      if (!document.elementFromPoint(x, y)?.classList.contains('ed-view') || !document.elementFromPoint(x + 60, y + 30)?.classList.contains('ed-view')) continue;
+      if (!offsets.every(([dx, dy]) => document.elementFromPoint(x + dx, y + dy)?.classList.contains('ed-view'))) continue;
       const d = Math.hypot(x - c.x, y - c.y); if (!best || d > best.d) best = { x, y, d };
     }
     return best;
@@ -550,7 +554,7 @@ check('11', 'Gestures (touch, 390x844)', async () => {
   assert.match(await card.getAttribute('class'), /\bactive\b/, 'placement is armed');
   // Two-finger drags, released in both orders: the view turns, nothing is placed.
   for (const firstUp of [1, 2]) {
-    const count = await complexity(page), yaw = await data(page, 'yaw'), body = await project(page, { t: .5, angle: 0 });
+    const count = await complexity(page), yaw = await data(page, 'yaw'), body = await side(page, .5);
     const a = { x: body.x - 60, y: body.y - 40, id: 1 }, b = { x: body.x + 60, y: body.y + 40, id: 2 };
     await touch('touchStart', [a]); await touch('touchStart', [a, b]);
     for (let i = 0; i < 6; i++) { a.x -= 8; b.x -= 8; await touch('touchMove', [a, b]); }   // toward the rear view
