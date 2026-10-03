@@ -2,32 +2,33 @@ import { startAnalytics } from '../analytics';
 import * as T from 'three';
 import './style.css';
 import './hud.css';
-import { applyDesign, commitEvolution, currentPlan, damageAfterArmor, DEATH_KEEP, dietCanEat, dnaOf, eat, evolveReady, freshRun, growthOf, hurt, inReach, parseSaveWithNotes, PLANET_COUNT, prepareEvolution, reward, STAGES, unlock, type Build, type Run } from './state';
+import { applyDesign, commitEvolution, currentPlan, damageAfterArmor, DEATH_KEEP, dietCanEat, dnaOf, evolveReady, freshRun, growthOf, parseSaveWithNotes, PLANET_COUNT, prepareEvolution, STAGES, type Build, type Run } from './state';
 import { adaptToPlan, derive, dietOf, effectiveStats } from './genome';
-import { DROPS, part } from './parts';
+import { part } from './parts';
 import { tierSpecies } from './species';
 import { PLAYER_HALF, SIZES, SPAWN_HALF } from './biomes';
 import { EDGE_HINT, EDGE_SOFT_START, inEdgeZone } from './edge';
-import { entityRadius, provoke, type EcoEvent, type Entity } from './ecosystem';
+import type { EcoEvent, Entity } from './ecosystem';
 import { canApproachFood, type Traversal } from './food-access';
 import { openEditor, type EditorResult, type SubmitOutcome } from './editor';
 import { openPathScreen, type PathChoice } from './path-screen';
 import { renderPreview } from './preview';
 import { cardSummary, COAST_READY, eligibleChildren, leadsTo, type BodyPlan } from './plans';
 import { quoteDesign } from './economy';
-import { newRuntime, type Actor, type Capsule, type CombatInput, type Constraint, type MutVec3, type Orientation, type RecoveryResult, type Vec3, type WorldQueries } from './combat-types';
-import { basicRequested, readIntent, RELEASED } from './input';
-import { blockHint, blockHintDue, newBlockHintGate, type PlayerStepResult, newStepSnapshot, newTapWatch, restoreStep, snapshotStep, stepPlayer, tapTargetStalled } from './player-motion';
-import { beginRespawn, canChooseNextPlan, evolutionDestination, growthPose, newTrapWatch, reconcileAfterCommit, recoverPlayer, resetRuntime, resolveHazards, resolveRespawn, rescueFreeRun, TRAP_MOVE, trapDue, trapFailed, trapRescued, rescueBudget, UnstickSearch, wedged } from './lifecycle';
-import { habitat, movement, movementCapabilities } from './profiles';
-import { admissionClock, admissionCount, makeWorldQueries, resetAdmissionClock, stageBounds, stageWorldQueries, supportHeight, zoneLabel } from './world-queries';
+import { newRuntime, type Actor, type CombatInput, type Constraint, type Vec3, type WorldQueries } from './combat-types';
+import { readIntent, RELEASED } from './input';
+import { blockHint, blockHintDue, newBlockHintGate, type PlayerStepResult, newTapWatch, tapTargetStalled } from './player-motion';
+import { canChooseNextPlan, evolutionDestination, reconcileAfterCommit } from './lifecycle';
+import { admitted as simAdmitted, checkPose, playerActorCached as simActor, refreshDerived as simRefreshDerived, simBegin, simEvolve, simFrame, simOwnedState, type GameMode, type SimEvent, type SimState, type SimWorld } from './sim';
+import type { ChompResult } from './feeding';
+import { movement, movementCapabilities } from './profiles';
+import { admissionClock, makeWorldQueries, resetAdmissionClock, stageBounds, stageWorldQueries, zoneLabel } from './world-queries';
 import { ROCK_FIT, stageSolids } from './reef';
-import { orientedHeave, orientedSway, rotateInto } from './orientation';
 import { startAnchor } from './motion';
-import { bodyLengthOf, hullFitOf, hullOffsets, massFor, playerActor } from './mount';
+import { bodyLengthOf, playerActor } from './mount';
 import { designDelta } from './design-delta';
 import { TideAudio } from './audio';
-import { TideWorld, type FoodObject } from './world';
+import { TideWorld } from './world';
 import { loadAssets, assetDiagnostics } from './assets';
 import { editorProjection } from './editor';
 import { QA_GRANT_CATALOG } from './qa-catalog';
@@ -179,7 +180,7 @@ try {
   if (saved && loadedKey && LEGACY_KEYS.includes(loadedKey) && writeKey) localStorage.setItem(writeKey, JSON.stringify(saved));
   audio.muted = localStorage.getItem('tiny-tide-muted') === 'true'; } catch { /* Storage is optional. */ }
 let run = saved && !saved.completed ? structuredClone(saved) : freshRun();
-let mode: 'menu' | 'playing' | 'paused' | 'evolving' | 'editing' | 'fainted' | 'stuck' | 'won' = 'menu';
+let mode: GameMode = 'menu';
 startAnalytics('tiny-tide', () => mode === 'playing' || mode === 'evolving');
 let keys = new Set<string>();
 let stickX = 0, stickZ = 0, stickPointer: number | null = null;
@@ -191,48 +192,40 @@ let toastTimer = 0, uiClock = 0, saveClock = 0, hintClock = 0, respawnClock = 0,
 let sinceHit = 99, regenClock = 0, wrongDietClock = 0, readyToasted = false, lastBiome = '';
 /** The one combat runtime of the player. Never cache its fields across frames (resets replace them). */
 let rt = newRuntime();
-/** The player's authoritative physical position. The rendered root follows it every frame. */
-// The installed pose. Every write but a rescue glide step cancels a pending rescue (cancelRescue): tests/tiny-tide-core/main-rescue.test.ts.
+/** The player's authoritative physical position. The rendered root follows it every frame. sim.ts writes it through the `sim` binding;
+ *  every write but a rescue glide step cancels a pending rescue (cancelRescue): tests/tiny-tide-core/main-rescue.test.ts. */
 let physical: Vec3 = { x: 0, y: 0, z: 0 };
 let genomeRevision = 0, acceptedHits = 0, rejectedHits = 0, contactNow = false, lastContact: Constraint | null = null, lastContactSolid: string | null = null, edgeNow = false, edgeHinted = false;
-const faintLog: { time: number; hadPermit: boolean; hadArc: boolean }[] = [];
-const blockGate = newBlockHintGate(), beforeStep = newStepSnapshot(), tapWatch = newTapWatch(), trapWatch = newTrapWatch();
-/** QA: the rescues of this page (searches started, found, failed) and the last one (from, to, time, the solids in contact). */
-const rescueLog = { searches: 0, found: 0, failed: 0, last: null as null | { from: Vec3; to: Vec3; time: number; solids: string[] } };
-let lastSolids: string[] = [];
-/** Admissions of this frame's player step and rescue slice (fix round 4: the slice gets what the step left of FRAME_ADMISSIONS). */
-let stepCalls = 0, rescueCalls = 0;
-let trapRescues = 0, unstick: UnstickSearch | null = null, glide: { path: { position: Vec3; orientation: Orientation }[]; index: number } | null = null;
+const blockGate = newBlockHintGate(), tapWatch = newTapWatch();
 let dialogReturn: 'menu' | 'playing' | 'paused' = 'menu';
 const modal = el<HTMLDialogElement>('modal');
 world.setCreature(run.genome);
 let derived = derive(effectiveStats(run.genome, currentPlan(run)));
-function refreshDerived() { derived = derive(effectiveStats(run.genome, currentPlan(run))); }
-type MutCapsule = { start: MutVec3; end: MutVec3; radius: number; radii?: [number, number]; sway: number; heave: number };
-let actorCache: { key: string; unit: Capsule[]; unitLength: number; hull: MutCapsule[]; actor: Actor; scale: number } | null = null, hullRescaled = false;
-/** The last rescale changed only the growth (same plan, genome revision and stage). */
-let hullGrew = false;
-/** The player's actor. The hull is rebuilt only when the plan, the genome revision or the stage changes;
- *  a growth change rescales the cached buffers in place to the exact growth (no bucket). */
-function playerActorCached(): Actor {
-  const plan = currentPlan(run), key = `${plan.id}:${genomeRevision}:${run.stage}`, scale = SIZES[run.stage]! * growthOf(run);
-  if (!actorCache || actorCache.key !== key) {
-    const fit = hullFitOf(plan), unit = hullOffsets(run.genome, 1, fit), hull = unit.map((u): MutCapsule => ({ start: { x: 0, y: 0, z: 0 }, end: { x: 0, y: 0, z: 0 }, radius: 0, ...(u.radii ? { radii: [0, 0] as [number, number] } : {}), sway: 0, heave: 0 }));
-    actorCache = { key, unit, unitLength: bodyLengthOf(run.genome), hull, actor: { id: 'player', hull, habitat: habitat(plan.habitat), bodyLength: 0, ...(fit === 'tight' ? { fit } : {}) }, scale: NaN };
-  }
-  const c = actorCache;
-  if (c.scale !== scale) {
-    c.unit.forEach((u, i) => {
-      const h = c.hull[i]!;
-      h.start.x = u.start.x * scale; h.start.y = u.start.y * scale; h.start.z = u.start.z * scale;
-      h.end.x = u.end.x * scale; h.end.y = u.end.y * scale; h.end.z = u.end.z * scale;
-      h.radius = u.radius * scale; h.sway = (u.sway ?? 0) * scale; h.heave = (u.heave ?? 0) * scale;
-      if (h.radii && u.radii) { h.radii[0] = u.radii[0] * scale; h.radii[1] = u.radii[1] * scale; }
-    });
-    hullGrew = !Number.isNaN(c.scale); c.actor.bodyLength = c.unitLength * scale; c.scale = scale; hullRescaled = true;
-  }
-  return c.actor;
-}
+/** True while a run that began stuck still owes its start grace to the first successful install. */
+let startGracePending = false;
+/** sim.ts reads and writes the frame state through these bindings (spec D29), so main.ts keeps its own variables for presentation. */
+const sim: SimState = {
+  get run() { return run; }, set run(v) { run = v; },
+  get rt() { return rt; }, set rt(v) { rt = v; },
+  get physical() { return physical; }, set physical(v) { physical = v; },
+  get time() { return time; }, set time(v) { time = v; },
+  get mode() { return mode; }, set mode(v) { mode = v; },
+  get derived() { return derived; }, set derived(v) { derived = v; },
+  get genomeRevision() { return genomeRevision; }, set genomeRevision(v) { genomeRevision = v; },
+  get chompCooldown() { return cooldown; }, set chompCooldown(v) { cooldown = v; },
+  get sinceHit() { return sinceHit; }, set sinceHit(v) { sinceHit = v; },
+  get regenClock() { return regenClock; }, set regenClock(v) { regenClock = v; },
+  get respawnClock() { return respawnClock; }, set respawnClock(v) { respawnClock = v; },
+  get stuckRetry() { return stuckRetry; }, set stuckRetry(v) { stuckRetry = v; },
+  get startGracePending() { return startGracePending; }, set startGracePending(v) { startGracePending = v; },
+  get acceptedHits() { return acceptedHits; }, set acceptedHits(v) { acceptedHits = v; },
+  get rejectedHits() { return rejectedHits; }, set rejectedHits(v) { rejectedHits = v; },
+  ...simOwnedState(),
+};
+/** What the simulation reads from the page: the world's ecosystem, the cached legality, the start grace and the QA flag. */
+const simWorld: SimWorld = { get eco() { return world.eco; }, legality: stage => legality(stage), startGrace: START_GRACE, qa: QA };
+const refreshDerived = () => simRefreshDerived(sim);
+const playerActorCached = (): Actor => simActor(sim);
 const capsOf = () => movementCapabilities(currentPlan(run));
 /** Food guidance (spec §3, T-R3-17, T-R3-24): one cache entry per entity, recomputed by a fair round-robin queue
  *  of at most GUIDE_PER_FRAME entries per frame. A missing or stale entry is unknown and is not shown. Bites never use it. */
@@ -271,77 +264,13 @@ function approachable(e: Entity): boolean | null {
   const entry = guideCache.get(e.id); if (!entry) return null;
   return entry.key === guideKey(e, currentPlan(run).id, growthOf(run), guideTraversal().key) ? entry.value : null;
 }
-/** The player's hull in world space: oriented (envelope converted under pitch) and translated to the physical position. The buffer
- *  is reused every frame (final review M17): its readers (the ecosystem's step and provoke) copy what they keep. */
-const hullBuffer: { start: MutVec3; end: MutVec3; radius: number; sway: number; heave: number }[] = [];
-function worldHull(actor: Actor): Capsule[] {
-  const o = rt.orientation, h = actor.hull;
-  while (hullBuffer.length < h.length) hullBuffer.push({ start: { x: 0, y: 0, z: 0 }, end: { x: 0, y: 0, z: 0 }, radius: 0, sway: 0, heave: 0 });
-  hullBuffer.length = h.length;
-  for (let i = 0; i < h.length; i++) {
-    const c = h[i]!, b = hullBuffer[i]!, w = c.sway ?? 0, v = c.heave ?? 0;
-    rotateInto(o, c.start, b.start); rotateInto(o, c.end, b.end);
-    b.start.x += physical.x; b.start.y += physical.y; b.start.z += physical.z; b.end.x += physical.x; b.end.y += physical.y; b.end.z += physical.z;
-    b.radius = c.radius; b.sway = orientedSway(w, v, o.pitch); b.heave = orientedHeave(w, v, o.pitch);
-  }
-  return hullBuffer;
-}
-/** The grounded offset against the support under the current pose (0 when supported or not grounded). */
-function settleOffset(actor: Actor) {
-  const t = legality(run.stage).queries.terrain;
-  rt.groundOffset = capsOf().ground && !t.space ? Math.max(0, physical.y - (supportHeight(actor, physical.x, physical.z, rt.orientation, t) + .01 * actor.bodyLength)) : 0;
-}
 /** The rendered root follows the simulation: position, yaw on the root, pitch on the avatar. */
 function renderRoot() {
   world.player.position.set(physical.x, physical.y, physical.z).divideScalar(world.scale);
   world.player.rotation.y = rt.orientation.yaw; world.avatar.rotation.x = -rt.orientation.pitch;
 }
-/** Installs an admitted full pose: position and orientation together, no permit or arc, zero velocities. `snap` moves the camera too (start, respawn). */
-/** Ends a pending rescue search or glide and restarts the trap watch. Every pose install except a rescue glide step calls it
- *  (installPose, checkPose, checkGrownPose, begin, the evolution): a rescue never continues from a pose it did not start from. */
-function cancelRescue() { unstick = null; glide = null; trapWatch.armed = false; }
-function installPose(pose: { position: Vec3; orientation: Orientation }, actor: Actor, snap = false, rescue = false) {
-  // Any install but a rescue glide step ends a pending rescue (re-review m3): respawn, evolution, recovery, an edit.
-  if (!rescue) cancelRescue();
-  physical = { x: pose.position.x, y: pose.position.y, z: pose.position.z }; rt.orientation = { yaw: pose.orientation.yaw, pitch: pose.orientation.pitch };
-  rt.permit = null; rt.arc = null; rt.controlledVelocity = { x: 0, y: 0, z: 0 }; rt.externalVelocity = { x: 0, y: 0, z: 0 };
-  settleOffset(actor);
-  if (snap) world.placePlayerAt(new T.Vector3(physical.x, physical.y, physical.z).divideScalar(world.scale));
-  renderRoot();
-}
-/** The start anchor for the actor at its exact growth (never cached across growth changes). */
-const anchorFor = (actor: Actor): RecoveryResult => startAnchor(actor, run.stage, legality(run.stage));
-const admitted = (actor: Actor) => legality(run.stage).queries.overlapHull(actor, physical, rt.orientation, { time, permit: rt.permit, bounds: legality(run.stage).bounds }).ok;
-/** Recovers to an admitted full pose, searching from `from` (default: the installed pose). A failed pose is never installed. */
-function recover(actor: Actor, at: number, from: Vec3 = physical): boolean {
-  const rec = recoverPlayer(actor, from, rt.orientation, { ...legality(run.stage), time: at }, anchorFor(actor), 20 * actor.bodyLength);
-  if (!rec.ok) return false;
-  installPose(rec, actor); return true;
-}
-/** The start grace of a new run or load: `START_GRACE` seconds, or none (0) with `?qaStartGrace=0`. */
-function applyStartGrace() { rt.invulnerableUntil = START_GRACE > 0 ? time + START_GRACE : 0; }
-/** True while a run that began stuck still owes its start grace to the first successful install. */
-let startGracePending = false;
-function enterStuck() { mode = 'stuck'; clearInput(); stuckRetry = 1; toast('Stuck — finding you a safe spot…'); }
-/** After an edit, a growth change or a transformation: settle on the support, or recover when the body is not admitted. */
-function checkPose(actor: Actor) {
-  cancelRescue();
-  if (admitted(actor)) settleOffset(actor);
-  else if (!recover(actor, time)) enterStuck();
-}
-/** After a growth rescale: the smallest admitted lift of the grown body, with both velocities kept (a bite at the floor does not
- *  stop the body). Only when no lift within .5 L is admitted does the normal recovery run (it zeroes the velocities). */
-function checkGrownPose(actor: Actor) {
-  const lifted = growthPose(actor, physical, rt, { ...legality(run.stage), time });
-  if (!lifted) { checkPose(actor); return; }
-  cancelRescue(); physical = lifted; settleOffset(actor); renderRoot();
-}
-/** Completes a pending respawn at the start anchor for the actual growth. The caller shows the result. */
-function tryRespawn(): boolean {
-  const actor = playerActorCached(), anchor = anchorFor(actor);
-  if (!anchor.ok || !resolveRespawn(run, rt, time, anchor)) return false;
-  installPose(anchor, actor, true); refreshDerived(); save(); return true;
-}
+/** Read-only (QA): the installed pose is admitted. */
+const admittedNow = (actor: Actor) => simAdmitted(sim, simWorld, actor);
 /** Writes the run to the write key only. A kept, unreadable or legacy key is never written. */
 function save() { try { if (writeKey) localStorage.setItem(writeKey, JSON.stringify(run)); saved = structuredClone(run); } catch { /* Continue without saving in private contexts. */ } }
 function clearInput() { keys.clear(); holdingChomp = false; rising = false; diving = false; chompTapped = false; riseTapped = false; lastIntent = RELEASED; stickX = 0; stickZ = 0; stickPointer = null; target = null; el('stick').style.transform = ''; el('chomp').classList.remove('pressed'); el('special').classList.remove('pressed'); el('dive').classList.remove('pressed'); }
@@ -429,28 +358,16 @@ function objective() {
   return `Eat ${list}. ${run.stage === 0 ? 'Swipe the world to look around.' : run.stage === 3 ? 'Watch out for seaplanes.' : move}`;
 }
 function begin(fresh = false) {
-  audio.init(); run = !fresh && saved && !saved.completed ? structuredClone(saved) : freshRun();
-  refreshDerived(); run.health = Math.min(run.health, derived.maxHealth);
-  world.build(run.stage, run); el('evolution-banner').hidden = true; el('faint').hidden = true; mode = 'playing'; clearInput(); cooldown = 0; sinceHit = 99; readyToasted = evolveReady(run); lastBiome = '';
-  // A fresh runtime for every new run or load. The start grace lives in the runtime.
-  rt = newRuntime(); genomeRevision++; hintClock = 0; blockGate.blockedFor = 0; blockGate.shown = false; cancelRescue(); contactNow = false; lastContact = null; lastContactSolid = null; edgeNow = false; edgeHinted = false; startGracePending = false;
-  faintLog.length = 0; acceptedHits = 0; rejectedHits = 0;
+  audio.init();
+  const next = !fresh && saved && !saved.completed ? structuredClone(saved) : freshRun();
+  world.build(next.stage, next); el('evolution-banner').hidden = true; el('faint').hidden = true; clearInput(); readyToasted = evolveReady(next); lastBiome = '';
+  hintClock = 0; blockGate.blockedFor = 0; blockGate.shown = false; contactNow = false; lastContact = null; lastContactSolid = null; edgeNow = false; edgeHinted = false;
   el('home').hidden = true; el('game-ui').hidden = false; el('pause').hidden = false; el('edit').hidden = false; el('corner-note').hidden = true; el('mode-label').textContent = 'NIBBLE. GROW. REPEAT.';
-  document.body.classList.add('is-playing'); toast(STAGES[run.stage]!.description);
-  const actor = playerActorCached(), t = legality(run.stage).queries.terrain;
-  physical = { x: 0, y: t.space ? 3 * SIZES[run.stage]! : t.groundAt(0, 0) + actor.bodyLength, z: 0 };
-  world.placePlayerAt(new T.Vector3(physical.x, physical.y, physical.z).divideScalar(world.scale)); renderRoot();
-  if (run.pendingRespawn) {
-    // A save made during a faint resolves once, before play starts.
-    if (!tryRespawn()) { mode = 'fainted'; respawnClock = 1; respawnToasted = false; el('faint').hidden = false; }
-  } else {
-    const anchor = anchorFor(actor), forced = forcedSpawn; forcedSpawn = null;
-    // QA: a forced spawn is recovered to a legal pose like any other; without one it falls back to the anchor.
-    const start: RecoveryResult = forced && anchor.ok ? recoverPlayer(actor, { x: forced.x * SIZES[run.stage]!, y: forced.y * SIZES[run.stage]!, z: forced.z * SIZES[run.stage]! }, anchor.orientation,
-      { ...legality(run.stage), time }, anchor, 20 * actor.bodyLength) : anchor;
-    if (start.ok) { rt = newRuntime(start.orientation); installPose(start, actor, true); applyStartGrace(); }
-    else { enterStuck(); startGracePending = true; }
-  }
+  document.body.classList.add('is-playing'); toast(STAGES[next.stage]!.description);
+  // A pending respawn ignores the forced spawn (it stays for the next start).
+  const forced = next.pendingRespawn ? null : forcedSpawn; if (!next.pendingRespawn) forcedSpawn = null;
+  respawnToasted = false;
+  presentSim(simBegin(sim, simWorld, next, forced), 0);
   syncUI(); save();
   if (qaHoldStart) { qaHoldStart = false; holdingStart = true; }
 }
@@ -511,8 +428,7 @@ function submitEvolution(next: BodyPlan, r: EditorResult): SubmitOutcome {
   const nextActor = playerActor(next, prepared.genome, next.size, 1), nextLegality = legality(next.size), anchor = startAnchor(nextActor, next.size, nextLegality);
   const destination = evolutionDestination(nextActor, physical, { ...nextLegality, orientation: { yaw: rt.orientation.yaw, pitch: 0 }, time }, anchor.ok ? anchor.position : physical);
   if (!destination.ok) return { ok: false, reason: "This body can't fit anywhere here." };
-  commitEvolution(run, prepared, CATALOG); resetRuntime(rt, destination.orientation); genomeRevision++; refreshDerived();
-  cancelRescue(); physical = { ...destination.position }; startTransformation(destination.position);
+  commitEvolution(run, prepared, CATALOG); simEvolve(sim, destination); startTransformation(destination.position);
   return { ok: true };
 }
 /** The edit editor. A failed commit keeps the editor open with the reason. */
@@ -531,7 +447,8 @@ async function editDesign() {
       return { ok: true };
     } });
   if (!committed) return;
-  mode = 'playing'; save(); checkPose(playerActorCached());
+  mode = 'playing'; save();
+  const events: SimEvent[] = []; checkPose(sim, simWorld, playerActorCached(), events); presentSim(events, 0);
 }
 function startTransformation(destination: Vec3) {
   mode = 'evolving'; clearInput(); audio.evolve(); save();
@@ -549,72 +466,69 @@ function win() {
   showDialog(`<span class="modal-art cosmic">${species[4]}</span><div class="eyebrow">THE UNIVERSE WAS DELICIOUS</div><h2 id="modal-title">All full.<br>All yours.</h2><p>${escapeHtml(run.name)} grew from a speck to a cosmic giant.<br>Every planet is eaten. Now, a well-earned nap.</p><div class="win-stats"><div><strong>${Math.floor(run.totalDna)}</strong><span>DNA EARNED</span></div><div><strong>${run.bites}</strong><span>HAPPY BITES</span></div><div><strong>${minutes}:${seconds}</strong><span>YOUR ADVENTURE</span></div></div><button id="play-again" class="primary">One more little adventure ${icons.arrow}</button>`, false);
   el('play-again').onclick = () => { modal.close(); begin(true); };
 }
-/** A food or creature in bite range: own-tier food, or a bigger creature that is attacking. */
-function biteTargets() {
-  const p = world.player.position, growth = growthOf(run), diet = dietOf(run.genome);
-  const out: { food: FoodObject; edible: boolean; distance: number }[] = []; let wrongDiet: string | null = null;
-  for (const food of world.foods) {
-    const e = food.entity; if (e.eaten) continue;
-    const attacking = e.mode === 'hunt' || e.mode === 'angry';
-    if (food.tier !== run.stage && !(attacking && food.tier === run.stage + 1)) continue;
-    const radius = food.tier > run.stage ? entityRadius(e) / world.scale : 0;
-    if (!inReach(run.stage, p, food.data, growth, derived.reach, radius)) continue;
-    const edible = food.tier === run.stage && dietCanEat(diet, e.spec.tag);
-    // A mouth that can not eat it can still bite back at something that fights.
-    if (!edible && !attacking && !e.spec.fights) { wrongDiet = e.spec.label; continue; }
-    out.push({ food, edible, distance: Math.hypot(food.data.x - p.x, food.data.y - p.y, food.data.z - p.z) });
+/** Presentation of the simulation's events: the rendered root and camera, hints, sounds, particles, toasts and saves. */
+function presentSim(events: readonly SimEvent[], dt: number) {
+  renderRoot();
+  for (const e of events) {
+    switch (e.type) {
+      case 'installed': if (e.snap) world.placePlayerAt(new T.Vector3(physical.x, physical.y, physical.z).divideScalar(world.scale)); renderRoot(); break;
+      // main.ts's enterStuck cleared the input (and lastIntent) when the body got stuck.
+      case 'stuck': clearInput(); toast('Stuck — finding you a safe spot…'); break;
+      case 'unstuck': el('toast').classList.remove('show'); syncUI(); break;
+      case 'step': presentStep(e.result, dt); break;
+      case 'chomp': presentChomp(e.result); break;
+      case 'regen': syncHearts(); break;
+      case 'hurt': presentHurt(e.event, e.fainted); break;
+      case 'respawned': el('faint').hidden = true; save(); syncUI(); toast(`You kept ${Math.round(DEATH_KEEP * 100)}% of your DNA. Stay safe out there.`); break;
+      case 'respawn-waiting': if (!respawnToasted) { respawnToasted = true; toast('Looking for a safe place to wake up…'); } break;
+      case 'resume-fainted': el('faint').hidden = false; break;
+    }
   }
-  return { targets: out.sort((a, b) => a.distance - b.distance), wrongDiet };
 }
-function chomp() {
-  if (mode !== 'playing' || cooldown > 0) return;
-  cooldown = .24; chompPulse = 1;
-  const { targets, wrongDiet } = biteTargets();
-  const hit = targets[0];
-  if (!hit) {
+/** The player step's presentation: contacts (QA), the block hint, the edge hint and the Breach splashes. */
+function presentStep(r: PlayerStepResult, dt: number) {
+  const plan = currentPlan(run), legal = legality(run.stage), p = world.player.position, contact = r.contacts[0];
+  contactNow = !!contact; frameContacts += r.contacts.length;
+  if (contact) { lastContact = contact.constraint; lastContactSolid = contact.solidId ?? null; }
+  // A block hint only for a real, sustained block (not a slide), and never over another toast (final review I1).
+  if (blockHintDue(blockGate, r, dt, hintClock <= 0 && toastTimer <= 0) && contact) { toast(blockHint(plan, contact)); hintClock = 6; }
+  // The soft edge: the edge hint shows once per entry into the push zone, rate-limited with the block hints, and only when no other
+  // toast is on screen (so a one-shot message is never replaced).
+  edgeNow = inEdgeZone(physical, legal.bounds.half);
+  if (!edgeNow) edgeHinted = false;
+  else if (!edgeHinted && hintClock <= 0 && toastTimer <= 0) { toast(EDGE_HINT); edgeHinted = true; hintClock = 6; }
+  if (r.breachStarted) { audio.breach(); world.burst(p.x, world.surface, p.z, '#d6fff1', 22); }
+  if (r.arcEnded) world.burst(p.x, world.surface, p.z, '#d6fff1', 18);
+}
+/** A chomp's presentation (feeding.ts already changed the run and the ecosystem). */
+function presentChomp(c: ChompResult) {
+  chompPulse = 1;
+  if (c.kind === 'miss') {
     audio.tone(170, 0, .065);
-    if (wrongDiet && wrongDietClock <= 0) { toast(`A ${dietOf(run.genome)} can’t eat ${wrongDiet.toLowerCase()}. Try another mouth in the editor.`); wrongDietClock = 6; }
+    if (c.wrongDiet && wrongDietClock <= 0) { toast(`A ${dietOf(run.genome)} can’t eat ${c.wrongDiet.toLowerCase()}. Try another mouth in the editor.`); wrongDietClock = 6; }
     return;
   }
-  const { food } = hit, e = food.entity, pos = world.screenPoint(new T.Vector3(food.data.x, food.data.y + 1, food.data.z));
-  const bigger = food.tier > run.stage, damage = bigger ? Math.max(1, Math.floor(derived.bite / 2)) : derived.bite;
-  if (e.spec.hp > 1 || bigger) {
-    e.hp -= damage; provoke(e, physical, time, worldHull(playerActorCached())); audio.bite(run.bites); world.burst(food.data.x, food.data.y, food.data.z, '#ffd9a8', 8);
-    if (e.hp > 0) { floater(`-${damage}`, pos.x, pos.y, 'hit'); return; }
-  }
-  const drop = DROPS[e.spec.kind];
-  if (drop && unlock(run, drop)) { toast(`New part found: ${part(drop)!.name}! Open the editor to use it.`); audio.found(); }
-  let dna: number, won = false;
-  if (hit.edible) { const result = eat(run, e.spec, e.spec.kind === 'planet' ? world.eco.planetIndex(e) : e.id); dna = result.dna; won = result.win; }
-  else { dna = Math.round(e.spec.dna * .5); reward(run, dna, food.tier === run.stage); }
-  world.eco.consume(e); world.removeFood(food); audio.bite(run.bites);
+  const food = world.foods.find(f => f.entity === c.entity)!, pos = world.screenPoint(new T.Vector3(food.data.x, food.data.y + 1, food.data.z));
+  if (c.entity.spec.hp > 1 || c.entity.spec.tier > run.stage) { audio.bite(run.bites); world.burst(food.data.x, food.data.y, food.data.z, '#ffd9a8', 8); }
+  if (c.kind === 'bitten') { floater(`-${c.damage}`, pos.x, pos.y, 'hit'); return; }
+  if (c.drop) { toast(`New part found: ${part(c.drop)!.name}! Open the editor to use it.`); audio.found(); }
+  world.removeFood(food); audio.bite(run.bites);
   if (typeof navigator.vibrate === 'function') navigator.vibrate(15);
-  floater(dna > 0 ? `+${dna} DNA` : ['yum!', 'nom!', '♡'][run.bites % 3]!, pos.x, pos.y);
+  floater(c.dna > 0 ? `+${c.dna} DNA` : ['yum!', 'nom!', '♡'][run.bites % 3]!, pos.x, pos.y);
   syncUI(); save();
-  if (won) { win(); return; }
+  if (c.won) { win(); return; }
   if (evolveReady(run) && !readyToasted) { readyToasted = true; toast('Ready to evolve! Tap Evolve when you want to grow.'); audio.found(); }
 }
-/** One accepted hazard event (resolveHazards already accepted it). */
-function takeHit(event: EcoEvent) {
-  sinceHit = 0; world.hurt(); audio.hurt(); if (typeof navigator.vibrate === 'function') navigator.vibrate([30, 40, 30]);
+/** One accepted hazard hit (the simulation already applied it and, at 0 hearts, began the respawn). */
+function presentHurt(event: EcoEvent, fainted: boolean) {
+  world.hurt(); audio.hurt(); if (typeof navigator.vibrate === 'function') navigator.vibrate([30, 40, 30]);
   const pos = world.screenPoint(world.player.position.clone().add(new T.Vector3(0, 1.4, 0)));
   floater(`-${damageAfterArmor(event.damage, derived.armor)} ♥`, pos.x, pos.y, 'hurt');
-  const fainted = hurt(run, event.damage, derived.armor); syncHearts(); el('hearts').classList.remove('hit'); void el('hearts').offsetWidth; el('hearts').classList.add('hit');
+  syncHearts(); el('hearts').classList.remove('hit'); void el('hearts').offsetWidth; el('hearts').classList.add('hit');
   if (!fainted) { if (run.health <= 2) toast(`${event.entity.spec.label} is winning! Get away to heal.`); return; }
-  const hadPermit = rt.permit !== null, hadArc = rt.arc !== null;
-  if (!beginRespawn(run, rt)) return;
-  save(); mode = 'fainted'; faintLog.push({ time, hadPermit, hadArc }); respawnClock = 1.8; respawnToasted = false;
+  // main.ts's takeHit cleared the input (and lastIntent) at a faint.
+  save(); respawnToasted = false;
   clearInput(); audio.faint(); el('faint').hidden = false; world.burst(world.player.position.x, world.player.position.y, world.player.position.z, '#ff8f7a', 40);
-}
-/** The faint timer: respawn at the start anchor, or wait and retry each second. */
-function tickFaint(dt: number) {
-  respawnClock -= dt; if (respawnClock > 0) return;
-  if (tryRespawn()) {
-    el('faint').hidden = true; mode = 'playing'; sinceHit = 99; syncUI(); toast(`You kept ${Math.round(DEATH_KEEP * 100)}% of your DNA. Stay safe out there.`);
-    return;
-  }
-  respawnClock = 1;
-  if (!respawnToasted) { respawnToasted = true; toast('Looking for a safe place to wake up…'); }
 }
 el('start').onclick = () => begin(); el('fresh').onclick = () => { dialogReturn = 'menu'; confirmRestart(); };
 el('evolve').onclick = () => void edit('evolve'); el('edit').onclick = () => void edit('edit');
@@ -728,29 +642,18 @@ function frame(now: number) {
   requestAnimationFrame(frame);
   const dt = Math.min((now - last) / 1000, .05); last = now;
   if (admissionClock.on) { resetAdmissionClock(); admissionClock.caller = 'player'; frameContacts = 0; }
-  stepCalls = 0; rescueCalls = 0;
-  // The game clock runs in these modes only (not while paused, editing, stuck or won).
-  const held = holdingStart && mode === 'playing';
+  // The game clock runs in these modes only (not while paused, editing, stuck or won); sim.ts decides it the same way.
+  const held = holdingStart && mode === 'playing', playing = mode === 'playing' && !held;
   const active = !held && (mode === 'playing' || mode === 'menu' || mode === 'evolving' || mode === 'fainted');
-  let moving = false;
-  const growth = growthOf(run), stage = run.stage, plan = currentPlan(run), caps = movementCapabilities(plan);
-  const actor = mode === 'menu' ? null : playerActorCached();
-  if (actor && hullRescaled) {
-    // A growth change rescaled the hull: settle again, or recover if the bigger body is not admitted.
-    const grew = hullGrew; hullRescaled = false; hullGrew = false;
-    if (mode === 'playing') { if (grew) checkGrownPose(actor); else checkPose(actor); } else settleOffset(actor);
-  }
-  if (mode === 'playing' && actor && !held) {
-    run.elapsed += dt; cooldown = Math.max(0, cooldown - dt); chompPulse = Math.max(0, chompPulse - dt * 5);
-    wrongDietClock = Math.max(0, wrongDietClock - dt); hintClock = Math.max(0, hintClock - dt); sinceHit += dt;
-    // Hearts come back slowly once the creature is out of danger.
-    if (sinceHit > 5 && run.health < derived.maxHealth) { regenClock += dt; if (regenClock > 2.5) { regenClock = 0; run.health = Math.min(derived.maxHealth, run.health + 1); syncHearts(); } } else regenClock = 0;
+  const stage = run.stage, caps = capsOf(), growth = growthOf(run);
+  let intent = lastIntent, wish: Vec3 = NO_WISH, moving = false;
+  if (playing) {
+    chompPulse = Math.max(0, chompPulse - dt * 5); wrongDietClock = Math.max(0, wrongDietClock - dt); hintClock = Math.max(0, hintClock - dt);
     // One input consumer: one intent per frame, then the tap flags are spent.
-    const intent = readIntent({ stickX, stickZ, keys, chompHeld: holdingChomp, chompTapped, riseHeld: rising, riseTapped, diveHeld: diving }, lastIntent, { breachOnRiseTap: caps.breach });
+    intent = readIntent({ stickX, stickZ, keys, chompHeld: holdingChomp, chompTapped, riseHeld: rising, riseTapped, diveHeld: diving }, lastIntent, { breachOnRiseTap: caps.breach });
     chompTapped = false; riseTapped = false; lastIntent = intent;
     const p = world.player.position;
     if (Math.abs(intent.move.x) + Math.abs(intent.move.z) > .05) { target = null; world.targetRing.visible = false; }
-    let wish: Vec3 = NO_WISH;
     if (target && caps.ground) {
       const dx = target.x - p.x, dz = target.z - p.z, d = Math.hypot(dx, dz);
       // Reached, or no progress for a second (a tall rock or an arch in the way: those are walls): the target is dropped.
@@ -759,78 +662,21 @@ function frame(now: number) {
       if (target) { target = null; world.targetRing.visible = false; }
       const v = world.moveVector(intent.move.x, intent.move.z, caps.pitch); wish = { x: v.x, y: v.y, z: v.z };
     }
-    const legal = legality(stage);
-    snapshotStep(rt, beforeStep);
-    // A rescue glides the body along its admitted path, one pose a frame, re-admitted for the current body (fix round 2: no snap).
-    let r: PlayerStepResult;
-    if (glide) {
-      const pose = glide.path[glide.index++];
-      if (pose && legal.queries.overlapHull(actor, pose.position, pose.orientation, { time: time + dt, bounds: legal.bounds }).ok) installPose(pose, actor, false, true);
-      else glide = null;
-      if (glide && glide.index >= glide.path.length) glide = null;
-      r = { position: physical, status: 'moved', contacts: [], progress: 1, needsRecovery: false, breachStarted: false, arcEnded: false, permitEnded: false, turnRefused: false };
-    } else stepCalls = admissionCount.n, r = stepPlayer(physical, rt, intent, { plan, profile: movement(plan.movement), caps, actor, ...legal, size: SIZES[stage]!, topSpeedLocal: STAGES[stage]!.speed * derived.speedFactor,
-      now: time, dt, wish, aim: null, actionLock: false });
-    stepCalls = admissionCount.n - stepCalls;
-    // A result that needs recovery is never installed or rendered: recover from it, or keep the last legal pose while stuck, with
-    // the orientation, permit and arc it was admitted with (final review M10).
-    if (!r.needsRecovery) { physical = r.position; renderRoot(); }
-    else if (!recover(actor, time + dt, r.position)) { restoreStep(rt, beforeStep); enterStuck(); }
-    // A trapped body (pushed, really wedged on most frames, no progress for TRAP_SECONDS) glides to the nearest admitted pose that
-    // faces the push, along a path the whole hull is admitted on. The search spends what the step left of FRAME_ADMISSIONS a frame
-    // (rescueBudget; fix round 4), and goes on next frame where it stopped; it is dropped when the body moves away on its own.
-    if (!glide && !r.needsRecovery && !unstick && trapDue(trapWatch, physical, wish, actor.bodyLength, wedged(r.contacts, wish, r.turnRefused, rt.orientation.yaw), dt))
-      { unstick = new UnstickSearch(actor, { ...physical }, Math.atan2(wish.x, wish.z), { ...rt.orientation }, { ...legal, time: time + dt, ground: caps.ground && !legal.queries.terrain.space }, rescueFreeRun(trapWatch, physical, time, actor.bodyLength)); rescueLog.searches++; }
-    if (unstick) {
-      const spent = unstick.spent, u = Math.hypot(physical.x - unstick.at.x, physical.z - unstick.at.z) > TRAP_MOVE * actor.bodyLength ? { ok: false as const, reason: 'moved' } : unstick.step(rescueBudget(stepCalls));
-      rescueCalls = unstick.spent - spent;
-      if (u) {
-        if (u.ok) { rescueLog.found++; rescueLog.last = { from: { ...unstick.at }, to: { ...u.position }, time, solids: [...lastSolids] }; glide = { path: u.path, index: 0 }; trapRescues++; trapRescued(trapWatch, unstick.at, time); }
-        else if (u.reason !== 'moved') { rescueLog.failed++; trapFailed(trapWatch, unstick.at, wish); }
-        unstick = null;
-      }
-    }
-    const contact = r.contacts[0];
-    contactNow = !!contact; frameContacts += r.contacts.length;
-    if (QA) lastSolids = r.contacts.filter(c => c.solidId).map(c => c.solidId!);
-    if (contact) { lastContact = contact.constraint; lastContactSolid = contact.solidId ?? null; }
-    // A block hint only for a real, sustained block (not a slide), and never over another toast (final review I1).
-    if (blockHintDue(blockGate, r, dt, hintClock <= 0 && toastTimer <= 0) && contact) { toast(blockHint(plan, contact)); hintClock = 6; }
-    // The soft edge: the edge hint shows once per entry into the push zone, rate-limited with the block hints, and
-    // only when no other toast is on screen (so a one-shot message is never replaced).
-    edgeNow = inEdgeZone(physical, legal.bounds.half);
-    if (!edgeNow) edgeHinted = false;
-    else if (!edgeHinted && hintClock <= 0 && toastTimer <= 0) { toast(EDGE_HINT); edgeHinted = true; hintClock = 6; }
-    if (r.breachStarted) { audio.breach(); world.burst(p.x, world.surface, p.z, '#d6fff1', 22); }
-    if (r.arcEnded) world.burst(p.x, world.surface, p.z, '#d6fff1', 18);
+  }
+  presentSim(simFrame(sim, simWorld, { dt, intent, wish, held }), dt);
+  if (playing) {
     const v = rt.controlledVelocity; moving = Math.hypot(v.x, v.y, v.z) > .5 * SIZES[stage]!;
-    if (mode === 'playing' && basicRequested(intent)) chomp();
     saveClock += dt; if (saveClock >= 5) { save(); saveClock = 0; }
     el('special').classList.toggle('cooldown', caps.breach && time < rt.breachReadyAt);
   }
-  if (mode === 'stuck' && actor) {
-    // The game clock is stopped; a separate countdown retries recovery once per second.
-    stuckRetry -= dt;
-    if (stuckRetry <= 0) { stuckRetry = 1; if (recover(actor, time)) { if (startGracePending) { startGracePending = false; applyStartGrace(); } mode = 'playing'; el('toast').classList.remove('show'); syncUI(); } }
-  }
-  if ((mode === 'playing' || mode === 'evolving' || mode === 'fainted') && actor && !held) {
-    admissionClock.caller = 'ecosystem';
-    const events = world.eco.step({ stage, dt, now: time, player: physical, playerHull: worldHull(actor), perceivable: rt.perceivable && mode !== 'fainted', stealthFactor: derived.stealthFactor });
-    admissionClock.caller = 'player';
-    const accepted = resolveHazards(events, { mode, pendingRespawn: run.pendingRespawn, rt, now: time, mass: massFor(plan, run.genome, actor.bodyLength), resistance: plan.physics.knockbackResistance });
-    rejectedHits += events.length - accepted.length;
-    // A hit counts as accepted only when it is applied (not when skipped after a same-frame faint).
-    for (const event of accepted) { if (mode !== 'playing') break; acceptedHits++; takeHit(event); }
-    // After the ecosystem step, so fresh entries match the food positions that the guide and diagnostics read.
-    if (mode === 'playing') { admissionClock.caller = 'guide'; stepGuideCache(actor); admissionClock.caller = 'other'; }
-  }
-  if (mode === 'fainted') tickFaint(dt);
+  // After the ecosystem step, so fresh entries match the food positions that the guide and diagnostics read.
+  if (mode === 'playing' && !held) { admissionClock.caller = 'guide'; stepGuideCache(playerActorCached()); admissionClock.caller = 'other'; }
   if (toastTimer > 0 && mode === 'playing') { toastTimer -= dt; if (toastTimer <= 0) el('toast').classList.remove('show'); }
-  if (active) time += dt;
   world.update(active ? dt : 0, time, mode === 'menu', moving, chompPulse, growth);
   if (mode === 'evolving' && !world.transitioning) {
     // The body ends at the simulation's destination; if the world changed, recover.
-    mode = 'playing'; el('evolution-banner').hidden = true; renderRoot(); checkPose(playerActorCached());
+    mode = 'playing'; el('evolution-banner').hidden = true;
+    const events: SimEvent[] = []; checkPose(sim, simWorld, playerActorCached(), events); presentSim(events, 0);
     if (mode === 'playing') toast(STAGES[run.stage]!.description);
     syncUI();
   }
@@ -852,7 +698,7 @@ function frame(now: number) {
     if (mode === 'playing' && !held) {
       const a = admissionStats[stage]!, by = admissionClock.by; a.frames++; a.ms += admissionClock.ms; a.calls += admissionClock.calls; a.worst = Math.max(a.worst, admissionClock.ms); a.contacts += frameContacts;
       for (const k of ['player', 'ecosystem', 'guide'] as const) { a[k].ms += by[k].ms; a[k].calls += by[k].calls; a[k].worst = Math.max(a[k].worst, by[k].ms); }
-      a.player.worstCalls = Math.max(a.player.worstCalls, by.player.calls); a.rescueWorstCalls = Math.max(a.rescueWorstCalls, rescueCalls);
+      a.player.worstCalls = Math.max(a.player.worstCalls, by.player.calls); a.rescueWorstCalls = Math.max(a.rescueWorstCalls, sim.rescueCalls);
     }
     resetAdmissionClock();
   }
@@ -916,8 +762,8 @@ if (QA) {
   Object.defineProperty(window, '__tinyTide', { get: () => ({ mode,
     plan: currentPlan(run).id, plans: [...run.plans], zone: zoneNow(), velocity: copy(rt.controlledVelocity), externalVelocity: copy(rt.externalVelocity),
     orientation: { ...rt.orientation }, permit: rt.permit ? { ...rt.permit } : null, arc: rt.arc ? { ...rt.arc } : null, breachReadyAt: rt.breachReadyAt, invulnerableUntil: rt.invulnerableUntil,
-    pendingRespawn: run.pendingRespawn, caps: capsOf(), physical: copy(physical), legal: mode === 'menu' ? null : admitted(playerActor(currentPlan(run), run.genome, run.stage, growthOf(run))), contactNow, lastContact: lastContact === null ? null : `${lastContact}`, lastContactSolid, trapRescues, rescueLog: JSON.parse(JSON.stringify(rescueLog)), contactSolids: [...lastSolids], groundOffset: rt.groundOffset, solidOverlap: mode === 'menu' ? null : solidOverlap(), solidsNear: mode === 'menu' ? [] : solidsNear(32), edge: { inZone: edgeNow, hinted: edgeHinted, half: PLAYER_HALF, softStart: EDGE_SOFT_START * PLAYER_HALF }, hazardSources: hazardSources(), growth: growthOf(run), acceptedHits, rejectedHits,
-    faintLog: faintLog.map(f => ({ ...f })), stage: run.stage, dna: dnaOf(run), stageDna: run.stageDna, goal: STAGES[run.stage]!.goal, health: run.health, maxHealth: derived.maxHealth, deaths: run.deaths, diet: dietOf(run.genome), genome: structuredClone(run.genome), name: run.name, unlocked: [...run.unlocked], evolveReady: evolveReady(run), bites: run.bites, totalDna: run.totalDna, elapsed: run.elapsed, completed: run.completed, eatenPlanets: [...run.eatenPlanets], player: { x: world.player.position.x, y: world.player.position.y, z: world.player.position.z }, foods: world.edibleFoods.map(f => ({ ...f.data, tag: f.entity.spec.tag, label: f.entity.spec.label, mode: f.entity.mode, hp: f.entity.hp, approachable: approachable(f.entity) })), threats: world.threats.map(f => ({ ...f.data, label: f.entity.spec.label, mode: f.entity.mode })), landmarks: world.foods.filter(f => f.model.visible && f.tier > run.stage).map(f => ({ tier: f.tier, kind: f.data.kind, x: f.data.x, y: f.data.y, z: f.data.z })), world: world.diagnostics, assets: assetDiagnostics(), saveKey: writeKey, loadedKey, time, holdingStart, editorProjection, poseAgreement, admission: admissionStats.map(a => { const per = (v: number) => a.frames ? v / a.frames : 0; return { frames: a.frames, msPerFrame: per(a.ms), callsPerFrame: per(a.calls), worstMs: a.worst, contactsPerFrame: per(a.contacts),
+    pendingRespawn: run.pendingRespawn, caps: capsOf(), physical: copy(physical), legal: mode === 'menu' ? null : admittedNow(playerActor(currentPlan(run), run.genome, run.stage, growthOf(run))), contactNow, lastContact: lastContact === null ? null : `${lastContact}`, lastContactSolid, trapRescues: sim.trapRescues, rescueLog: JSON.parse(JSON.stringify(sim.rescueLog)), contactSolids: [...sim.lastSolids], groundOffset: rt.groundOffset, solidOverlap: mode === 'menu' ? null : solidOverlap(), solidsNear: mode === 'menu' ? [] : solidsNear(32), edge: { inZone: edgeNow, hinted: edgeHinted, half: PLAYER_HALF, softStart: EDGE_SOFT_START * PLAYER_HALF }, hazardSources: hazardSources(), growth: growthOf(run), acceptedHits, rejectedHits,
+    faintLog: sim.faintLog.map(f => ({ ...f })), stage: run.stage, dna: dnaOf(run), stageDna: run.stageDna, goal: STAGES[run.stage]!.goal, health: run.health, maxHealth: derived.maxHealth, deaths: run.deaths, diet: dietOf(run.genome), genome: structuredClone(run.genome), name: run.name, unlocked: [...run.unlocked], evolveReady: evolveReady(run), bites: run.bites, totalDna: run.totalDna, elapsed: run.elapsed, completed: run.completed, eatenPlanets: [...run.eatenPlanets], player: { x: world.player.position.x, y: world.player.position.y, z: world.player.position.z }, foods: world.edibleFoods.map(f => ({ ...f.data, tag: f.entity.spec.tag, label: f.entity.spec.label, mode: f.entity.mode, hp: f.entity.hp, approachable: approachable(f.entity) })), threats: world.threats.map(f => ({ ...f.data, label: f.entity.spec.label, mode: f.entity.mode })), landmarks: world.foods.filter(f => f.model.visible && f.tier > run.stage).map(f => ({ tier: f.tier, kind: f.data.kind, x: f.data.x, y: f.data.y, z: f.data.z })), world: world.diagnostics, assets: assetDiagnostics(), saveKey: writeKey, loadedKey, time, holdingStart, editorProjection, poseAgreement, admission: admissionStats.map(a => { const per = (v: number) => a.frames ? v / a.frames : 0; return { frames: a.frames, msPerFrame: per(a.ms), callsPerFrame: per(a.calls), worstMs: a.worst, contactsPerFrame: per(a.contacts),
       player: { msPerFrame: per(a.player.ms), callsPerFrame: per(a.player.calls), worstMs: a.player.worst, worstCalls: a.player.worstCalls }, rescueWorstCalls: a.rescueWorstCalls, ecosystem: { msPerFrame: per(a.ecosystem.ms), callsPerFrame: per(a.ecosystem.calls), worstMs: a.ecosystem.worst }, guide: { msPerFrame: per(a.guide.ms), callsPerFrame: per(a.guide.calls), worstMs: a.guide.worst } }; }), render: { calls: world.renderer.info.render.calls, triangles: world.renderer.info.render.triangles, geometries: world.renderer.info.memory.geometries } }) });
 }
 requestAnimationFrame(frame);

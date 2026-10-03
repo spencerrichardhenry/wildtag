@@ -1,5 +1,5 @@
 // tests/tiny-tide-core/sim.test.ts — spec D29 and §14.1: sim.ts keeps the former main.ts tick order. Two scripted stage 0 runs (dt 1/60)
-// are pinned by sim-golden.json, recorded first with the main.ts frame (legacy-frame.ts) and then compared with sim.ts:
+// are pinned by sim-golden.json, recorded with the main.ts frame before the extraction (T6a, a line-for-line port of it) and matched by sim.ts:
 // - `journey` (seed 7, 20 s from the start anchor): swims, chomps, eats three times (three growth rescales of the hull), touches the reef;
 // - `rescue` (seed 358833899, 10 s from a forced spawn): one held push into the pocket between rock:0:0 and arch:0:0, which the trap
 //   watch rescues twice (search in slices under the frame's admission budget, then the glide);
@@ -7,7 +7,7 @@
 // - `regen` (seed 3, 80 s): the `faint` circle until 54.3 s, then +x: after the respawn one hit at 64.4 s, then no hit, and the hearts
 //   come back three times (regen every 2.5 s after 5 s without a hit).
 // Not covered: the stuck retry, held frames, a win, and the modes other than playing and fainted.
-// TIDE_SIM_RECORD=legacy rewrites the golden from legacy-frame.ts; TIDE_SIM_RECORD=sim from sim.ts (a later task that changes stage 0 on purpose).
+// A task that changes stage 0 on purpose re-records it from sim.ts with TIDE_SIM_RECORD=sim and says why in its commit.
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { Ecosystem } from '../../src/tiny-tide/ecosystem';
@@ -65,11 +65,10 @@ const runAll = (runner: (c: Scenario) => Sample[]): Golden => ({ journey: runner
 /** Health rises between two samples of one life (no faint between them): a regen. */
 const regens = (samples: readonly Sample[]) => samples.filter((x, i) => i > 0 && x.deaths === samples[i - 1]!.deaths && x.health > samples[i - 1]!.health).length;
 describe('sim', () => {
-  it('sim.ts keeps the former main.ts tick order', async () => {
+  it('sim.ts keeps the former main.ts tick order', () => {
     const record = process.env.TIDE_SIM_RECORD;
-    if (record === 'legacy') { const { runLegacy } = await import('./legacy-frame'); writeFileSync(GOLDEN, JSON.stringify(runAll(runLegacy), null, 1)); }
     if (record === 'sim') writeFileSync(GOLDEN, JSON.stringify(runAll(runSim), null, 1));
-    expect(existsSync(GOLDEN), 'record the golden first: TIDE_SIM_RECORD=legacy').toBe(true);
+    expect(existsSync(GOLDEN), 'the golden is missing').toBe(true);
     const golden = JSON.parse(readFileSync(GOLDEN, 'utf8')) as Golden;
     // The scenarios still cover what they claim: three meals in the journey, at least one rescue in the push, a faint (0 hearts) and the
     // respawn, and regen after a later hit.
