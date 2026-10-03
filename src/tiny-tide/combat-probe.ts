@@ -502,17 +502,28 @@ export interface AttackRow { attackId: string; species: string; size: number; ki
   /** Trials that found no subject, no legal place or no start (not counted). */
   skipped: number; bandSource?: AttackSetup['bandSource'] }
 export interface P0Row { attackId: string; species: string; size: number; band: readonly [number, number]; bandSource: AttackSetup['bandSource']; near: number; mid: number; far: number;
-  trials: { near: number; mid: number; far: number }; pass: boolean }
+  trials: { near: number; mid: number; far: number };  pass: boolean }
 export interface TtkRow { species: string; build: 'meat' | 'plant'; median: number; bar: number | null; pass: boolean; trials: number; faints: number; times: number[] }
 export interface ProbeReport { p0: P0Row[]; p1: AttackRow[]; p2: AttackRow[]; p3: AttackRow[]; p4: AttackRow[]; p5: TtkRow[]; p6: TtkRow[]; p7: JourneyReport[];
   p8: { maxTokens: number; minActiveGap: number; minOffScreenWindup: number; windups: number; offScreen: number; gapPair: string; pass: boolean; mix?: Record<string, number> };
   /** The balance notes of earlier reviews, measured (controller list; no bar). */
-  notes: NoteRow[]; pass: boolean }
+  notes: NoteRow[];
+  /** T23 fix round 1: the largest bot reaction (step .01 s) at which each attack still meets its bar, per measure; and P1 with a reaction
+   *  drawn from .25–.45 s for each trial (reported, no bar). */
+  thresholds: ThresholdRow[]; p1Jitter: JitterRow[]; pass: boolean }
+export interface ThresholdRow { measure: 'p1' | 'p2' | 'p3'; attackId: string; species: string; size: number; bar: number;
+  /** Largest reaction (s) in [0, .8] with share ≥ bar; null: not even at 0; .8: at least .8. */
+  threshold: number | null; at25: number; at35: number; trials: number }
+export interface JitterRow { attackId: string; species: string; size: number; kind: AttackRow['kind']; trials: number; share: number;
+  /** Avoided share by reaction bin (.25–.30, .30–.35, .35–.40, .40–.45). */
+  bins: { from: number; n: number; good: number }[] }
 export interface NoteRow { note: string; build: string; species: string; median: number; faints: number; trials: number; damage: number; times: number[] }
-export interface ProbeOptions { trials: number; p0Trials: number; ttkSeeds: readonly number[]; ttkTrials: number; journeySeeds: readonly number[]; journeyLimit: number }
-export const FULL_PROBE: ProbeOptions = { trials: 200, p0Trials: 100, ttkSeeds: [11, 12, 13], ttkTrials: 30, journeySeeds: [11, 12, 13, 14, 15], journeyLimit: 600 };
-export type ProbePart = 'p0' | 'p1' | 'p2' | 'p3' | 'p4' | 'p5' | 'p6' | 'p7-swimmer' | 'p7-crawler' | 'p8' | 'notes';
-export const PROBE_PARTS: readonly ProbePart[] = ['p0', 'p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7-swimmer', 'p7-crawler', 'p8', 'notes'];
+export interface ProbeOptions { trials: number; p0Trials: number; ttkSeeds: readonly number[]; ttkTrials: number; journeySeeds: readonly number[]; journeyLimit: number;
+  /** Seeds per attack and reaction step of the reaction-threshold search (T23 fix round 1). */
+  thresholdTrials: number }
+export const FULL_PROBE: ProbeOptions = { trials: 200, p0Trials: 100, ttkSeeds: [11, 12, 13], ttkTrials: 30, journeySeeds: [11, 12, 13, 14, 15], journeyLimit: 600, thresholdTrials: 40 };
+export type ProbePart = 'p0' | 'p1' | 'p2' | 'p3' | 'p4' | 'p5' | 'p6' | 'p7-swimmer' | 'p7-crawler' | 'p8' | 'notes' | 'th-p1' | 'th-p2' | 'th-p3' | 'p1-jitter';
+export const PROBE_PARTS: readonly ProbePart[] = ['p0', 'p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7-swimmer', 'p7-crawler', 'p8', 'notes', 'th-p1', 'th-p2', 'th-p3', 'p1-jitter'];
 
 /** Every hostile attack at sizes 0 and 1: its species, the size it targets and its kind. */
 export function hostileAttacks(): { attackId: string; species: string; size: 0 | 1; kind: AttackRow['kind'] }[] {
@@ -589,7 +600,7 @@ function ttkRows(o: ProbeOptions, build: (size: 0 | 1) => ProbeBuild, bars: Read
 const p8Of = (watch: DirectorWatch) => ({ maxTokens: watch.maxTokens, minActiveGap: watch.minActiveGap, minOffScreenWindup: watch.minOffScreenWindup, windups: watch.windups, offScreen: watch.offScreen, gapPair: watch.gapPair, mix: { ...watch.mix },
   pass: watch.maxTokens <= 2 && watch.minActiveGap >= .25 - 1e-6 && watch.minOffScreenWindup >= .6 - 1e-6 });
 export function emptyReport(): ProbeReport {
-  return { p0: [], p1: [], p2: [], p3: [], p4: [], p5: [], p6: [], p7: [], p8: { maxTokens: 0, minActiveGap: Infinity, minOffScreenWindup: Infinity, windups: 0, offScreen: 0, gapPair: '', pass: true, mix: {} }, notes: [], pass: false };
+  return { p0: [], p1: [], p2: [], p3: [], p4: [], p5: [], p6: [], p7: [], p8: { maxTokens: 0, minActiveGap: Infinity, minOffScreenWindup: Infinity, windups: 0, offScreen: 0, gapPair: '', pass: true, mix: {} }, notes: [], thresholds: [], p1Jitter: [], pass: false };
 }
 /** The pass flag of a whole report. */
 export function judge(r: ProbeReport): ProbeReport {
@@ -620,9 +631,56 @@ export function runProbe(o: ProbeOptions = FULL_PROBE, parts: readonly ProbePart
       flush({});
     }
     if (part === 'notes') r.notes = noteRows(o, watch, rows => flush({ notes: rows }));
+    if (part === 'th-p1') r.thresholds.push(...thresholdRows('p1', all, dashBuild, x => x === 'avoided' || x === 'countered', x => x.kind === 'alpha' ? .9 : .95, o.thresholdTrials, rows => flush({ thresholds: rows })));
+    if (part === 'th-p2') r.thresholds.push(...thresholdRows('p2', all.filter(x => x.size === 1 && SPECIES_ATTACKS[x.attackId]!.blockable), () => braceBuild, x => x !== 'hit', () => .95, o.thresholdTrials, rows => flush({ thresholds: rows })));
+    if (part === 'th-p3') r.thresholds.push(...thresholdRows('p3', all.filter(x => SPECIES_ATTACKS[x.attackId]!.parryable), counterBuild, x => x === 'countered', () => .85, o.thresholdTrials, rows => flush({ thresholds: rows })));
+    if (part === 'p1-jitter') r.p1Jitter = jitterRows(all, o.trials, watch, rows => flush({ p1Jitter: rows }));
     r.p8 = mergeP8(r.p8, p8Of(watch));
   }
   return judge(r);
+}
+/** The avoided share of one attack at one reaction, over `trials` seeds (only trials whose attack hits a still player count). */
+function shareAt(x: { attackId: string; species: string; size: 0 | 1 }, build: (size: 0 | 1) => ProbeBuild, counts: (o: AttackOutcome) => boolean, reaction: number, trials: number): { n: number; good: number } {
+  let n = 0, good = 0;
+  for (let i = 0; i < trials; i++) {
+    if (stillOutcome(1000 + i, build(x.size), x.species, x.attackId) !== 'hit') continue;
+    const o = attackTrial(1000 + i, build(x.size), x.species, x.attackId, { reaction, useMoves: true }); if (o === null) continue;
+    n++; if (counts(o)) good++;
+  }
+  return { n, good };
+}
+/** T23 fix round 1 (review: P1–P3 are a cliff): per attack, the largest reaction in [0, .8] s, at a step of .01 s, at which the share still meets
+ *  the bar (a binary search: the share falls as the reaction grows), with the shares at .25 and .35 s. */
+function thresholdRows(measure: ThresholdRow['measure'], list: ReturnType<typeof hostileAttacks>, build: (size: 0 | 1) => ProbeBuild, counts: (o: AttackOutcome) => boolean,
+  bar: (r: { kind: AttackRow['kind'] }) => number, trials: number, flush: (rows: ThresholdRow[]) => void): ThresholdRow[] {
+  const rows: ThresholdRow[] = [];
+  for (const x of list) {
+    const b = bar(x), share = (r: number) => { const q = shareAt(x, build, counts, r, trials); return { ok: q.n > 0 && q.good / q.n >= b - 1e-9, share: q.n ? q.good / q.n : NaN, n: q.n }; };
+    const s25 = share(.25), s35 = share(.35);
+    let threshold: number | null;
+    if (!share(0).ok) threshold = null;
+    else if (share(.8).ok) threshold = .8;
+    else { let lo = 0, hi = 80; while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (share(mid / 100).ok) lo = mid; else hi = mid; } threshold = lo / 100; }
+    rows.push({ measure, attackId: x.attackId, species: x.species, size: x.size, bar: b, threshold, at25: s25.share, at35: s35.share, trials: s25.n });
+    flush([...rows]);
+  }
+  return rows;
+}
+/** P1 with a reaction drawn uniformly from .25–.45 s for each trial (seeded by trial and attack); reported with bins, no bar. */
+function jitterRows(list: ReturnType<typeof hostileAttacks>, trials: number, watch: DirectorWatch, flush: (rows: JitterRow[]) => void): JitterRow[] {
+  const acc = list.map(() => ({ n: 0, good: 0, bins: [.25, .30, .35, .40].map(from => ({ from, n: 0, good: 0 })) }));
+  const rows = () => list.map((x, k) => ({ attackId: x.attackId, species: x.species, size: x.size, kind: x.kind, trials: acc[k]!.n, share: acc[k]!.n ? acc[k]!.good / acc[k]!.n : NaN, bins: acc[k]!.bins }));
+  for (let i = 0; i < trials; i++) {
+    list.forEach((x, k) => {
+      if (stillOutcome(1000 + i, dashBuild(x.size), x.species, x.attackId) !== 'hit') return;
+      const u = (Math.imul(1000 + i, 0x9e3779b1) ^ Math.imul(k + 1, 0x85ebca6b)) >>> 0, reaction = .25 + .2 * ((u % 10007) / 10007);
+      const o = attackTrial(1000 + i, dashBuild(x.size), x.species, x.attackId, { reaction, useMoves: true }, watch); if (o === null) return;
+      const a = acc[k]!, ok = o === 'avoided' || o === 'countered', bin = a.bins[Math.min(3, Math.floor((reaction - .25) / .05))]!;
+      a.n++; bin.n++; if (ok) { a.good++; bin.good++; }
+    });
+    if (i % 10 === 9 || i === trials - 1) flush(rows());
+  }
+  return rows();
 }
 /** The balance notes of earlier reviews (controller list), each measured over the time-to-kill seeds: an aimed mash bot (it aims and bites, and
  *  never dodges or uses a move) against both alphas, crawler fights with the puffer and the eel, and a sardine placed 3 of its body lengths away. */
@@ -664,7 +722,7 @@ function mergeP8(a: ProbeReport['p8'], b: ProbeReport['p8']): ProbeReport['p8'] 
 export function mergeReports(list: readonly Partial<ProbeReport>[]): ProbeReport {
   const r = emptyReport();
   for (const x of list) {
-    for (const k of ['p0', 'p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'notes'] as const) if (x[k]?.length) (r[k] as unknown[]).push(...x[k]!);
+    for (const k of ['p0', 'p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'notes', 'thresholds', 'p1Jitter'] as const) if (x[k]?.length) (r[k] as unknown[]).push(...x[k]!);
     if (x.p8) r.p8 = mergeP8(r.p8, x.p8);
   }
   return judge(r);
@@ -695,6 +753,10 @@ export function probeMarkdown(r: ProbeReport): string {
     'Probe decisions: P0 band points are 5 % inside each edge; pattern and den attacks (no AI band) use probe bands (eel-ambush 0–.9, mother-emerge 0–.6, tyrant-charge .4–1.2); chain-only attacks (mother-pinch-2, mother-pinch-rage) start their parent and score the child (R12(2)); a move is used only when ready (R12(1)); P8 measures active starts in game time.', '',
     ...p0, ...rows('P1 Dash-only avoidance', r.p1), ...rows('P2 Brace', r.p2), ...rows('P3 Counter', r.p3), ...rows('P4 Movement only (reported)', r.p4),
     ...ttk('P5 Time to kill, meat build', r.p5), ...ttk('P6 Time to kill, plant build', r.p6), ...journeys, ...faints,
+    '## Reaction thresholds (largest reaction that still meets the bar, step .01 s)', '', '| Measure | Attack | Species | Size | Bar | Threshold | Share at .25 s | Share at .35 s | Trials |', '| --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+    ...(r.thresholds ?? []).map(x => `| ${x.measure.toUpperCase()} | ${x.attackId} | ${x.species} | ${x.size} | ${pct(x.bar)} | ${x.threshold === null ? 'none' : x.threshold >= .8 ? '≥ 0.80 s' : x.threshold.toFixed(2) + ' s'} | ${pct(x.at25)} | ${pct(x.at35)} | ${x.trials} |`), '',
+    '## P1 with reaction jitter .25–.45 s (reported)', '', '| Attack | Species | Size | Trials | Avoided | .25–.30 | .30–.35 | .35–.40 | .40–.45 |', '| --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+    ...(r.p1Jitter ?? []).map(x => `| ${x.attackId} | ${x.species} | ${x.size} | ${x.trials} | ${pct(x.share)} | ${x.bins.map(b => b.n ? `${pct(b.good / b.n)} (${b.n})` : '—').join(' | ')} |`), '',
     '## Balance notes (measured, no bar)', '', '| Note | Build | Species | Median | Trials | Faints | Damage ½♥ | Not killed |', '| --- | --- | --- | --- | --- | --- | --- | --- |',
     ...(r.notes ?? []).map(x => `| ${x.note} | ${x.build} | ${x.species} | ${sec(x.median)} | ${x.trials} | ${x.faints} | ${x.damage} | ${x.times.filter(t => t < 0).length} |`), '',
     `Attack mix (wind-ups at the player, every part): ${Object.entries(r.p8.mix ?? {}).sort().map(([k, n]) => `${k} ${n}`).join(', ') || '—'}`, '',
