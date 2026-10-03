@@ -35,6 +35,14 @@ export interface Entity {
   returnUntil: number; hazardReadyAt: number;
   /** The tier is relevant to the player's stage (|tier − stage| ≤ 1). */
   active: boolean;
+  /** The time of the last damage the combat world dealt to this body (D37 as amended by the T18 review: no full heal within
+   *  HEAL_QUIET_SECONDS of it). */
+  damagedAt?: number;
+  /** A return to calm while damage was recent: the full heal waits for HEAL_QUIET_SECONDS without damage. */
+  healPending?: boolean;
+  /** The displacement knockback (external velocity) gave this body since its engagement: the leash and give-up distances leave it out
+   *  (T18 review I2: a Bite's knockback alone must not end a fight). */
+  knock?: MutVec3;
   /** A combat species' motion this tick (spec §5.12, §11.2), set by the combat world's AI tick before the step; legacy species have none
    *  (and a combat species without it this tick moves by today's rules). */
   combat?: EntityMotion | null;
@@ -60,6 +68,8 @@ export interface EcoContext {
 export interface EcoEvent { type: 'hazard'; entity: Entity; hazard: ContactHazard; damage: number; point: Vec3; normal: Vec3; time: number }
 
 export const RESPAWN_TIME = [14, 22] as const;
+/** D37 (T18 review I2): a combat species back to calm heals to full only once this long has passed since its last damage. */
+export const HEAL_QUIET_SECONDS = 8;
 /** A species that hunts the player's current size respawns later after it is eaten or killed (D28; plan review R14(1): every other
  *  species keeps RESPAWN_TIME). */
 export const HUNTER_RESPAWN_TIME = [30, 40] as const;
@@ -110,15 +120,24 @@ function schoolPlace(spawns: readonly Spawn[], spawn: Spawn, seed: number): Vec3
   // The member keeps the leader's height above the seabed (± .5 L), so a school stays as reachable as its leader (review R14(2)).
   return { x, y: seabedHeight(x, z) + (leader.y - seabedHeight(leader.x, leader.z)) + (rand() - .5) * L, z };
 }
-/** An eel's den (spec §11.3): .5 L outside the footprint of a seeded reef solid of its tier (one inside the spawn square), on the seabed;
- *  installation then finds the nearest admitted pose (≤ 4 L). Without such a solid, its normal spawn. The eel respawns here. */
+/** An eel's den (spec §11.3): on the seabed beside a seeded reef solid of its tier (one inside the spawn square). From the solid's centre it
+ *  walks out along a seeded direction until the eel's hull clears every solid by DEN_GAP L (T18 review: the bounding-box circle left dens up
+ *  to 1.75 L from an arch's real surface); installation then finds the nearest admitted pose (≤ 4 L). Without such a solid, its normal
+ *  spawn. The eel respawns here. */
+export const DEN_GAP = .25;
 export function denOf(seed: number, spawn: { id: number; spec: Species; x: number; y: number; z: number }): Vec3 {
-  const S = SIZES[spawn.spec.tier]!, half = SPAWN_HALF * S;
-  const solids = stageSolids(spawn.spec.tier, seed).solids.filter(s => Math.max(Math.abs(s.minX), Math.abs(s.maxX), Math.abs(s.minZ), Math.abs(s.maxZ)) < half);
+  const S = SIZES[spawn.spec.tier]!, half = SPAWN_HALF * S, index = stageSolids(spawn.spec.tier, seed);
+  const solids = index.solids.filter(s => Math.max(Math.abs(s.minX), Math.abs(s.maxX), Math.abs(s.minZ), Math.abs(s.maxZ)) < half);
   if (!solids.length) return { x: spawn.x, y: spawn.y, z: spawn.z };
   const rand = random(seed * 53 + spawn.id * 7 + 2), s = solids[Math.floor(rand() * solids.length)]!, a = rand() * 2 * Math.PI, L = speciesActor(spawn).bodyLength;
-  const cx = (s.minX + s.maxX) / 2, cz = (s.minZ + s.maxZ) / 2, r = Math.max(s.maxX - s.minX, s.maxZ - s.minZ) / 2 + .5 * L, x = cx + Math.sin(a) * r, z = cz + Math.cos(a) * r;
-  return { x, y: seabedHeight(x, z) + .35 * S * (spawn.spec.bodyScale ?? 1), z };
+  const lift = .35 * S * (spawn.spec.bodyScale ?? 1), R = speciesActor(spawn).hull[0]!.radius, cx = (s.minX + s.maxX) / 2, cz = (s.minZ + s.maxZ) / 2;
+  const reach = Math.hypot(s.maxX - s.minX, s.maxZ - s.minZ) / 2 + 2 * L;
+  let x = cx, z = cz;
+  for (let r = 0; r <= reach; r += .1 * L) {
+    x = cx + Math.sin(a) * r; z = cz + Math.cos(a) * r;
+    if (!index.solidAt(x, seabedHeight(x, z) + lift + R, z, R + DEN_GAP * L)) break;
+  }
+  return { x, y: seabedHeight(x, z) + lift, z };
 }
 const hasDen = (spec: Species) => !!BEHAVIOURS[spec.behaviourId ?? '']?.den;
 export function makeEntities(seed: number): Entity[] {
@@ -213,6 +232,7 @@ export class Ecosystem {
   // Scratch objects reused on the hot path.
   private readonly from: MutVec3 = { x: 0, y: 0, z: 0 };
   private readonly disp: MutVec3 = { x: 0, y: 0, z: 0 };
+  private readonly pushed: MutVec3 = { x: 0, y: 0, z: 0 };
   private readonly pose: MutVec3 = { x: 0, y: 0, z: 0 };
   private readonly actx: AdmissionContext = { time: 0 };
   private readonly req: MotionRequest = { actorId: '', from: this.from, displacement: this.disp, orientation: O0, hull: [], habitatProfileId: '', cause: 'locomotion' };
@@ -263,13 +283,15 @@ export class Ecosystem {
   /** The roaming bound of an entity's tier: tighter for hunters. */
   private boundsOf(e: Entity) { return (isHunter(e.spec) ? this.hunterBounds : this.bounds)[e.spec.tier]!; }
   /** Moves the entity (and its home) to the nearest legal pose within 4 body lengths, or removes it until a retry. */
-  private install(e: Entity): boolean {
+  /** `keepHome`: an eel's den stays where it is when a fight reinstalls the body (T18 review I2: the leash is measured from the den). */
+  private install(e: Entity, keepHome = false): boolean {
     if (isStatic(e)) return true;
     const actor = this.actors.get(e)!, tier = e.spec.tier;
     e.lastKnownHull = null;
     const found = findRecoveryPose(actor, { x: e.x, y: e.y, z: e.z }, { queries: this.queries[tier]!, bounds: this.boundsOf(e), orientation: O0, time: 0 }, { maxDistance: 4 * actor.bodyLength });
     if (!found.ok) { e.eaten = true; e.respawn = INSTALL_RETRY; e.mode = 'calm'; e.modeTime = 0; this.installFailures++; return false; }
-    e.x = e.hx = found.position.x; e.y = e.hy = found.position.y; e.z = e.hz = found.position.z;
+    e.x = found.position.x; e.y = found.position.y; e.z = found.position.z;
+    if (!keepHome) { e.hx = e.x; e.hy = e.y; e.hz = e.z; }
     e.groundOffset = e.y - seabedHeight(e.x, e.z);
     return true;
   }
@@ -331,8 +353,11 @@ export class Ecosystem {
       if (perceived) remember(e, p, now, ctx.playerHull);
       this.updateReachability(e, now);
       const policy = this.pursuitFor?.(e) ?? pursuit(spec.pursuitId), L = this.actors.get(e)!.bodyLength;
-      const giveUp = Math.hypot(e.x - e.hx, e.y - e.hy, e.z - e.hz) > policy.leashBodyLengths * L
-        || distance > policy.giveUpBodyLengths * L
+      // Leash and give-up distances leave out the knockback the body took (T18 review I2): only its own motion ends a pursuit. The home is
+      // the den for an eel (install never moves a den mid-fight).
+      const k = e.knock, ox = e.x - (k?.x ?? 0), oy = e.y - (k?.y ?? 0), oz = e.z - (k?.z ?? 0);
+      const giveUp = Math.hypot(ox - e.hx, oy - e.hy, oz - e.hz) > policy.leashBodyLengths * L
+        || Math.min(distance, Math.hypot(p.x - ox, p.y - oy, p.z - oz)) > policy.giveUpBodyLengths * L
         || (!perceived && now - e.lastSeenAt > policy.memorySeconds)
         || (perceived && !e.reachable && e.blockedSince !== null && now - e.blockedSince > policy.blockedWaitSeconds + policy.memorySeconds)
         || pastSoftEdge(p, ctx.stage);
@@ -342,8 +367,10 @@ export class Ecosystem {
     if (e.mode === 'flee') { if (e.modeTime > 2.5) this.setMode(e, 'calm'); return perceived; }
     if (e.mode === 'return' && (Math.hypot(e.x - e.hx, e.z - e.hz) <= this.actors.get(e)!.bodyLength || now >= e.returnUntil + 6)) {
       this.setMode(e, 'calm');
-      if (spec.behaviourId) e.hp = spec.hp;   // a combat species back to calm gets its full HP (spec §11.2, D37)
+      // A combat species back to calm gets its full HP (spec §11.2, D37), but not within HEAL_QUIET_SECONDS of its last damage (T18 review I2).
+      if (spec.behaviourId) e.healPending = true;
     }
+    if (e.healPending && e.mode === 'calm' && now - (e.damagedAt ?? -Infinity) >= HEAL_QUIET_SECONDS - 1e-9) { e.hp = spec.hp; e.healPending = false; }
     // Acquire, from calm or return, once the reacquire window has passed.
     if (now >= e.returnUntil && perceived && spec.hunts.includes(ctx.stage) && !pastSoftEdge(p, ctx.stage)) {
       this.setMode(e, 'hunt'); clearBlocked(e); remember(e, p, now, ctx.playerHull); this.updateReachability(e, now); return perceived;
@@ -373,7 +400,7 @@ export class Ecosystem {
     if (now - e.reachableSince >= BLOCK_CLEAR_SECONDS) e.blockedSince = null;
   }
 
-  private setMode(e: Entity, mode: Mode) { e.mode = mode; e.modeTime = 0; }
+  private setMode(e: Entity, mode: Mode) { e.mode = mode; e.modeTime = 0; if (mode !== 'hunt' && mode !== 'angry') e.knock = undefined; }
 
   /** Desired displacement toward a point; ground and surface movers steer horizontally. */
   private toward(e: Entity, x: number, y: number, z: number, speed: number, dt: number, mode: MovementMode, out: MutVec3) {
@@ -409,6 +436,13 @@ export class Ecosystem {
       d.x += m.external.x * dt; d.y += m.external.y * dt; d.z += m.external.z * dt;
     }
     if (m.separation && !m.held) { d.x += m.separation.x; d.y += m.separation.y; d.z += m.separation.z; }
+    // The pushed share of this tick's displacement (knockback and body separation), kept apart from the body's own motion (T18 review I2).
+    const pushed = this.pushed; pushed.x = 0; pushed.y = 0; pushed.z = 0;
+    if (!m.held) {
+      if (!m.frozen) { pushed.x += m.external.x * dt; pushed.y += m.external.y * dt; pushed.z += m.external.z * dt; }
+      if (m.separation) { pushed.x += m.separation.x; pushed.y += m.separation.y; pushed.z += m.separation.z; }
+    }
+    const wanted = Math.hypot(d.x, d.y, d.z);
     if (mode === 'ground' && !q.terrain.space) d.y = supportHeight(actor, e.x + d.x, e.z + d.z, O0, q.terrain) + .01 * actor.bodyLength - e.y;
     else if (mode === 'surface') d.y = e.hy - e.y;
     const req = this.req, from = this.from;
@@ -416,9 +450,13 @@ export class Ecosystem {
     req.actorId = actor.id; req.hull = actor.hull; req.habitatProfileId = actor.habitat.id; req.cause = m.held ? 'grab' : m.lunge ? 'lunge' : m.external.x || m.external.y || m.external.z ? 'knockback' : 'locomotion';
     const mo = this.motion; mo.queries = q; mo.bounds = this.boundsOf(e); mo.actor = actor; mo.interval.start = ctx.now; mo.interval.end = ctx.now + dt;
     const result = resolveMotion(req, mo); req.cause = 'locomotion';
-    if (result.status === 'invalid-start' || result.status === 'needs-recovery') { this.install(e); return; }
+    if (result.status === 'invalid-start' || result.status === 'needs-recovery') { this.install(e, hasDen(spec)); return; }
     m.moved = Math.hypot(result.position.x - e.x, result.position.y - e.y, result.position.z - e.z);
     e.x = result.position.x; e.y = result.position.y; e.z = result.position.z;
+    if ((e.mode === 'hunt' || e.mode === 'angry') && (pushed.x || pushed.y || pushed.z)) {
+      const f = wanted > 1e-9 ? Math.min(1, m.moved / wanted) : 0, k = e.knock ??= { x: 0, y: 0, z: 0 };
+      k.x += pushed.x * f; k.y += pushed.y * f; k.z += pushed.z * f;
+    }
     if (!m.frozen) {
       const pe = projectVelocity(m.external, result.contacts), decay = Math.exp(-ENTITY_EXTERNAL_DECAY * dt);
       m.external.x = pe.x * decay; m.external.y = pe.y * decay; m.external.z = pe.z * decay;
@@ -507,7 +545,7 @@ export class Ecosystem {
     e.respawn -= ctx.dt; if (e.respawn > 0) return;
     // New food arrives out of sight, so the world never visibly pops.
     // Plants, palms and lighthouses grow back where they were.
-    const size = SIZES[e.spec.tier]!, away = 16 * size, fresh = { hp: e.spec.hp, eaten: false, respawn: -1, mode: 'calm' as Mode, modeTime: 0, combat: null, ...pursuitState() };
+    const size = SIZES[e.spec.tier]!, away = 16 * size, fresh = { hp: e.spec.hp, eaten: false, respawn: -1, mode: 'calm' as Mode, modeTime: 0, combat: null, knock: undefined, healPending: false, ...pursuitState() };
     if (e.spec.behavior === 'still') {
       if (Math.hypot(e.hx - ctx.player.x, e.hz - ctx.player.z) < away) { e.respawn = 0; return; }
       Object.assign(e, { x: e.hx, y: e.hy, z: e.hz }, fresh); this.install(e); return;

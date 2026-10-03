@@ -1,11 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { denOf, Ecosystem, engage, HUNTER_MARGIN, makeEntities, provoke, speciesActor, type Entity, type EntityMotion } from '../../src/tiny-tide/ecosystem';
-import { canApproachFood } from '../../src/tiny-tide/food-access';
-import { derive, effectiveStats, starterFor } from '../../src/tiny-tide/genome';
-import { playerActor } from '../../src/tiny-tide/mount';
+import { denOf, Ecosystem, engage, HUNTER_MARGIN, provoke, speciesActor, type Entity, type EntityMotion } from '../../src/tiny-tide/ecosystem';
+import { biteReacher } from './bite-reach';
+import { stageSolids } from '../../src/tiny-tide/reef';
 import { PLANS } from '../../src/tiny-tide/plans';
-import { movement, PURSUITS } from '../../src/tiny-tide/profiles';
-import { stageBounds, stageWorldQueries } from '../../src/tiny-tide/world-queries';
+import { PURSUITS } from '../../src/tiny-tide/profiles';
 import { HAZARDS } from '../../src/tiny-tide/registries';
 import { makeTerrain, makeWorldQueries } from '../../src/tiny-tide/world-queries';
 import { habitat } from '../../src/tiny-tide/profiles';
@@ -288,34 +286,33 @@ describe('size-1 combat species (T18)', () => {
     expect(row('2:squid').contactHazardId).toBeUndefined(); expect(HAZARDS['squid-grab']).toBeUndefined();
     expect(PURSUITS.ambusher).toMatchObject({ id: 'ambusher', memorySeconds: 3, blockedWaitSeconds: 1, reacquireSeconds: 4, leashBodyLengths: 1.5, giveUpBodyLengths: 3 });
   });
-  it('spawns sardines in groups of 4 within 2 L, and eels at dens beside reef solids', () => {
-    for (const seed of [1, 2]) {
-      const eco = new Ecosystem(seed), sardines = makeEntities(seed).filter(e => e.spec.key === '1:sardine'), L = SIZES[1]! * 1.4 * .55;
-      expect(sardines.length).toBe(12);
+  it('spawns sardines in groups of 4 within 2 L, and eels at dens beside reef solids (installed positions)', () => {
+    for (const seed of [1, 2, 3, 4, 5]) {
+      const eco = new Ecosystem(seed), sardines = eco.entities.filter(e => e.spec.key === '1:sardine'), L = SIZES[1]! * 1.4 * .55;
+      expect(sardines.length).toBe(12); expect(sardines.every(e => !e.eaten)).toBe(true);
       for (let k = 0; k < sardines.length; k++) { const lead = sardines[k - k % 4]!; expect(Math.hypot(sardines[k]!.x - lead.x, sardines[k]!.z - lead.z), `seed ${seed} sardine ${k}`).toBeLessThanOrEqual(2 * L + 1e-9); }
-      const eels = eco.entities.filter(e => e.spec.key === '2:eel' && !e.eaten); expect(eels.length).toBe(4);
+      const eels = eco.entities.filter(e => e.spec.key === '2:eel' && !e.eaten), solids = stageSolids(2, seed), Le = SIZES[2]! * 1.4, r = .35 * SIZES[2]!;
+      expect(eels.length).toBe(4);
       for (const eel of eels) {
-        const den = denOf(seed, eel), Le = SIZES[2]! * 1.4;
-        expect(Math.hypot(eel.hx - den.x, eel.hz - den.z), `seed ${seed} eel ${eel.id}`).toBeLessThanOrEqual(4 * Le);   // installed within 4 L of its den
+        expect(Math.hypot(eel.hx - denOf(seed, eel).x, eel.hz - denOf(seed, eel).z), `seed ${seed} eel ${eel.id}`).toBeLessThanOrEqual(4 * Le);   // installed within 4 L of its den
+        // Beside a reef solid: the gap from the hull to the nearest solid surface is at most 1 L.
+        expect(solids.solidAt(eel.x, eel.y + r, eel.z, r + Le), `seed ${seed} eel ${eel.id} beside a solid`).not.toBeNull();
       }
       expect(eco.installFailures).toBe(0);
     }
   });
-  it('R14(2): puffers spawn 1–3 tier units above the seabed; sardines 1.5–3 (plus the school spread), reachable from the seabed', () => {
-    for (const seed of [1, 2, 3]) for (const e of makeEntities(seed)) {
+  it('R14(2), review I1: installed puffers sit .8–1.6 tier units above the seabed (in a crawler\'s Bite reach)', () => {
+    for (const seed of [1, 2, 3, 4, 5]) for (const e of new Ecosystem(seed).entities) {
       const above = (e.y - seabedHeight(e.x, e.z)) / SIZES[1]!;
-      if (e.spec.key === '1:puffer') { expect(above, `seed ${seed} puffer ${e.id}`).toBeGreaterThanOrEqual(1 - 1e-9); expect(above).toBeLessThanOrEqual(3 + 1e-9); }
+      if (e.spec.key === '1:puffer' && !e.eaten) { expect(above, `seed ${seed} puffer ${e.id}`).toBeGreaterThanOrEqual(.8 - .05); expect(above).toBeLessThanOrEqual(1.6 + .05); }
     }
   });
-  it('R14: every visible size-1 line can reach a sardine and a puffer (seeds 1–3, a fresh starter, the real bite rule)', () => {
-    for (const p of PLANS.filter(q => q.size === 1 && !q.needs)) for (const seed of [1, 2, 3]) {
-      const starter = starterFor(p), actor = playerActor(p, starter, 1, 1), mode = movement(p.movement).mode;
-      const bite = { stage: 1, growth: 1, reach: derive(effectiveStats(starter, p)).reach }, c = { queries: stageWorldQueries(1, seed), bounds: stageBounds(1) };
-      const eco = new Ecosystem(seed);
-      for (const key of ['1:sardine', '1:puffer']) {
-        const n = eco.entities.filter(e => e.spec.key === key && !e.eaten && canApproachFood(actor, mode, { x: e.x, y: e.y, z: e.z, radius: 0 }, bite, c)).length;
-        expect(n, `${p.id} seed ${seed} ${key}`).toBeGreaterThan(0);
-      }
+  it('R14 (review I1): every installed puffer, and some sardine, is in Bite reach of a fresh size-1 swimmer and crawler (seeds 1–5)', () => {
+    for (const p of PLANS.filter(q => q.size === 1 && !q.needs)) for (const seed of [1, 2, 3, 4, 5]) {
+      const eco = new Ecosystem(seed), reach = biteReacher(p, seed), live = (key: string) => eco.entities.filter(e => e.spec.key === key && !e.eaten);
+      const missed = live('1:puffer').filter(e => !reach.canBite(e)).map(e => `e${e.id} +${((e.y - seabedHeight(e.x, e.z)) / SIZES[1]!).toFixed(2)} S`);
+      expect(missed, `${p.id} seed ${seed}: puffers out of Bite reach`).toEqual([]);
+      expect(live('1:sardine').some(e => reach.canBite(e)), `${p.id} seed ${seed}: a sardine in Bite reach`).toBe(true);
     }
   });
   it('an eaten eel comes back at its den', () => {
@@ -325,5 +322,36 @@ describe('size-1 combat species (T18)', () => {
     while (eel.eaten && now < 60) { eco.step(ctx(far, now, { stage: 2, perceivable: false, playerHull: [] })); now += .1; }
     expect(eel.eaten).toBe(false);
     expect(Math.hypot(eel.hx - den.x, eel.hz - den.z)).toBeLessThanOrEqual(4 * SIZES[2]! * 1.4);
+  });
+  it('review I2(a): knockback alone never makes an engaged eel give up; its own motion past the leash from its den does', () => {
+    const run = (knock: boolean) => {
+      const eco = new Ecosystem(1), eel = eco.entities.find(e => e.spec.key === '2:eel' && !e.eaten && Math.max(Math.abs(e.x), Math.abs(e.z)) < 38 * SIZES[1]!)!, den = { x: eel.hx, y: eel.hy, z: eel.hz }, L = SIZES[2]! * 1.4, dt = .1;   // ctx's tick
+      const near = () => ({ x: eel.x, y: eel.y + .35 * SIZES[2]! + 6, z: eel.z });
+      eco.step(ctx(near(), 0, { stage: 1 })); provoke(eel, near(), 0); expect(eel.mode).toBe('angry');
+      // The direction that carries the eel farthest from its den (around the reef solid).
+      let best = 0, dir = { x: 1, z: 0 };
+      for (let k = 0; k < 8; k++) { const a = k / 8 * 2 * Math.PI, x = den.x + Math.sin(a) * 2.2 * L, z = den.z + Math.cos(a) * 2.2 * L, open = (eco.lineOfSight(eel, { x, y: eel.y + .35 * SIZES[2]!, z }) ? 1 : 0) + (Math.max(Math.abs(x), Math.abs(z)) < 36 * SIZES[1]! ? 2 : 0); if (open > best) { best = open; dir = { x: Math.sin(a), z: Math.cos(a) }; } }
+      let now = dt, gaveUp = false, trace = '';
+      for (let i = 0; i < (knock ? 10 : 30); i++, now += dt) {
+        eel.combat = knock ? { intent: { kind: 'hold' }, face: null, lunge: null, external: { x: dir.x * 2.2 * L, y: 0, z: dir.z * 2.2 * L }, frozen: false, held: null, snap: null, moved: 0 }
+          : { intent: { kind: 'toward', point: { x: den.x + dir.x * 5 * L, y: eel.y, z: den.z + dir.z * 5 * L }, speedFactor: 1 }, face: null, lunge: null, external: { x: 0, y: 0, z: 0 }, frozen: false, held: null, snap: null, moved: 0 };
+        eco.step(ctx(near(), now, { stage: 1 })); if (!gaveUp && eel.mode === 'return') trace = `tick ${i} out ${(Math.hypot(eel.x - den.x, eel.z - den.z) / L).toFixed(2)} knock ${JSON.stringify(eel.knock)} pos ${eel.x.toFixed(0)},${eel.z.toFixed(0)}`; gaveUp ||= eel.mode === 'return';
+      }
+      return { gaveUp, out: Math.hypot(eel.x - den.x, eel.z - den.z) / L, trace };
+    };
+    const knocked = run(true), walked = run(false);
+    expect(knocked.out).toBeGreaterThan(1.6); expect(knocked.gaveUp, knocked.trace).toBe(false);
+    expect(walked.out).toBeGreaterThan(1.6); expect(walked.gaveUp).toBe(true);
+  });
+  it('review I2(b), D37: a species back to calm within 8 s of its last damage heals only after 8 s without damage', () => {
+    const eco = new Ecosystem(7), crab = crabOf(eco), far = { x: 0, y: 900, z: 0 };
+    eco.step(ctx(far, 0, { perceivable: false, playerHull: [] }));
+    Object.assign(crab, { mode: 'return', modeTime: 0, hp: 5, damagedAt: 1, returnUntil: 0, x: crab.hx, z: crab.hz });
+    eco.step(ctx(far, 2, { perceivable: false, playerHull: [] })); expect(crab.mode).toBe('calm'); expect(crab.hp).toBe(5);
+    eco.step(ctx(far, 8.9, { perceivable: false, playerHull: [] })); expect(crab.hp).toBe(5);
+    eco.step(ctx(far, 9.05, { perceivable: false, playerHull: [] })); expect(crab.hp).toBe(crab.spec.hp);
+    // Undamaged for 8 s at the return: full HP at once (D37 as before).
+    Object.assign(crab, { mode: 'return', modeTime: 0, hp: 5, damagedAt: 0, x: crab.hx, z: crab.hz });
+    eco.step(ctx(far, 9.2, { perceivable: false, playerHull: [] })); expect(crab.mode).toBe('calm'); expect(crab.hp).toBe(crab.spec.hp);
   });
 });

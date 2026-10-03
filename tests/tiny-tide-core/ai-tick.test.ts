@@ -200,6 +200,11 @@ describe('the AI tick: size-1 species (T18)', () => {
     const intent = a.combat!.intent; expect(intent.kind).toBe('toward');
     if (intent.kind === 'toward') { expect(intent.point.z).toBeGreaterThan(60); expect(intent.point.x).toBeGreaterThan(0); }
   });
+  it('a damaging hit stamps the entity\'s damagedAt (the ecosystem\'s D37 quiet heal, T18 review I2)', () => {
+    const s = fighter(), crab = entity(1, CRAB, ahead(1.6)); let now = 0, hitAt = -1;
+    for (let i = 0; i < 60 && hitAt < 0; i++, now += DT) { const { r } = tick(s, [crab], now, { basicPressed: i === 0, basicHeld: i < 10 }); if (r.events.some(e => e.targetId === 'e1' && e.amount > 0)) hitAt = now; }
+    expect(hitAt).toBeGreaterThanOrEqual(0); expect(crab.damagedAt).toBeCloseTo(hitAt, 9);
+  });
   it('the real squid\'s ink inks a still player in its band (status inked, the speed factor of the ink effect)', () => {
     const SQUID = species(2, 'squid'), s = fighter(), squid = entity(1, SQUID, aheadOf(SQUID, 5.6 + .5 * 22.4)), c = s.combat.stateOf(squid)!;
     const body = playerBody(s, playerActorCached(s)), a = s.combat.startSpecies(c, 'squid-ink', SPECIES_ATTACKS['squid-ink']!, { x: 0, y: 0, z: -1 }, 'player', 0, { ...AT_PLAYER, targetAt: body.centre });

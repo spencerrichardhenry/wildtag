@@ -1146,7 +1146,7 @@ spawn as groups of `school.groupSize` (4) within 2 L of a group centre.
 | `idle` | Ambient (graze or drift). A hit, or the player within `trigger.radiusBodyLengths` for `trigger.seconds` | `face` |
 | `face` | `hold`; turn to the player for 0.2 s | `attack` (token) or `idle` (player out of range) |
 | `attack` | The engine runs its one attack | `back-off` |
-| `back-off` | `away(player, 0.5)` for 2 s | `idle` |
+| `back-off` | `away(player, 0.5)` for 2 s; level (horizontal) when the player is a ground mover, so it never rises out of a crawler's reach (T18 review M2) | `idle` |
 
 It never approaches more than 0.5 L from where it started the fight. Its
 pursuit policy is `retaliate` (memory only).
@@ -1170,7 +1170,12 @@ pursuit policy is `retaliate` (memory only).
   (`chainNextId`) starts the next attack after `chainGapSeconds` without a
   new choice, but it needs its own token.
 - **Gap:** after an action ends, the hunter starts no attack for `gapSeconds`.
-- A hunter that returns to `calm` gets its full HP back.
+- A hunter that returns to `calm` gets its full HP back, but not within 8 s
+  of its last damage: then it heals once 8 s pass without damage (D37, T18
+  review).
+- Inside its smallest band (only when every band starts above 0, as the
+  squid's do) no attack fits, so the hunter backs out to that band's lower
+  bound + 0.1 L instead of pressing in (T18).
 
 **`hunter-ambush` (Moray eel):**
 
@@ -1182,7 +1187,11 @@ pursuit policy is `retaliate` (memory only).
 | `retreat` | `toward(den, 1.0)` | `den` |
 
 Pursuit policy `ambusher`: memory 3 s, blocked wait 1 s, reacquire 4 s, leash
-1.5 L, give-up 3 L. The den is its home.
+1.5 L, give-up 3 L. The den is its home: the leash is measured from the den,
+and a reinstall during a fight does not move the den. For every pursuit, the
+leash and give-up distances leave out the displacement that knockback and
+body separation gave the body during the engagement, so a Bite's knockback
+alone never ends a fight (T18 review I2).
 
 **`alpha`:** a hunter bound to its lair, with phases.
 
@@ -1240,11 +1249,15 @@ Speeds are in tier-local units per second (× `SIZES[tier]`). HP is in HP.
   "Jelly drift" puffer 1; tier 2 "Ray shallows" eel 1, "Squid deep" eel 1.
   Alphas are placed at their lair, not by weight.
 - Spawn heights: drifter `ground + 0.6 + 1.6 × rand`; spiny snail
-  `ground + 1`; sardine and puffer `max(ground + 3, 5 + 13 × rand)` (tier
-  scaled as the shrimp); eel at its den.
-- **Eel dens:** each eel picks a seeded reef solid of `stageSolids(2, seed)`;
-  the den is 0.5 L_e outside the solid's footprint, on the seabed side, then
-  `findRecoveryPose` (4 L). Without a solid, a normal spawn.
+  `ground + 1`; sardine `ground + (1.25 + 1.25 × rand) × S`; puffer
+  `ground + (0.8 + 0.8 × rand) × S`, inside a size-1 crawler's level Bite
+  cone (T18 review I1: it reaches 1.8–2.4 S); school members keep their
+  leader's height above the seabed ± 0.5 L; eel at its den.
+- **Eel dens:** each eel picks a seeded reef solid of `stageSolids(2, seed)`
+  inside the spawn square; from the solid's centre it walks out along a
+  seeded direction until its hull clears every solid by 0.25 L_e, on the
+  seabed, then `findRecoveryPose` (4 L). Without a solid, a normal spawn. The
+  eel respawns at its den.
 - Respawn after a kill: hunters 30–40 s; other combat species today's
   14–22 s. Alphas never respawn.
 - `entityRadius`, the hull sphere and `bodyLength` are multiplied by
@@ -1598,5 +1611,5 @@ it.
 | D34 | Grab size rule: held when `L_t ≤ sizeFactor × L_a`; alphas cannot be grabbed. A held player can Bite; presses and stick flicks add break-free progress. The grabber can Bite during the hold; any other move ends it. | Resolver rules. |
 | D35 | The probe bars P1–P8. | Test thresholds. |
 | D36 | The Berry squid keeps `hunts: [1, 2]` and uses the 3a attacks at size 2 until 3b. | One data row. |
-| D37 | Enemies regain full HP when they return to calm; an alpha heals 4 % per second after 3 s with the player outside 1.5 × its lair. | Constants. |
+| D37 | Enemies regain full HP when they return to calm, but not within 8 s of their last damage (then once 8 s pass without damage; T18 review I2); an alpha heals 4 % per second after 3 s with the player outside 1.5 × its lair. | Constants. |
 | D38 | A herbivore's kill drives the creature off (consumed, respawns) with no DNA. | One rule. |

@@ -67,8 +67,9 @@ export function spawnHeight(spec: Species, x: number, z: number, rand: () => num
     case 'spiny_snail': return ground + 1;
     case 'worm': return ground + .1;
     case 'shrimp': return Math.max(ground + 3, 5 + rand() * 13);
-    // Review R14(2): low enough that a size-1 crawler on the seabed can bite them (tier units above the seabed).
-    case 'puffer': return ground + (1 + 2 * rand()) * size;
+    // Review R14(2) and the T18 review I1: low enough that a size-1 crawler's level Bite cone reaches them from the seabed (tier units above
+    // the seabed). Measured: the crawler starter's Bite reaches a puffer origin up to 1.8–2.4 S above the seabed, so puffers spawn at .8–1.6 S.
+    case 'puffer': return ground + (.8 + .8 * rand()) * size;
     case 'sardine': return ground + (1.25 + 1.25 * rand()) * size;
     case 'crab': case 'snail': return ground + 1;
     case 'jellyfish': return 12 + rand() * 24;

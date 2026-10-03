@@ -1,7 +1,7 @@
 // tests/tiny-tide-core/combat-ai.test.ts — spec §11.2 with seeded fixtures: the shipped behaviours, a scripted player, and an attack that keeps
 // the entity busy for its windup + active + recovery once the AI's request is started.
 import { describe, expect, it } from 'vitest';
-import { aiLandedHit, aiRefused, aiStarted, aiStep, alphaPhase, chooseAttack, clampToDisc, newAiState, schoolFlee, ROAR_SECONDS, type AiInput, type AiOutput, type AiState } from '../../src/tiny-tide/combat-ai';
+import { aiLandedHit, aiRefused, BAND_MARGIN, aiStarted, aiStep, alphaPhase, chooseAttack, clampToDisc, newAiState, schoolFlee, ROAR_SECONDS, type AiInput, type AiOutput, type AiState } from '../../src/tiny-tide/combat-ai';
 import { BEHAVIOURS, LAPS, SPECIES_ATTACKS, type SpeciesBehaviour } from '../../src/tiny-tide/bestiary';
 import type { Vec3 } from '../../src/tiny-tide/combat-types';
 import { Ecosystem, lairOf, speciesActor } from '../../src/tiny-tide/ecosystem';
@@ -76,6 +76,17 @@ describe('combat AI: prey', () => {
     const leashed = aiStep(BEHAVIOURS.puffer!, s, base({ now: back.t + .1, self: { ...base().self, position: at(0, -1) }, player: { position: at(0, 1), d: 1, visible: true, targetable: true } }));
     expect(leashed.intent).toMatchObject({ kind: 'toward', point: { x: 0, y: 0, z: 0 } });
   });
+  it('the puffer backs off horizontally from a ground mover (T18 review M2: it must not rise out of a crawler\'s reach)', () => {
+    for (const ground of [true, false]) {
+      const s = newAiState(1, 5), below = at(0, 1, -3), log = drive(BEHAVIOURS.puffer!, s, 2.5, t => ({ hit: t < DT, player: { position: below, d: 1, visible: true, targetable: true, ground } }));
+      const back = log.filter(l => l.state === 'back-off').map(l => l.out.intent);
+      expect(back.length).toBeGreaterThan(0);
+      for (const it of back) {
+        expect(it.kind).toBe('away');
+        if (it.kind === 'away') { if (ground) expect(it.point.y).toBeCloseTo(0, 9); else expect(it.point.y).toBe(-3); }   // level with the puffer (self y 0)
+      }
+    }
+  });
 });
 
 describe('combat AI: hunters', () => {
@@ -141,6 +152,11 @@ describe('combat AI: hunters', () => {
     const run = (seed: number, id: number) => drive(BEHAVIOURS.crab!, newAiState(seed, id), 30, () => crabAt()).filter(l => l.out.attack).map(l => `${l.t.toFixed(3)} ${l.out.attack!.attackId}`);
     expect(run(1, 6)).toEqual(run(1, 6)); expect(run(1, 7)).not.toEqual(run(1, 6)); expect(run(2, 6)).not.toEqual(run(1, 6));
   });
+  it('a crab at d = 0 attacks and does not strafe out (T18 review M1: a band from 0 needs no back-off)', () => {
+    const s = newAiState(1, 8), log = drive(BEHAVIOURS.crab!, s, 2, () => ({ pursuit: 'hunt', player: { position: at(0, 1), d: 0, visible: true, targetable: true } }));
+    expect(log.some(l => l.out.attack)).toBe(true);
+    expect(log.filter(l => l.state === 'approach' && !l.out.attack).every(l => l.out.intent.kind === 'toward' && Math.hypot(l.out.intent.point.x, l.out.intent.point.z - 1) < 1e-9)).toBe(true);   // chases the player
+  });
   it('a hunter whose bands all start above 0 (the squid) backs out of a player inside its smallest band, then attacks (T18 live look)', () => {
     // Live look: a squid on top of a still Speck (d = 0) chased into it for minutes without an attack (every squid band starts at .2 L or more).
     const s = newAiState(1, 7), L = 22.4, me = at(0, 0), p = at(0, 2), d = (q: Vec3) => Math.max(0, Math.hypot(q.x - p.x, q.z - p.z) - .3 * L) / L;
@@ -149,7 +165,8 @@ describe('combat AI: hunters', () => {
     const o = one(me, .6);
     expect(o.attack).toBeFalsy();
     expect(o.intent.kind).toBe('toward');
-    if (o.intent.kind === 'toward') expect(Math.hypot(o.intent.point.x - p.x, o.intent.point.z - p.z)).toBeGreaterThan(Math.hypot(me.x - p.x, me.z - p.z));   // away from the player
+    // Away from the player, to the nearest band's lower bound (squid-grab .2 L) + BAND_MARGIN: the gap there is (.2 + .1) L.
+    if (o.intent.kind === 'toward') expect(Math.hypot(o.intent.point.x - p.x, o.intent.point.z - p.z)).toBeCloseTo(Math.hypot(me.x - p.x, me.z - p.z) + (.2 + BAND_MARGIN) * L, 6);
     // In the band again it attacks.
     const far = at(0, 2 - (.3 + .5) * L);
     let attacked = false; for (let t = .7; t < 3 && !attacked; t += DT) attacked = !!one(far, t).attack;
@@ -280,6 +297,12 @@ describe('combat AI: alphas', () => {
   it('the roar holds still; the caller cancels a busy action', () => {
     const s = newAiState(1, 30); s.home = at(0, 0); drive(mother, s, 1, () => alphaInput(80));
     const o = aiStep(mother, s, base({ now: 2, ...alphaInput(40) })); expect(o.intent).toEqual({ kind: 'hold' }); expect(o.attack).toBeNull();
+  });
+  it('the Clawmother (phase 1) at d = 0 attacks and does not strafe out (T18 review M1)', () => {
+    const s = newAiState(1, 32); s.home = at(0, 0);
+    const log = drive(mother, s, 3, () => alphaInput(80, { player: { position: at(0, 1), d: 0, visible: true, targetable: true } }));
+    expect(s.phase).toBe(0); expect(log.some(l => l.out.attack)).toBe(true);
+    expect(log.filter(l => l.state === 'approach' && !l.out.attack).every(l => l.out.intent.kind === 'toward' && Math.hypot(l.out.intent.point.x, l.out.intent.point.z - 1) < 1e-9)).toBe(true);
   });
   it('the alpha does not notice a player outside its lair', () => {
     const s = newAiState(1, 31); s.home = at(0, 0);

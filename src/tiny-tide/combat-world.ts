@@ -318,7 +318,7 @@ export class CombatWorld {
     for (const e of resolveAll(requests, now, statusOf)) {
       out.events.push(e);
       if (e.killed && e.killed !== PLAYER_ID) { const c = live.find(x => x.id === e.killed); if (c && !out.killed.includes(c.entity)) out.killed.push(c.entity); }
-      const hurt = live.find(x => x.id === e.targetId); if (hurt && e.amount > 0) hurt.lastDamagedAt = now;
+      const hurt = live.find(x => x.id === e.targetId); if (hurt && e.amount > 0) { hurt.lastDamagedAt = now; hurt.entity.damagedAt = now; }   // the ecosystem's D37 quiet heal reads it
       if (e.targetId === PLAYER_ID) {
         const by = live.find(x => x.id === e.attackerId); if (by) by.lastAttackedPlayerAt = now;
         if (by?.ai && (e.outcome === 'hit' || e.outcome === 'grabbed' || e.outcome === 'guard-broken')) aiLandedHit(by.behaviour, by.ai, now);   // an eel stays out longer
@@ -503,7 +503,7 @@ export class CombatWorld {
         now,
         self: { position: centre, L, forward: pose.forward, hp: e.hp, maxHp: c.maxHp, staggered: c.rt.actionClock < c.rt.staggerUntil, held: c.rt.heldBy !== null, busy: liveActions(c.rt).length > 0,
           speed: e.spec.speed * tierSize },
-        player: { position: p.centre, d: Math.max(0, dHurt - r) / L, visible: ctx.lineOfSight(e, p.centre), targetable: ctx.playing && p.rt.targetable },
+        player: { position: p.centre, d: Math.max(0, dHurt - r) / L, visible: ctx.lineOfSight(e, p.centre), targetable: ctx.playing && p.rt.targetable, ground: p.ground },
         hostile: !ctx.givingUp && hostileSizes(e.spec).includes(ctx.stage),   // D27 (review ruling): no creature attacks the player in the window
         pursuit: ctx.givingUp && engaged ? 'return' : e.mode, hit,
         fleeDistance: 7 * Math.max(tierSize, stageSize) * ctx.stealthFactor,

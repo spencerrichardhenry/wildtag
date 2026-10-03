@@ -48,7 +48,8 @@ export interface AiInput {
   now: number;
   /** `speed`: the species' top speed (physical units per second). */
   self: { position: Vec3; L: number; forward: Vec3; hp: number; maxHp: number; staggered: boolean; held: boolean; busy: boolean; speed: number };
-  player: { position: Vec3; d: number; visible: boolean; targetable: boolean };
+  /** `ground`: the player is a ground mover (a back-off then stays level, T18 review M2). */
+  player: { position: Vec3; d: number; visible: boolean; targetable: boolean; ground?: boolean };
   /** The species is hostile at the player's size (spec §11.1). */
   hostile: boolean;
   /** The ecosystem's pursuit mode (spec §10): `hunt`/`angry` engaged, `return` giving up, `calm` idle. */
@@ -168,6 +169,8 @@ function preyFighter(b: SpeciesBehaviour, s: AiState, i: AiInput): AiOutput {
   const near = i.hostile && i.player.targetable && i.player.d <= t.radiusBodyLengths;
   // It never moves more than .5 L from where it started the fight.
   const leash = (intent: MoveIntent): MoveIntent => s.home && len(sub(i.self.position, s.home)) > .5 * L ? { kind: 'toward', point: s.home, speedFactor: 1 } : intent;
+  // Away from a ground mover is level (T18 review M2): a puffer that rose after each burst would leave a crawler's Bite reach.
+  const from: Vec3 = i.player.ground ? { x: i.player.position.x, y: i.self.position.y, z: i.player.position.z } : i.player.position;
   switch (s.name) {
     case 'idle': {
       s.nearSince = near ? s.nearSince ?? now : null;
@@ -182,11 +185,11 @@ function preyFighter(b: SpeciesBehaviour, s: AiState, i: AiInput): AiOutput {
     case 'attack': {
       if (i.self.busy) return out(HOLD);
       set(s, 'back-off', now); s.gapUntil = now + b.gapSeconds;
-      return out(leash({ kind: 'away', point: i.player.position, speedFactor: .5 }));
+      return out(leash({ kind: 'away', point: from, speedFactor: .5 }));
     }
     case 'back-off': {
       if (now - s.since >= 2 - 1e-9) { set(s, 'idle', now); s.nearSince = null; return out(AMBIENT); }
-      return out(leash({ kind: 'away', point: i.player.position, speedFactor: .5 }));
+      return out(leash({ kind: 'away', point: from, speedFactor: .5 }));
     }
     default: set(s, 'idle', now); return out(AMBIENT);
   }
@@ -233,9 +236,9 @@ function hunter(b: SpeciesBehaviour, s: AiState, i: AiInput, choices: readonly A
   if (s.name !== 'approach') set(s, 'approach', now);
   const chase: MoveIntent = { kind: 'toward', point: pull(i.player.position), speedFactor: speed * (i.pursuit === 'angry' ? 1.15 : 1) };
   // Inside the smallest band (the squid: every band starts at .2 L or more) no attack fits, so pressing in would sit on the player for good
-  // (T18 live look): back out to the strafe ring (d .4 L) instead.
-  const nearest = Math.min(...choices.map(c => c.band[0]));
-  if (i.player.targetable && nearest > 0 && i.player.d < nearest) return out(strafe(b, s, i, pull));
+  // (T18 live look): back out to just inside the nearest band (its lower bound + BAND_MARGIN), circling as a strafe does.
+  const nearest = choices.length ? Math.min(...choices.map(c => c.band[0])) : 0;
+  if (i.player.targetable && nearest > 0 && i.player.d < nearest) return out(strafe(b, s, i, pull, nearest + BAND_MARGIN));
   if (now >= s.gapUntil && i.player.targetable) {
     const wait = waitUntil(s, i);
     // Waiting on a token with the player in reach: reposition until the retry time instead of pressing in and re-asking.
@@ -250,10 +253,12 @@ function hunter(b: SpeciesBehaviour, s: AiState, i: AiInput, choices: readonly A
 }
 /** A refused chain is dropped after this wait (fix round 1, M-b). */
 const CHAIN_WAIT_SECONDS = 1;
-/** Strafe around the player at `repositionSpeedFactor`, keeping d in [.4, .9] L. */
-function strafe(b: SpeciesBehaviour, s: AiState, i: AiInput, pull: (p: Vec3) => Vec3): MoveIntent {
+/** Backing out of a player inside the nearest band aims this far (L) past the band's lower bound. */
+export const BAND_MARGIN = .1;
+/** Strafe around the player at `repositionSpeedFactor`, keeping d in [.4, .9] L (or moving d to `toD`). */
+function strafe(b: SpeciesBehaviour, s: AiState, i: AiInput, pull: (p: Vec3) => Vec3, toD?: number): MoveIntent {
   const p = i.player.position, from = sub(i.self.position, p), h = Math.hypot(from.x, from.z) || 1, a = Math.atan2(from.x, from.z) + s.strafe * .6;
-  const r = h + (Math.max(.4, Math.min(.9, i.player.d)) - i.player.d) * i.self.L;
+  const r = h + ((toD ?? Math.max(.4, Math.min(.9, i.player.d))) - i.player.d) * i.self.L;
   return { kind: 'toward', point: pull({ x: p.x + Math.sin(a) * r, y: i.self.position.y, z: p.z + Math.cos(a) * r }), speedFactor: b.repositionSpeedFactor };
 }
 function ambusher(b: SpeciesBehaviour, s: AiState, i: AiInput): AiOutput {
