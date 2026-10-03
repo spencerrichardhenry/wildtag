@@ -38,10 +38,11 @@ describe('feeding', () => {
     expect(biteTargets(s.run, [legacy], s.physical, 1, d).targets.map(t => t.entity.id)).toEqual([5]);
   });
   it('legacy species keep chomp damage', () => {
-    const s = speck(), d = derive(effectiveStats(s.run.genome, currentPlan(s.run))), crab = entity(6, species(1, 'crab'), { x: 0, y: 1, z: 2 });
-    crab.mode = 'hunt';   // a bigger creature that is attacking is a bite target
-    const eco = { entities: [crab], consume: () => undefined, planetIndex: () => 0 };
+    // A bigger legacy fighter that is attacking (the ray, until 3b) takes max(1, floor(bite / 2)) from a chomp.
+    const s = speck(), d = derive(effectiveStats(s.run.genome, currentPlan(s.run))); s.run.stage = 1; s.physical = { x: 0, y: 4, z: 0 };
+    const ray = entity(6, species(2, 'ray'), { x: 0, y: 4, z: 4 }); ray.mode = 'angry';
+    const eco = { entities: [ray], consume: () => undefined, planetIndex: () => 0 };
     expect(chomp(s.run, eco, s.physical, 1, d, 0, [])).toMatchObject({ kind: 'bitten', damage: Math.max(1, Math.floor(d.bite / 2)) });
-    expect(crab.hp).toBe(species(1, 'crab').hp - Math.max(1, Math.floor(d.bite / 2)));
+    expect(ray.hp).toBe(species(2, 'ray').hp - Math.max(1, Math.floor(d.bite / 2)));
   });
 });

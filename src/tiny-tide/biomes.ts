@@ -1,5 +1,5 @@
 import { EDGE_REACH, EDGE_SOFT_START } from './edge';
-import { SPECIES, tierSpecies, type FoodKind, type Species } from './species';
+import { APPENDED_FROM, SPECIES, tierSpecies, type FoodKind, type Species } from './species';
 
 // Physical sizes in one persistent world. The camera stays close while the
 // entire habitat shrinks continuously as the creature grows.
@@ -22,10 +22,10 @@ export type Decor = 'coral' | 'kelp' | 'rock' | 'sand';
 export interface BiomeType { name: string; weights: Partial<Record<FoodKind, number>>; decor: Decor; tint: string }
 export interface Biome extends BiomeType { tier: number; x: number; z: number }
 const TYPES: readonly (readonly BiomeType[])[] = [
-  [{ name: 'Sprout meadow', weights: { plant: 3, lettuce: 2 }, decor: 'kelp', tint: '#2f8a7c' },
-   { name: 'Copepod cloud', weights: { copepod: 4 }, decor: 'sand', tint: '#2b7f93' },
-   { name: 'Wormy sands', weights: { worm: 4, plant: .5 }, decor: 'sand', tint: '#3b7f86' },
-   { name: 'Grape garden', weights: { seagrape: 3, kelp_snack: 2 }, decor: 'coral', tint: '#2e7a8c' }],
+  [{ name: 'Sprout meadow', weights: { plant: 3, lettuce: 2, spiny_snail: 1 }, decor: 'kelp', tint: '#2f8a7c' },
+   { name: 'Copepod cloud', weights: { copepod: 4, drifter: 2 }, decor: 'sand', tint: '#2b7f93' },
+   { name: 'Wormy sands', weights: { worm: 4, plant: .5, spiny_snail: 2 }, decor: 'sand', tint: '#3b7f86' },
+   { name: 'Grape garden', weights: { seagrape: 3, kelp_snack: 2, drifter: 1 }, decor: 'coral', tint: '#2e7a8c' }],
   [{ name: 'Coral garden', weights: { seagrape: 2, shrimp: 2 }, decor: 'coral', tint: '#2a7e8e' },
    { name: 'Jelly drift', weights: { jellyfish: 4 }, decor: 'sand', tint: '#30708f' },
    { name: 'Crab flats', weights: { crab: 4, snail: 2 }, decor: 'rock', tint: '#3a7a80' },
@@ -63,6 +63,8 @@ export function spawnHeight(spec: Species, x: number, z: number, rand: () => num
   const ground = seabedHeight(x, z), size = SIZES[spec.tier]!;
   switch (spec.kind) {
     case 'copepod': return ground + .6 + rand() * 1.8;
+    case 'drifter': return ground + .6 + rand() * 1.6;
+    case 'spiny_snail': return ground + 1;
     case 'worm': return ground + .1;
     case 'shrimp': return Math.max(ground + 3, 5 + rand() * 13);
     case 'crab': case 'snail': return ground + 1;
@@ -98,13 +100,16 @@ export interface Spawn { id: number; spec: Species; x: number; y: number; z: num
 /** The opening population of every tier. The ids are stable for a seed. A point that `blocked(tier, x, y, z)` rejects (a reef solid,
  *  owner playtest P4) is replaced by a spawnPoint search with its own RNG, so every other spawn of the seed stays where it was. */
 export function populate(seed: number, blocked?: (tier: number, x: number, y: number, z: number) => boolean): Spawn[] {
-  const out: Spawn[] = []; let id = 0;
+  // `legacy`: the spawn's id before the combat rows were appended (T16). A reef-blocked spawn's own RNG is seeded with it, so the rows
+  // appended after every legacy row (which shift the ids of the higher tiers) move no legacy spawn.
+  const out: Spawn[] = []; let id = 0, legacy = 0;
   for (let tier = 0; tier < SIZES.length; tier++) {
     const rand = random(seed * 7 + tier * 119 + 8721), biomes = makeBiomes(seed, tier), block = (x: number, y: number, z: number) => !!blocked?.(tier, x, y, z);
     const firsts = new Set<string>();
     for (const spec of tierSpecies(tier)) for (let i = 0; i < spec.count; i++) {
       let point = spec.kind === 'planet' ? planetPoint(i, rand) : spawnPoint(spec, biomes, rand);
-      if (spec.kind !== 'planet' && block(point.x, point.y, point.z)) point = spawnPoint(spec, biomes, random(seed * 977 + id * 31 + 5), undefined, block);
+      const key = SPECIES.indexOf(spec) < APPENDED_FROM ? legacy++ : 100_000 + id;
+      if (spec.kind !== 'planet' && block(point.x, point.y, point.z)) point = spawnPoint(spec, biomes, random(seed * 977 + key * 31 + 5), undefined, block);
       // A few landmarks are placed where the opening camera can see them.
       if (!firsts.has(spec.key)) {
         firsts.add(spec.key);

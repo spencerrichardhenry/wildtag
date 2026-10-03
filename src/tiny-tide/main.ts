@@ -245,7 +245,7 @@ const sim: SimState = {
   ...simOwnedState(),
 };
 /** What the simulation reads from the page: the world's ecosystem, the cached legality, the start grace and the QA flag. */
-const simWorld: SimWorld = { get eco() { return world.eco; }, legality: stage => legality(stage), startGrace: START_GRACE, qa: QA };
+const simWorld: SimWorld = { get eco() { return world.eco; }, legality: stage => legality(stage), startGrace: START_GRACE, qa: QA, isOnScreen: p => onScreen(p) };
 const refreshDerived = () => simRefreshDerived(sim);
 const playerActorCached = (): Actor => simActor(sim);
 const capsOf = () => movementCapabilities(currentPlan(run));
@@ -354,6 +354,18 @@ function presentKill(e: Entity, dna: number, drop: string | null) {
   if (food) { const pos = world.screenPoint(new T.Vector3(food.data.x, food.data.y + 1, food.data.z)); if (pos.visible) floater(dna > 0 ? `+${dna} DNA` : 'Driven off!', pos.x, pos.y); }
   if (drop) { toast(`New part found: ${part(drop)!.name}! Open the editor to use it.`); audio.found(); }
   if (evolveReady(run) && !readyToasted) { readyToasted = true; toast('Ready to evolve! Tap Evolve when you want to grow.'); audio.found(); }
+}
+/** The survivor bonus (spec §10.4, D22): a DNA floater at the hunter and a toast. */
+function presentSurvived(e: Entity, dna: number) {
+  const food = world.foods.find(f => f.entity === e);
+  if (food) { const pos = world.screenPoint(new T.Vector3(food.data.x, food.data.y + 1, food.data.z)); if (pos.visible) floater(`+${dna} DNA`, pos.x, pos.y); }
+  toast(`You survived the ${e.spec.label}! +${dna} DNA`); syncUI();
+}
+/** An alpha's phase roar (spec §11.6): a red flash of particles at it and the hint. */
+function presentRoar(e: Entity) {
+  const food = world.foods.find(f => f.entity === e);
+  if (food) world.burst(food.data.x, food.data.y, food.data.z, '#ff4d4d', 30);
+  toast(`The ${e.spec.label} is getting angry!`);
 }
 function syncUI() {
   const stage = STAGES[run.stage]!, diet = dietOf(run.genome);
@@ -512,6 +524,8 @@ function presentSim(events: readonly SimEvent[], dt: number) {
       case 'combat': presentCombat(e.tick); break;
       case 'fainted': presentFaint(e.lost); break;
       case 'killed': presentKill(e.entity, e.dna, e.drop); break;
+      case 'survived': presentSurvived(e.entity, e.dna); break;
+      case 'roar': for (const r of e.entities) presentRoar(r); break;
       case 'respawned': el('faint').hidden = true; save(); syncUI(); toast('You woke up at the start. Eat to grow again.'); break;
       case 'respawn-waiting': if (!respawnToasted) { respawnToasted = true; toast('Looking for a safe place to wake up…'); } break;
       case 'resume-fainted': showFaintText(null); el('faint').hidden = false; break;   // the loss was taken before the save: not known here

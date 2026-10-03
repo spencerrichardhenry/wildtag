@@ -2,11 +2,13 @@
 // action clocks, the action engine, world shapes, hit requests, the resolver, holds and kills. Pure: positions are read from the bodies it
 // is given; it never moves a body (combat motion goes to the player step and the ecosystem as requests).
 import * as T from 'three';
-import { advanceClock, bufferedPress, bufferPress, canStart, dashSpeed, endHold, endNow, holdingAction, liveActions, newPoise, startAction, sweepEnded, tickAction, windupLength, type PoiseMeter, type StartRefusal } from './action-engine';
-import { BEHAVIOURS, type SpeciesBehaviour } from './bestiary';
-import { actionShapes, aimFrame, crossingOk, hurtboxesHit, nearestTargets, obstructionClear, telegraphDescriptor, truncateCapsule, worldShape, type TelegraphDescriptor } from './combat-shapes';
+import { advanceClock, bufferedPress, bufferPress, canStart, dashSpeed, endHold, endNow, holdingAction, liveActions, lungeSpeed, newPoise, startAction, sweepEnded, tickAction, windupLength, type PoiseMeter, type StartRefusal } from './action-engine';
+import { BEHAVIOURS, hostileSizes, SPECIES_ATTACKS, type SpeciesBehaviour } from './bestiary';
+import { SIZES } from './biomes';
+import { aiLandedHit, aiRefused, aiStarted, aiStep, newAiState, ROAR_SECONDS, type AiState } from './combat-ai';
+import { actionShapes, aimFrame, closestOnSegment, crossingOk, hurtboxesHit, nearestTargets, obstructionClear, shapeCentroid, telegraphDescriptor, truncateCapsule, worldShape, type TelegraphDescriptor } from './combat-shapes';
 import { newRuntime, type ActionPhase, type TelegraphProfile, type ActionState, type ActiveSlot, type ActorId, type AttackSpec, type CombatInput, type CombatPose, type CombatRuntime, type EmitterSource, type MovementMode, type ResolvedMove, type Vec3, type WorldQueries, type WorldShape } from './combat-types';
-import type { Entity } from './ecosystem';
+import { engage, provoke, type Entity, type EntityMotion } from './ecosystem';
 import { biteDispatch } from './feeding';
 import { addBreakProgress, armCounters, isFlick, releaseHold, resolveAll, squeezesDue, type CombatEvent, type Fighter, type HitRequestIn } from './hit-resolver';
 import { basicRequested } from './input';
@@ -32,8 +34,21 @@ export const ENGAGED_SECONDS = 3;
 
 /** `lastAttackedPlayerAt`: world time of the last event in which this species made contact with the player, any outcome (hit, blocked,
  *  evaded, countered…; review R17 engagement). `tokenRetryAt`: world time before which a new wind-up at the player is refused (a refused
- *  token or a wind-up the director ended; spec §9.4: ask again after RETRY_SECONDS). */
-export interface EntityCombat { id: ActorId; entity: Entity; rt: CombatRuntime; poise: PoiseMeter; behaviour: SpeciesBehaviour; maxHp: number; lastDamagedAt: number; lastAttackedPlayerAt: number; tokenRetryAt: number }
+ *  token or a wind-up the director ended; spec §9.4: ask again after RETRY_SECONDS). `ai`: its state machine (combat-ai.ts), created at
+ *  its first AI tick. `immuneUntil`: no stagger before this world time (an alpha's roar, ROAR_SECONDS). */
+export interface EntityCombat { id: ActorId; entity: Entity; rt: CombatRuntime; poise: PoiseMeter; behaviour: SpeciesBehaviour; maxHp: number; lastDamagedAt: number; lastAttackedPlayerAt: number; tokenRetryAt: number;
+  ai: AiState | null; immuneUntil: number }
+/** What the AI tick reads (spec §11.2). `hitBy`: entity ids the player damaged this tick (provocation, the AI's `hit`). `isOnScreen`: a physical
+ *  point is on screen (the director's off-screen rule; main.ts tests it against the camera each frame, headless callers pass a fixed answer).
+ *  `lineOfSight`: the ecosystem's perception test (review I9: visibility and a clear segment). `givingUp`: inside the faint give-up window
+ *  (D27): alphas are not hostile and engaged hunters get the give-up pursuit. */
+export interface AiTickContext {
+  now: number; dt: number; stage: number; runSeed: number; entities: readonly Entity[]; player: PlayerBody; playing: boolean; stealthFactor: number;
+  hitBy: ReadonlySet<number>; isOnScreen(p: Vec3): boolean; lineOfSight(e: Entity, p: Vec3): boolean; givingUp: boolean;
+}
+/** Engagements that ended with the player alive (the survivor bonus check), roars (a ring flash and a hint) and hunters that noticed the
+ *  player (the "!" marker). */
+export interface AiTickResult { engagements: { entity: Entity; seconds: number; windups: number }[]; roars: Entity[]; markers: Entity[] }
 /** A species start's options. `targetAt`: the target's hurtbox centre (see startSpecies). `onScreen`: the shape's centroid is on screen;
  *  `playerHeld`: the player is in a hold (spec §9.4). `playing`: start rule 1. `tick`: the combat tick length (plan review R6: the action's
  *  clock starts on the next tick, so the director's estimate adds one). `onScreen`, `playerHeld` and `tick` are required for an attack on
@@ -116,7 +131,7 @@ export class CombatWorld {
   /** Review R18: inside a tick, each entity's pose is sampled once (keyed by entity id); outside a tick nothing is cached. */
   private readonly poses = new Map<number, { entity: Entity; pose: CombatPose }>();
   private inTick = false;
-  constructor(private readonly behaviours: Record<string, SpeciesBehaviour> = BEHAVIOURS) {}
+  constructor(private readonly behaviours: Record<string, SpeciesBehaviour> = BEHAVIOURS, private readonly attacks: Record<string, AttackSpec> = SPECIES_ATTACKS) {}
   /** A fresh state for a new run or a load (spec §13). */
   reset(): void { this.entities.clear(); this.log.length = 0; this.poses.clear(); this.director.releaseAll(); }
   /** Faint and evolve (spec §10.3, §13): every species action at the player ends, its token returns, and holds on the player end. */
@@ -129,7 +144,8 @@ export class CombatWorld {
     let c = this.entities.get(e.id);
     if (c && c.entity === e) return c;
     const b = e.spec.behaviourId ? this.behaviours[e.spec.behaviourId] : undefined; if (!b) return null;
-    c = { id: entityActorId(e), entity: e, rt: newRuntime({ yaw: e.heading, pitch: 0 }), poise: newPoise(), behaviour: b, maxHp: e.spec.hp, lastDamagedAt: -Infinity, lastAttackedPlayerAt: -Infinity, tokenRetryAt: -Infinity };
+    c = { id: entityActorId(e), entity: e, rt: newRuntime({ yaw: e.heading, pitch: 0 }), poise: newPoise(), behaviour: b, maxHp: e.spec.hp, lastDamagedAt: -Infinity, lastAttackedPlayerAt: -Infinity, tokenRetryAt: -Infinity,
+      ai: null, immuneUntil: -Infinity };
     this.entities.set(e.id, c); return c;
   }
   /** A combat entity that respawned or was consumed starts over (its actions, clock and holds). */
@@ -239,7 +255,7 @@ export class CombatWorld {
       if (basicRequested(intent, slotAccepted)) {
         const cone = this.biteCone(p, ctx.moves, aim), herbivore = ctx.diet === 'herbivore';
         const isCombat = (e: Entity) => { const c = this.stateOf(e); return c !== null && (!herbivore || this.engaged(c, now)); };
-        if (cone && biteDispatch(cone, ctx.entities, ctx.stage, isCombat, e => this.poseOf(e, now).hurtboxes)) {
+        if (cone && biteDispatch(cone, ctx.entities, ctx.stage, isCombat, e => this.stateOf(e)?.rt.targetable === false ? [] : this.poseOf(e, now).hurtboxes)) {
           if (intent.basicPressed) press('basic');
           else if (this.tryStart(ctx, ctx.moves.basic!, aim, true) === 'started') out.started.push('bite');
         } else out.chomp = true;
@@ -283,7 +299,7 @@ export class CombatWorld {
       if (!shapes.length) continue;
       const attacker = fighter === 'player' ? playerFighter : fighters.get(fighter)!;
       const candidates = fighter === 'player'
-        ? live.map(c => ({ id: c.id, c, hurt: this.poseOf(c.entity, now).hurtboxes }))
+        ? live.map(c => ({ id: c.id, c, hurt: this.poseOf(c.entity, now).hurtboxes }))   // the resolver skips an untargetable body (an alpha under the sand)
         : [{ id: PLAYER_ID, c: null, hurt: p.pose.hurtboxes }];
       const hits = candidates.flatMap(t => { const point = hurtboxesHit(t.hurt, shapes); if (!point) return []; const s = shapes[0]!, origin = s.kind === 'cone' ? s.apex : s.start;
         return [{ ...t, point, origin, distance: Math.hypot(point.x - origin.x, point.y - origin.y, point.z - origin.z) }]; });
@@ -297,7 +313,10 @@ export class CombatWorld {
       out.events.push(e);
       if (e.killed && e.killed !== PLAYER_ID) { const c = live.find(x => x.id === e.killed); if (c && !out.killed.includes(c.entity)) out.killed.push(c.entity); }
       const hurt = live.find(x => x.id === e.targetId); if (hurt && e.amount > 0) hurt.lastDamagedAt = now;
-      if (e.targetId === PLAYER_ID) { const by = live.find(x => x.id === e.attackerId); if (by) by.lastAttackedPlayerAt = now; }
+      if (e.targetId === PLAYER_ID) {
+        const by = live.find(x => x.id === e.attackerId); if (by) by.lastAttackedPlayerAt = now;
+        if (by?.ai && (e.outcome === 'hit' || e.outcome === 'grabbed' || e.outcome === 'guard-broken')) aiLandedHit(by.behaviour, by.ai, now);   // an eel stays out longer
+      }
     }
     p.health = playerFighter.health;
     for (const [c, f] of fighters) c.entity.hp = f.health;
@@ -321,7 +340,8 @@ export class CombatWorld {
   private fighterOf(c: EntityCombat, now: number): Fighter {
     const pose = this.poseOf(c.entity, now), b = c.behaviour;
     return { id: c.id, isPlayer: false, rt: c.rt, centre: pose.hull[0]!.start, forward: pose.forward, L: pose.bodyLength, mass: pose.mass, knockbackResistance: b.knockbackResistance, armor: 0,
-      ground: c.entity.spec.movementProfileId === 'sp-ground', grabbable: b.grabbable && !c.entity.spec.alpha, poise: c.poise, poiseMax: b.poise, staggerResist: b.staggerResist, health: c.entity.hp };
+      ground: c.entity.spec.movementProfileId === 'sp-ground', grabbable: b.grabbable && !c.entity.spec.alpha, poise: c.poise, poiseMax: b.poise, staggerResist: now < c.immuneUntil ? 1 : b.staggerResist,
+      health: c.entity.hp };
   }
   /** The shape origin of a species action (review R2, R4): a target-origin attack's fixed point; a `centre` attack's hull centre; else the
    *  hull front (hull centre + aim × hull radius). */
@@ -449,6 +469,77 @@ export class CombatWorld {
       }
     }
     return out;
+  }
+  /** The AI tick (spec §11.2), after the combat tick and before the ecosystem's step: every active combat species' state machine, its
+   *  attack at the player (startSpecies with the full context: the hurtbox centre, on-screen, held, playing, the tick; a director token),
+   *  and its motion for the step (`entity.combat`). The player's damage this tick provokes fighters. */
+  aiTick(ctx: AiTickContext): AiTickResult {
+    const res: AiTickResult = { engagements: [], roars: [], markers: [] }, p = ctx.player, now = ctx.now;
+    for (const e of ctx.entities) {
+      if (!e.spec.behaviourId) continue;
+      if (e.eaten || !e.active) { e.combat = null; continue; }
+      const c = this.stateOf(e); if (!c) { e.combat = null; continue; }
+      const ai = c.ai ??= newAiState(ctx.runSeed, e.id, now), hit = ctx.hitBy.has(e.id);
+      if (hit && e.spec.fights) provoke(e, p.position, now, p.pose.hull);
+      const pose = speciesCombatPose(e, now), centre = pose.hull[0]!.start, r = pose.hull[0]!.radius, L = pose.bodyLength;
+      let dHurt = Infinity;
+      for (const h of p.pose.hurtboxes) { const q = closestOnSegment(centre, h.start, h.end); dHurt = Math.min(dHurt, Math.hypot(q.x - centre.x, q.y - centre.y, q.z - centre.z) - h.radius); }
+      const tierSize = SIZES[e.spec.tier]!, stageSize = SIZES[Math.min(ctx.stage, SIZES.length - 1)]!, engaged = e.mode === 'hunt' || e.mode === 'angry';
+      const out = aiStep(c.behaviour, ai, {
+        now,
+        self: { position: centre, L, forward: pose.forward, hp: e.hp, maxHp: c.maxHp, staggered: c.rt.actionClock < c.rt.staggerUntil, held: c.rt.heldBy !== null, busy: liveActions(c.rt).length > 0,
+          speed: e.spec.speed * tierSize },
+        player: { position: p.centre, d: Math.max(0, dHurt - r) / L, visible: ctx.lineOfSight(e, p.centre), targetable: ctx.playing && p.rt.targetable },
+        hostile: !(ctx.givingUp && e.spec.alpha) && hostileSizes(e.spec).includes(ctx.stage),
+        pursuit: ctx.givingUp && engaged ? 'return' : e.mode, hit,
+        fleeDistance: 7 * Math.max(tierSize, stageSize) * ctx.stealthFactor,
+        ready: id => (c.rt.cooldowns.get(`${c.id}:root:${id}`) ?? -Infinity) <= c.rt.actionClock + 1e-9,
+        inLair: ai.home && c.behaviour.lair ? Math.hypot(p.centre.x - ai.home.x, p.centre.z - ai.home.z) <= c.behaviour.lair.radiusBodyLengths * L : undefined,
+        tokenRetryAt: c.tokenRetryAt,
+      });
+      if (out.roar) {   // a phase change: the roar starts at once and cancels a busy action (its token returns; no cooldown)
+        for (const a of c.rt.actions) { if (a.phase === 'interrupted') continue; if (a.heldTarget === PLAYER_ID) { endHold(c.rt, a); p.rt.heldBy = null; p.rt.breakProgress = 0; } endNow(c.rt, a, 0); this.director.release(a.instanceId); }
+        c.immuneUntil = now + ROAR_SECONDS; res.roars.push(e);
+      }
+      let snap: Vec3 | null = null;
+      if (out.attack) {
+        const attack = this.attacks[out.attack.attackId];
+        const started = attack ? this.startSpecies(c, out.attack.attackId, attack, out.attack.aim, PLAYER_ID, now,
+          { targetAt: p.centre, onScreen: ctx.isOnScreen(this.startCentroid(attack, pose, p.centre)), playerHeld: p.rt.heldBy !== null, playing: ctx.playing, tick: ctx.dt }) : 'no-target';
+        if (typeof started === 'string') aiRefused(ai, now, c.tokenRetryAt);
+        else {
+          aiStarted(ai, now);
+          if (ai.name === 'ambush') engage(e, p.position, now, p.pose.hull);   // T16 carry 4: the ambusher's pursuit is engaged
+          if (started.originPoint) snap = started.originPoint;   // review R4: the body stands at the emerge point
+        }
+      }
+      c.rt.targetable = !out.untargetable;
+      if (out.heal > 0) e.hp = Math.min(c.maxHp, e.hp + out.heal * c.maxHp * ctx.dt);
+      if (out.marker) res.markers.push(e);
+      if (out.engagementEnded) res.engagements.push({ entity: e, ...out.engagementEnded });
+      const lunging = liveActions(c.rt).find(a => a.phase === 'active' && !!a.resolved.attack?.lunge), speed = lunging ? lungeSpeed(lunging, L) : 0;
+      const holder = c.rt.heldBy === PLAYER_ID ? holdingAction(p.rt, c.id) : undefined, claw = holder ? this.clawPoint(p, holder, L, now) : null;
+      const motion: EntityMotion = { intent: out.intent, face: out.intent.kind === 'hold' && (ai.name === 'face' || ai.name === 'notice' || ai.name === 'attack') ? p.centre : null,
+        lunge: lunging ? { x: lunging.aim.x * speed, y: lunging.aim.y * speed, z: lunging.aim.z * speed } : null, external: c.rt.externalVelocity, frozen: now < c.rt.hitStopUntil,
+        held: claw ? { x: claw.x - centre.x, y: claw.y - centre.y, z: claw.z - centre.z } : null, snap, moved: 0 };
+      e.combat = motion;
+    }
+    return res;
+  }
+  /** The centroid of an attack's shape if it started now (the director's on-screen test): from the target point, the hull centre or the hull
+   *  front (review R2/R4), aimed at the target with the pitch clamp. */
+  private startCentroid(attack: AttackSpec, pose: CombatPose, target: Vec3): Vec3 {
+    const h = pose.hull[0]!, c = h.start, aim = clampAimPitch({ x: target.x - c.x, y: target.y - c.y, z: target.z - c.z }, pose.forward);
+    const origin = attack.origin === 'target' ? target : attack.aimMode === 'centre' ? c : { x: c.x + aim.x * h.radius, y: c.y + aim.y * h.radius, z: c.z + aim.z * h.radius };
+    return shapeCentroid(worldShape(attack.shape, aimFrame(origin, aim, pose.forward), pose.bodyLength));
+  }
+  /** After the ecosystem's step: a lunge counts the body lengths it really moved (its hit volume is truncated there, spec §5.10). */
+  afterMotion(entities: readonly Entity[]): void {
+    for (const e of entities) {
+      const m = e.combat, c = m?.lunge ? this.entities.get(e.id) : undefined; if (!m || !c || c.entity !== e) continue;
+      const a = liveActions(c.rt).find(x => x.phase === 'active' && !!x.resolved.attack?.lunge);
+      if (a) a.lungeDone += m.moved / speciesCombatPose(e, 0).bodyLength;
+    }
   }
   /** Tokens follow their actions (spec §9.4, plan review R6), at the end of each tick (`now`, length `dt`; the clocks cover the tick):
    *  - a token is held to the end of active (to the end of hold for a grab), and returns when the action ends or its attacker is gone

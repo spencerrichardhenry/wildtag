@@ -6,6 +6,7 @@ import { PARTS, part } from '../src/tiny-tide/parts';
 import { SPECIES, species, tierSpecies } from '../src/tiny-tide/species';
 import { biomeAt, makeBiomes, populate, SIZES, WORLD_HALF } from '../src/tiny-tide/biomes';
 import { Ecosystem, entityRadius, provoke } from '../src/tiny-tide/ecosystem';
+import { hostileSizes } from '../src/tiny-tide/bestiary';
 
 const withMouth = (g: Genome, id: string): Genome => ({ ...g, parts: g.parts.map(p => part(p.id)!.kind === 'mouth' ? { ...p, id } : p) });
 
@@ -98,23 +99,26 @@ describe('Tiny Tide world generation', () => {
 
 describe('Tiny Tide ecosystem', () => {
   const ctx = (_eco: Ecosystem, stage: number, player: { x: number; y: number; z: number }, extra = {}) => ({ stage, dt: .1, now: 0, player, playerHull: [{ start: player, end: player, radius: .6 * SIZES[stage]! }], stealthFactor: 1, perceivable: true, ...extra });
-  it('lets a crab notice, hunt and bite a nearby tiny creature, and stealth hides it', () => {
+  it('lets a crab notice and hunt a nearby tiny creature, and stealth hides it; it attacks through the combat world, not a contact hazard', () => {
+    // T16: the Peach crab is a combat species (telegraphed attacks from the AI tick, tests/tiny-tide-core/ai-tick.test.ts); the player point
+    // is 3 units up, so the seabed between does not block the line of sight (review I9).
     const eco = new Ecosystem(7), crab = eco.entities.find(e => e.spec.key === '1:crab')!;
-    const player = { x: crab.x + 6, y: crab.y, z: crab.z };
+    const player = { x: crab.x + 6, y: crab.y + 3, z: crab.z };
     eco.step(ctx(eco, 0, player)); expect(crab.mode).toBe('hunt');
-    let events: ReturnType<Ecosystem['step']> = [];
-    for (let i = 0; i < 40 && !events.length; i++) events = eco.step(ctx(eco, 0, player)).filter(e => e.entity === crab);
-    expect(events[0]?.type).toBe('hazard'); expect(events[0]!.damage).toBe(6);   // half-hearts: 4 + 2 × (1 − 0)
+    const events: ReturnType<Ecosystem['step']> = [];
+    for (let i = 0; i < 40; i++) events.push(...eco.step(ctx(eco, 0, player)).filter(e => e.entity === crab));
+    expect(events).toEqual([]);
     const quiet = new Ecosystem(7), crab2 = quiet.entities.find(e => e.spec.key === '1:crab')!;
-    quiet.step(ctx(quiet, 0, { x: crab2.x + 6, y: crab2.y, z: crab2.z }, { stealthFactor: .35 })); expect(crab2.mode).toBe('calm');
+    quiet.step(ctx(quiet, 0, { x: crab2.x + 6, y: crab2.y + 3, z: crab2.z }, { stealthFactor: .35 })); expect(crab2.mode).toBe('calm');
   });
   it('makes crabs prey for a stage-one creature until provoked, then they fight back', () => {
+    // T16: a provoked crab is angry; at stage 1 it is hostile (it fights at its own tier), so its AI attacks (spec §11.1).
     const eco = new Ecosystem(7), crab = eco.entities.find(e => e.spec.key === '1:crab')!;
-    const player = { x: crab.x + 4, y: crab.y, z: crab.z };
+    const player = { x: crab.x + 4, y: crab.y + 3, z: crab.z };
     eco.step(ctx(eco, 1, player)); expect(crab.mode).toBe('calm');
     provoke(crab, player, 0); expect(crab.mode).toBe('angry');
-    let attacked = false; for (let i = 0; i < 60 && !attacked; i++) attacked = eco.step(ctx(eco, 1, player)).some(e => e.entity === crab && e.type === 'hazard');
-    expect(attacked).toBe(true);
+    for (let i = 0; i < 10; i++) eco.step(ctx(eco, 1, player));
+    expect(crab.mode).toBe('angry'); expect(hostileSizes(crab.spec)).toContain(1);
   });
   it('gives up a hunt when the player escapes, and perceives independently of damage', () => {
     // The seed's crab nearest the centre (8.8, −26.8): a stage 0 player beside it is inside its world, and hunters do not chase into

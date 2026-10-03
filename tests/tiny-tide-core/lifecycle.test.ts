@@ -25,7 +25,7 @@ const busy = (): CombatRuntime => { const rt = newRuntime({ yaw: 1, pitch: .4 })
   rt.staggerUntil = 4; rt.guardProfileId = 'g'; rt.damageable = false; rt.cooldowns.set('player:p5:snap', 5); rt.actions.push(action('p5', 0), action('p5', 1)); return rt; };
 const claw = (over: Partial<Genome['parts'][number]> = {}): Genome => ({ ...starterGenome(), parts: [...starterGenome().parts, { uid: 'p5', id: 'claw_pincer', t: .45, angle: 2, scale: 1, mirror: true, roll: 0, ...over }] });
 const grant: PartSpec[] = PARTS.map(p => p.id === 'claw_pincer' ? { ...p, activeGrants: [{ id: 'snap', abilityId: 'dash', socketIds: ['pinch'], mirrorPolicy: 'shared-cast' as const }] } : p);
-const hazardEvent = (e: EcoEvent['entity'], time: number): EcoEvent => ({ type: 'hazard', entity: e, hazard: REGISTRY_HAZARDS['crab-pinch']!, damage: 3, point: { x: 0, y: 0, z: 0 }, normal: { x: 1, y: 0, z: 0 }, time });
+const hazardEvent = (e: EcoEvent['entity'], time: number): EcoEvent => ({ type: 'hazard', entity: e, hazard: REGISTRY_HAZARDS['jelly-sting']!, damage: 3, point: { x: 0, y: 0, z: 0 }, normal: { x: 1, y: 0, z: 0 }, time });
 
 describe('lifecycle', () => {
   it('resets every transient field', () => {
@@ -87,7 +87,7 @@ describe('lifecycle', () => {
     expect(resolveHazards([hazardEvent(crab, 2.5)], ctx(2.5))).toEqual([]); expect(rt.lastDamageAt).toBe(2);   // still invulnerable
   });
   it('applies an impulse through mass and resistance', () => {
-    const crab = new Ecosystem(7).entities.find(e => e.spec.key === '1:crab')!, rt = newRuntime(), e = { ...hazardEvent(crab, 0), hazard: { ...REGISTRY_HAZARDS['crab-pinch']!, impulse: 2 } };
+    const crab = new Ecosystem(7).entities.find(e => e.spec.key === '1:crab')!, rt = newRuntime(), e = { ...hazardEvent(crab, 0), hazard: { ...REGISTRY_HAZARDS['jelly-sting']!, impulse: 2 } };
     resolveHazards([e], { mode: 'playing', pendingRespawn: false, rt, now: 0, mass: 4, resistance: .5 }); expect(rt.externalVelocity.x).toBeCloseTo(.25);   // 2 / 4 × .5
   });
   it('finds a legal evolution destination away from an illegal start, or uses the anchor', () => {

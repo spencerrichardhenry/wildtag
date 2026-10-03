@@ -4,13 +4,15 @@
 import { makeBiomes, PLAYER_HALF, populate, seabedHeight, SIZES, SPAWN_HALF, spawnPoint, WORLD_HALF, random, type Biome } from './biomes';
 import { EDGE_SOFT_START } from './edge';
 import type { Actor, AdmissionContext, Capsule, ContactHazard, LegalityContext, MotionRequest, MovementMode, MutVec3, Orientation, PursuitPolicy, Vec3, WorldQueries } from './combat-types';
-import { findRecoveryPose, resolveMotion } from './motion';
+import { findRecoveryPose, projectVelocity, resolveMotion } from './motion';
 import { speciesActor } from './mount';
 import { habitat, movement, pursuit } from './profiles';
 import { HAZARDS } from './registries';
 import type { Species } from './species';
 import { stageSolids } from './reef';
 import { stageWorldQueries, supportHeight } from './world-queries';
+import type { MoveIntent } from './combat-ai';
+import { terrainSegmentClear } from './combat-shapes';
 
 export { speciesActor };
 
@@ -30,7 +32,14 @@ export interface Entity {
   returnUntil: number; hazardReadyAt: number;
   /** The tier is relevant to the player's stage (|tier − stage| ≤ 1). */
   active: boolean;
+  /** A combat species' motion this tick (spec §5.12, §11.2), set by the combat world's AI tick before the step; legacy species have none
+   *  (and a combat species without it this tick moves by today's rules). */
+  combat?: EntityMotion | null;
 }
+/** How a combat species moves this tick: its AI intent (ambient, toward, away, hold), a point to face while holding, a lunge's velocity, its
+ *  external (knockback) velocity, a hit-stop freeze, a held body's displacement to the claw point, and `snap`: an emerge point to stand on
+ *  at a target-origin wind-up start (review R4; admitted through findRecoveryPose, else no move). `moved` is filled by the step. */
+export interface EntityMotion { intent: MoveIntent; face: Vec3 | null; lunge: Vec3 | null; external: MutVec3; frozen: boolean; held: Vec3 | null; snap?: Vec3 | null; moved: number }
 export interface EcoContext {
   stage: number; dt: number; now: number;
   player: Vec3;
@@ -43,6 +52,11 @@ export interface EcoContext {
 export interface EcoEvent { type: 'hazard'; entity: Entity; hazard: ContactHazard; damage: number; point: Vec3; normal: Vec3; time: number }
 
 export const RESPAWN_TIME = [14, 22] as const;
+/** A species that hunts the player's current size respawns later after it is eaten or killed (D28; plan review R14(1): every other
+ *  species keeps RESPAWN_TIME). */
+export const HUNTER_RESPAWN_TIME = [30, 40] as const;
+/** The decay of a combat species' external (knockback) velocity, per second (the player's EXTERNAL_DECAY). */
+export const ENTITY_EXTERNAL_DECAY = 6;
 /** Seconds of continuous reachability that clear the blocked timer. */
 export const BLOCK_CLEAR_SECONDS = 1;
 /** Seconds before an entity that could not be installed tries again. */
@@ -116,6 +130,14 @@ function remember(e: Entity, player: Vec3, now: number, hull: readonly Capsule[]
 function clearBlocked(e: Entity) { e.reachable = false; e.reachableSince = null; e.blockedSince = null; }
 
 const owners = new WeakMap<Entity, Ecosystem>();
+/** A combat species that struck from ambush hunts the player (T16 carry 4: an eel whose pursuit stayed calm would retreat at once). Unlike
+ *  `provoke` it needs no `fights` flag and keeps an angry entity angry. */
+export function engage(e: Entity, player: Vec3, now: number, hull?: readonly Capsule[]) {
+  if (e.eaten || e.mode === 'hunt' || e.mode === 'angry') return;
+  clearBlocked(e); e.mode = 'hunt'; e.modeTime = 0;
+  remember(e, player, now, hull);
+  owners.get(e)?.updateReachability(e, now);
+}
 /** The player provokes a fighter by biting it; `hull` is the biter's world hull at the bite. */
 export function provoke(e: Entity, player: Vec3, now: number, hull?: readonly Capsule[]) {
   if (!e.spec.fights || e.eaten) return;
@@ -170,9 +192,12 @@ export class Ecosystem {
   }
   /** The planet index (0–11) of a planet entity. */
   planetIndex(e: Entity) { return this.entities.filter(other => other.spec.kind === 'planet').indexOf(e); }
+  /** The player's size at the last step (the respawn time of a hunter of that size). */
+  private stage = 0;
   consume(e: Entity) {
-    e.eaten = true; e.mode = 'calm'; e.modeTime = 0;
-    e.respawn = e.spec.kind === 'planet' ? -1 : RESPAWN_TIME[0] + this.rand() * (RESPAWN_TIME[1] - RESPAWN_TIME[0]);
+    e.eaten = true; e.mode = 'calm'; e.modeTime = 0; e.combat = null;
+    const [lo, hi] = e.spec.hunts.includes(this.stage) ? HUNTER_RESPAWN_TIME : RESPAWN_TIME;
+    e.respawn = e.spec.kind === 'planet' ? -1 : lo + this.rand() * (hi - lo);
   }
 
   /** The end of the faint give-up window (D27); world time. */
@@ -201,7 +226,7 @@ export class Ecosystem {
   }
 
   step(ctx: EcoContext): EcoEvent[] {
-    const events: EcoEvent[] = [];
+    const events: EcoEvent[] = []; this.stage = ctx.stage;
     for (const e of this.entities) {
       const relevant = Math.abs(e.spec.tier - ctx.stage) <= 1;
       if (e.eaten) { e.active = relevant; this.tickRespawn(e, ctx); continue; }
@@ -225,7 +250,15 @@ export class Ecosystem {
   }
 
   private perceives(e: Entity, ctx: EcoContext, distance: number): boolean {
-    return ctx.perceivable && distance <= noticeRadius(e, ctx.stage, ctx.stealthFactor) && this.queries[e.spec.tier]!.visibility(e, ctx.player) > 0;
+    return ctx.perceivable && distance <= noticeRadius(e, ctx.stage, ctx.stealthFactor) && this.lineOfSight(e, ctx.player);
+  }
+  private readonly eye: MutVec3 = { x: 0, y: 0, z: 0 };
+  /** Line of sight (spec §11.2, review I9) from the entity's hull centre to a point: the visibility query and a clear segment (terrain and
+   *  reef solids of its tier, sampled every half tier unit). Perception (acquisition) and the combat AI (an eel's den) use it. */
+  lineOfSight(e: Entity, p: Vec3): boolean {
+    const q = this.queries[e.spec.tier]!, c = this.actors.get(e)!.hull[0]!.start, eye = this.eye;
+    eye.x = e.x + c.x; eye.y = e.y + c.y; eye.z = e.z + c.z;
+    return q.visibility(eye, p) > 0 && (q.segmentClear ? q.segmentClear(eye, p, .5 * SIZES[e.spec.tier]!) : terrainSegmentClear(q, eye, p, .5 * SIZES[e.spec.tier]!));
   }
 
   /** Mode changes (spec §10 pursuit, today's prey flee). Returns whether the entity perceives the player. */
@@ -245,14 +278,18 @@ export class Ecosystem {
       return perceived;
     }
     if (e.mode === 'flee') { if (e.modeTime > 2.5) this.setMode(e, 'calm'); return perceived; }
-    if (e.mode === 'return' && (Math.hypot(e.x - e.hx, e.z - e.hz) <= this.actors.get(e)!.bodyLength || now >= e.returnUntil + 6)) this.setMode(e, 'calm');
+    if (e.mode === 'return' && (Math.hypot(e.x - e.hx, e.z - e.hz) <= this.actors.get(e)!.bodyLength || now >= e.returnUntil + 6)) {
+      this.setMode(e, 'calm');
+      if (spec.behaviourId) e.hp = spec.hp;   // a combat species back to calm gets its full HP (spec §11.2, D37)
+    }
     // Acquire, from calm or return, once the reacquire window has passed.
     if (now >= e.returnUntil && perceived && spec.hunts.includes(ctx.stage) && !pastSoftEdge(p, ctx.stage)) {
       this.setMode(e, 'hunt'); clearBlocked(e); remember(e, p, now, ctx.playerHull); this.updateReachability(e, now); return perceived;
     }
     if (e.mode !== 'calm' || !ctx.perceivable) return perceived;
     // Prey runs from a player that can eat it, but tires quickly so it can be caught.
-    const size = SIZES[spec.tier]!, prey = spec.tier <= ctx.stage && ['skittish', 'school'].includes(spec.behavior);
+    // Combat species flee by their AI (combat-ai.ts), not by today's prey rule.
+    const size = SIZES[spec.tier]!, prey = !spec.behaviourId && spec.tier <= ctx.stage && ['skittish', 'school'].includes(spec.behavior);
     if (prey && e.modeTime > 1.5 && distance < 7 * Math.max(size, SIZES[ctx.stage]!) * ctx.stealthFactor) this.setMode(e, 'flee');
     return perceived;
   }
@@ -286,9 +323,47 @@ export class Ecosystem {
     if (Math.hypot(dx, dz) > 1e-4) e.heading = Math.atan2(dx, dz);
   }
 
+  /** A combat species moves by its AI intent, its lunge and its knockback through resolveMotion (spec §5.12); a held one goes to the claw
+   *  point; a snap (an emerge) stands it on an admitted pose near the point. A refused motion keeps the last pose. */
+  private combatMove(e: Entity, ctx: EcoContext, m: EntityMotion) {
+    const spec = e.spec, size = SIZES[spec.tier]!, mode = movement(spec.movementProfileId).mode, d = this.disp, dt = ctx.dt, actor = this.actors.get(e)!, q = this.queries[spec.tier]!;
+    d.x = 0; d.y = 0; d.z = 0; m.moved = 0;
+    if (m.snap) {
+      const ground = mode === 'ground' && !q.terrain.space, at = { x: m.snap.x, y: ground ? supportHeight(actor, m.snap.x, m.snap.z, O0, q.terrain) + .01 * actor.bodyLength : m.snap.y, z: m.snap.z };
+      const found = findRecoveryPose(actor, at, { queries: q, bounds: this.boundsOf(e), orientation: O0, time: ctx.now }, { maxDistance: actor.bodyLength });
+      if (found.ok) { m.moved = Math.hypot(found.position.x - e.x, found.position.y - e.y, found.position.z - e.z); e.x = found.position.x; e.y = found.position.y; e.z = found.position.z; }
+      return;
+    }
+    if (m.held) { d.x = m.held.x; d.y = m.held.y; d.z = m.held.z; }
+    else if (!m.frozen) {
+      const it = m.intent, speed = spec.speed * size;
+      if (it.kind === 'ambient') { this.ambient(e, ctx, d); d.x *= it.speedFactor; d.y *= it.speedFactor; d.z *= it.speedFactor; }
+      else if (it.kind === 'toward') this.toward(e, it.point.x, it.point.y, it.point.z, speed * it.speedFactor, dt, mode, d);
+      else if (it.kind === 'away') this.toward(e, 2 * e.x - it.point.x, 2 * e.y - it.point.y, 2 * e.z - it.point.z, speed * it.speedFactor, dt, mode, d);
+      else if (m.face) { const fx = m.face.x - e.x, fz = m.face.z - e.z; if (Math.hypot(fx, fz) > 1e-4) e.heading = Math.atan2(fx, fz); }
+      if (m.lunge) { d.x += m.lunge.x * dt; d.y += (mode === 'ground' ? 0 : m.lunge.y) * dt; d.z += m.lunge.z * dt; }
+      d.x += m.external.x * dt; d.y += m.external.y * dt; d.z += m.external.z * dt;
+    }
+    if (mode === 'ground' && !q.terrain.space) d.y = supportHeight(actor, e.x + d.x, e.z + d.z, O0, q.terrain) + .01 * actor.bodyLength - e.y;
+    else if (mode === 'surface') d.y = e.hy - e.y;
+    const req = this.req, from = this.from;
+    from.x = e.x; from.y = e.y; from.z = e.z;
+    req.actorId = actor.id; req.hull = actor.hull; req.habitatProfileId = actor.habitat.id; req.cause = m.held ? 'grab' : m.lunge ? 'lunge' : m.external.x || m.external.y || m.external.z ? 'knockback' : 'locomotion';
+    const mo = this.motion; mo.queries = q; mo.bounds = this.boundsOf(e); mo.actor = actor; mo.interval.start = ctx.now; mo.interval.end = ctx.now + dt;
+    const result = resolveMotion(req, mo); req.cause = 'locomotion';
+    if (result.status === 'invalid-start' || result.status === 'needs-recovery') { this.install(e); return; }
+    m.moved = Math.hypot(result.position.x - e.x, result.position.y - e.y, result.position.z - e.z);
+    e.x = result.position.x; e.y = result.position.y; e.z = result.position.z;
+    if (!m.frozen) {
+      const pe = projectVelocity(m.external, result.contacts), decay = Math.exp(-ENTITY_EXTERNAL_DECAY * dt);
+      m.external.x = pe.x * decay; m.external.y = pe.y * decay; m.external.z = pe.z * decay;
+    }
+  }
+
   private move(e: Entity, ctx: EcoContext, perceived: boolean) {
     const spec = e.spec;
     if (spec.behavior === 'still' || isStatic(e)) return;
+    if (e.combat) { this.combatMove(e, ctx, e.combat); return; }
     const size = SIZES[spec.tier]!, mode = movement(spec.movementProfileId).mode, d = this.disp, p = ctx.player, dt = ctx.dt;
     switch (e.mode) {
       case 'hunt': case 'angry': {
@@ -367,7 +442,7 @@ export class Ecosystem {
     e.respawn -= ctx.dt; if (e.respawn > 0) return;
     // New food arrives out of sight, so the world never visibly pops.
     // Plants, palms and lighthouses grow back where they were.
-    const size = SIZES[e.spec.tier]!, away = 16 * size, fresh = { hp: e.spec.hp, eaten: false, respawn: -1, mode: 'calm' as Mode, modeTime: 0, ...pursuitState() };
+    const size = SIZES[e.spec.tier]!, away = 16 * size, fresh = { hp: e.spec.hp, eaten: false, respawn: -1, mode: 'calm' as Mode, modeTime: 0, combat: null, ...pursuitState() };
     if (e.spec.behavior === 'still') {
       if (Math.hypot(e.hx - ctx.player.x, e.hz - ctx.player.z) < away) { e.respawn = 0; return; }
       Object.assign(e, { x: e.hx, y: e.hy, z: e.hz }, fresh); this.install(e); return;

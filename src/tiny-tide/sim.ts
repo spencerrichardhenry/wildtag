@@ -6,19 +6,21 @@ import { clearBuffer } from './action-engine';
 import { newRuntime, type Actor, type Capsule, type CombatInput, type CombatRuntime, type MutVec3, type Orientation, type RecoveryResult, type Vec3, type WorldQueries } from './combat-types';
 import type { Ecosystem, EcoEvent, Entity } from './ecosystem';
 import { chomp, CHOMP_COOLDOWN, type ChompResult } from './feeding';
-import { derive, dietOf, effectiveStats, type Derived } from './genome';
+import { derive, dietOf, effectiveStats, type Derived, type Genome } from './genome';
+import type { BodyPlan } from './plans';
 import { basicRequested } from './input';
 import { beginRespawn, growthPose, RESPAWN_GRACE, newTrapWatch, recoverPlayer, resetRuntime, resolveHazards, resolveRespawn, rescueFreeRun, TRAP_MOVE, trapDue, trapFailed, trapRescued, rescueBudget, UnstickSearch, wedged, type TrapWatch } from './lifecycle';
 import { startAnchor } from './motion';
 import { bodyLengthOf, hullFitOf, hullOffsets, massFor, sampleCombatPose } from './mount';
-import { CombatWorld, playerMatrix, type CombatTick, type MotionBody, type PlayerBody } from './combat-world';
+import { CombatWorld, PLAYER_ID, playerMatrix, type CombatTick, type MotionBody, type PlayerBody } from './combat-world';
 import { assignSlots, movesOf, NO_PINS, type MoveSet, type SlotAssignment } from './moves';
 import { DROPS } from './parts';
 import { createRigPose, type RigPose } from './rig';
 import { orientedHeave, orientedSway, rotateInto } from './orientation';
 import { newStepSnapshot, restoreStep, snapshotStep, stepPlayer, type PlayerStepResult, type StepSnapshot } from './player-motion';
 import { habitat, movement, movementCapabilities } from './profiles';
-import { currentPlan, evolveReady, growthOf, hurt, killReward, STAGES, unlock, type Run } from './state';
+import { currentPlan, evolveReady, growthOf, hurt, killReward, STAGES, survivorBonusDue, survivorReward, unlock, type Run } from './state';
+import { BEHAVIOURS } from './bestiary';
 import { faintLoss, type Economy } from './economy';
 import { admissionClock, admissionCount, supportHeight } from './world-queries';
 
@@ -26,7 +28,10 @@ export type GameMode = 'menu' | 'playing' | 'paused' | 'evolving' | 'editing' | 
 export interface SimLegality { queries: WorldQueries; bounds: { half: number; maxY?: number } }
 /** What the tick reads from outside: the ecosystem, the cached world queries of a stage, and the start grace (seconds). `qa`: keep the
  *  QA-only diagnostics (`lastSolids`, read by the rescue log); off in production, as main.ts did with its QA flag. */
-export interface SimWorld { eco: Ecosystem; legality(stage: number): SimLegality; startGrace: number; qa?: boolean }
+export interface SimWorld { eco: Ecosystem; legality(stage: number): SimLegality; startGrace: number; qa?: boolean;
+  /** A physical point is on screen (the director's off-screen rule, spec §9.4): main.ts tests it against the camera each frame; tests and
+   *  the probe pass a fixed answer. */
+  isOnScreen(p: Vec3): boolean }
 type MutCapsule = { start: MutVec3; end: MutVec3; radius: number; radii?: [number, number]; sway: number; heave: number };
 interface ActorCache { key: string; unit: Capsule[]; unitLength: number; hull: MutCapsule[]; actor: Actor; scale: number }
 export interface Glide { path: { position: Vec3; orientation: Orientation }[]; index: number }
@@ -45,8 +50,8 @@ export interface SimState {
   acceptedHits: number; rejectedHits: number; faintLog: { time: number; hadPermit: boolean; hadArc: boolean }[];
   /** The combat world (spec §3.1) and the player's moves, cached per genome revision. */
   combat: CombatWorld; moves: { revision: number; set: MoveSet; slots: SlotAssignment; rig: RigPose } | null;
-  /** The previous tick's stick (break-free flicks). */
-  previousMove: Vec3;
+  /** The previous tick's stick (break-free flicks), and the entity ids the player damaged this frame (the AI tick's provocation and `hit`). */
+  previousMove: Vec3; hitBy: Set<number>;
 }
 export type SimEvent =
   /** A pose was installed (`snap`: the camera jumps there too: start, respawn). */
@@ -62,16 +67,20 @@ export type SimEvent =
   | { type: 'respawned' } | { type: 'respawn-waiting' }
   /** Combat damage emptied the hearts (the run is already marked; save it at once). `lost`: the at-risk DNA (wallet and part credit) the faint took. */
   | { type: 'fainted'; lost: number }
+  /** A plant-eater outlasted (or killed) a hunter it was engaged with (spec §10.4, D22): the bonus DNA, paid once per engagement. */
+  | { type: 'survived'; entity: Entity; dna: number }
+  /** Alphas changed phase this frame (a ring flash and the hint "The <name> is getting angry!"). */
+  | { type: 'roar'; entities: Entity[] }
   /** A combat kill (spec §10.4): the DNA it paid (0 for a herbivore) and a part it unlocked. */
   | { type: 'killed'; entity: Entity; dna: number; drop: string | null }
   /** A loaded run that was saved during a faint found no anchor yet: it waits fainted (main shows the faint overlay). */
   | { type: 'resume-fainted' };
 export interface SimInput { dt: number; intent: CombatInput; wish: Vec3; held: boolean }
 
-type SimOwned = Pick<SimState, 'trap' | 'unstick' | 'glide' | 'beforeStep' | 'rescueLog' | 'trapRescues' | 'lastSolids' | 'stepCalls' | 'rescueCalls' | 'actorCache' | 'hullRescaled' | 'hullGrew' | 'faintLog' | 'combat' | 'moves' | 'previousMove'>;
+type SimOwned = Pick<SimState, 'trap' | 'unstick' | 'glide' | 'beforeStep' | 'rescueLog' | 'trapRescues' | 'lastSolids' | 'stepCalls' | 'rescueCalls' | 'actorCache' | 'hullRescaled' | 'hullGrew' | 'faintLog' | 'combat' | 'moves' | 'previousMove' | 'hitBy'>;
 /** The fields only the simulation owns (main.ts spreads them into its bound state). */
 export const simOwnedState = (): SimOwned => ({ trap: newTrapWatch(), unstick: null, glide: null, beforeStep: newStepSnapshot(), rescueLog: { searches: 0, found: 0, failed: 0, last: null },
-  trapRescues: 0, lastSolids: [], stepCalls: 0, rescueCalls: 0, actorCache: null, hullRescaled: false, hullGrew: false, faintLog: [], combat: new CombatWorld(), moves: null, previousMove: { x: 0, y: 0, z: 0 } });
+  trapRescues: 0, lastSolids: [], stepCalls: 0, rescueCalls: 0, actorCache: null, hullRescaled: false, hullGrew: false, faintLog: [], combat: new CombatWorld(), moves: null, previousMove: { x: 0, y: 0, z: 0 }, hitBy: new Set() });
 /** A plain state (tests and the combat probe). */
 export function newSimState(run: Run): SimState {
   return { run, rt: newRuntime(), physical: { x: 0, y: 0, z: 0 }, time: 0, mode: 'menu', derived: derive(effectiveStats(run.genome, currentPlan(run))), genomeRevision: 0,
@@ -175,11 +184,15 @@ export const playerMotionBody = (s: SimState, actor: Actor): MotionBody => ({ rt
 /** The player's combat body at its installed pose (spec §5.10: sampleCombatPose on the rest rig). The centre is the middle of the hull.
  *  simFrame samples it once per frame, after the player step (review R18). */
 export function playerBody(s: SimState, actor: Actor): PlayerBody {
-  const plan = currentPlan(s.run), m = playerMoves(s), scale = SIZES[s.run.stage]! * growthOf(s.run), caps = movementCapabilities(plan);
-  const pose = sampleCombatPose({ actorId: 'player', genome: s.run.genome, plan, world: playerMatrix(s.physical, s.rt.orientation, scale), rig: m.rig, physicalLength: actor.bodyLength });
-  const centre = hullCentre(s, actor);
-  return { rt: s.rt, position: s.physical, centre, L: actor.bodyLength, mass: massFor(plan, s.run.genome, actor.bodyLength), knockbackResistance: plan.physics.knockbackResistance,
-    armor: s.derived.armor, ground: caps.ground, mode: movement(plan.movement).mode, inBreachArc: s.rt.arc !== null, health: s.run.health, pose };
+  return makePlayerBody({ genome: s.run.genome, plan: currentPlan(s.run), position: s.physical, rt: s.rt, actor, scale: SIZES[s.run.stage]! * growthOf(s.run), armor: s.derived.armor,
+    health: s.run.health, rig: playerMoves(s).rig, centre: hullCentre(s, actor) });
+}
+/** A player's combat body at a pose (sampleCombatPose on the rest rig); `centre`: the middle of its world hull. The sim and avoidance use it. */
+export function makePlayerBody(o: { genome: Genome; plan: BodyPlan; position: Vec3; rt: CombatRuntime; actor: Actor; scale: number; armor: number; health: number; rig: RigPose; centre: Vec3 }): PlayerBody {
+  const caps = movementCapabilities(o.plan);
+  const pose = sampleCombatPose({ actorId: 'player', genome: o.genome, plan: o.plan, world: playerMatrix(o.position, o.rt.orientation, o.scale), rig: o.rig, physicalLength: o.actor.bodyLength });
+  return { rt: o.rt, position: o.position, centre: o.centre, L: o.actor.bodyLength, mass: massFor(o.plan, o.genome, o.actor.bodyLength), knockbackResistance: o.plan.physics.knockbackResistance,
+    armor: o.armor, ground: caps.ground, mode: movement(o.plan.movement).mode, inBreachArc: o.rt.arc !== null, health: o.health, pose };
 }
 /** Regeneration (spec §10.2): half a heart every REGEN_EVERY seconds once REGEN_AFTER seconds have passed since the last damage and the
  *  last wind-up at the player. */
@@ -210,6 +223,7 @@ export function simFrame(s: SimState, w: SimWorld, input: SimInput): SimEvent[] 
   const active = !held && (s.mode === 'playing' || s.mode === 'menu' || s.mode === 'evolving' || s.mode === 'fainted');
   const stage = run.stage, plan = currentPlan(run), caps = movementCapabilities(plan);
   const actor = s.mode === 'menu' ? null : playerActorCached(s);
+  let body: PlayerBody | null = null;   // the one combat-pose sample of this frame (review R18), shared by the combat tick and the AI tick
   if (actor && s.hullRescaled) {
     // A growth change rescaled the hull: settle again, or recover if the bigger body is not admitted.
     const grew = s.hullGrew; s.hullRescaled = false; s.hullGrew = false;
@@ -259,13 +273,17 @@ export function simFrame(s: SimState, w: SimWorld, input: SimInput): SimEvent[] 
     // The combat world (spec §3.1; T8 decision: after the player step, before the chomp): the player's moves, every action, hits, holds
     // and kills. The basic input that finds no combat species in the Bite cone falls back to today's chomp, before the ecosystem moves.
     if (s.mode === 'playing') {
-      const body = playerBody(s, actor), m = playerMoves(s);   // the one combat-pose sample of this frame (review R18)
+      body = playerBody(s, actor); const m = playerMoves(s);
       const tick = s.combat.tick({ now: s.time, dt, playing: true, intent, wish, previousMove: s.previousMove, player: body, moves: m.set, slots: m.slots, entities: w.eco.entities,
         stage, diet: dietOf(run.genome), queries: legal.queries });
       run.health = body.health; s.previousMove = intent.move;
+      for (const e of tick.events) if (e.attackerId === PLAYER_ID && e.amount > 0 && e.targetId !== PLAYER_ID) s.hitBy.add(Number(e.targetId.slice(1)));
       if (tick.events.length || tick.killed.length || tick.started.length || tick.brokeFree) events.push({ type: 'combat', tick });
       for (const e of tick.killed) {
         const drop = DROPS[e.spec.kind]; if (drop) unlock(run, drop);
+        // A plant-eater that kills a hunter it was engaged with also survived it (D22); the AI state is forgotten below, so it pays once.
+        const ai = s.combat.entities.get(e.id)?.ai;
+        if (ai && ai.engagedSince !== null && survivorBonusDue(run, behaviourType(e), { seconds: s.time - ai.engagedSince, windups: ai.windups })) events.push({ type: 'survived', entity: e, dna: survivorReward(run, e.spec) });
         events.push({ type: 'killed', entity: e, dna: killReward(run, e.spec).dna, drop: drop && run.unlocked.includes(drop) ? drop : null });
         w.eco.consume(e); s.combat.forget(e);
       }
@@ -282,9 +300,16 @@ export function simFrame(s: SimState, w: SimWorld, input: SimInput): SimEvent[] 
     if (s.stuckRetry <= 0) { s.stuckRetry = 1; if (recover(s, w, actor, s.time, events)) { if (s.startGracePending) { s.startGracePending = false; applyStartGrace(s, w); } s.mode = 'playing'; events.push({ type: 'unstuck' }); } }
   }
   if ((s.mode === 'playing' || s.mode === 'evolving' || s.mode === 'fainted') && actor && !held) {
+    // The AI (spec §11.2): states, attacks at the player (director tokens) and each combat species' motion for the ecosystem's step.
+    const ai = s.combat.aiTick({ now: s.time, dt, stage, runSeed: run.seed, entities: w.eco.entities, player: body ?? playerBody(s, actor), playing: s.mode === 'playing' && !run.pendingRespawn,
+      stealthFactor: s.derived.stealthFactor, hitBy: s.hitBy, isOnScreen: p => w.isOnScreen(p), lineOfSight: (e, p) => w.eco.lineOfSight(e, p), givingUp: w.eco.givingUp(s.time) });
+    s.hitBy.clear();
+    for (const g of ai.engagements) if (s.mode === 'playing' && survivorBonusDue(run, behaviourType(g.entity), g)) events.push({ type: 'survived', entity: g.entity, dna: survivorReward(run, g.entity.spec) });
+    if (ai.roars.length) events.push({ type: 'roar', entities: ai.roars });
     admissionClock.caller = 'ecosystem';
     const hazards = w.eco.step({ stage, dt, now: s.time, player: s.physical, playerHull: worldHull(s, actor), perceivable: s.rt.perceivable && s.mode !== 'fainted', stealthFactor: s.derived.stealthFactor });
     admissionClock.caller = 'player';
+    s.combat.afterMotion(w.eco.entities);
     const accepted = resolveHazards(hazards, { mode: s.mode, pendingRespawn: run.pendingRespawn, rt: s.rt, now: s.time, mass: massFor(plan, run.genome, actor.bodyLength), resistance: plan.physics.knockbackResistance });
     s.rejectedHits += hazards.length - accepted.length;
     // A hit counts as accepted only when it is applied (not when skipped after a same-frame faint).
@@ -295,6 +320,8 @@ export function simFrame(s: SimState, w: SimWorld, input: SimInput): SimEvent[] 
   if (active) s.time += dt;
   return events;
 }
+/** The behaviour type of a combat species (the survivor bonus applies to hunters). */
+const behaviourType = (e: Entity) => e.spec.behaviourId ? BEHAVIOURS[e.spec.behaviourId]?.type : undefined;
 /** One accepted hazard event: damage, and a faint at 0 hearts (once). */
 function takeHit(s: SimState, w: SimWorld, event: EcoEvent, events: SimEvent[]): void {
   const lost = hurt(s.run, event.damage, s.derived.armor) ? faintNow(s, w) : null;
@@ -312,7 +339,7 @@ export function simBegin(s: SimState, w: SimWorld, run: Run, forced: Vec3 | null
   const events: SimEvent[] = [];
   s.run = run; refreshDerived(s); run.health = Math.min(run.health, s.derived.maxHealth);
   s.mode = 'playing'; s.chompCooldown = 0;
-  s.rt = newRuntime(); s.genomeRevision++; cancelRescue(s); s.startGracePending = false; s.combat.reset(); s.previousMove = { x: 0, y: 0, z: 0 };
+  s.rt = newRuntime(); s.genomeRevision++; cancelRescue(s); s.startGracePending = false; s.combat.reset(); s.previousMove = { x: 0, y: 0, z: 0 }; s.hitBy.clear();
   s.faintLog.length = 0; s.acceptedHits = 0; s.rejectedHits = 0;
   const actor = playerActorCached(s), t = w.legality(run.stage).queries.terrain;
   s.physical = { x: 0, y: t.space ? 3 * SIZES[run.stage]! : t.groundAt(0, 0) + actor.bodyLength, z: 0 };

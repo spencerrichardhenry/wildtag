@@ -31,7 +31,7 @@ describe('combat contract', () => {
       [c => { c.movements.swimmer = { ...c.movements.swimmer!, evasionProfileId: 'nope' }; }, 'movement swimmer: evasion nope'],
       [c => { c.pursuits.hunter = { ...c.pursuits.hunter!, memorySeconds: -2 }; }, 'pursuit hunter: memorySeconds'],
       [c => { c.hulls.sphere = { id: 'ball' }; }, 'hull sphere: id'],
-      [c => { c.hazards['crab-pinch'] = { ...c.hazards['crab-pinch']!, cadenceSeconds: 0 }; }, 'hazard crab-pinch: cadenceSeconds'],
+      [c => { c.hazards['jelly-sting'] = { ...c.hazards['jelly-sting']!, cadenceSeconds: 0 }; }, 'hazard jelly-sting: cadenceSeconds'],
       [c => { c.attacks.pinch!.windupSeconds = -1; }, 'attack pinch: windupSeconds'],
       [c => { c.attacks.pinch!.aimLockAtSeconds = 1; }, 'attack pinch: aimLockAtSeconds'],
       [c => { c.attacks.pinch!.maxTargets = 1.5; }, 'attack pinch: maxTargets'],
@@ -151,7 +151,7 @@ describe('combat contract', () => {
       [c => { c.parts = c.parts.map(p => p.id === 'fx_rare' ? { ...p, model: 'fx_rare' } : p); }, 'part fx_rare: model fx_rare'],
       [c => { c.species = c.species.map(s => s.key === '1:fx_alpha' ? { ...s, alpha: { ...s.alpha!, rewardPartId: 'claw_pincer' } } : s); }, 'species 1:fx_alpha: reward claw_pincer'],
       // V18
-      [c => { c.species = c.species.map(s => s.key === '1:fx_hunter' ? { ...s, contactHazardId: 'crab-pinch' } : s); }, 'species 1:fx_hunter: behaviour and hazard'],
+      [c => { c.species = c.species.map(s => s.key === '1:fx_hunter' ? { ...s, contactHazardId: 'jelly-sting' } : s); }, 'species 1:fx_hunter: behaviour and hazard'],
       [c => { c.species = c.species.map(s => s.key === '1:fx_hunter' ? { ...s, behaviourId: 'fx-fleer' } : s); }, 'species 1:fx_hunter: hazard missing'],
       [c => { c.species = c.species.map(s => s.key === '1:fx_hunter' ? { ...s, behaviourId: 'nope' } : s); }, 'species 1:fx_hunter: behaviour nope'],
       // V19

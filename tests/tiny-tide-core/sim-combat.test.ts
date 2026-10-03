@@ -20,8 +20,9 @@ const DT = 1 / 60;
 /** A flat stage-0 world whose ecosystem only holds `entities` (it never moves them). */
 function flatWorld(entities: Entity[]): SimWorld {
   const giveUps: [number, number][] = [];
-  const eco = { entities, consume: (e: Entity) => { e.eaten = true; }, planetIndex: () => 0, step: () => [], giveUps, giveUpAll: (now: number, seconds: number) => { giveUps.push([now, seconds]); } } as unknown as Ecosystem;
-  return { eco, startGrace: 0, legality: stage => ({ queries: FLAT, bounds: stageBounds(stage) }) };
+  const eco = { entities, consume: (e: Entity) => { e.eaten = true; }, planetIndex: () => 0, step: () => [], giveUps, giveUpAll: (now: number, seconds: number) => { giveUps.push([now, seconds]); },
+    givingUp: () => false, lineOfSight: () => true } as unknown as Ecosystem;
+  return { eco, startGrace: 0, isOnScreen: () => true, legality: stage => ({ queries: FLAT, bounds: stageBounds(stage) }) };
 }
 function begun(entities: Entity[], mouth?: string): { s: SimState; w: SimWorld } {
   const s = speck([], mouth), w = flatWorld(entities);

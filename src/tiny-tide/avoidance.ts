@@ -3,7 +3,7 @@
 import { SIZES, WORLD_HALF } from './biomes';
 import { newRuntime, type Actor, type Capsule, type CombatInput, type CombatRuntime, type Orientation, type PursuitPolicy, type Vec3, type WorldQueries } from './combat-types';
 import { Ecosystem, entityRadius, noticeRadius, speciesActor, touches, type EcoEvent, type Entity } from './ecosystem';
-import { derive, effectiveStats, starterFor } from './genome';
+import { derive, dietOf, effectiveStats, starterFor } from './genome';
 import { RELEASED } from './input';
 import { recoverPlayer } from './lifecycle';
 import { findRecoveryPose, startAnchor } from './motion';
@@ -14,6 +14,10 @@ import { movement, movementCapabilities } from './profiles';
 import { stepPlayer } from './player-motion';
 import { EDGE_SOFT_START } from './edge';
 import { STAGES } from './state';
+import { CombatWorld, entityActorId } from './combat-world';
+import { assignSlots, movesOf, NO_PINS } from './moves';
+import { createRigPose } from './rig';
+import { makePlayerBody } from './sim';
 import { stageBounds, stageWorldQueries, supportHeight } from './world-queries';
 
 /** `startYaw`: the orientation the start pose was admitted with (the player faces away from the hunter's start, from the searched point).
@@ -119,13 +123,20 @@ export function edgeEncounter(planId: string, hunterKey: string, seed: number): 
     if (!hrec.ok) continue;
     const hunter = hrec.position;
     if (distance(start, hunter) > n || touches(hunter, entityRadius(h), worldHull(pl.actor, start, o))) continue;
+    // Perception needs a line of sight (T16, review I9): a seabed hill between the pair hides the player, so that pair is no encounter.
+    h.x = hunter.x; h.y = hunter.y; h.z = hunter.z;
+    if (!eco.lineOfSight(h, start)) continue;
     return { seed, entityId: h.id, hunterKey, planId, start: { ...start }, startYaw: o.yaw, hunterStart: { ...hunter }, separation: distance(start, hunter), relocate: true };
   }
   return null;
 }
 
-/** Runs straight away from the hunter for eight seconds with the real player step and the real hunter rules. */
-export function simulateEscape(e: Encounter, hunter: { speedScale?: number; policy?: PursuitPolicy } = {}): EscapeResult {
+/** A combat hit on the player (spec §6): an attack that damaged or held it. Avoidance counts these as well as contact hazards. */
+const COMBAT_HITS = new Set(['hit', 'grabbed', 'guard-broken']);
+/** Runs straight away from the hunter for eight seconds with the real player step, the real hunter rules and the real combat world (the
+ *  combat tick, the AI tick and the motion of combat species, in simFrame's order). Only the encounter's hunter counts. `stay`: the player
+ *  does not move (the negative control). */
+export function simulateEscape(e: Encounter, hunter: { speedScale?: number; policy?: PursuitPolicy; stay?: boolean } = {}): EscapeResult {
   const pl = playerFor(e.planId), p = pl.plan, stage = p.size, size = SIZES[stage]!, legal = legality(stage, e.seed), actor = pl.actor;
   const caps = movementCapabilities(p), profile = movement(p.movement), t = legal.queries.terrain, L = actor.bodyLength;
   const policy = hunter.policy;
@@ -143,12 +154,18 @@ export function simulateEscape(e: Encounter, hunter: { speedScale?: number; poli
   if (!acquires(eco, h, pl, position, rt.orientation)) return { ok: false, reason: 'not-acquired', seconds: 0 };
 
   const intent: CombatInput = caps.rise ? { ...RELEASED, traversal: 'rise' } : RELEASED;
-  const anchor = startAnchor(actor, stage, legal);
+  const anchor = startAnchor(actor, stage, legal), genome = starterFor(p), combat = new CombatWorld(), rig = createRigPose(genome), moves = movesOf(genome), slots = assignSlots(genome, NO_PINS);
+  const hunterId = entityActorId(h);
+  const body = () => {
+    const hull = worldHull(actor, position, rt.orientation), first = hull[0]!, last = hull[hull.length - 1]!;
+    const centre = { x: (first.start.x + last.end.x) / 2, y: (first.start.y + last.end.y) / 2, z: (first.start.z + last.end.z) / 2 };
+    return makePlayerBody({ genome, plan: p, position, rt, actor, scale: size, armor: 0, health: 99, rig, centre });
+  };
   const steps = Math.round(ESCAPE_SECONDS / DT);
   for (let i = 1; i <= steps; i++) {
     const now = i * DT;
     const dx = position.x - h.x, dz = position.z - h.z, len = Math.hypot(dx, dz);
-    const wish: Vec3 = len > 1e-9 ? { x: dx / len, y: 0, z: dz / len } : { x: 0, y: 0, z: 0 };
+    const wish: Vec3 = len > 1e-9 && !hunter.stay ? { x: dx / len, y: 0, z: dz / len } : { x: 0, y: 0, z: 0 };
     const r = stepPlayer(position, rt, intent, { plan: p, profile, caps, actor, ...legal, size, topSpeedLocal: pl.topSpeedLocal, now, dt: DT, wish, aim: null, actionLock: false });
     position = r.position;
     if (r.needsRecovery) {
@@ -158,7 +175,13 @@ export function simulateEscape(e: Encounter, hunter: { speedScale?: number; poli
       rt.permit = null; rt.arc = null; rt.controlledVelocity = { x: 0, y: 0, z: 0 }; rt.externalVelocity = { x: 0, y: 0, z: 0 };
       settle();
     }
+    const b = body(), tick = combat.tick({ now, dt: DT, playing: true, intent, wish, previousMove: wish, player: b, moves, slots, entities: eco.entities, stage, diet: dietOf(genome), queries: legal.queries });
+    const struck = tick.events.find(ev => ev.attackerId === hunterId && ev.targetId === 'player' && COMBAT_HITS.has(ev.outcome));
+    if (struck) return { ok: false, reason: 'hit', seconds: now };
+    combat.aiTick({ now, dt: DT, stage, runSeed: e.seed, entities: eco.entities, player: b, playing: true, stealthFactor: pl.stealth, hitBy: new Set(), isOnScreen: () => true,
+      lineOfSight: (x, q) => eco.lineOfSight(x, q), givingUp: eco.givingUp(now) });
     const events = eco.step({ stage, dt: DT, now, player: position, playerHull: worldHull(actor, position, rt.orientation), perceivable: true, stealthFactor: pl.stealth });
+    combat.afterMotion(eco.entities);
     const hit = hunterEvent(events, h);
     if (hit) return { ok: false, reason: 'hit', seconds: hit.time };
     if (h.mode === 'return') return { ok: true, reason: 'gave-up', seconds: now };

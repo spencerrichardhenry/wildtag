@@ -255,7 +255,7 @@ export class TideWorld {
     const prefabs = new Map<string, T.Group>(), islands = new T.Group();
     for (const entity of this.eco.entities) {
       const spec = entity.spec, size = SIZES[spec.tier]!, kind = spec.kind, home = kind === 'planet' && this.eco.planetIndex(entity) === 0;
-      if (kind !== 'planet' && !prefabs.has(kind)) prefabs.set(kind, foodModel(kind));
+      if (kind !== 'planet' && !prefabs.has(kind)) prefabs.set(kind, foodModel(spec.model ?? kind));   // a species draws its model GLB (default its kind; T16b: one prefab per species, tints)
       const model = kind === 'planet' ? foodModel(kind, this.eco.planetIndex(entity)) : prefabs.get(kind)!.clone(true);
       model.scale.multiplyScalar(size * (home ? 1.35 : 1)); model.position.set(entity.x, entity.y, entity.z); model.rotation.y = entity.phase;
       if (home) {

@@ -1,6 +1,8 @@
 import type { SpeciesCombatFields } from './combat-types';
 // Everything that lives (or floats, or sails) in the Tiny Tide universe.
-export type FoodKind = 'plant' | 'kelp_snack' | 'seagrape' | 'lettuce' | 'copepod' | 'worm' | 'shrimp' | 'crab' | 'jellyfish' | 'snail' | 'fish' | 'squid' | 'ray' | 'bird' | 'tree' | 'boat' | 'plane' | 'balloon' | 'lighthouse' | 'planet';
+export type FoodKind = 'plant' | 'kelp_snack' | 'seagrape' | 'lettuce' | 'copepod' | 'worm' | 'shrimp' | 'crab' | 'jellyfish' | 'snail' | 'fish' | 'squid' | 'ray' | 'bird' | 'tree' | 'boat' | 'plane' | 'balloon' | 'lighthouse' | 'planet'
+  /** Combat species of sizes 0 and 1 (spec §11.3); each draws an existing GLB through `model`. */
+  | 'drifter' | 'spiny_snail';
 export type FoodTag = 'plant' | 'meat' | 'any';
 export type Behavior = 'still' | 'drift' | 'graze' | 'school' | 'skittish' | 'flyer';
 export interface Species extends SpeciesCombatFields {
@@ -39,7 +41,7 @@ export const SPECIES: readonly Species[] = [
   s(1, 'seagrape', 'plant', 'Grape cluster', 'still', 9, 12),
   s(1, 'lettuce', 'plant', 'Lettuce bed', 'still', 9, 12),
   s(1, 'shrimp', 'meat', 'Little shrimp', 'skittish', 10, 16, { speed: 3.4 }),
-  s(1, 'crab', 'meat', 'Peach crab', 'graze', 8, 24, { hp: 3, speed: 1.3, hunts: [0], fights: true, contactHazardId: 'crab-pinch', pursuitId: 'hunter' }),
+  s(1, 'crab', 'meat', 'Peach crab', 'graze', 8, 24, { hp: 20, speed: 1.3, hunts: [0], fights: true, pursuitId: 'hunter', behaviourId: 'crab', attackIds: ['crab-pinch', 'crab-lunge', 'crab-sweep'] }),
   s(1, 'jellyfish', 'meat', 'Moon jelly', 'drift', 8, 14, { stingsStages: [0, 1], contactHazardId: 'jelly-sting' }),
   s(1, 'snail', 'meat', 'Sea snail', 'graze', 8, 13, { speed: .5 }),
   s(2, 'kelp_snack', 'plant', 'Kelp frond', 'still', 10, 16),
@@ -54,10 +56,16 @@ export const SPECIES: readonly Species[] = [
   s(3, 'balloon', 'any', 'Hot-air balloon', 'drift', 8, 22, { habitatProfileId: 'sp-air', movementProfileId: 'sp-fly' }),
   s(3, 'lighthouse', 'any', 'Lighthouse', 'still', 7, 26, { habitatProfileId: 'sp-prop' }),
   s(4, 'planet', 'any', 'Planet', 'still', 12, 30, { habitatProfileId: 'sp-space', movementProfileId: 'sp-still' }),
+  // Combat species (spec §11.3), after every legacy row so the legacy spawns of each tier keep their seeded places.
+  s(0, 'drifter', 'meat', 'Drifter shrimp', 'skittish', 8, 14, { hp: 3, speed: 3.0, model: 'shrimp', tint: '#f6b58f', behaviourId: 'drifter' }),
+  s(0, 'spiny_snail', 'meat', 'Spiny snail', 'graze', 6, 16, { hp: 6, speed: .5, model: 'snail', tint: '#c9a3e6', behaviourId: 'spiny-snail', attackIds: ['snail-poke'], fights: true, pursuitId: 'retaliate' }),
 ];
+/** The index of the first row appended by combat sub-project 3a: earlier rows keep the reef-fallback RNG of their spawns (populate). */
+export const APPENDED_FROM = SPECIES.findIndex(spec => spec.key === '0:drifter');
 const byKey = new Map(SPECIES.map(spec => [spec.key, spec]));
 export const species = (tier: number, kind: FoodKind) => byKey.get(`${tier}:${kind}`)!;
 export const tierSpecies = (tier: number) => SPECIES.filter(spec => spec.tier === tier);
 /** Food kinds with a GLB (`public/tiny-tide/models/<kind>.glb`); planets use `planet_XX`. */
 export const FOOD_GLBS: readonly FoodKind[] = ['plant', 'kelp_snack', 'seagrape', 'lettuce', 'copepod', 'worm', 'shrimp', 'crab', 'jellyfish', 'snail', 'fish', 'squid', 'ray', 'bird', 'tree', 'boat', 'plane', 'balloon', 'lighthouse'];
-export const FOOD_MODEL_KINDS = [...new Set(SPECIES.filter(spec => spec.kind !== 'planet').map(spec => spec.kind))];
+/** The food GLBs to load: each species' model (default its kind), once. */
+export const FOOD_MODEL_KINDS = [...new Set(SPECIES.filter(spec => spec.kind !== 'planet').map(spec => spec.model ?? spec.kind))];

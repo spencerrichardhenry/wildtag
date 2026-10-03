@@ -1,6 +1,7 @@
 // tests/tiny-tide-core/combat-motion.test.ts — spec §5.12: combat motion goes through resolveMotion and never installs a refused pose.
 import { describe, expect, it } from 'vitest';
-import { random, SIZES } from '../../src/tiny-tide/biomes';
+import { random, SIZES, WORLD_HALF } from '../../src/tiny-tide/biomes';
+import { Ecosystem, speciesActor } from '../../src/tiny-tide/ecosystem';
 import { newRuntime, type Vec3 } from '../../src/tiny-tide/combat-types';
 import { starterFor } from '../../src/tiny-tide/genome';
 import { RELEASED } from '../../src/tiny-tide/input';
@@ -71,4 +72,31 @@ describe('combat motion', () => {
     stepPlayer(at, slow, RELEASED, { ...ctx, combat: { ...NO_COMBAT_MOTION, speedFactor: .5 } });
     expect(slow.controlledVelocity.z).toBeLessThan(100);   // it brakes toward half the top speed
   });
+});
+describe('combat motion of species', () => {
+  it('knockback, lunge, dash and grab motion never install a refused pose (species: lunge, knockback, held)', () => {
+    // Crabs (tier 1, ground) and fixture swimmers next to reef rocks and arches, pushed by random lunges, knockbacks and claw pulls.
+    let steps = 0;
+    for (const seed of [1, 2, 3]) {
+      const eco = new Ecosystem(seed), rand = random(seed * 13 + 1), q = stageWorldQueries(1, seed), bounds = { half: WORLD_HALF * SIZES[1]! };
+      const solids = stageSolids(1, seed).solids.filter(s => Math.max(Math.abs(s.minX), Math.abs(s.maxX), Math.abs(s.minZ), Math.abs(s.maxZ)) < 35 * SIZES[1]!);
+      const crabs = eco.entities.filter(e => e.spec.key === '1:crab');
+      eco.step({ stage: 1, dt: DT, now: 0, player: { x: 0, y: 900, z: 0 }, playerHull: [], perceivable: false, stealthFactor: 1 });
+      for (let c = 0; c < 56; c++) {
+        const e = crabs[c % crabs.length]!, s = solids[Math.floor(rand() * solids.length)]!, a = rand() * 2 * Math.PI, L = speciesActor(e).bodyLength, r = Math.max(s.maxX - s.minX, s.maxZ - s.minZ) / 2 + .6 * L;
+        const start = findRecoveryPose(speciesActor(e), { x: (s.minX + s.maxX) / 2 + Math.sin(a) * r, y: s.minY, z: (s.minZ + s.maxZ) / 2 + Math.cos(a) * r }, { queries: q, bounds, orientation: { yaw: 0, pitch: 0 }, time: 0 }, { maxDistance: 3 * L });
+        if (!start.ok) continue;
+        e.x = e.hx = start.position.x; e.y = e.hy = start.position.y; e.z = e.hz = start.position.z;
+        const kind = c % 3, push = scaled(dir(rand, true), kind === 2 ? .5 * L * rand() : (kind === 0 ? 1.2 * L / .22 : 45 * L * rand()));
+        e.combat = { intent: { kind: 'hold' }, face: null, lunge: kind === 0 ? push : null, external: kind === 1 ? { ...push } : { x: 0, y: 0, z: 0 }, frozen: false, held: kind === 2 ? push : null, moved: 0 };
+        for (let i = 0; i < 8; i++) {
+          eco.step({ stage: 1, dt: DT, now: (i + 1) * DT, player: { x: 0, y: 900, z: 0 }, playerHull: [], perceivable: false, stealthFactor: 1 });
+          if (e.eaten) break;
+          expect(q.overlapHull(speciesActor(e), { x: e.x, y: e.y, z: e.z }, { yaw: 0, pitch: 0 }, { time: (i + 1) * DT, bounds }).ok, `seed ${seed} case ${c} step ${i}`).toBe(true); steps++;
+        }
+        e.combat = null;
+      }
+    }
+    expect(steps).toBeGreaterThan(1000);
+  }, 120_000);
 });

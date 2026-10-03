@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { Ecosystem, HUNTER_MARGIN, provoke, speciesActor, type Entity } from '../../src/tiny-tide/ecosystem';
+import { Ecosystem, engage, HUNTER_MARGIN, provoke, speciesActor, type Entity, type EntityMotion } from '../../src/tiny-tide/ecosystem';
+import { HAZARDS } from '../../src/tiny-tide/registries';
 import { makeTerrain, makeWorldQueries } from '../../src/tiny-tide/world-queries';
 import { habitat } from '../../src/tiny-tide/profiles';
 import { SIZES, SPAWN_HALF, WATER_LEVEL, WORLD_HALF } from '../../src/tiny-tide/biomes';
-import { SPECIES } from '../../src/tiny-tide/species';
+import { FOOD_MODEL_KINDS, SPECIES } from '../../src/tiny-tide/species';
 import type { Terrain, Vec3 } from '../../src/tiny-tide/combat-types';
 
 const hullAt = (p: Vec3, r = .6) => [{ start: p, end: p, radius: r }];
@@ -45,9 +46,11 @@ describe('species installation', () => {
     eco.step(ctx(far, .2, { stage: 2 })); expect(squid.eaten || legal(squid)).toBe(true);
   });
 });
+// T16: the player point is 1.4 above the crab's origin (its hull centre height): acquisition needs a line of sight (review I9), and a
+// point at the crab's ground level 6 units away can be under the seabed.
 describe('pursuit', () => {
   it('giveUpAll (D27): every hunter of the player returns and acquires nothing inside the window', () => {
-    const eco = new Ecosystem(7), crab = crabOf(eco), p = at(crab, 6, 0); eco.step(ctx(p, 0)); expect(crab.mode).toBe('hunt');   // without a give-up it hunts on
+    const eco = new Ecosystem(7), crab = crabOf(eco), p = at(crab, 6, 1.4); eco.step(ctx(p, 0)); expect(crab.mode).toBe('hunt');   // without a give-up it hunts on
     expect(eco.givingUp(0)).toBe(false);
     eco.giveUpAll(.1, 6); expect(crab.mode).toBe('return'); expect(eco.givingUp(.1)).toBe(true); expect(eco.givingUp(6.1)).toBe(false);
     let again = -1;
@@ -57,17 +60,17 @@ describe('pursuit', () => {
   });
   it('keeps hunting through a one-frame escape', () => {
     const eco = new Ecosystem(7), crab = crabOf(eco), home = at(crab, 0, 0);
-    eco.step(ctx(at(crab, 6, 0), 0)); expect(crab.mode).toBe('hunt');
+    eco.step(ctx(at(crab, 6, 1.4), 0)); expect(crab.mode).toBe('hunt');
     eco.step(ctx({ x: home.x + 6, y: home.y + 60, z: home.z }, .1)); expect(crab.mode).toBe('hunt');   // 60.3 < give-up 12 × 5.6 = 67.2
-    eco.step(ctx(at(crab, 6, 0), .2)); expect(crab.mode).toBe('hunt');
+    eco.step(ctx(at(crab, 6, 1.4), .2)); expect(crab.mode).toBe('hunt');
   });
   it('gives up after its memory on a sustained escape and does not re-hunt inside the reacquire window', () => {
-    const eco = new Ecosystem(7), crab = crabOf(eco); eco.step(ctx(at(crab, 6, 0), 0));
+    const eco = new Ecosystem(7), crab = crabOf(eco); eco.step(ctx(at(crab, 6, 1.4), 0));
     let returnedAt = -1;
     for (let t = .1; t <= 6.1; t = tick(t + .1)) { eco.step(ctx(at(crab, 6, 60), t)); if (crab.mode !== 'hunt' && returnedAt < 0) returnedAt = t; }
     expect(returnedAt).toBe(6.1);   // last seen at 0; memory 6; strict >
-    eco.step(ctx(at(crab, 3, 0), 6.2)); expect(crab.mode).not.toBe('hunt');   // returnUntil = 8.1, even if it is already calm at home
-    eco.step(ctx(at(crab, 3, 0), 8.2)); expect(crab.mode).toBe('hunt');
+    eco.step(ctx(at(crab, 3, 1.4), 6.2)); expect(crab.mode).not.toBe('hunt');   // returnUntil = 8.1, even if it is already calm at home
+    eco.step(ctx(at(crab, 3, 1.4), 8.2)); expect(crab.mode).toBe('hunt');
   });
   it('goes to the last seen point when the target hides, then gives up', () => {
     // Seed 4: its central crab (x −21) keeps both sightings inside the stage 0 soft start (seed 7's nearest crab is at x −38.4).
@@ -123,8 +126,8 @@ describe('pursuit', () => {
     eco.step(ctx(gap(2), 1.3)); expect(crab.blockedSince).toBeNull();                                                   // 1.1 s ≥ 1
   });
   it('lets the leash win while the player is still seen', () => {
-    const eco = new Ecosystem(7), crab = crabOf(eco); eco.step(ctx(at(crab, 6, 0), 0)); crab.hx = crab.x - 200;   // 200 > 30 × 5.6 = 168
-    eco.step(ctx(at(crab, 6, 0), .1)); expect(crab.mode).toBe('return');
+    const eco = new Ecosystem(7), crab = crabOf(eco); eco.step(ctx(at(crab, 6, 1.4), 0)); crab.hx = crab.x - 200;   // 200 > 30 × 5.6 = 168
+    eco.step(ctx(at(crab, 6, 1.4), .1)); expect(crab.mode).toBe('return');
   });
   it('perceives with visibility and the perceivable flag, independent of damage', () => {
     const hidden = new Ecosystem(9, { queries: tier => makeWorldQueries(makeTerrain(tier), { visibility: () => 0 }) }), a = crabOf(hidden);
@@ -133,10 +136,14 @@ describe('pursuit', () => {
   });
 });
 describe('provocation and hazards', () => {
-  it('lets a provoked crab retaliate against a bigger stage-1 player it cannot see', () => {
-    const eco = new Ecosystem(7, { queries: tier => makeWorldQueries(makeTerrain(tier), { visibility: () => 0 }) }), crab = crabOf(eco), p = at(crab, 0, 0);
-    provoke(crab, p, 0); expect(crab.mode).toBe('angry'); expect(crab.lastKnown).toEqual(p);
-    const events = eco.step(ctx(p, 0, { stage: 1 })).filter(e => e.entity === crab); expect(events).toHaveLength(1); expect(events[0]!.damage).toBe(4);   // 4 + 2 × max(0, 1 − 1)
+  it('lets a provoked ray retaliate against a bigger stage-3 player it cannot see', () => {
+    // The ray stings stages 1 and 2 only; at stage 3 only its provoked (angry) mode makes it sting (the crab has no hazard since sub-project 3a).
+    const eco = new Ecosystem(7, { queries: tier => makeWorldQueries(makeTerrain(tier), { visibility: () => 0 }) }), ray = eco.entities.find(e => e.spec.key === '2:ray' && !e.eaten)!;
+    eco.step(ctx({ x: 0, y: 900, z: 0 }, 0, { stage: 3, perceivable: false, playerHull: [] }));   // the ray becomes active and is installed
+    const p = at(ray, 0, 0);
+    expect(eco.step(ctx(p, .05, { stage: 3 })).filter(e => e.entity === ray)).toEqual([]);
+    provoke(ray, p, .1); expect(ray.mode).toBe('angry'); expect(ray.lastKnown).toEqual(p);
+    const events = eco.step(ctx(p, .1, { stage: 3 })).filter(e => e.entity === ray); expect(events).toHaveLength(1); expect(events[0]!.damage).toBe(2);   // 2 + 2 × max(0, 2 − 3)
   });
   it('lets a provoked ray retaliate with its own policy and forget a hidden player', () => {
     const eco = new Ecosystem(7, { queries: tier => makeWorldQueries(makeTerrain(tier), { visibility: () => 0 }) }), ray = eco.entities.find(e => e.spec.key === '2:ray' && !e.eaten)!;
@@ -145,11 +152,11 @@ describe('provocation and hazards', () => {
     eco.step(ctx(at(ray, 10, 0), 4.1, { stage: 2 })); expect(ray.mode).toBe('return');   // retaliate memory 4
   });
   it('emits a hazard at t = 0 and the next only after the cadence, from the translated hull', () => {
-    // Flat ground keeps the grounded crab's support height constant, so its centre stays exactly on the player point.
-    const eco = new Ecosystem(7, { queries: tier => makeWorldQueries(tier === 4 ? makeTerrain(4) : flatSea) }), crab = crabOf(eco), events: ReturnType<Ecosystem['step']> = [];
-    eco.step(ctx({ x: 0, y: 500, z: 0 }, 0, { perceivable: false, playerHull: [] }));   // settle onto the flat ground first
-    for (let i = 0; i <= 14; i++) events.push(...eco.step(ctx(at(crab, 0, 0), i / 10)).filter(e => e.entity === crab));
-    expect(events.map(e => e.time)).toEqual([0, 1.4]); expect(events[0]!.damage).toBe(6); expect(events[0]!.normal).toEqual({ x: 0, y: 1, z: 0 });   // 4 + 2 × (1 − 0) half-hearts; coincident centres
+    // The ray stings stage 2 on contact (calm, not engaged).
+    const eco = new Ecosystem(7, { queries: tier => makeWorldQueries(tier === 4 ? makeTerrain(4) : flatSea) }), ray = eco.entities.find(e => e.spec.key === '2:ray' && !e.eaten)!, events: ReturnType<Ecosystem['step']> = [];
+    eco.step(ctx({ x: 0, y: 500, z: 0 }, 0, { stage: 2, perceivable: false, playerHull: [] }));   // settle onto the flat ground first
+    for (let i = 0; i <= 18; i++) events.push(...eco.step(ctx(at(ray, 0, 0), i / 10, { stage: 2, perceivable: false })).filter(e => e.entity === ray));   // the player point follows the grazing ray
+    expect(events.map(e => e.time)).toEqual([0, 1.8]); expect(events[0]!.damage).toBe(2);   // ray-sting: 2 half-hearts, every 1.8 s
   });
   it('emits nothing when the hull is far away, even while the player point is seen', () => {
     const eco = new Ecosystem(7), crab = crabOf(eco), events: ReturnType<Ecosystem['step']> = [];
@@ -183,5 +190,71 @@ describe('hunters and the world edge (owner ruling M11)', () => {
     step(at(41), 1 / 60); expect(crab.mode).toBe('return');
     for (let f = 2; f < 400; f++) step(at(41), f / 60);
     expect(crab.mode === 'hunt' || crab.mode === 'angry').toBe(false);
+  });
+});
+
+describe('combat species in the ecosystem (T16)', () => {
+  it('has the size-0 rows, the crab as a combat species and no crab hazard; models default to the kind', () => {
+    const drifter = SPECIES.find(s => s.key === '0:drifter')!, snail = SPECIES.find(s => s.key === '0:spiny_snail')!, crab = SPECIES.find(s => s.key === '1:crab')!;
+    expect(drifter).toMatchObject({ tier: 0, model: 'shrimp', behaviourId: 'drifter', hp: 3 });
+    expect(snail).toMatchObject({ tier: 0, model: 'snail', behaviourId: 'spiny-snail', attackIds: ['snail-poke'], fights: true, pursuitId: 'retaliate', hp: 6 });
+    expect(crab).toMatchObject({ hp: 20, behaviourId: 'crab', attackIds: ['crab-pinch', 'crab-lunge', 'crab-sweep'] }); expect(crab.contactHazardId).toBeUndefined();
+    expect(HAZARDS['crab-pinch']).toBeUndefined();
+    expect(FOOD_MODEL_KINDS).not.toContain('drifter'); expect(FOOD_MODEL_KINDS).not.toContain('spiny_snail'); expect(FOOD_MODEL_KINDS).toContain('snail');
+    // The new rows come after every legacy row, so the legacy spawns of each tier keep their seeded places.
+    expect(SPECIES.findIndex(s => s.key === '0:drifter')).toBeGreaterThan(SPECIES.findIndex(s => s.key === '4:planet'));
+  });
+  it('R14 / D28: a hunter of the current size respawns in 30–40 s, every other species in 14–22 s', () => {
+    const eco = new Ecosystem(7), crab = crabOf(eco), snail = eco.entities.find(e => e.spec.key === '1:snail')!, drifter = eco.entities.find(e => e.spec.key === '0:drifter')!;
+    eco.step(ctx({ x: 0, y: 900, z: 0 }, 0, { perceivable: false, playerHull: [] }));   // the player's size is 0
+    for (let i = 0; i < 20; i++) {
+      eco.consume(crab); expect(crab.respawn).toBeGreaterThanOrEqual(30); expect(crab.respawn).toBeLessThanOrEqual(40);
+      for (const e of [snail, drifter]) { eco.consume(e); expect(e.respawn).toBeGreaterThanOrEqual(14); expect(e.respawn).toBeLessThanOrEqual(22); }
+    }
+    eco.step(ctx({ x: 0, y: 900, z: 0 }, .1, { stage: 1, perceivable: false, playerHull: [] }));   // the crab does not hunt size 1
+    eco.consume(crab); expect(crab.respawn).toBeLessThanOrEqual(22);
+  });
+  it('D37: a combat species that returns to calm gets its full HP back (a legacy one keeps its HP)', () => {
+    const eco = new Ecosystem(7), crab = crabOf(eco), ray = eco.entities.find(e => e.spec.key === '2:ray' && !e.eaten)!;
+    eco.step(ctx({ x: 0, y: 900, z: 0 }, 0, { perceivable: false, playerHull: [] }));
+    crab.hp = 5; crab.mode = 'return'; crab.returnUntil = 0;
+    eco.step(ctx({ x: 0, y: 900, z: 0 }, .1, { perceivable: false, playerHull: [] })); expect(crab.mode).toBe('calm'); expect(crab.hp).toBe(20);
+    eco.step(ctx({ x: 0, y: 900, z: 0 }, .2, { stage: 1, perceivable: false, playerHull: [] }));
+    ray.hp = 1; ray.mode = 'return'; ray.returnUntil = 0; ray.x = ray.hx; ray.z = ray.hz;
+    eco.step(ctx({ x: 0, y: 900, z: 0 }, .3, { stage: 1, perceivable: false, playerHull: [] })); expect(ray.mode).toBe('calm'); expect(ray.hp).toBe(1);
+  });
+  it('combat species flee by their AI, not by the legacy prey rule', () => {
+    const eco = new Ecosystem(7), drifter = eco.entities.find(e => e.spec.key === '0:drifter' && !e.eaten)!, copepod = eco.entities.find(e => e.spec.key === '0:copepod' && !e.eaten)!;
+    const modes = new Set<string>(), legacy = new Set<string>();
+    for (let t = 0; t <= 3; t = tick(t + .1)) { eco.step(ctx(at(drifter, 1, 0), t)); modes.add(drifter.mode); }
+    for (let t = 3.1; t <= 6; t = tick(t + .1)) { eco.step(ctx(at(copepod, 1, 0), t)); legacy.add(copepod.mode); }
+    expect(modes.has('flee')).toBe(false); expect(legacy.has('flee')).toBe(true);
+  });
+  it('acquires only with a clear line of sight (review I9: visibility and segmentClear)', () => {
+    const blocked = (tier: number) => ({ ...makeWorldQueries(makeTerrain(tier)), segmentClear: () => false });
+    const hidden = new Ecosystem(7, { queries: blocked }), a = crabOf(hidden); hidden.step(ctx(at(a, 6, 1.4), 0)); expect(a.mode).toBe('calm');
+    const open = new Ecosystem(7), b = crabOf(open); open.step(ctx(at(b, 6, 1.4), 0)); expect(b.mode).toBe('hunt');
+    expect(open.lineOfSight(b, at(b, 6, 3))).toBe(true); expect(hidden.lineOfSight(a, at(a, 6, 3))).toBe(false);
+  });
+  it('engage (T16 carry 4): an ambusher that struck hunts the player, without the fights flag', () => {
+    const eco = new Ecosystem(7), drifter = eco.entities.find(e => e.spec.key === '0:drifter' && !e.eaten)!, p = at(drifter, 2, 0);
+    engage(drifter, p, 0); expect(drifter.mode).toBe('hunt'); expect(drifter.lastKnown).toEqual(p);
+    drifter.mode = 'angry'; engage(drifter, p, 0); expect(drifter.mode).toBe('angry');   // an angry one stays angry
+  });
+  it('moves a combat species by its motion through resolveMotion: toward, hold facing a point, knockback decay, the snap to an emerge point', () => {
+    const eco = new Ecosystem(7), crab = crabOf(eco), still = { x: 0, y: 900, z: 0 };
+    eco.step(ctx(still, 0, { perceivable: false, playerHull: [] }));
+    const motion = (over: Partial<EntityMotion> = {}): EntityMotion => ({ intent: { kind: 'hold' }, face: null, lunge: null, external: { x: 0, y: 0, z: 0 }, frozen: false, held: null, snap: null, moved: 0, ...over });
+    const x0 = crab.x;
+    crab.combat = motion({ intent: { kind: 'toward', point: at(crab, 50, 0), speedFactor: 1 } });
+    eco.step(ctx(still, .1, { perceivable: false, playerHull: [] })); expect(crab.x).toBeGreaterThan(x0); expect(crab.combat.moved).toBeGreaterThan(0); expect(legal(crab)).toBe(true);
+    const x1 = crab.x; crab.combat = motion({ face: at(crab, 0, 0, 10) });
+    eco.step(ctx(still, .2, { perceivable: false, playerHull: [] })); expect(crab.x).toBeCloseTo(x1, 6); expect(crab.heading).toBeCloseTo(0, 6);
+    const kick = motion({ external: { x: 20, y: 0, z: 0 } }); crab.combat = kick;
+    eco.step(ctx(still, .3, { perceivable: false, playerHull: [] })); expect(crab.x).toBeGreaterThan(x1); expect(kick.external.x).toBeLessThan(20 * Math.exp(-6 * .1) + 1e-9);
+    const frozen = motion({ external: { x: 20, y: 0, z: 0 }, frozen: true }), x2 = crab.x; crab.combat = frozen;
+    eco.step(ctx(still, .4, { perceivable: false, playerHull: [] })); expect(crab.x).toBeCloseTo(x2, 6); expect(frozen.external.x).toBe(20);
+    const target = { x: crab.x + 3, y: crab.y, z: crab.z + 2 }; crab.combat = motion({ snap: target });
+    eco.step(ctx(still, .5, { perceivable: false, playerHull: [] })); expect(Math.hypot(crab.x - target.x, crab.z - target.z)).toBeLessThan(1); expect(legal(crab)).toBe(true);
   });
 });
