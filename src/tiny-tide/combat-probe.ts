@@ -30,11 +30,17 @@ const flat = (a: Vec3): Vec3 => unit({ x: a.x, y: 0, z: a.z });
 export const median = (xs: readonly number[]) => { const s = [...xs].sort((a, b) => a - b); return s.length ? (s.length % 2 ? s[(s.length - 1) / 2]! : (s[s.length / 2 - 1]! + s[s.length / 2]!) / 2) : NaN; };
 
 // ---- the camera model (spec §14.3): 6 L behind and 2 L above the player, looking at it, 60° vertical field of view, 16:9 ----
-const TAN_V = Math.tan(30 * Math.PI / 180), TAN_H = TAN_V * 16 / 9;
-export function onScreenFrom(player: Vec3, yaw: number, L: number, p: Vec3): boolean {
-  const f = { x: Math.sin(yaw), y: 0, z: Math.cos(yaw) }, eye = { x: player.x - 6 * L * f.x, y: player.y + 2 * L, z: player.z - 6 * L * f.z };
+/** A camera for the on-screen test: vertical field of view, aspect (width / height) and a yaw offset from the player's facing (a camera the
+ *  player turned away from its body). The spec's camera is SPEC_CAMERA. */
+export interface ProbeCamera { fovDeg: number; aspect: number; yawOffset: number }
+export const SPEC_CAMERA: ProbeCamera = { fovDeg: 60, aspect: 16 / 9, yawOffset: 0 };
+/** T23 fix round 1, P8: a portrait phone (aspect < .8, 64° vertical) looking .8 rad to the side of the player's facing. */
+export const PORTRAIT_CAMERA: ProbeCamera = { fovDeg: 64, aspect: 9 / 16, yawOffset: .8 };
+export function onScreenFrom(player: Vec3, yaw: number, L: number, p: Vec3, cam: ProbeCamera = SPEC_CAMERA): boolean {
+  const tanV = Math.tan(cam.fovDeg / 2 * Math.PI / 180), tanH = tanV * cam.aspect, y = yaw + cam.yawOffset;
+  const f = { x: Math.sin(y), y: 0, z: Math.cos(y) }, eye = { x: player.x - 6 * L * f.x, y: player.y + 2 * L, z: player.z - 6 * L * f.z };
   const look = unit(sub(player, eye)), right = unit(cross(look, UP)), up = cross(right, look), d = sub(p, eye), z = dot(d, look);
-  return z > 0 && Math.abs(dot(d, up) / z) <= TAN_V && Math.abs(dot(d, right) / z) <= TAN_H;
+  return z > 0 && Math.abs(dot(d, up) / z) <= tanV && Math.abs(dot(d, right) / z) <= tanH;
 }
 
 // ---- builds (the fixture page's construction, with the game's own modules) ----
@@ -95,9 +101,10 @@ function evolve(run: Run, line: 'swimmer' | 'crawler', mouth: string, add: reado
 
 // ---- the world ----
 export interface ProbeWorld { s: SimState; w: SimWorld }
-function startWorld(seed: number, run: Run, grace = 0): ProbeWorld {
+/** `view`: the camera of the on-screen test, or 'blind' (nothing is on screen: the director's off-screen wiring check). */
+function startWorld(seed: number, run: Run, grace = 0, view: ProbeCamera | 'blind' = SPEC_CAMERA): ProbeWorld {
   const s = newSimState(run), eco = new Ecosystem(seed, { queries: tier => legality(tier, seed).queries });
-  const w: SimWorld = { eco, startGrace: grace, legality: stage => legality(stage, seed), isOnScreen: p => onScreenFrom(s.physical, s.rt.orientation.yaw, playerActorCached(s).bodyLength, p) };
+  const w: SimWorld = { eco, startGrace: grace, legality: stage => legality(stage, seed), isOnScreen: p => view !== 'blind' && onScreenFrom(s.physical, s.rt.orientation.yaw, playerActorCached(s).bodyLength, p, view) };
   eco.reset(run.eatenPlanets); simBegin(s, w, run, null);
   return { s, w };
 }
@@ -367,8 +374,8 @@ export function attackTrial(seed: number, build: ProbeBuild, speciesKey: string,
 /** P8, off-screen wind-ups: the subject placed behind or beside the player (`turn` from its facing) at the far point of its longest band, and
  *  the AI left to start its own attack (the director judges on-screen as in the game; the camera model sees close attackers even behind the
  *  player). Runs until that attack ends or `seconds` pass. True if it attacked. */
-export function behindTrial(seed: number, build: ProbeBuild, speciesKey: string, watch: DirectorWatch, turn = Math.PI, seconds = 6): boolean {
-  const run = makeRun(seed, build), p = startWorld(seed, run), subject = p.w.eco.entities.find(e => e.spec.key === speciesKey && (!e.eaten || !!e.spec.alpha));
+export function behindTrial(seed: number, build: ProbeBuild, speciesKey: string, watch: DirectorWatch, turn = Math.PI, seconds = 6, view: ProbeCamera | 'blind' = SPEC_CAMERA): boolean {
+  const run = makeRun(seed, build), p = startWorld(seed, run, 0, view), subject = p.w.eco.entities.find(e => e.spec.key === speciesKey && (!e.eaten || !!e.spec.alpha));
   if (!subject || (subject.spec.alpha && subject.spec.alpha.size !== run.stage)) return false;
   isolate(p, subject); stillFrame(p);
   const b = BEHAVIOURS[subject.spec.behaviourId ?? '']!, longest = [...b.attacks, ...(b.phases?.[0]?.attacks ?? [])].sort((x, y) => y.band[1] - x.band[1])[0];
@@ -515,7 +522,9 @@ export interface ProbeReport { p0: P0Row[]; p1: AttackRow[]; p2: AttackRow[]; p3
   notes: NoteRow[];
   /** T23 fix round 1: the largest bot reaction (step .01 s) at which each attack still meets its bar, per measure; and P1 with a reaction
    *  drawn from .25–.45 s for each trial (reported, no bar). */
-  thresholds: ThresholdRow[]; p1Jitter: JitterRow[]; pass: boolean }
+  thresholds: ThresholdRow[]; p1Jitter: JitterRow[];
+  /** P8 by camera (the p8 part). */
+  p8Views: ({ view: string } & ProbeReport['p8'])[]; pass: boolean }
 export interface ThresholdRow { measure: 'p1' | 'p2' | 'p3'; attackId: string; species: string; size: number; bar: number;
   /** Largest reaction (s) in [0, .8] with share ≥ bar; null: not even at 0; .8: at least .8. */
   threshold: number | null; at25: number; at35: number; trials: number }
@@ -605,11 +614,11 @@ function ttkRows(o: ProbeOptions, build: (size: 0 | 1) => ProbeBuild, bars: Read
 const p8Of = (watch: DirectorWatch) => ({ maxTokens: watch.maxTokens, minActiveGap: watch.minActiveGap, minOffScreenWindup: watch.minOffScreenWindup, windups: watch.windups, offScreen: watch.offScreen, gapPair: watch.gapPair, mix: { ...watch.mix },
   pass: watch.maxTokens <= 2 && watch.minActiveGap >= .25 - 1e-6 && watch.minOffScreenWindup >= .6 - 1e-6 });
 export function emptyReport(): ProbeReport {
-  return { p0: [], p1: [], p2: [], p3: [], p4: [], p5: [], p6: [], p7: [], p8: { maxTokens: 0, minActiveGap: Infinity, minOffScreenWindup: Infinity, windups: 0, offScreen: 0, gapPair: '', pass: true, mix: {} }, notes: [], thresholds: [], p1Jitter: [], pass: false };
+  return { p0: [], p1: [], p2: [], p3: [], p4: [], p5: [], p6: [], p7: [], p8: { maxTokens: 0, minActiveGap: Infinity, minOffScreenWindup: Infinity, windups: 0, offScreen: 0, gapPair: '', pass: true, mix: {} }, notes: [], thresholds: [], p1Jitter: [], p8Views: [], pass: false };
 }
 /** The pass flag of a whole report. */
 export function judge(r: ProbeReport): ProbeReport {
-  r.pass = ![...r.p0, ...r.p1, ...r.p2, ...r.p3, ...r.p5, ...r.p6].some(failed) && !r.p7.some(failed) && r.p8.pass && r.p0.length > 0 && r.p7.length > 0;
+  r.pass = ![...r.p0, ...r.p1, ...r.p2, ...r.p3, ...r.p5, ...r.p6].some(failed) && !r.p7.some(failed) && r.p8.pass && (r.p8Views ?? []).every(v => v.pass) && r.p0.length > 0 && r.p7.length > 0;
   return r;
 }
 /** The probe (spec §14.3), or some of its parts. Long: run it with TIDE_COMBAT_PROBE=1. `progress` receives each part's rows as they grow. */
@@ -631,9 +640,16 @@ export function runProbe(o: ProbeOptions = FULL_PROBE, parts: readonly ProbePart
       r.p7.push(...mine);
     }
     // P8 is watched over every run; this part adds attackers that start behind the player (off-screen wind-ups).
-    if (part === 'p8') for (let i = 0; i < Math.max(1, Math.round(o.p0Trials / 5)); i++) {
-      for (const species of Object.keys(SPECIES_SIZE)) for (const turn of [Math.PI, Math.PI / 2, -Math.PI / 2]) behindTrial(1000 + i, dashBuild(SPECIES_SIZE[species]!), species, watch, turn);
-      flush({});
+    // Three cameras: the spec's; a portrait phone turned .8 rad off the player's facing (T23 fix round 1: the spec camera sees every attack at
+    // these ranges); and 'blind' (every wind-up off-screen), which checks the director's off-screen wiring. Each view is reported alone.
+    if (part === 'p8') {
+      const views: [string, ProbeCamera | 'blind'][] = [['spec', SPEC_CAMERA], ['portrait', PORTRAIT_CAMERA], ['portrait, other side', { ...PORTRAIT_CAMERA, yawOffset: -PORTRAIT_CAMERA.yawOffset }], ['blind', 'blind']];
+      for (const [name, view] of views) {
+        const w = newWatch();
+        for (let i = 0; i < Math.max(1, Math.round(o.p0Trials / 5)); i++)
+          for (const species of Object.keys(SPECIES_SIZE)) for (const turn of [Math.PI, Math.PI / 2, -Math.PI / 2]) { behindTrial(1000 + i, dashBuild(SPECIES_SIZE[species]!), species, w, turn, 6, view); behindTrial(1000 + i, dashBuild(SPECIES_SIZE[species]!), species, watch, turn, 6, view); }
+        r.p8Views.push({ view: name, ...p8Of(w) }); flush({ p8Views: [...r.p8Views] });
+      }
     }
     if (part === 'notes') r.notes = noteRows(o, watch, rows => flush({ notes: rows }));
     if (part === 'th-p1') r.thresholds.push(...thresholdRows('p1', all, dashBuild, x => x === 'avoided' || x === 'countered', x => x.kind === 'alpha' ? .9 : .95, o.thresholdTrials, rows => flush({ thresholds: rows })));
@@ -727,7 +743,7 @@ function mergeP8(a: ProbeReport['p8'], b: ProbeReport['p8']): ProbeReport['p8'] 
 export function mergeReports(list: readonly Partial<ProbeReport>[]): ProbeReport {
   const r = emptyReport();
   for (const x of list) {
-    for (const k of ['p0', 'p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'notes', 'thresholds', 'p1Jitter'] as const) if (x[k]?.length) (r[k] as unknown[]).push(...x[k]!);
+    for (const k of ['p0', 'p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'notes', 'thresholds', 'p1Jitter', 'p8Views'] as const) if (x[k]?.length) (r[k] as unknown[]).push(...x[k]!);
     if (x.p8) r.p8 = mergeP8(r.p8, x.p8);
   }
   return judge(r);
@@ -765,5 +781,7 @@ export function probeMarkdown(r: ProbeReport): string {
     '## Balance notes (measured, no bar)', '', '| Note | Build | Species | Median | Trials | Faints | Damage ½♥ | Not killed |', '| --- | --- | --- | --- | --- | --- | --- | --- |',
     ...(r.notes ?? []).map(x => `| ${x.note} | ${x.build} | ${x.species} | ${sec(x.median)} | ${x.trials} | ${x.faints} | ${x.damage} | ${x.times.filter(t => t < 0).length} |`), '',
     `Attack mix (wind-ups at the player, every part): ${Object.entries(r.p8.mix ?? {}).sort().map(([k, n]) => `${k} ${n}`).join(', ') || '—'}`, '',
+    '## P8 by camera (p8 part)', '', '| Camera | Wind-ups | Off-screen | Shortest off-screen wind-up | Smallest active gap | Most tokens | Pass |', '| --- | --- | --- | --- | --- | --- | --- |',
+    ...(r.p8Views ?? []).map(v => `| ${v.view} | ${v.windups} | ${v.offScreen} | ${sec(v.minOffScreenWindup ?? Infinity)} | ${Number.isFinite(v.minActiveGap ?? Infinity) ? (v.minActiveGap as number).toFixed(3) + ' s' : '∞'} | ${v.maxTokens} | ${v.pass ? 'yes' : '**no**'} |`), '',
     '## P8 Director', '', `Most tokens at once: ${r.p8.maxTokens}; smallest gap between active starts: ${Number.isFinite(r.p8.minActiveGap) ? r.p8.minActiveGap.toFixed(3) + ' s' : '∞'} (${r.p8.gapPair || '—'}); shortest off-screen wind-up: ${sec(r.p8.minOffScreenWindup)} (${r.p8.offScreen} off-screen); wind-ups watched: ${r.p8.windups}; pass: ${r.p8.pass ? 'yes' : '**no**'}`, ''].join('\n');
 }
