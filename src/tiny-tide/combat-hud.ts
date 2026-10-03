@@ -1,6 +1,8 @@
-// The combat HUD (spec §8, §9.2–§9.3): the four slot buttons with their move icons, key labels and cooldown rings. DOM only.
+// The combat HUD (spec §8, §9.2–§9.3): the four slot buttons with their move icons, key labels and cooldown rings; the combat overlay (HP bars,
+// edge arrows toward off-screen telegraphs, the break-free prompt) and the damage floater text. DOM only; elements are pooled.
 import './controls.css';
-import type { CombatRuntime, MoveKind } from './combat-types';
+import type { CombatRuntime, HitOutcome, MoveKind } from './combat-types';
+import { damageText } from './combat-profiles';
 import { PLAYER_ID } from './combat-world';
 import type { MoveSet, SlotAssignment } from './moves';
 
@@ -53,4 +55,57 @@ export class CombatHud {
       b.classList.toggle('cooldown', v.cooldown > 0);
     });
   }
+}
+
+/** The floater of one hit outcome (spec §9.2, T8 carry): a word for a block, a counter, a dodge or an immunity; else the damage when it is
+ *  above 0; else none (a 0-damage hit, catch or guard break shows nothing, never "−0" or "− ♥"). */
+export function floaterText(outcome: HitOutcome, unit: 'hp' | 'half-heart', amount: number): string | null {
+  if (outcome === 'blocked' || outcome === 'countered' || outcome === 'evaded') return damageText(outcome, unit, amount);
+  if (outcome === 'immune') return 'IMMUNE';
+  return amount > 0 ? damageText(outcome, unit, amount) : null;
+}
+/** A combat species shows its HP bar for this long after its last damage (spec §9.3). */
+export const HP_BAR_SECONDS = 4;
+/** Screen pixels; `fraction` is HP left. */
+export interface HpBar { x: number; y: number; fraction: number }
+/** Screen pixels; `fill` is the telegraph's fill (the ring fills like the shape). */
+export interface EdgeArrow { x: number; y: number; angle: number; color: 'amber' | 'red'; fill: number }
+/** The overlay: HP bars above damaged species, edge arrows toward off-screen telegraphs, and the break-free prompt with its progress ring. */
+export class CombatOverlay {
+  private readonly root = document.createElement('div');
+  private readonly bars: HTMLElement[] = [];
+  private readonly arrows: HTMLElement[] = [];
+  readonly prompt = document.createElement('div');
+  private readonly ring: HTMLElement;
+  private shownBreak = -1;
+  constructor(host: HTMLElement) {
+    this.root.id = 'combat-overlay'; this.root.setAttribute('aria-hidden', 'true');
+    this.prompt.id = 'break-free'; this.prompt.hidden = true; this.prompt.setAttribute('role', 'status');
+    this.prompt.innerHTML = '<i class="break-ring"></i><span>Wiggle free! Tap CHOMP</span>';
+    this.ring = this.prompt.querySelector('.break-ring')!;
+    host.append(this.root, this.prompt);
+  }
+  private pooled(list: HTMLElement[], i: number, cls: string): HTMLElement {
+    let e = list[i]; if (!e) { e = document.createElement('div'); e.className = cls; this.root.append(e); list[i] = e; }
+    e.hidden = false; return e;
+  }
+  /** `breakProgress`: null when the player is not held. */
+  sync(bars: readonly HpBar[], arrows: readonly EdgeArrow[], breakProgress: number | null): void {
+    bars.forEach((b, i) => { const e = this.pooled(this.bars, i, 'hp-bar'); e.style.left = `${b.x}px`; e.style.top = `${b.y}px`; e.style.setProperty('--hp', `${Math.max(0, Math.min(1, b.fraction)) * 100}%`); });
+    for (let i = bars.length; i < this.bars.length; i++) this.bars[i]!.hidden = true;
+    arrows.forEach((a, i) => {
+      const e = this.pooled(this.arrows, i, 'edge-arrow'); e.style.left = `${a.x}px`; e.style.top = `${a.y}px`; e.style.rotate = `${a.angle}rad`; e.dataset.color = a.color;
+      e.style.setProperty('--fill', `${Math.max(0, Math.min(1, a.fill)) * 360}deg`);
+    });
+    for (let i = arrows.length; i < this.arrows.length; i++) this.arrows[i]!.hidden = true;
+    this.prompt.hidden = breakProgress === null;
+    const step = breakProgress === null ? -1 : Math.round(Math.min(1, breakProgress) * 40);
+    if (step !== this.shownBreak) { this.shownBreak = step; if (step >= 0) this.ring.style.background = `conic-gradient(#fff2b3 ${step * 9}deg, #ffffff33 0)`; }
+  }
+}
+/** Where an edge arrow sits (screen pixels): on an ellipse 36 px inside the screen edge, toward the off-screen point; a point behind the
+ *  camera (not `visible`) projects mirrored, so its direction is flipped. `angle` points from the screen centre toward the point. */
+export function edgeArrowAt(point: { x: number; y: number; visible: boolean }, width: number, height: number): { x: number; y: number; angle: number } {
+  const cx = width / 2, cy = height / 2, k = point.visible ? 1 : -1, angle = Math.atan2((point.y - cy) * k, (point.x - cx) * k);
+  return { x: cx + Math.cos(angle) * (cx - 36), y: cy + Math.sin(angle) * (cy - 36), angle };
 }

@@ -7,10 +7,19 @@ import { activeStartedAt, stagger } from '../../src/tiny-tide/action-engine';
 import { resetRuntime } from '../../src/tiny-tide/lifecycle';
 import { AIM_PITCH_LIMIT, clampAimPitch } from '../../src/tiny-tide/combat-world';
 import type { AttackSpec, Vec3, WorldShape } from '../../src/tiny-tide/combat-types';
+import type { Entity } from '../../src/tiny-tide/ecosystem';
 import { RELEASED } from '../../src/tiny-tide/input';
 import { playerActorCached, playerBody, playerMoves } from '../../src/tiny-tide/sim';
-import { POKE, WRAP, FX_HUNTER, FX_FLEER } from './combat-fixture';
+import { POKE, WRAP, SMASH, FX_BEHAVIOURS, FX_HUNTER, FX_FLEER } from './combat-fixture';
 import { AT_PLAYER, entity, speck, tick } from './combat-fixture-world';
+import { BEHAVIOURS, SPECIES_ATTACKS } from '../../src/tiny-tide/bestiary';
+import { forwardReach, sphereHitsShape } from '../../src/tiny-tide/combat-shapes';
+import { speciesCombatPose } from '../../src/tiny-tide/mount';
+import { SPECIES, type Species } from '../../src/tiny-tide/species';
+import { WINDUP_FLASH } from '../../src/tiny-tide/combat-world';
+import { FLASH_LEAD_SECONDS } from '../../src/tiny-tide/combat-profiles';
+import { outlineGeometry, telegraphMatrix, unitGeometry } from '../../src/tiny-tide/telegraph-view';
+import * as T from 'three';
 
 const ahead = (d: number) => ({ x: 0, y: 1 - .35 * SIZES[1]!, z: d });   // a tier-1 entity's origin so that its hull centre is level with the Speck
 const R1 = .35 * SIZES[1]!;   // a tier-1 hull radius
@@ -461,4 +470,151 @@ describe('director tokens (spec §9.4, plan review R6)', () => {
     }
     expect(phases).toContain('hold'); expect(phases).toContain('recovery');
   });
+});
+
+describe('telegraphs (spec §9.1)', () => {
+  it('fill over windup + extension; live before the lock, the locked shapes after; amber solid or red stripes', () => {
+    const s = speck(), crab = entity(20, FX_HUNTER, ahead(3)), c = s.combat.stateOf(crab)!, onScreen = () => true, ground = () => 0;
+    const a = s.combat.startSpecies(c, 'poke', POKE, { x: 0, y: 0, z: -1 }, 'player', 0, { ...AT_PLAYER, targetAt: AT }); if (typeof a === 'string') throw new Error(a);
+    let now = 0; for (let i = 0; i < 6; i++) { now += 1 / 60; tick(s, [crab], now); }   // .1 s
+    const early = s.combat.telegraphs(now, onScreen, ground)[0]!;
+    expect(early.locked).toBe(false); expect(early.fill).toBeCloseTo(.1 / .5); expect(early.color).toBe('amber'); expect(early.pattern).toBe('solid');
+    expect(early.activeIn).toBeCloseTo(.4); expect(early).toMatchObject({ attackId: 'poke', attackerId: 'e20', entityId: 20, phase: 'windup', cue: 'rear' });
+    for (let i = 0; i < 18; i++) { now += 1 / 60; tick(s, [crab], now); }   // .4 s: locked at .3
+    const locked = s.combat.telegraphs(now, onScreen, ground)[0]!;
+    expect(locked.locked).toBe(true); expect(locked.shapes).toBe(a.lockedShapes);
+    const w = s.combat.startSpecies(s.combat.stateOf(entity(21, FX_HUNTER, ahead(5)))!, 'wrap', WRAP, { x: 0, y: 0, z: -1 }, null, now); if (typeof w === 'string') throw new Error(w);
+    expect(s.combat.telegraphs(now, onScreen, ground).find(t => t.attackId === 'wrap')).toMatchObject({ color: 'red', pattern: 'stripes', cue: 'coil' });
+  });
+  it('the edge arrow shows from going off-screen to the end of active; the attacker flashes at windup start and before active', () => {
+    const s = speck(), crab = entity(22, FX_HUNTER, ahead(3)), c = s.combat.stateOf(crab)!;
+    s.combat.startSpecies(c, 'poke', POKE, { x: 0, y: 0, z: -1 }, 'player', 0, { ...AT_PLAYER, targetAt: AT });
+    let screen = true; const at = (now: number) => s.combat.telegraphs(now, () => screen, () => 0)[0];
+    expect(at(0)).toMatchObject({ arrow: false, flash: true, onScreen: true });   // windup start
+    expect(WINDUP_FLASH).toBe(.1);
+    let now = 0; for (let i = 0; i < 12; i++) { now += 1 / 60; tick(s, [crab], now); }
+    expect(at(now)).toMatchObject({ arrow: false, flash: false });
+    screen = false; expect(at(now)).toMatchObject({ arrow: true, onScreen: false }); screen = true; expect(at(now)!.arrow).toBe(true);   // stays on
+    for (let i = 0; i < 16; i++) { now += 1 / 60; tick(s, [crab], now); }   // .47 s: inside the .12 s flash lead before active at .5
+    expect(.5 - now).toBeLessThanOrEqual(FLASH_LEAD_SECONDS); expect(at(now)!.flash).toBe(true);
+    for (let i = 0; i < 20; i++) { now += 1 / 60; tick(s, [crab], now); }   // past active
+    expect(at(now)).toBeUndefined();
+  });
+});
+
+/** Plan review R11 (binding): the telegraph drawn at the aim lock is the locked hit shape (numbers checked independently of the combat
+ *  world's shape code), and at every active tick each sampled boundary point of the hit volume lies inside the telegraph volume. Runs over
+ *  every registered species attack (SPECIES_ATTACKS) and the fixture attacks, with moving attackers and a lunge that advances. */
+describe('telegraph = hit volume for every species attack (plan review R11)', () => {
+  /** T13 sets this to true when it registers the species attacks: the test then fails if none are registered. */
+  const REQUIRE_REGISTERED = false;
+  const LUNGE: AttackSpec = { ...POKE, id: 'fx-lunge', shape: { kind: 'capsule', start: { x: 0, y: 0, z: 0 }, end: { x: 0, y: 0, z: 1.4 }, radius: .22 }, lunge: { distanceBodyLengths: 1.2 },
+    windupSeconds: .6, aimLockAtSeconds: .35, activeSeconds: .3, interruptible: false };
+  const WIDE: AttackSpec = { ...POKE, id: 'fx-wide', shape: { kind: 'cone', range: .9, halfAngle: 100 * Math.PI / 180 }, telegraphProfileId: 'amber-spin' };
+  const BURST: AttackSpec = { ...POKE, id: 'fx-burst', aimMode: 'centre', aimLockAtSeconds: 0, telegraphProfileId: 'amber-inflate', shape: { kind: 'capsule', start: { x: 0, y: 0, z: 0 }, end: { x: 0, y: 0, z: 0 }, radius: 1.6 } };
+  const EMERGE: AttackSpec = { ...POKE, id: 'fx-emerge', aimMode: 'fixed-at-start', aimLockAtSeconds: 0, origin: 'target', blockable: false, telegraphProfileId: 'red-burrow',
+    shape: { kind: 'capsule', start: { x: 0, y: 0, z: 0 }, end: { x: 0, y: 0, z: 0 }, radius: .35 } };
+  const SIDE: AttackSpec = { ...POKE, id: 'fx-side', aimMode: 'fixed-at-start', aimLockAtSeconds: 0, shape: { kind: 'capsule', start: { x: .3, y: .1, z: 0 }, end: { x: .3, y: .1, z: .8 }, radius: .15 } };
+  const registered = Object.values(SPECIES_ATTACKS), fixtures = [POKE, WRAP, SMASH, LUNGE, WIDE, BURST, EMERGE, SIDE];
+  const bands = [...Object.values(BEHAVIOURS), ...Object.values(FX_BEHAVIOURS)].flatMap(b => [...b.attacks, ...(b.phases ?? []).flatMap(p => p.attacks)]);
+  const v3 = (x: number, y: number, z: number): Vec3 => ({ x, y, z });
+  const add = (a: Vec3, b: Vec3) => v3(a.x + b.x, a.y + b.y, a.z + b.z), mul = (a: Vec3, k: number) => v3(a.x * k, a.y * k, a.z * k), sub = (a: Vec3, b: Vec3) => v3(a.x - b.x, a.y - b.y, a.z - b.z);
+  const len = (a: Vec3) => Math.hypot(a.x, a.y, a.z), norm = (a: Vec3) => mul(a, 1 / len(a));
+  const cross = (a: Vec3, b: Vec3) => v3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);
+  /** Two unit vectors perpendicular to `d` and to each other. */
+  const perp = (d: Vec3): [Vec3, Vec3] => { const a = norm(cross(d, Math.abs(d.y) < .9 ? v3(0, 1, 0) : v3(1, 0, 0))); return [a, cross(d, a)]; };
+  /** Points on the boundary of a shape (and its apex or axis ends). */
+  function boundary(s: WorldShape): Vec3[] {
+    const out: Vec3[] = [];
+    if (s.kind === 'cone') {
+      const [u, w] = perp(s.axis), h = Math.min(Math.PI, s.halfAngle);
+      out.push(s.apex, add(s.apex, mul(s.axis, s.range)));
+      for (let k = 0; k < 16; k++) {
+        const t = k / 16 * 2 * Math.PI, side = add(mul(u, Math.cos(t)), mul(w, Math.sin(t)));
+        for (const angle of [h, h / 2]) { const dir = add(mul(s.axis, Math.cos(angle)), mul(side, Math.sin(angle))); for (const f of [.25, .5, 1]) out.push(add(s.apex, mul(dir, s.range * f))); }
+      }
+      return out;
+    }
+    const axis = sub(s.end, s.start), d = len(axis) > 1e-12 ? norm(axis) : v3(0, 0, 1), [u, w] = perp(d);
+    out.push(sub(s.start, mul(d, s.radius)), add(s.end, mul(d, s.radius)));
+    for (const f of [0, .25, .5, .75, 1]) for (let k = 0; k < 12; k++) {
+      const t = k / 12 * 2 * Math.PI, side = add(mul(u, Math.cos(t)), mul(w, Math.sin(t)));
+      out.push(add(add(s.start, mul(axis, f)), mul(side, s.radius)));
+      if (f === 0) out.push(add(s.start, mul(norm(sub(side, d)), s.radius)));
+      if (f === 1) out.push(add(s.end, mul(norm(add(side, d)), s.radius)));
+    }
+    return out;
+  }
+  /** The expected locked shape, from the attack numbers, the species pose and the aim only (spec §5.10, review R2/R4). */
+  function expected(attack: AttackSpec, e: Entity, aim: Vec3, targetAt: Vec3, now: number): WorldShape {
+    const pose = speciesCombatPose(e, now), hull = pose.hull[0]!, L = pose.bodyLength, z = norm(aim);
+    const origin = attack.origin === 'target' ? targetAt : attack.aimMode === 'centre' ? hull.start : add(hull.start, mul(z, hull.radius));
+    const ref = Math.abs(z.y) > .98 ? pose.forward : v3(0, 1, 0), y = norm(sub(ref, mul(z, ref.x * z.x + ref.y * z.y + ref.z * z.z))), x = cross(y, z);
+    if (attack.shape.kind === 'cone') return { kind: 'cone', apex: origin, axis: z, range: attack.shape.range * L, halfAngle: attack.shape.halfAngle };
+    const at = (p: Vec3) => add(origin, mul(add(add(mul(x, p.x), mul(y, p.y)), mul(z, p.z)), L));
+    return { kind: 'capsule', start: at(attack.shape.start), end: at(attack.shape.end), radius: attack.shape.radius * L };
+  }
+  const close = (a: Vec3, b: Vec3, tol: number) => { expect(a.x).toBeCloseTo(b.x, tol); expect(a.y).toBeCloseTo(b.y, tol); expect(a.z).toBeCloseTo(b.z, tol); };
+  function sameShape(got: WorldShape, want: WorldShape) {
+    expect(got.kind).toBe(want.kind);
+    if (got.kind === 'cone' && want.kind === 'cone') { close(got.apex, want.apex, 9); close(got.axis, want.axis, 9); expect(got.range).toBeCloseTo(want.range, 9); expect(got.halfAngle).toBeCloseTo(want.halfAngle, 12); }
+    if (got.kind === 'capsule' && want.kind === 'capsule') { close(got.start, want.start, 9); close(got.end, want.end, 9); expect(got.radius).toBeCloseTo(want.radius, 9); }
+  }
+  /** The drawn mesh: every vertex of the volume and outline lies in the shape, and the mesh reaches the shape's far point and rim. */
+  function drawnMatches(s: WorldShape) {
+    // Vertices are float32: a relative tolerance of 1e-5 of the shape's size.
+    const m = telegraphMatrix(s, 1, new T.Matrix4()), size = s.kind === 'cone' ? s.range : s.radius + len(sub(s.end, s.start)), tol = 1e-5 * size;
+    const origin = s.kind === 'cone' ? s.apex : s.start, axis = s.kind === 'cone' ? s.axis : len(sub(s.end, s.start)) > 1e-12 ? norm(sub(s.end, s.start)) : null;
+    let far = -Infinity, rim = 0;
+    for (const g of [unitGeometry(s), outlineGeometry(s)]) {
+      const p = g.getAttribute('position'), v = new T.Vector3();
+      for (let i = 0; i < p.count; i++) {
+        v.fromBufferAttribute(p, i).applyMatrix4(m); const q = v3(v.x, v.y, v.z);
+        expect(sphereHitsShape(q, tol, s), `${s.kind} vertex ${i}`).toBe(true);
+        if (axis) { const d = sub(q, origin), along = d.x * axis.x + d.y * axis.y + d.z * axis.z; far = Math.max(far, along); if (len(d) > 1e-9) rim = Math.max(rim, Math.acos(Math.max(-1, Math.min(1, along / len(d))))); }
+      }
+    }
+    if (s.kind === 'cone') { expect(Math.abs(far - s.range)).toBeLessThan(tol); expect(rim).toBeCloseTo(Math.min(Math.PI, s.halfAngle), 4); }
+    else if (axis) expect(Math.abs(far - (len(sub(s.end, s.start)) + s.radius))).toBeLessThan(tol);
+  }
+  function check(attack: AttackSpec) {
+    const real = SPECIES.find(sp => sp.attackIds.includes(attack.id)), spec: Species = real ? { ...real, behaviourId: 'fx-hunter' } : FX_HUNTER;
+    const s = speck(), e = entity(90, spec, v3(0, 0, 0)), c = s.combat.stateOf(e)!, target = playerBody(s, playerActorCached(s)).centre;
+    // The hull centre level with the player's centre, the hull front at the middle of the attack's band (else half its reach) from it.
+    const pose = speciesCombatPose(e, 0), hull = pose.hull[0]!, L = pose.bodyLength, band = bands.find(b => b.attackId === attack.id)?.band;
+    const gap = (band ? (band[0] + band[1]) / 2 : forwardReach(attack.shape) / 2) * L, offset = sub(hull.start, v3(e.x, e.y, e.z));
+    e.x = target.x - offset.x; e.y = target.y - offset.y; e.z = target.z + hull.radius + gap - offset.z;
+    const a = s.combat.startSpecies(c, attack.id, attack, v3(0, 0, -1), 'player', 0, { ...AT_PLAYER, targetAt: target });
+    if (typeof a === 'string') throw new Error(`${attack.id}: ${a}`);
+    let now = 0, lockChecked = false, activeTicks = 0;
+    const lockCheck = () => {
+      const view = s.combat.telegraphs(now, () => true, () => 0).find(v => v.actionId === a.instanceId)!;
+      expect(view, attack.id).toBeDefined(); expect(view.locked).toBe(true); expect(view.shapes).toHaveLength(1);
+      sameShape(view.shapes[0]!, expected(attack, e, a.aim, target, now)); sameShape(a.lockedShapes![0]!, view.shapes[0]!);
+      drawnMatches(view.shapes[0]!); lockChecked = true;
+    };
+    if (a.aimLocked) lockCheck();
+    for (let i = 1; i <= 240 && (activeTicks === 0 || a.phase === 'active'); i++) {
+      now = i / 60;
+      e.x += .004 * L; e.heading += .01;   // a moving, turning attacker
+      if (a.phase === 'active' && attack.lunge) {   // the ecosystem moves a lunge along the aim and records how far it came
+        const step = Math.min(attack.lunge.distanceBodyLengths - a.lungeDone, attack.lunge.distanceBodyLengths / attack.activeSeconds / 60);
+        a.lungeDone += step; e.x += a.aim.x * step * L; e.y += a.aim.y * step * L; e.z += a.aim.z * step * L;
+      }
+      tick(s, [e], now);
+      if (!lockChecked && a.aimLocked) lockCheck();
+      if (a.phase !== 'active') continue;
+      activeTicks++;
+      const view = s.combat.telegraphs(now, () => true, () => 0).find(v => v.actionId === a.instanceId)!;
+      expect(view, `${attack.id} active tick ${activeTicks}`).toBeDefined(); expect(view.shapes).toBe(a.lockedShapes);
+      for (const hit of s.combat.speciesHitShapes(c, a, now)) for (const q of boundary(hit))
+        expect(view.shapes.some(t => sphereHitsShape(q, 1e-6 * L, t)), `${attack.id} active tick ${activeTicks}`).toBe(true);
+    }
+    expect(lockChecked, attack.id).toBe(true); expect(activeTicks, attack.id).toBeGreaterThan(0);
+    if (attack.lunge) expect(a.lungeDone).toBeGreaterThan(0);
+  }
+  it('registered attacks are checked once T13 registers them', () => {
+    expect(registered.length).toBeGreaterThan(REQUIRE_REGISTERED ? 0 : -1);
+  });
+  for (const attack of [...registered, ...fixtures]) it(`${attack.id}: drawn at the lock as the locked hit shape; every active hit volume inside it`, () => check(attack));
 });

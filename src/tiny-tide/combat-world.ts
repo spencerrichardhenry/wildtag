@@ -4,8 +4,8 @@
 import * as T from 'three';
 import { advanceClock, bufferedPress, bufferPress, canStart, dashSpeed, endHold, endNow, holdingAction, liveActions, newPoise, startAction, sweepEnded, tickAction, windupLength, type PoiseMeter, type StartRefusal } from './action-engine';
 import { BEHAVIOURS, type SpeciesBehaviour } from './bestiary';
-import { actionShapes, aimFrame, crossingOk, hurtboxesHit, nearestTargets, obstructionClear, truncateCapsule, worldShape } from './combat-shapes';
-import { newRuntime, type ActionState, type ActiveSlot, type ActorId, type AttackSpec, type CombatInput, type CombatPose, type CombatRuntime, type EmitterSource, type MovementMode, type ResolvedMove, type Vec3, type WorldQueries, type WorldShape } from './combat-types';
+import { actionShapes, aimFrame, crossingOk, hurtboxesHit, nearestTargets, obstructionClear, telegraphDescriptor, truncateCapsule, worldShape, type TelegraphDescriptor } from './combat-shapes';
+import { newRuntime, type ActionPhase, type TelegraphProfile, type ActionState, type ActiveSlot, type ActorId, type AttackSpec, type CombatInput, type CombatPose, type CombatRuntime, type EmitterSource, type MovementMode, type ResolvedMove, type Vec3, type WorldQueries, type WorldShape } from './combat-types';
 import type { Entity } from './ecosystem';
 import { biteDispatch } from './feeding';
 import { addBreakProgress, armCounters, isFlick, releaseHold, resolveAll, squeezesDue, type CombatEvent, type Fighter, type HitRequestIn } from './hit-resolver';
@@ -15,7 +15,7 @@ import { speciesMove, type GrantedMove, type MoveSet, type SlotAssignment } from
 import { forwardOf, orientationMatrix } from './orientation';
 import type { Diet } from './parts';
 import type { CombatMotion } from './player-motion';
-import { EFFECTS } from './combat-profiles';
+import { EFFECTS, TELEGRAPHS } from './combat-profiles';
 import { damageAfterArmor } from './state';
 import { Director, MAX_EXTENSION, RETRY_SECONDS, spacedExtension } from './director';
 
@@ -92,6 +92,15 @@ export function clampAimPitch(v: Vec3, forward: Vec3): Vec3 {
 /** A species start refusal: the engine's, 'no-target' (an attack on the player or a target-origin attack without the target point), or
  *  'no-context' (an attack on the player without `onScreen`, `playerHeld` and `tick`; T11 fix round 1: the caller must give real values). */
 export type SpeciesRefusal = StartRefusal | 'no-target' | 'no-context';
+/** What the telegraph view draws for one species action in windup or active (spec §9.1). `arrow`: the shape's centroid was off-screen at
+ *  some time in the windup; the edge arrow shows to the end of active. `flash`: the attacker flashes (WINDUP_FLASH at the windup start, and
+ *  the profile's flash lead before active). `activeIn`: action-clock seconds to the active start (0 in active). */
+export interface TelegraphView extends TelegraphDescriptor {
+  actionId: string; attackerId: ActorId; entityId: number; attackId: string; phase: ActionPhase; onScreen: boolean; arrow: boolean; flash: boolean;
+  cue: TelegraphProfile['poseCue']; activeIn: number;
+}
+/** The attacker's colour flash lasts this long at the windup start (spec §9.1 item 5). */
+export const WINDUP_FLASH = .1;
 const statusOf = (id: string) => { const s = EFFECTS[id]?.status; return s ? { seconds: s.seconds, speedFactor: s.speedFactor } : null; };
 
 export class CombatWorld {
@@ -103,12 +112,15 @@ export class CombatWorld {
   /** Attack tokens for wind-ups at the player (spec §9.4). */
   readonly director = new Director();
   private serial = 0;
+  /** Actions whose telegraph centroid went off-screen in the windup (their edge arrow shows to the end of active). Presentation memory only:
+   *  no tick reads it. */
+  private readonly arrowed = new Set<string>();
   /** Review R18: inside a tick, each entity's pose is sampled once (keyed by entity id); outside a tick nothing is cached. */
   private readonly poses = new Map<number, { entity: Entity; pose: CombatPose }>();
   private inTick = false;
   constructor(private readonly behaviours: Record<string, SpeciesBehaviour> = BEHAVIOURS) {}
   /** A fresh state for a new run or a load (spec §13). */
-  reset(): void { this.entities.clear(); this.log.length = 0; this.poses.clear(); this.director.releaseAll(); }
+  reset(): void { this.entities.clear(); this.log.length = 0; this.poses.clear(); this.arrowed.clear(); this.director.releaseAll(); }
   /** Faint and evolve (spec §10.3, §13): every species action at the player ends, its token returns, and holds on the player end. */
   cancelAttacksOnPlayer(playerRt: CombatRuntime): void {
     for (const c of this.entities.values()) for (const a of c.rt.actions) if (a.targetId === PLAYER_ID && a.phase !== 'interrupted') { if (a.heldTarget === PLAYER_ID) endHold(c.rt, a); endNow(c.rt, a, 0); }
@@ -326,9 +338,11 @@ export class CombatWorld {
     const attack = a.resolved.attack!, pose = this.poseOf(c.entity, now);
     return actionShapes(attack.shape, [this.speciesOrigin(a, pose)], a.aim, pose.forward, pose.bodyLength);
   }
+  /** The hit volume that a species action's active phase tests now (plan review R11 checks it against the telegraph). */
+  speciesHitShapes(c: EntityCombat, a: ActionState, now: number): WorldShape[] { return this.hitShapes(c, a, null, now); }
   /** The hit volume of an active action: the locked shapes; a lunge's capsule truncated at the reached point (always inside the telegraph). */
-  private hitShapes(c: EntityCombat | null, a: ActionState, p: PlayerBody, now: number): WorldShape[] {
-    const shapes = a.lockedShapes ?? (c ? this.speciesShapes(c, a, now) : this.playerShapes(p, a)), attack = a.resolved.attack!;
+  private hitShapes(c: EntityCombat | null, a: ActionState, p: PlayerBody | null, now: number): WorldShape[] {
+    const shapes = a.lockedShapes ?? (c ? this.speciesShapes(c, a, now) : p ? this.playerShapes(p, a) : []), attack = a.resolved.attack!;
     if (!attack.lunge || attack.shape.kind !== 'capsule') return shapes;
     const len = Math.hypot(attack.shape.end.x - attack.shape.start.x, attack.shape.end.y - attack.shape.start.y, attack.shape.end.z - attack.shape.start.z);
     return shapes.map(s => s.kind === 'capsule' ? truncateCapsule(s, len, attack.lunge!.distanceBodyLengths, a.lungeDone) : s);
@@ -414,6 +428,30 @@ export class CombatWorld {
     if (attack.origin === 'target' && targetAt) a.originPoint = { x: targetAt.x, y: targetAt.y, z: targetAt.z };
     if (a.aimLocked) a.lockedShapes = this.speciesShapes(c, a, now);
     return a;
+  }
+  /** The telegraphs of every species action in windup or active (spec §9.1): the shapes the hit test uses (the live aim before the lock,
+   *  the locked shapes after it), the fill (τ − τ0) / (windup + extension), the depth ring, the colour code, the edge arrow and the flash.
+   *  Read-only for the combat state; `isOnScreen` takes a physical point. */
+  telegraphs(now: number, isOnScreen: (p: Vec3) => boolean, groundAt: (x: number, z: number) => number): TelegraphView[] {
+    const out: TelegraphView[] = [], seen = new Set<string>();
+    for (const c of this.entities.values()) {
+      if (c.entity.eaten || !c.entity.active) continue;
+      for (const a of c.rt.actions) {
+        if (a.phase !== 'windup' && a.phase !== 'active') continue;
+        const attack = a.resolved.attack; if (!attack) continue;
+        const profile = TELEGRAPHS[attack.telegraphProfileId]; if (!profile || profile.color === 'none') continue;
+        const windup = windupLength(a), elapsed = c.rt.actionClock - a.phaseStartedAt, fill = a.phase === 'windup' ? elapsed / Math.max(1e-9, windup) : 1;
+        const shapes = a.lockedShapes ?? this.speciesShapes(c, a, now), d = telegraphDescriptor(shapes, fill, profile.color, profile.pattern, a.aimLocked, groundAt), onScreen = isOnScreen(d.centroid);
+        if (a.phase === 'windup' && !onScreen) this.arrowed.add(a.instanceId);
+        seen.add(a.instanceId);
+        const activeIn = a.phase === 'windup' ? Math.max(0, windup - elapsed) : 0;
+        const flash = a.phase === 'windup' && (elapsed < WINDUP_FLASH - 1e-9 || activeIn <= profile.flashLeadSeconds + 1e-9);
+        out.push({ ...d, actionId: a.instanceId, attackerId: c.id, entityId: c.entity.id, attackId: attack.id, phase: a.phase, onScreen, arrow: profile.edgeArrow && this.arrowed.has(a.instanceId), flash,
+          cue: profile.poseCue, activeIn });
+      }
+    }
+    for (const id of [...this.arrowed]) if (!seen.has(id)) this.arrowed.delete(id);
+    return out;
   }
   /** Tokens follow their actions (spec §9.4, plan review R6), at the end of each tick (`now`, length `dt`; the clocks cover the tick):
    *  - a token is held to the end of active (to the end of hold for a grab), and returns when the action ends or its attacker is gone

@@ -250,6 +250,14 @@ export class CreatureModel {
     m.color.copy(source.color);   // tints follow paint changes
     return m;
   }
+  /** The emissive colour and intensity of each material before the hurt flash (restored after it). */
+  private readonly unflashed = new Map<T.MeshStandardMaterial, { color: T.Color; intensity: number }>();
+  /** The hurt flash (spec §9.2): the body and its tint materials glow white while `on`. Writes only on a change. */
+  setFlash(on: boolean) {
+    if (on === (this.unflashed.size > 0)) return;
+    if (!on) { for (const [m, e] of this.unflashed) { m.emissive.copy(e.color); m.emissiveIntensity = e.intensity; } this.unflashed.clear(); return; }
+    for (const m of [this.bodyMaterial, ...this.tints.values()]) { this.unflashed.set(m, { color: m.emissive.clone(), intensity: m.emissiveIntensity }); m.emissive.set('#ffffff'); m.emissiveIntensity = .8; }
+  }
   /** Procedural motion. `chomp` is 0–1, `swim` is 0 when idle and 1 when moving. */
   animate(time: number, swim: number, chomp: number) {
     const pose = rigPoseInto(this.pose, this.genome, time, swim, chomp), n = this.bones.length;

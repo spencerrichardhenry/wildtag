@@ -9,6 +9,8 @@ import { Ecosystem, type Entity } from './ecosystem';
 import type { Vec3 } from './combat-types';
 import type { Genome } from './genome';
 import type { FoodKind } from './species';
+import { TelegraphLayer } from './telegraph-view';
+import type { TelegraphView } from './combat-world';
 
 export { seabedHeight };
 /** Gameplay view of an entity, in the current stage's local units. */
@@ -24,6 +26,13 @@ const chevronGeometry = new T.ShapeGeometry(new T.Shape([new T.Vector2(0, .5), n
 const chevronMaterial = new T.MeshBasicMaterial({ color: '#fff1c4', transparent: true, opacity: .85, side: T.DoubleSide, depthWrite: false, depthTest: false });
 const ringMaterial = new T.MeshBasicMaterial({ color: '#e0f6ad', transparent: true, opacity: .75, side: T.DoubleSide, depthWrite: false });
 const UP = new T.Vector3(0, 1, 0);
+/** Instance colours multiply the material: white keeps it; FLASH_COLOR (above 1) is the hurt flash. */
+const WHITE = new T.Color(1, 1, 1), FLASH_COLOR = new T.Color(3, 3, 3);
+/** The impact particle pool (spec §9.2): created once; a burst reuses the oldest particles when all are in use. */
+const IMPACT_POOL = 64;
+/** Pose cues (spec §9.1 item 4) at full wind-up: rear back 15°, crouch to .8 height, inflate × 1.35, coil to .75 length, sink half a size into
+ *  the sand, spin up to 12 rad/s. */
+const CUE_REAR = 15 * Math.PI / 180, CUE_CROUCH = .2, CUE_INFLATE = .35, CUE_COIL = .25, CUE_BURROW = .5, CUE_SPIN = 12;
 // The soft world edge (edge.ts): in the push zone the water gets darker and foggier, and scenery past the hard bound
 // (render units = stage-local units, so the bound is at ±PLAYER_HALF) fades into the fog colour.
 /** Fog density at the full edge fog (the clear-water density is .014). */
@@ -61,6 +70,17 @@ export class TideWorld {
   readonly camera = new T.PerspectiveCamera(55, 1, .08, 340);
   readonly renderer: T.WebGLRenderer;
   readonly universe = new T.Group();
+  /** Combat presentation (spec §9): telegraph volumes (in the universe: physical units), hurt flashes (world time), pose cues, hit-stop
+   *  freezes and pooled impact particles. Presentation only: nothing here changes the simulation. */
+  readonly telegraphs = new TelegraphLayer(this.universe);
+  /** The OS asks for reduced motion (D31): no camera shake. main.ts keeps it current. */
+  reducedMotion = false;
+  private readonly flashUntil = new Map<number | 'player', number>();
+  private readonly cues = new Map<number, { cue: TelegraphView['cue']; t: number; flash: boolean }>();
+  private frozen: { player: boolean; entities: ReadonlySet<number> } = { player: false, entities: new Set() };
+  private worldTime = 0;
+  private readonly impacts: { mesh: T.Mesh<T.SphereGeometry, T.MeshBasicMaterial>; life: number; velocity: T.Vector3 }[] = [];
+  private nextImpact = 0;
   readonly environment = new T.Group();
   readonly actors = new T.Group();
   readonly effects = new T.Group();
@@ -261,7 +281,7 @@ export class TideWorld {
       prefab.traverse(child => {
         if (!(child instanceof T.Mesh) || Array.isArray(child.material)) return;
         const mesh = new T.InstancedMesh(child.geometry, child.material, foods.length);
-        mesh.instanceMatrix.setUsage(T.DynamicDrawUsage); mesh.castShadow = true; mesh.receiveShadow = true; mesh.frustumCulled = false;
+        mesh.instanceMatrix.setUsage(T.DynamicDrawUsage); for (let i = 0; i < foods.length; i++) mesh.setColorAt(i, WHITE); mesh.castShadow = true; mesh.receiveShadow = true; mesh.frustumCulled = false;
         this.actors.add(mesh); this.instances.push({ mesh, foods, local: child.matrixWorld.clone() });
       });
     }
@@ -288,6 +308,8 @@ export class TideWorld {
     this.placePlayerAt(new T.Vector3());
     this.yaw = .1; this.pitch = .22; this.targetRing.visible = false;
     this.particles.forEach(p => this.effects.remove(p.mesh)); this.particles = [];
+    for (const q of this.impacts) q.mesh.visible = false;
+    this.flashUntil.clear(); this.cues.clear(); this.telegraphs.update([], 0);
     // Gameplay can chomp before the next render update. Reset collision
     // coordinates together with scale so replay never uses the space scale.
     this.syncFoods();
@@ -312,8 +334,27 @@ export class TideWorld {
     this.previousCreature = this.creature; this.creature = new CreatureModel(genome); this.creature.group.scale.setScalar(.001); this.avatar.add(this.creature.group);
     this.burst(this.player.position.x, this.player.position.y, this.player.position.z, '#f4e2b9', 50);
   }
+  /** A hurt actor flashes white for `seconds` of world time (spec §9.2). */
+  flash(id: number | 'player', seconds: number) { this.flashUntil.set(id, this.worldTime + seconds); }
+  /** Camera shake (1 = the hurt shake); none under reduced motion. */
+  shakeBy(amount: number) { if (!this.reducedMotion) this.shake = Math.max(this.shake, amount); }
+  /** This frame's telegraphs (volumes and pose cues) and the actors in a hit-stop (their animation stops). */
+  setCombatView(views: readonly TelegraphView[], frozen: { player: boolean; entities: ReadonlySet<number> }) {
+    this.telegraphs.update(views, .03 * this.scale); this.frozen = frozen; this.cues.clear();
+    for (const v of views) this.cues.set(v.entityId, { cue: v.cue, t: v.phase === 'windup' ? v.fill : 1, flash: v.flash });
+  }
+  /** Impact particles at a render-unit point, from the pool (no allocation after the first use). */
+  impact(x: number, y: number, z: number, color: string, count: number) {
+    for (let i = 0; i < count; i++) {
+      let p = this.impacts[this.nextImpact];
+      if (!p) { p = { mesh: new T.Mesh(particleGeometry, new T.MeshBasicMaterial({ transparent: true, opacity: .85, depthWrite: false })), life: 0, velocity: new T.Vector3() }; this.impacts.push(p); this.effects.add(p.mesh); }
+      this.nextImpact = (this.nextImpact + 1) % IMPACT_POOL;
+      p.mesh.material.color.set(color); p.mesh.position.set(x, y, z); p.mesh.scale.setScalar(.6 + Math.random() * 1.1); p.mesh.visible = true;
+      p.life = .35 + Math.random() * .25; p.velocity.set((Math.random() - .5) * 6, (Math.random() - .5) * 6, (Math.random() - .5) * 6);
+    }
+  }
   /** A hit: red sparks and a short camera shake. */
-  hurt() { const p = this.player.position; this.burst(p.x, p.y + .3, p.z, '#ff8f7a', 14); this.shake = 1; }
+  hurt() { const p = this.player.position; this.burst(p.x, p.y + .3, p.z, '#ff8f7a', 14); this.shakeBy(1); }
   private syncFoods() {
     for (const f of this.foods) {
       const e = f.entity; f.data.eaten = e.eaten; f.data.x = e.x / this.scale; f.data.y = e.y / this.scale; f.data.z = e.z / this.scale;
@@ -344,7 +385,7 @@ export class TideWorld {
   }
   groundPoint(x: number, y: number): T.Vector3 | null { const ray = new T.Raycaster(); ray.setFromCamera(new T.Vector2(x / this.width * 2 - 1, -y / this.height * 2 + 1), this.camera); return ray.ray.intersectPlane(new T.Plane(UP, -this.player.position.y), new T.Vector3()); }
   update(dt: number, time: number, menu: boolean, moving: boolean, chomping: number, growth: number) {
-    this.isMenu = menu; const p = this.player.position;
+    this.isMenu = menu; const p = this.player.position; this.worldTime = time;
     if (this.transitioning && dt > 0) {
       this.transitionProgress = Math.min(1, this.transitionProgress + dt / 3.4);
       const t = this.transitionProgress, ease = t * t * (3 - 2 * t), previous = this.scale;
@@ -370,10 +411,12 @@ export class TideWorld {
       const targetCam = this.focus.clone().add(new T.Vector3(Math.sin(this.yaw) * Math.cos(this.pitch) * distance, Math.sin(this.pitch) * distance, Math.cos(this.yaw) * Math.cos(this.pitch) * distance));
       if (this.stage < 4) targetCam.y = Math.max(targetCam.y, this.groundAt(targetCam.x, targetCam.z) + .6);
       this.cameraPosition.lerp(targetCam, 1 - Math.exp(-dt * 8)); this.camera.position.copy(this.cameraPosition);
+      if (this.reducedMotion) this.shake = 0;
       if (this.shake > 0) { this.shake = Math.max(0, this.shake - dt * 3); this.camera.position.add(new T.Vector3(Math.random() - .5, Math.random() - .5, Math.random() - .5).multiplyScalar(this.shake * .35)); } this.camera.fov = T.MathUtils.damp(this.camera.fov, this.width / this.height < .8 ? 64 : 59, 3, dt); this.camera.updateProjectionMatrix(); this.camera.lookAt(this.focus);
     }
     this.swim = T.MathUtils.damp(this.swim, moving ? 1 : 0, 6, dt);
-    this.creature?.animate(time, this.swim, chomping); this.previousCreature?.animate(time, this.swim, chomping);
+    if (!this.frozen.player) { this.creature?.animate(time, this.swim, chomping); this.previousCreature?.animate(time, this.swim, chomping); }
+    this.creature?.setFlash((this.flashUntil.get('player') ?? -Infinity) > time);
     this.sun.position.copy(p).add(new T.Vector3(-14, 27, 13)); this.sun.target.position.copy(p);
     const groundY = this.groundAt(p.x, p.z); this.shadow.visible = this.stage < 4 && p.y - groundY < 9;
     this.shadow.position.set(p.x, groundY + .06, p.z); this.shadow.scale.setScalar(menu ? 3.2 : 1.2 * growth + (p.y - groundY) * .04);
@@ -431,6 +474,18 @@ export class TideWorld {
       const distance = p.distanceTo(new T.Vector3(f.data.x, f.data.y, f.data.z));
       f.model.visible = size / this.scale > .07 && distance < 230 + size / this.scale * 2 && !(f.tier < 4 && this.spaceMix > .99);
       if (f === this.homePlanet) f.model.visible = f.model.visible && this.spaceMix > .001;
+      const cue = this.cues.get(e.id);
+      if (cue) {
+        const t = cue.t;
+        if (cue.cue === 'inflate') f.model.scale.multiplyScalar(1 + CUE_INFLATE * t);
+        else if (cue.cue === 'crouch') f.model.scale.y *= 1 - CUE_CROUCH * t;
+        else if (cue.cue === 'coil') f.model.scale.z *= 1 - CUE_COIL * t;
+        else if (cue.cue === 'rear') f.model.rotation.x = -CUE_REAR * t;
+        else if (cue.cue === 'burrow') f.model.position.y -= CUE_BURROW * size * t;
+        else if (cue.cue === 'spin' && !this.frozen.entities.has(e.id)) f.model.rotation.y += CUE_SPIN * t * dt;
+      }
+      if (cue?.cue !== 'rear' && f.model.rotation.x !== 0) f.model.rotation.x = 0;
+      if (this.frozen.entities.has(e.id)) continue;
       if (f.tier === 0) f.model.rotation.z = Math.sin(time * 1.7 + f.data.phase) * .1;
       else if (kind === 'planet') f.model.rotation.y += dt * .07;
       else if (kind === 'boat') f.model.rotation.z = Math.sin(time * 1.1 + f.data.phase) * .04;
@@ -444,9 +499,16 @@ export class TideWorld {
         const model = food.model;
         if (!model.visible) continue;
         model.updateMatrix(); this.instanceMatrix.multiplyMatrices(model.matrix, set.local);
+        const id = food.entity.id, lit = (this.flashUntil.get(id) ?? -Infinity) > time || this.cues.get(id)?.flash === true;
+        set.mesh.setColorAt(count, lit ? FLASH_COLOR : WHITE);
         set.mesh.setMatrixAt(count++, this.instanceMatrix);
       }
-      set.mesh.count = count; set.mesh.visible = count > 0; set.mesh.instanceMatrix.needsUpdate = true;
+      set.mesh.count = count; set.mesh.visible = count > 0; set.mesh.instanceMatrix.needsUpdate = true; if (set.mesh.instanceColor) set.mesh.instanceColor.needsUpdate = true;
+    }
+    for (const q of this.impacts) {
+      if (!q.mesh.visible) continue;
+      q.life -= dt; q.mesh.position.addScaledVector(q.velocity, dt); q.velocity.multiplyScalar(Math.exp(-dt * 5)); q.mesh.scale.multiplyScalar(Math.exp(-dt * 3));
+      if (q.life <= 0) q.mesh.visible = false;
     }
     for (let i = this.particles.length - 1; i >= 0; i--) { const particle = this.particles[i]!; particle.life -= dt; particle.mesh.position.addScaledVector(particle.velocity, dt); particle.velocity.y -= dt * 2; particle.mesh.scale.multiplyScalar(Math.exp(-dt * 1.8)); if (particle.life <= 0) { this.effects.remove(particle.mesh); this.particles.splice(i, 1); } }
     this.renderer.render(this.scene, this.camera);

@@ -6,7 +6,7 @@ import { applyDesign, commitEvolution, currentPlan, damageAfterArmor, DEATH_KEEP
 import { adaptToPlan, derive, dietOf, effectiveStats } from './genome';
 import { part } from './parts';
 import { tierSpecies } from './species';
-import { PLAYER_HALF, SIZES, SPAWN_HALF } from './biomes';
+import { PLAYER_HALF, seabedHeight, SIZES, SPAWN_HALF } from './biomes';
 import { EDGE_HINT, EDGE_SOFT_START, inEdgeZone } from './edge';
 import type { EcoEvent, Entity } from './ecosystem';
 import { canApproachFood, type Traversal } from './food-access';
@@ -17,14 +17,14 @@ import { cardSummary, COAST_READY, eligibleChildren, leadsTo, type BodyPlan } fr
 import { quoteDesign } from './economy';
 import { newRuntime, type Actor, type CombatInput, type Constraint, type Tuple4, type Vec3, type WorldQueries } from './combat-types';
 import { aimChevron, aimPitch, autoAim, BRACE_AUTO_AIM_HALF_ANGLE, dragAim, mouseButtons, NO_MOUSE, pitched, pointerAim, POINTER_FRESH_SECONDS, readIntent, RELEASED, type AimCandidate, type AimSource, type MouseState } from './input';
-import { CombatHud, slotViews } from './combat-hud';
+import { CombatHud, CombatOverlay, edgeArrowAt, floaterText, HP_BAR_SECONDS, slotViews, type EdgeArrow, type HpBar } from './combat-hud';
 import { forwardOf } from './orientation';
 import { blockHint, blockHintDue, newBlockHintGate, PITCH_LIMIT, type PlayerStepResult, newTapWatch, tapTargetStalled } from './player-motion';
 import { canChooseNextPlan, evolutionDestination, reconcileAfterCommit } from './lifecycle';
 import { admitted as simAdmitted, checkPose, playerActorCached as simActor, refreshDerived as simRefreshDerived, simBegin, simEvolve, simFrame, simOwnedState, simSuspend, type GameMode, type SimEvent, type SimState, type SimWorld } from './sim';
 import type { ChompResult } from './feeding';
-import { PLAYER_ID, type CombatTick } from './combat-world';
-import { damageText } from './combat-profiles';
+import { PLAYER_ID, type CombatTick, type TelegraphView } from './combat-world';
+import { FLASH_SECONDS, IMPACT_COLOURS, IMPACT_PARTICLES, shakeForPlayerHit, shakeForPlayerStrike } from './combat-profiles';
 import { movement, movementCapabilities } from './profiles';
 import { admissionClock, makeWorldQueries, resetAdmissionClock, stageBounds, stageWorldQueries, zoneLabel } from './world-queries';
 import { ROCK_FIT, stageSolids } from './reef';
@@ -92,7 +92,12 @@ app.innerHTML = `
 const el = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 /** A touch-first device (no fine pointer): the camera turns with a swipe, not a middle drag (spec §8.1). */
 const coarsePointer = () => matchMedia('(pointer: coarse)').matches;
-const combatHud = new CombatHud(document.querySelector<HTMLElement>('#game-ui .actions')!);
+const combatHud = new CombatHud(document.querySelector<HTMLElement>('#game-ui .actions')!), overlay = new CombatOverlay(document.getElementById('game-ui')!);
+/** Reduced motion follows the OS setting only (D31): no camera shake. */
+const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+/** This frame's telegraphs (read-only diagnostics) and the wind-ups already announced by the rising tone. */
+let telegraphViews: TelegraphView[] = [];
+const toned = new Set<string>();
 const audio = new TideAudio();
 let world: TideWorld;
 try {
@@ -553,15 +558,61 @@ function presentFaint() {
   save(); respawnToasted = false;
   clearInput(); audio.faint(); el('faint').hidden = false; world.burst(world.player.position.x, world.player.position.y, world.player.position.z, '#ff8f7a', 40);
 }
-/** One combat tick: damage numbers, hearts, and the removed bodies of kills (T13 adds the full hit feel). */
+/** One combat tick's hit feel (spec §9.2): floaters (a number only above 0, else a word; T8 carry), impact particles, one sound per outcome,
+ *  the hurt flash, camera shake (none under reduced motion), vibration, hearts, and the removed bodies of kills. Hit-stop itself is
+ *  simulation state (the resolver set both actors' hitStopUntil); presentCombatView only shows it as frozen animation. */
 function presentCombat(t: CombatTick) {
   for (const e of t.events) {
-    const pos = world.screenPoint(new T.Vector3(e.point.x, e.point.y, e.point.z).divideScalar(world.scale));
-    if (e.amount > 0 || e.outcome !== 'hit') floater(damageText(e.outcome, e.unit, e.amount), pos.x, pos.y, e.targetId === PLAYER_ID ? 'hurt' : 'hit');
-    if (e.targetId === PLAYER_ID) syncHearts();
+    const local = new T.Vector3(e.point.x, e.point.y, e.point.z).divideScalar(world.scale), pos = world.screenPoint(local);
+    const toPlayer = e.targetId === PLAYER_ID, fromPlayer = e.attackerId === PLAYER_ID, text = floaterText(e.outcome, e.unit, e.amount);
+    if (text && pos.visible) floater(text, pos.x, pos.y, toPlayer ? 'hurt' : 'hit');
+    const colour = e.outcome === 'countered' ? IMPACT_COLOURS.counter : e.outcome === 'blocked' || e.outcome === 'guard-broken' ? IMPACT_COLOURS.block : toPlayer ? IMPACT_COLOURS.hurt : IMPACT_COLOURS.hit;
+    if (e.outcome !== 'evaded' && e.outcome !== 'immune' ) world.impact(local.x, local.y, local.z, colour, IMPACT_PARTICLES);
+    if (e.outcome === 'hit') { if (toPlayer) audio.hurt(); else audio.hit(); }
+    else if (e.outcome === 'blocked') audio.block(); else if (e.outcome === 'guard-broken') audio.breakFree(); else if (e.outcome === 'countered') audio.counter();
+    else if (e.outcome === 'grabbed') audio.grab(); else if (e.outcome === 'evaded') audio.dash();
+    if (toPlayer && e.amount > 0) {
+      world.flash('player', FLASH_SECONDS); syncHearts(); el('hearts').classList.remove('hit'); void el('hearts').offsetWidth; el('hearts').classList.add('hit');
+      world.shakeBy(shakeForPlayerHit(e.amount));
+      if (typeof navigator.vibrate === 'function') navigator.vibrate([30, 40, 30]);
+    }
+    if (!toPlayer && e.amount > 0) { world.flash(Number(e.targetId.slice(1)), FLASH_SECONDS); if (fromPlayer && typeof navigator.vibrate === 'function') navigator.vibrate(15); }
+    // Only the player's Sweep and Counter shake the camera (and hits on the player, above).
+    if (fromPlayer && e.outcome === 'hit' && e.attackId.startsWith('sweep')) world.shakeBy(shakeForPlayerStrike(e.amount));
+    if (toPlayer && e.outcome === 'countered') world.shakeBy(shakeForPlayerStrike(e.reflect));
   }
+  if (t.started.includes('dash')) audio.dash();
+  if (t.brokeFree) audio.breakFree();
   for (const k of t.killed) { const food = world.foods.find(f => f.entity === k); if (food) world.removeFood(food); }
   if (t.killed.length) { syncUI(); save(); }
+}
+/** A physical point is on screen (the telegraph's edge arrow). */
+function onScreen(p: Vec3): boolean {
+  const s = world.screenPoint(new T.Vector3(p.x, p.y, p.z).divideScalar(world.scale));
+  return s.visible && s.x >= 0 && s.y >= 0 && s.x <= innerWidth && s.y <= innerHeight;
+}
+/** Every frame: telegraph volumes and pose cues, hit-stop freezes, the wind-up tone, HP bars, edge arrows and the break-free prompt.
+ *  Reads the simulation only. */
+function presentCombatView() {
+  const playing = mode === 'playing' || mode === 'fainted' || mode === 'evolving';
+  world.reducedMotion = reducedMotion.matches;
+  telegraphViews = playing ? sim.combat.telegraphs(time, onScreen, seabedHeight) : [];
+  const frozen = new Set<number>();
+  for (const c of sim.combat.entities.values()) if (time < c.rt.hitStopUntil) frozen.add(c.entity.id);
+  world.setCombatView(telegraphViews, { player: time < rt.hitStopUntil, entities: frozen });
+  for (const v of telegraphViews) if (v.phase === 'windup' && !toned.has(v.actionId)) { toned.add(v.actionId); audio.windup(v.activeIn); }
+  for (const id of [...toned]) if (!telegraphViews.some(v => v.actionId === id)) toned.delete(id);
+  const bars: HpBar[] = [], arrows: EdgeArrow[] = [];
+  if (playing) for (const c of sim.combat.entities.values()) {
+    if (c.entity.eaten || !c.entity.active || time - c.lastDamagedAt > HP_BAR_SECONDS) continue;
+    const top = world.screenPoint(new T.Vector3(c.entity.x, c.entity.y + .9 * SIZES[c.entity.spec.tier]!, c.entity.z).divideScalar(world.scale));
+    if (top.visible) bars.push({ x: top.x, y: top.y, fraction: c.entity.hp / c.maxHp });
+  }
+  for (const v of telegraphViews) if (v.arrow && !v.onScreen) {
+    const at = edgeArrowAt(world.screenPoint(new T.Vector3(v.centroid.x, v.centroid.y, v.centroid.z).divideScalar(world.scale)), innerWidth, innerHeight);
+    arrows.push({ ...at, color: v.color, fill: v.fill });
+  }
+  overlay.sync(bars, arrows, playing && rt.heldBy !== null ? rt.breakProgress : null);
 }
 el('start').onclick = () => begin(); el('fresh').onclick = () => { dialogReturn = 'menu'; confirmRestart(); };
 el('evolve').onclick = () => void edit('evolve'); el('edit').onclick = () => void edit('edit');
@@ -783,6 +834,7 @@ function frame(now: number) {
   }
   presentSim(simFrame(sim, simWorld, { dt, intent, wish, held }), dt);
   if (mode !== 'menu' && sim.moves) combatHud.sync(slotViews(sim.moves.slots, sim.moves.set, rt));
+  presentCombatView();
   syncAimChevron(intent);
   if (playing) {
     const v = rt.controlledVelocity; moving = Math.hypot(v.x, v.y, v.z) > .5 * SIZES[stage]!;
@@ -876,6 +928,20 @@ function poseAgreement() {
   }
   return { sockets, positionError, angleError, reflectionsAgree, bodyLength, time };
 }
+/** Read-only (QA, spec §14.2): actions, telegraphs, action clocks, the last 20 hit outcomes, hit-stop ends, slots, director tokens and holds. */
+function combatDiagnostics() {
+  const clone = <V>(v: V): V => JSON.parse(JSON.stringify(v)) as V;
+  const actors = [{ actor: PLAYER_ID, rt }, ...[...sim.combat.entities.values()].map(c => ({ actor: c.id, rt: c.rt }))];
+  return {
+    actions: actors.flatMap(x => x.rt.actions.map(a => ({ actor: x.actor, id: a.definitionId, instance: a.instanceId, phase: a.phase, aim: { ...a.aim }, target: a.targetId, shape: clone(a.lockedShapes), windupExtension: a.windupExtension }))),
+    telegraphs: telegraphViews.map(v => ({ action: v.actionId, attacker: v.attackerId, attack: v.attackId, phase: v.phase, shapes: clone(v.shapes), fill: v.fill, onScreen: v.onScreen, arrow: v.arrow, flash: v.flash, color: v.color, pattern: v.pattern, locked: v.locked, cue: v.cue })),
+    telegraphMeshes: world.telegraphs.counts,
+    clocks: Object.fromEntries(actors.map(x => [x.actor, x.rt.actionClock])), hitStop: Object.fromEntries(actors.map(x => [x.actor, x.rt.hitStopUntil])),
+    hits: sim.combat.log.map(e => ({ outcome: e.outcome, attacker: e.attackerId, target: e.targetId, attack: e.attackId, amount: e.amount, unit: e.unit, time: e.time })),
+    slots: sim.moves ? [...sim.moves.slots.slots] : [], tokens: sim.combat.director.tokens.map(t => ({ ...t })),
+    heldBy: rt.heldBy, breakProgress: rt.breakProgress, hp: Object.fromEntries([...sim.combat.entities.values()].map(c => [c.id, c.entity.hp])), reducedMotion: reducedMotion.matches,
+  };
+}
 // Read-only diagnostics allow browser verification to steer with real controls.
 if (QA) {
   const copy = (v: Vec3) => ({ x: v.x, y: v.y, z: v.z });
@@ -884,6 +950,6 @@ if (QA) {
     orientation: { ...rt.orientation }, permit: rt.permit ? { ...rt.permit } : null, arc: rt.arc ? { ...rt.arc } : null, breachReadyAt: rt.breachReadyAt, invulnerableUntil: rt.invulnerableUntil,
     pendingRespawn: run.pendingRespawn, caps: capsOf(), physical: copy(physical), legal: mode === 'menu' ? null : admittedNow(playerActor(currentPlan(run), run.genome, run.stage, growthOf(run))), contactNow, lastContact: lastContact === null ? null : `${lastContact}`, lastContactSolid, trapRescues: sim.trapRescues, rescueLog: JSON.parse(JSON.stringify(sim.rescueLog)), contactSolids: [...sim.lastSolids], groundOffset: rt.groundOffset, solidOverlap: mode === 'menu' ? null : solidOverlap(), solidsNear: mode === 'menu' ? [] : solidsNear(32), edge: { inZone: edgeNow, hinted: edgeHinted, half: PLAYER_HALF, softStart: EDGE_SOFT_START * PLAYER_HALF }, hazardSources: hazardSources(), growth: growthOf(run), acceptedHits, rejectedHits,
     faintLog: sim.faintLog.map(f => ({ ...f })), stage: run.stage, dna: dnaOf(run), stageDna: run.stageDna, goal: STAGES[run.stage]!.goal, health: run.health, maxHealth: derived.maxHealth, deaths: run.deaths, diet: dietOf(run.genome), genome: structuredClone(run.genome), name: run.name, unlocked: [...run.unlocked], evolveReady: evolveReady(run), bites: run.bites, totalDna: run.totalDna, elapsed: run.elapsed, completed: run.completed, eatenPlanets: [...run.eatenPlanets], player: { x: world.player.position.x, y: world.player.position.y, z: world.player.position.z }, foods: world.edibleFoods.map(f => ({ ...f.data, tag: f.entity.spec.tag, label: f.entity.spec.label, mode: f.entity.mode, hp: f.entity.hp, approachable: approachable(f.entity) })), threats: world.threats.map(f => ({ ...f.data, label: f.entity.spec.label, mode: f.entity.mode })), landmarks: world.foods.filter(f => f.model.visible && f.tier > run.stage).map(f => ({ tier: f.tier, kind: f.data.kind, x: f.data.x, y: f.data.y, z: f.data.z })), world: world.diagnostics, assets: assetDiagnostics(), saveKey: writeKey, loadedKey, time, holdingStart, editorProjection, poseAgreement, admission: admissionStats.map(a => { const per = (v: number) => a.frames ? v / a.frames : 0; return { frames: a.frames, msPerFrame: per(a.ms), callsPerFrame: per(a.calls), worstMs: a.worst, contactsPerFrame: per(a.contacts),
-      player: { msPerFrame: per(a.player.ms), callsPerFrame: per(a.player.calls), worstMs: a.player.worst, worstCalls: a.player.worstCalls }, rescueWorstCalls: a.rescueWorstCalls, ecosystem: { msPerFrame: per(a.ecosystem.ms), callsPerFrame: per(a.ecosystem.calls), worstMs: a.ecosystem.worst }, guide: { msPerFrame: per(a.guide.ms), callsPerFrame: per(a.guide.calls), worstMs: a.guide.worst } }; }), render: { calls: world.renderer.info.render.calls, triangles: world.renderer.info.render.triangles, geometries: world.renderer.info.memory.geometries } }) });
+      player: { msPerFrame: per(a.player.ms), callsPerFrame: per(a.player.calls), worstMs: a.player.worst, worstCalls: a.player.worstCalls }, rescueWorstCalls: a.rescueWorstCalls, ecosystem: { msPerFrame: per(a.ecosystem.ms), callsPerFrame: per(a.ecosystem.calls), worstMs: a.ecosystem.worst }, guide: { msPerFrame: per(a.guide.ms), callsPerFrame: per(a.guide.calls), worstMs: a.guide.worst } }; }), render: { calls: world.renderer.info.render.calls, triangles: world.renderer.info.render.triangles, geometries: world.renderer.info.memory.geometries }, combat: combatDiagnostics() }) });
 }
 requestAnimationFrame(frame);

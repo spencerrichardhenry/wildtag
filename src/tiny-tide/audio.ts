@@ -20,4 +20,19 @@ export class TideAudio {
   faint() { [12, 7, 3, 0].forEach((note, i) => this.tone(220 * 2 ** (note / 12), i * .14, .35, 'triangle')); }
   found() { [0, 7, 12, 19].forEach((note, i) => this.tone(520 * 2 ** (note / 12), i * .07, .18)); }
   breach() { this.tone(190, 0, .22, 'triangle'); this.tone(570, .12, .25); }
+  // Combat (spec §9.2): one sound per outcome, and the rising wind-up tone (a cue only: the telegraph never needs the sound).
+  hit() { this.tone(300, 0, .08, 'square'); this.tone(180, .02, .1, 'triangle'); }
+  block() { this.tone(900, 0, .06, 'triangle'); this.tone(620, .03, .1, 'triangle'); }
+  counter() { [0, 7, 12].forEach((note, i) => this.tone(660 * 2 ** (note / 12), i * .04, .12, 'triangle')); }
+  dash() { this.tone(420, 0, .12, 'sine'); this.tone(840, .03, .1, 'sine'); }
+  grab() { this.tone(240, 0, .14, 'sawtooth'); }
+  breakFree() { this.tone(520, 0, .08, 'triangle'); this.tone(780, .05, .12, 'triangle'); }
+  /** A quiet tone that rises over `seconds` (the time left to the active start). */
+  windup(seconds: number) {
+    if (!this.context || !this.bus || this.muted || seconds <= 0) return;
+    const now = this.context.currentTime, osc = this.context.createOscillator(), gain = this.context.createGain();
+    osc.type = 'sine'; osc.frequency.setValueAtTime(220, now); osc.frequency.exponentialRampToValueAtTime(520, now + seconds);
+    gain.gain.setValueAtTime(0, now); gain.gain.linearRampToValueAtTime(.18, now + seconds); gain.gain.linearRampToValueAtTime(0, now + seconds + .05);
+    osc.connect(gain); gain.connect(this.bus); osc.start(now); osc.stop(now + seconds + .06); osc.onended = () => { osc.disconnect(); gain.disconnect(); };
+  }
 }
