@@ -2,7 +2,7 @@ import type { SpeciesCombatFields } from './combat-types';
 // Everything that lives (or floats, or sails) in the Tiny Tide universe.
 export type FoodKind = 'plant' | 'kelp_snack' | 'seagrape' | 'lettuce' | 'copepod' | 'worm' | 'shrimp' | 'crab' | 'jellyfish' | 'snail' | 'fish' | 'squid' | 'ray' | 'bird' | 'tree' | 'boat' | 'plane' | 'balloon' | 'lighthouse' | 'planet'
   /** Combat species of sizes 0 and 1 (spec §11.3); each draws an existing GLB through `model`. */
-  | 'drifter' | 'spiny_snail';
+  | 'drifter' | 'spiny_snail' | 'clawmother';
 export type FoodTag = 'plant' | 'meat' | 'any';
 export type Behavior = 'still' | 'drift' | 'graze' | 'school' | 'skittish' | 'flyer';
 export interface Species extends SpeciesCombatFields {
@@ -59,6 +59,8 @@ export const SPECIES: readonly Species[] = [
   // Combat species (spec §11.3), after every legacy row so the legacy spawns of each tier keep their seeded places.
   s(0, 'drifter', 'meat', 'Drifter shrimp', 'skittish', 8, 14, { hp: 3, speed: 3.0, model: 'shrimp', tint: '#f6b58f', behaviourId: 'drifter' }),
   s(0, 'spiny_snail', 'meat', 'Spiny snail', 'graze', 6, 16, { hp: 6, speed: .5, model: 'snail', tint: '#c9a3e6', behaviourId: 'spiny-snail', attackIds: ['snail-poke'], fights: true, pursuitId: 'retaliate' }),
+  s(1, 'clawmother', 'meat', 'Old Clawmother', 'graze', 1, 0, { hp: 80, speed: 1.0, model: 'crab', tint: '#9c3b2e', bodyScale: 1.8, behaviourId: 'clawmother', hunts: [0], fights: true, pursuitId: 'hunter',
+    attackIds: ['mother-pinch', 'mother-pinch-2', 'mother-lunge', 'mother-emerge', 'mother-sweep', 'mother-pinch-rage'], alpha: { size: 0, rewardPartId: 'claw_mother', rewardDna: 40 } }),
 ];
 /** The index of the first row appended by combat sub-project 3a: earlier rows keep the reef-fallback RNG of their spawns (populate). */
 export const APPENDED_FROM = SPECIES.findIndex(spec => spec.key === '0:drifter');

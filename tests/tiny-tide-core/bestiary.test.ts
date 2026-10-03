@@ -59,7 +59,7 @@ describe('bestiary', () => {
     expect(BEHAVIOURS.clawmother!.phases!.map(p => [p.aboveHpFraction, p.pattern, p.speedFactor, p.gapSeconds])).toEqual([[.6, 'normal', 1, 1], [.3, 'burrow', 1, .8], [0, 'normal', 1.3, .7]]);
     expect(BEHAVIOURS['reef-tyrant']!.phases!.map(p => [p.aboveHpFraction, p.pattern, p.speedFactor, p.gapSeconds, p.lairFraction])).toEqual([[.66, 'normal', 1, 1, .6], [.33, 'laps', 1.4, .6, undefined], [0, 'normal', 1.2, .8, undefined]]);
     expect(BEHAVIOURS['reef-tyrant']!.phases![2]!.attacks[0]!.band).toEqual([0, .55]);
-    expect(BEHAVIOURS.clawmother!.lair).toEqual({ radiusBodyLengths: 2.5, resetOutsideFactor: 1.5, resetDelaySeconds: 3, healPerSecond: .04 });
+    expect(BEHAVIOURS.clawmother!.lair).toEqual({ radiusBodyLengths: 1.2, resetOutsideFactor: 1.5, resetDelaySeconds: 3, healPerSecond: .04 });
   });
 });
 
@@ -106,7 +106,7 @@ describe('bestiary data pinned to spec §11', () => {
     expect(BEHAVIOURS.eel!.den).toEqual({ triggerBodyLengths: .9, outSeconds: 4, attackId: 'eel-ambush' });
     expect(BEHAVIOURS['spiny-snail']!.trigger).toEqual({ radiusBodyLengths: 1.2, seconds: 1.0 });
     expect(BEHAVIOURS.puffer!.trigger).toEqual({ radiusBodyLengths: 1.1, seconds: .8 });
-    expect(BEHAVIOURS.clawmother!.lair).toEqual({ radiusBodyLengths: 2.5, resetOutsideFactor: 1.5, resetDelaySeconds: 3, healPerSecond: .04 });
+    expect(BEHAVIOURS.clawmother!.lair).toEqual({ radiusBodyLengths: 1.2, resetOutsideFactor: 1.5, resetDelaySeconds: 3, healPerSecond: .04 });
     expect(BEHAVIOURS['reef-tyrant']!.lair).toEqual({ radiusBodyLengths: 2.2, resetOutsideFactor: 1.5, resetDelaySeconds: 3, healPerSecond: .04 });
   });
   it('attack lists: bands, weights, flank weights, chains', () => {

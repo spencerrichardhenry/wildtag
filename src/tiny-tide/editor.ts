@@ -68,8 +68,8 @@ function renderThumbnails() {
   const scene = new T.Scene(), camera = new T.PerspectiveCamera(30, 1, .01, 50);
   scene.add(new T.HemisphereLight('#ffffff', '#5b8a8a', 2.4)); const key = new T.DirectionalLight('#fff3d6', 2.2); key.position.set(2, 4, 3); scene.add(key);
   for (const spec of PARTS) {
-    const object = asset(`part_${spec.id}`);
-    object.traverse(node => { if (node instanceof T.Mesh && !Array.isArray(node.material) && node.material.name === 'Tide_tint') { const m = (node.material as T.MeshStandardMaterial).clone(); m.color.set('#ffb59a'); node.material = m; } });
+    const object = asset(`part_${spec.model ?? spec.id}`);
+    object.traverse(node => { if (node instanceof T.Mesh && !Array.isArray(node.material) && node.material.name === 'Tide_tint') { const m = (node.material as T.MeshStandardMaterial).clone(); m.color.set(spec.modelTint ?? '#ffb59a'); node.material = m; } });
     scene.add(object);
     const box = new T.Box3().setFromObject(object), center = box.getCenter(new T.Vector3()), size = box.getSize(new T.Vector3()).length() || 1;
     camera.position.copy(center).add(new T.Vector3(.9, .55, 1.1).normalize().multiplyScalar(size * 1.6)); camera.lookAt(center);
@@ -669,11 +669,11 @@ class Editor {
     if (!kinds.includes(this.kind) && kinds[0]) this.kind = kinds[0];
     panel.innerHTML = `<div class="ed-kinds" role="tablist" aria-label="Part types">${kinds.map(kind => `<button data-kind="${kind}" aria-selected="${kind === this.kind}">${KIND_LABELS[kind]}</button>`).join('')}</div>
       ${hidden.length ? `<p class="ed-kind-note">${esc(this.options.plan.name)}s can't use: ${hidden.map(k => KIND_LABELS[k].toLowerCase()).join(', ')}.</p>` : ''}
-      <div class="ed-cards">${PARTS.filter(p => p.kind === this.kind).map(spec => {
+      <div class="ed-cards">${PARTS.filter(p => p.kind === this.kind && (!p.rare || this.options.unlocked.includes(p.id))).map(spec => {
         const reason = this.cardReason(spec), found = isUnlocked(spec.id, this.options.plan.size, this.options.unlocked), early = found && spec.stage > this.options.plan.size;
         return `<button class="ed-card ${this.placing === spec.id ? 'active' : ''}" data-part="${spec.id}" ${reason ? `disabled data-reason="${esc(reason)}"` : ''} aria-label="${esc(spec.name)}, ${spec.cost} DNA${reason ? `. ${esc(reason)}` : ''}">
           <img src="${thumbnails.get(spec.id) ?? ''}" alt=""><strong>${esc(spec.name)}</strong><span class="ed-cost">${found ? `${spec.cost} DNA` : `🔒 ${STAGES[spec.stage]!.title}`}</span>
-          <small>${reason && found ? `<span class="ed-reason">${esc(reason)}</span>` : `${statLine(spec.stats)}${spec.diet ? ` · ${spec.diet}` : ''}`}</small>${early ? '<em>FOUND!</em>' : ''}</button>`;
+          <small>${reason && found ? `<span class="ed-reason">${esc(reason)}</span>` : `${statLine(spec.stats)}${spec.diet ? ` · ${spec.diet}` : ''}`}</small>${spec.rare ? '<em class="ed-rare">RARE</em>' : early ? '<em>FOUND!</em>' : ''}</button>`;
       }).join('')}</div>
       <p class="ed-tip">${this.placing ? 'Tap your creature to place it. Tap the card again to stop.' : 'Choose a part, then tap your creature. Turn it with two fingers or a right-drag.'}</p>`;
     panel.querySelectorAll<HTMLButtonElement>('[data-kind]').forEach(button => button.onclick = () => { this.kind = button.dataset.kind as PartKind; this.disarm(); this.render(); });

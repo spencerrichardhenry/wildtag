@@ -4,6 +4,13 @@ import { describe, expect, it } from 'vitest';
 import { aiLandedHit, aiRefused, aiStarted, aiStep, alphaPhase, chooseAttack, clampToDisc, newAiState, schoolFlee, ROAR_SECONDS, type AiInput, type AiOutput, type AiState } from '../../src/tiny-tide/combat-ai';
 import { BEHAVIOURS, LAPS, SPECIES_ATTACKS, type SpeciesBehaviour } from '../../src/tiny-tide/bestiary';
 import type { Vec3 } from '../../src/tiny-tide/combat-types';
+import { Ecosystem, lairOf, speciesActor } from '../../src/tiny-tide/ecosystem';
+import { PLAYER_HALF, SIZES } from '../../src/tiny-tide/biomes';
+import { PLANS } from '../../src/tiny-tide/plans';
+import { starterFor } from '../../src/tiny-tide/genome';
+import { playerActor } from '../../src/tiny-tide/mount';
+import { startAnchor } from '../../src/tiny-tide/motion';
+import { stageBounds, stageWorldQueries } from '../../src/tiny-tide/world-queries';
 
 const DT = 1 / 30;
 const base = (over: Partial<AiInput> = {}): AiInput => ({ now: 0, self: { position: { x: 0, y: 0, z: 0 }, L: 1.4, forward: { x: 0, y: 0, z: 1 }, hp: 10, maxHp: 10, staggered: false, held: false, busy: false, speed: 3 },
@@ -183,6 +190,42 @@ describe('combat AI: ambusher rules', () => {
 
 describe('combat AI: alphas', () => {
   const mother = BEHAVIOURS.clawmother!, L = 10.08;
+  it('alpha absent when its part is unlocked or at another size', () => {
+    const eco = new Ecosystem(3), mother = eco.entities.find(e => e.spec.key === '1:clawmother')!, far = { x: 0, y: 900, z: 0 };
+    const step = (stage: number, now: number, unlocked: string[] = []) => eco.step({ stage, dt: DT, now, player: far, playerHull: [], perceivable: false, stealthFactor: 1, unlocked });
+    const lair = lairOf(3, mother);
+    step(0, 0); expect(mother.eaten).toBe(false); expect(Math.hypot(mother.x - lair.x, mother.z - lair.z)).toBeLessThanOrEqual(4 * L);   // installed within 4 L
+    step(1, .1); expect(mother.eaten).toBe(true); expect(mother.active).toBe(false);   // only at its own size
+    step(0, .2); expect(mother.eaten).toBe(false); expect(mother.hp).toBe(80);
+    step(0, .3, ['claw_mother']); expect(mother.eaten).toBe(true);   // defeated earlier: gone for the run
+    step(0, 60, ['claw_mother']); expect(mother.eaten).toBe(true);
+    eco.consume(mother); expect(mother.respawn).toBe(-1);   // never respawns
+  });
+  it('an alpha has no ecosystem pursuit: no acquisition, no give-up heal (its lair is its leash)', () => {
+    const eco = new Ecosystem(4), mother = eco.entities.find(e => e.spec.key === '1:clawmother')!;
+    const near = { x: mother.x + 8, y: mother.y, z: mother.z }, step = (now: number, player: Vec3) => eco.step({ stage: 0, dt: DT, now, player, playerHull: [], perceivable: true, stealthFactor: 1, unlocked: [] });
+    for (let k = 0; k < 10; k++) step(k * DT, near);
+    expect(mother.mode).toBe('calm');   // a crab would hunt this player
+    mother.mode = 'angry'; mother.hp = 30; mother.x = mother.hx + 200; mother.combat = null;
+    for (let k = 0; k < 10; k++) step(1 + k * DT, { x: 0, y: 900, z: 0 });
+    expect(mother.mode).toBe('angry'); expect(mother.hp).toBe(30);   // no leash give-up, no return, no full heal
+  });
+  it('the lair (review R15): radius at most .25 x the play half-size, the start anchor outside 1.5 x the lair radius + 5 player body lengths', () => {
+    const size = SIZES[0], plans = PLANS.filter(p => p.size === 0);
+    for (let seed = 1; seed <= 20; seed++) {
+      const eco = new Ecosystem(seed), e = eco.entities.find(x => x.spec.key === '1:clawmother')!, lair = lairOf(seed, e);
+      const radius = mother.lair!.radiusBodyLengths * speciesActor(e).bodyLength;
+      expect(radius).toBeLessThanOrEqual(.25 * PLAYER_HALF * size);
+      expect(Math.max(Math.abs(lair.x), Math.abs(lair.z)) + radius).toBeLessThanOrEqual(.8 * PLAYER_HALF * size);   // the lair is inside the spawn square
+      for (const p of plans) for (const growth of [1, 1.38]) {
+        const actor = playerActor(p, starterFor(p), 0, growth), anchor = startAnchor(actor, 0, { queries: stageWorldQueries(0, seed), bounds: stageBounds(0) });
+        if (!anchor.ok) throw new Error(`seed ${seed} ${p.id}: no start anchor`);
+        expect(Math.hypot(anchor.position.x - lair.x, anchor.position.z - lair.z), `seed ${seed} ${p.id} growth ${growth}`).toBeGreaterThan(1.5 * radius + 5 * actor.bodyLength);
+      }
+      const installed = { x: e.x, z: e.z }; expect(Math.hypot(installed.x - lair.x, installed.z - lair.z)).toBeLessThanOrEqual(4 * speciesActor(e).bodyLength);
+    }
+  });
+
   const alphaInput = (hp: number, over: Partial<AiInput> = {}) => ({ self: { ...base().self, L, hp, maxHp: 80 }, inLair: true, pursuit: 'hunt' as const, player: { position: at(0, 5), d: .3, visible: true, targetable: true }, ...over });
   it('alpha phases switch at thresholds with a roar', () => {
     expect([80, 49, 48.1, 48, 25, 24, 1].map(hp => alphaPhase(mother.phases!, hp, 80))).toEqual([0, 0, 0, 1, 1, 2, 2]);   // above 60 %, above 30 %

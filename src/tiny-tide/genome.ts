@@ -112,7 +112,8 @@ export function problems(g: Genome, p: BodyPlan, ctx: DesignContext, catalog: re
   return out;
 }
 export const validateDesign = problems;
-export function isUnlocked(id: string, stage: number, unlocked: readonly string[]) { const spec = part(id); return !!spec && (spec.stage <= stage || unlocked.includes(id)); }
+/** A rare part only when unlocked (an alpha's reward, spec §7.6); any other part from its stage or when found early. */
+export function isUnlocked(id: string, stage: number, unlocked: readonly string[]) { const spec = part(id); return !!spec && (unlocked.includes(id) || (!spec.rare && spec.stage <= stage)); }
 export const availableParts = (stage: number, unlocked: readonly string[]) => PARTS.filter(spec => isUnlocked(spec.id, stage, unlocked));
 
 const exactKeys = (o: object, keys: readonly string[]) => { const k = Object.keys(o); return k.length === keys.length && keys.every(key => k.includes(key)); };

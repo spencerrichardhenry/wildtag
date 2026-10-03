@@ -1186,9 +1186,15 @@ Pursuit policy `ambusher`: memory 3 s, blocked wait 1 s, reacquire 4 s, leash
 
 **`alpha`:** a hunter bound to its lair, with phases.
 
-- The **lair** is a seeded point: angle `2π × rand`, radius
-  `(22 + 8 × rand) × SIZES[alpha.size]`, then the nearest admitted pose of the
-  alpha's actor (`findRecoveryPose`, max distance 4 L). It never moves out of
+- The **lair** is a seeded point (plan review R15, T17): its centre is
+  `resetOutsideFactor × lair radius + 5 × L_p + (1 + rand) × SIZES[alpha.size]`
+  from the start anchor (next to the world centre), at the angle
+  `π/4 + k × π/2 ± 0.05` (k = 0–3 from `rand`), where `L_p` is the longest
+  fully grown (× 1.38) starter body length of that size. Then the nearest
+  admitted pose of the alpha's actor (`findRecoveryPose`, max distance 4 L).
+  So the start anchor is outside 1.5 × the lair radius + 5 player body lengths,
+  and the whole lair is inside the spawn square. (The earlier rule, radius
+  `(22 + 8 × rand) × S` around the centre, could put the anchor in the lair.) It never moves out of
   `lair.radiusBodyLengths × L_e` of the lair: approach targets are clamped to
   that disc.
 - It acquires the player only inside the lair radius (plus its notice rules).
@@ -1255,7 +1261,7 @@ Speeds are in tier-local units per second (× `SIZES[tier]`). HP is in HP.
 | `crab` | 0.35 | 1.0 | 0.6–1.2 | — |
 | `squid` | 0.35 | 0.8 | 0.6–1.2 | — |
 | `eel` | 0 (ambush), 0.35 (out) | 0.8 | 0.5–1.0 | den trigger 0.9 L, out 4 s |
-| `clawmother` | 0.35 | phase | 0.6–1.0 | lair 2.5 L |
+| `clawmother` | 0.35 | phase | 0.6–1.0 | lair 1.2 L (R15) |
 | `reef-tyrant` | 0.35 | phase | 0.6–1.0 | lair 2.2 L |
 
 ### 11.5 Species attacks
@@ -1301,7 +1307,7 @@ The wind-ups respect the floors: size-0 hostiles ≥ 0.45 s (snail 0.50, crab
 
 ### 11.6 Alpha phases
 
-**Old Clawmother** (lair radius 2.5 L_e; L_e = 10.08):
+**Old Clawmother** (lair radius 1.2 L_e = 12.1 units, plan review R15: at most 0.25 × `PLAYER_HALF` × SIZES[0]; L_e = 10.08):
 
 | Phase | HP above | Pattern | Attacks (weight) | Speed | Gap |
 | --- | --- | --- | --- | --- | --- |

@@ -1,9 +1,13 @@
 // tests/tiny-tide-core/combat-hud.test.ts — T9: the slot views (label and cooldown fraction on the action clock) and the ring step that
 // decides when a slot button is redrawn (a cooldown that is almost over must still differ from a ready slot).
 import { describe, expect, it } from 'vitest';
-import { edgeArrowAt, faintMessage, FLOATER_COLOURS, floaterClass, floaterText, ringStep, slotViews } from '../../src/tiny-tide/combat-hud';
+import { alphaView, edgeArrowAt, faintMessage, FLOATER_COLOURS, floaterClass, floaterText, ringStep, slotViews } from '../../src/tiny-tide/combat-hud';
 import { playerMoves } from '../../src/tiny-tide/sim';
 import { speck } from './combat-fixture-world';
+import { BEHAVIOURS } from '../../src/tiny-tide/bestiary';
+import { newAiState } from '../../src/tiny-tide/combat-ai';
+import type { EntityCombat } from '../../src/tiny-tide/combat-world';
+import { Ecosystem } from '../../src/tiny-tide/ecosystem';
 
 describe('the slot HUD', () => {
   it('shows the slot moves and their cooldown left as a fraction of the action clock', () => {
@@ -46,5 +50,19 @@ describe('the faint overlay (T15 fix round 1)', () => {
     expect(faintMessage(24)).toEqual({ title: 'Fainted!', line: 'You lost 24 DNA. Your body and parts stay.' });
     expect(faintMessage(0)).toEqual({ title: 'Fainted!', line: 'No DNA was lost. Your body and parts stay.' });
     expect(faintMessage(null)).toEqual({ title: 'Fainted!', line: 'Waking up at the start. Your body and parts stay.' });
+  });
+});
+
+describe('the alpha bar (spec §9.3)', () => {
+  it('shows the name, the HP fraction and the phase while the player is inside 1.5 x the lair radius of the alpha\'s lair', () => {
+    const eco = new Ecosystem(5), mother = eco.entities.find(e => e.spec.key === '1:clawmother')!, ai = newAiState(1, mother.id);
+    ai.home = { x: mother.x, y: mother.y, z: mother.z }; ai.phase = 1; mother.hp = 40;
+    const c = { entity: mother, maxHp: 80, behaviour: BEHAVIOURS.clawmother!, ai } as unknown as EntityCombat, edge = 1.5 * 1.2 * 10.08;
+    const at = (d: number) => ({ x: mother.x + d, y: mother.y, z: mother.z });
+    expect(alphaView([c], at(edge - .1))).toEqual({ name: 'Old Clawmother', fraction: .5, phase: 1, phases: 3 });
+    expect(alphaView([c], at(edge + .1))).toBeNull();
+    mother.eaten = true; expect(alphaView([c], at(1))).toBeNull();
+    mother.eaten = false; ai.home = null; expect(alphaView([c], at(1))).toBeNull();   // before its first AI tick
+    const crab = eco.entities.find(e => e.spec.key === '1:crab')!; expect(alphaView([{ ...c, entity: crab, behaviour: BEHAVIOURS.crab! } as unknown as EntityCombat], { x: crab.x, z: crab.z })).toBeNull();
   });
 });

@@ -4,6 +4,7 @@ import * as T from 'three';
 import rigJson from './part-rig.json';
 import type { Genome, PlacedPart } from './genome';
 import { layout, SPACING } from './body-geometry';
+import { modelOf } from './parts';
 
 export interface RigNode { parent: string | null; pre: number[]; t: [number, number, number]; q: [number, number, number, number]; s: [number, number, number]; rest: number[] }
 export const PART_RIG = rigJson as unknown as Record<string, Record<string, RigNode>>;
@@ -23,7 +24,7 @@ const slots = new WeakMap<RigPose, PivotSlot[]>();
 export function createRigPose(g: Genome): RigPose {
   const pivots = new Map<string, Offset>(), list: PivotSlot[] = [];
   for (const placed of g.parts) {
-    const nodes = PART_RIG[placed.id]; if (!nodes) continue;
+    const nodes = PART_RIG[modelOf(placed.id)]; if (!nodes) continue;
     for (const copy of placed.mirror ? [0, 1] as const : [0] as const) for (const key of Object.keys(nodes)) {
       const [kind, index] = key.split(':'), offset = { x: 0, y: 0, z: 0 };
       pivots.set(`${placed.uid}:${copy}:${key}`, offset);
@@ -80,7 +81,7 @@ function cached(partId: string, key: string, node: RigNode) {
   return c;
 }
 function rigNode(partId: string, key: string) {
-  const node = PART_RIG[partId]?.[key];
+  const node = PART_RIG[modelOf(partId)]?.[key];
   if (!node) throw new Error(`No rig pivot ${key} on part ${partId}`);
   return node;
 }

@@ -66,3 +66,10 @@
 #break-free{position:absolute;left:50%;bottom:42%;transform:translateX(-50%);display:flex;align-items:center;gap:10px;padding:10px 16px;border-radius:30px;background:#163b47d9;color:var(--cream);font-weight:700;letter-spacing:.5px;pointer-events:none;z-index:4}
 #break-free[hidden]{display:none}
 #break-free .break-ring{width:22px;height:22px;border-radius:50%;box-shadow:0 0 0 2px #fff2b3}
+#alpha-bar{position:absolute;top:96px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px 12px 7px;border-radius:14px;background:#0b2f3acc;color:var(--cream);font-size:11px;font-weight:800;letter-spacing:1px;text-transform:uppercase;pointer-events:none;z-index:4}
+#alpha-bar[hidden]{display:none}
+#alpha-bar .alpha-hp{display:block;width:min(260px,60vw);height:8px;border-radius:4px;background:#ffffff26;overflow:hidden}
+#alpha-bar .alpha-hp b{display:block;height:100%;background:#ff6b57;transition:width .15s}
+#alpha-bar .alpha-pips{display:flex;gap:6px}
+#alpha-bar .alpha-pips i{width:8px;height:8px;border-radius:50%;background:#ffffff33}
+#alpha-bar .alpha-pips i.on{background:#ff6b57}

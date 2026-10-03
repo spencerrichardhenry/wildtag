@@ -104,6 +104,14 @@ describe('the AI tick (spec §11.2)', () => {
     run(s, [snail], now, 2.5);
     expect(calls.some(c => typeof c.result !== 'string')).toBe(true);   // the cornered snail pokes once the window is over
   });
+  it('an alpha\'s mode mirrors its AI (no ecosystem pursuit): engaged is angry, idle or reset is calm', () => {
+    const s = fighter(), mother = entity(1, MOTHER, ahead(3.5)), c = s.combat.stateOf(mother)!, centre = speciesCombatPose(mother, 0).hull[0]!.start;
+    c.ai = newAiState(1, mother.id, 0); c.ai.home = { ...centre };
+    s.combat.aiTick(ctx(s, [mother], 0)); expect(c.ai.name).toBe('notice'); expect(mother.mode).toBe('angry');   // the player is inside the lair
+    c.ai.name = 'reset'; mother.hp = .5 * c.maxHp; c.ai.home = { x: 100, y: 1, z: 100 };
+    s.combat.aiTick(ctx(s, [mother], DT)); expect(mother.mode).toBe('calm');
+    mother.mode = 'angry'; s.combat.aiTick(ctx(s, [mother], 2 * DT, { hitBy: new Set([mother.id]) })); expect(mother.mode).toBe('calm');   // a hit does not override the AI
+  });
   it('heals an alpha per second while it resets (carry 6)', () => {
     const s = fighter(), mother = entity(1, MOTHER, ahead(3.5)), c = s.combat.stateOf(mother)!;
     c.ai = newAiState(1, mother.id, 0); c.ai.name = 'reset'; c.ai.home = { x: 100, y: 1, z: 100 }; mother.hp = .5 * c.maxHp;

@@ -19,7 +19,7 @@ import { createRigPose, type RigPose } from './rig';
 import { orientedHeave, orientedSway, rotateInto } from './orientation';
 import { newStepSnapshot, restoreStep, snapshotStep, stepPlayer, type PlayerStepResult, type StepSnapshot } from './player-motion';
 import { habitat, movement, movementCapabilities } from './profiles';
-import { currentPlan, evolveReady, growthOf, hurt, killReward, STAGES, survivorBonusDue, survivorReward, unlock, type Run } from './state';
+import { alphaReward, currentPlan, evolveReady, growthOf, hurt, killReward, STAGES, survivorBonusDue, survivorReward, unlock, type Run } from './state';
 import { BEHAVIOURS } from './bestiary';
 import { faintLoss, type Economy } from './economy';
 import { admissionClock, admissionCount, supportHeight } from './world-queries';
@@ -284,7 +284,9 @@ export function simFrame(s: SimState, w: SimWorld, input: SimInput): SimEvent[] 
         // A plant-eater that kills a hunter it was engaged with also survived it (D22); the AI state is forgotten below, so it pays once.
         const ai = s.combat.entities.get(e.id)?.ai;
         if (ai && ai.engagedSince !== null && survivorBonusDue(run, behaviourType(e), { seconds: s.time - ai.engagedSince, windups: ai.windups })) events.push({ type: 'survived', entity: e, dna: survivorReward(run, e.spec) });
-        events.push({ type: 'killed', entity: e, dna: killReward(run, e.spec).dna, drop: drop && run.unlocked.includes(drop) ? drop : null });
+        // An alpha pays its reward DNA and unlocks its rare part, once (D23); any other species pays the kill reward and may drop a part.
+        const paid = e.spec.alpha ? alphaReward(run, e.spec) : { dna: killReward(run, e.spec).dna, part: null };
+        events.push({ type: 'killed', entity: e, dna: paid.dna, drop: paid.part ?? (drop && run.unlocked.includes(drop) ? drop : null) });
         w.eco.consume(e); s.combat.forget(e);
       }
       if (run.health <= 0) { const lost = faintNow(s, w); if (lost !== null) events.push({ type: 'fainted', lost }); }
@@ -307,7 +309,7 @@ export function simFrame(s: SimState, w: SimWorld, input: SimInput): SimEvent[] 
     for (const g of ai.engagements) if (s.mode === 'playing' && survivorBonusDue(run, behaviourType(g.entity), g)) events.push({ type: 'survived', entity: g.entity, dna: survivorReward(run, g.entity.spec) });
     if (ai.roars.length) events.push({ type: 'roar', entities: ai.roars });
     admissionClock.caller = 'ecosystem';
-    const hazards = w.eco.step({ stage, dt, now: s.time, player: s.physical, playerHull: worldHull(s, actor), perceivable: s.rt.perceivable && s.mode !== 'fainted', stealthFactor: s.derived.stealthFactor });
+    const hazards = w.eco.step({ stage, dt, now: s.time, player: s.physical, playerHull: worldHull(s, actor), perceivable: s.rt.perceivable && s.mode !== 'fainted', stealthFactor: s.derived.stealthFactor, unlocked: run.unlocked });
     admissionClock.caller = 'player';
     s.combat.afterMotion(w.eco.entities);
     const accepted = resolveHazards(hazards, { mode: s.mode, pendingRespawn: run.pendingRespawn, rt: s.rt, now: s.time, mass: massFor(plan, run.genome, actor.bodyLength), resistance: plan.physics.knockbackResistance });

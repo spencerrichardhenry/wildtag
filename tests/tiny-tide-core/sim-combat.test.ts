@@ -125,6 +125,19 @@ describe('the combat tick in simFrame', () => {
     expect(s.run.stageDna).toBe(before.stageDna + dna); expect(s.run.bites).toBe(before.bites + 1); expect(s.run.economy.wallet.atRisk).toBe(before.atRisk + dna);
     expect(prey.eaten).toBe(true);
   });
+  it('an alpha kill pays its reward DNA and unlocks its rare part, once, also for a herbivore (spec §10.4, D23)', () => {
+    for (const mouth of [undefined, 'mouth_nibbler']) {
+      const alpha = { ...FX_FLEER, hp: 1, dna: 10, alpha: { size: 0, rewardPartId: 'claw_mother', rewardDna: 40 } }, mother = entity(1, alpha, { x: 0, y: 0, z: 0 }), { s, w } = begun([mother], mouth);
+      Object.assign(mother, ahead(s, 2.1)); mother.mode = 'angry';
+      const stageDna = s.run.stageDna, events: SimEvent[] = [...frame(s, w, { basicPressed: true, basicHeld: true })];
+      for (let i = 0; i < 40; i++) events.push(...frame(s, w));
+      expect(events.filter(e => e.type === 'killed')).toEqual([{ type: 'killed', entity: mother, dna: 40, drop: 'claw_mother' }]);
+      expect(s.run.unlocked).toEqual(['claw_mother']); expect(s.run.stageDna).toBe(stageDna + 40);
+      const again = entity(2, alpha, { x: 0, y: 0, z: 0 }); w.eco.entities.push(again); Object.assign(again, ahead(s, 2.1)); again.mode = 'angry';
+      const later: SimEvent[] = []; for (let i = 0; i < 30; i++) later.push(...frame(s, w)); later.push(...frame(s, w, { basicPressed: true, basicHeld: true })); for (let i = 0; i < 40; i++) later.push(...frame(s, w));
+      expect(later.filter(e => e.type === 'killed')).toEqual([{ type: 'killed', entity: again, dna: 0, drop: null }]); expect(s.run.stageDna).toBe(stageDna + 40);
+    }
+  });
   it('a herbivore kill pays nothing: dna 0, no bite, no growth; the creature is still removed', () => {
     const prey = entity(1, { ...FX_FLEER, hp: 1, dna: 10 }, { x: 0, y: 0, z: 0 }), { s, w } = begun([prey], 'mouth_nibbler');
     expect(s.run.diet).toBe('herbivore'); Object.assign(prey, ahead(s, 2.1)); prey.mode = 'angry';   // a herbivore Bites only a creature engaged with it (R17)

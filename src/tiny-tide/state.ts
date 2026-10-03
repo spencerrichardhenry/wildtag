@@ -108,9 +108,18 @@ export function survivorBonusDue(run: Run, behaviourType: string | undefined, en
 export function survivorReward(run: Run, spec: Species): number {
   const dna = Math.round(SURVIVOR_SHARE * spec.dna); reward(run, dna, true); return dna;
 }
+/** Unlocks a part found early; a rare part at any stage (it is never available in another way, spec §7.6). */
 export function unlock(run: Run, id: string | undefined) {
-  if (!id || !part(id) || run.unlocked.includes(id) || part(id)!.stage <= run.stage) return false;
+  const spec = id ? part(id) : undefined;
+  if (!id || !spec || run.unlocked.includes(id) || (!spec.rare && spec.stage <= run.stage)) return false;
   run.unlocked.push(id); return true;
+}
+/** An alpha's defeat (spec §10.4, D23): its reward DNA (counting for the growth bar) and its rare part. Once: the part in `unlocked` records
+ *  the defeat (no other save field), so a second call, also after a save and load, pays nothing. */
+export function alphaReward(run: Run, spec: Species): { dna: number; part: string | null } {
+  const a = spec.alpha; if (!a || run.unlocked.includes(a.rewardPartId)) return { dna: 0, part: null };
+  unlock(run, a.rewardPartId); reward(run, a.rewardDna, true);
+  return { dna: a.rewardDna, part: a.rewardPartId };
 }
 const serialAfter = (g: Genome, ...floors: number[]) => Math.max(...floors, ...g.parts.map(p => uidSerial(p.uid) + 1));
 type Failure = { ok: false; reason: string; shortfall?: number };

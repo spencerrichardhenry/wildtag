@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { applyDesign, commitEvolution, currentPlan, dnaOf, eat, faint, freshRun, hurt, killReward, mealDna, PLANET_COUNT, prepareEvolution, STAGES, survivorBonusDue, survivorReward, validateRun, type Run } from '../../src/tiny-tide/state';
+import { alphaReward, applyDesign, commitEvolution, currentPlan, dnaOf, eat, faint, freshRun, hurt, killReward, mealDna, parseSave, PLANET_COUNT, prepareEvolution, STAGES, survivorBonusDue, survivorReward, unlock, validateRun, type Run } from '../../src/tiny-tide/state';
+import { availableParts, isUnlocked, problems } from '../../src/tiny-tide/genome';
+import { SPECIES } from '../../src/tiny-tide/species';
 import { adaptToPlan, nextUid, type Genome } from '../../src/tiny-tide/genome';
 import { plan } from '../../src/tiny-tide/plans';
 import { species } from '../../src/tiny-tide/species';
@@ -70,6 +72,29 @@ describe('run v4', () => {
     r.pendingRespawn = true; expect(survivorBonusDue(r, 'hunter', { seconds: 9, windups: 2 })).toBe(false);
     const m = freshRun(6); m.diet = 'carnivore'; expect(survivorBonusDue(m, 'hunter', { seconds: 9, windups: 2 })).toBe(false);
     const h = freshRun(6); expect(survivorReward(h, squid)).toBe(11); expect(h.stageDna).toBe(11);   // round(.35 × 30) = round(10.5)
+  });
+  it('unlock accepts rare parts at any stage', () => {
+    const r = freshRun(8); expect(unlock(r, 'claw_mother')).toBe(true); expect(r.unlocked).toEqual(['claw_mother']);   // stage 0, the part's own stage
+    expect(unlock(r, 'claw_mother')).toBe(false); expect(unlock(r, 'claw_pincer')).toBe(false);   // a common stage-0 part needs no unlock
+    r.stage = 3; expect(isUnlocked('claw_mother', 3, r.unlocked)).toBe(true);
+  });
+  it('rare part without unlock is locked', () => {
+    const r = freshRun(9), g = { ...r.genome, parts: [...r.genome.parts, { uid: 'p50', id: 'claw_mother', t: .2, angle: 2, scale: 1, mirror: false, roll: 0 }] };
+    expect(problems(g, currentPlan(r), { unlocked: [] }).map(x => x.code)).toContain('locked');
+    expect(problems(g, currentPlan(r), { unlocked: ['claw_mother'] }).map(x => x.code)).not.toContain('locked');
+    for (const stage of [0, 2, 4]) { expect(isUnlocked('claw_mother', stage, [])).toBe(false); expect(availableParts(stage, []).some(p => p.rare)).toBe(false); }
+  });
+  it('alphaReward once, part unlocked', () => {
+    const r = freshRun(10), mother = SPECIES.find(x => x.key === '1:clawmother')!;
+    expect(alphaReward(r, mother)).toEqual({ dna: 40, part: 'claw_mother' }); expect(r.unlocked).toContain('claw_mother'); expect(r.stageDna).toBe(40);
+    expect(alphaReward(r, mother)).toEqual({ dna: 0, part: null }); expect(r.stageDna).toBe(40);
+    expect(alphaReward(r, species(1, 'crab'))).toEqual({ dna: 0, part: null });   // not an alpha
+  });
+  it('alphaReward once across a save and load (D23: the unlocked part records the defeat)', () => {
+    const r = freshRun(11), mother = SPECIES.find(x => x.key === '1:clawmother')!;
+    alphaReward(r, mother); const total = r.totalDna;
+    const loaded = parseSave(JSON.stringify(r), build)!; expect(loaded).not.toBeNull(); expect(loaded.unlocked).toEqual(['claw_mother']);
+    expect(alphaReward(loaded, mother)).toEqual({ dna: 0, part: null }); expect(loaded.stageDna).toBe(40); expect(loaded.totalDna).toBe(total);
   });
   it('hurts in half-hearts after armor', () => {
     const r = freshRun(7); r.health = 3; expect(hurt(r, 3, 2)).toBe(false); expect(r.health).toBe(2);   // 3 − floor(2 / 2) = 2 half-hearts

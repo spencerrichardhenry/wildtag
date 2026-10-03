@@ -91,7 +91,8 @@ export const BEHAVIOURS: Record<string, SpeciesBehaviour> = Object.fromEntries([
   behaviour({ id: 'eel', type: 'hunter-ambush', reactionSeconds: .35, poise: 6, knockbackResistance: .3, gapSeconds: .8, repositionSeconds: [.5, 1.0],
     attacks: [choice('eel-bite', [0, .45], 3), choice('eel-wrap', [0, .6], 1)], den: { triggerBodyLengths: .9, outSeconds: 4, attackId: 'eel-ambush' } }),
   behaviour({ id: 'clawmother', type: 'alpha', reactionSeconds: .35, poise: 14, staggerResist: .5, knockbackResistance: .6, grabbable: false, gapSeconds: 1.0, repositionSeconds: [.6, 1.0],
-    lair: { radiusBodyLengths: 2.5, resetOutsideFactor: 1.5, resetDelaySeconds: 3, healPerSecond: .04 },
+    // Plan review R15: lair radius ≤ .25 × PLAYER_HALF × SIZES[0] = 12.5 units; 1.2 L_e = 12.1 units (the spec's 2.5 L_e reached the start anchor).
+    lair: { radiusBodyLengths: 1.2, resetOutsideFactor: 1.5, resetDelaySeconds: 3, healPerSecond: .04 },
     phases: [
       { aboveHpFraction: .6, attacks: [PINCH_COMBO, choice('mother-lunge', [.4, 1.0], 1)], speedFactor: 1.0, gapSeconds: 1.0, pattern: 'normal' },
       { aboveHpFraction: .3, attacks: [PINCH_COMBO], speedFactor: 1.0, gapSeconds: .8, pattern: 'burrow', patternAttackId: 'mother-emerge' },

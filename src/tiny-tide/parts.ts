@@ -14,6 +14,8 @@ export interface PartSpec extends PartCombatFields {
   rare?: true;
   /** The part whose GLB, rig and sockets this part uses (default `id`). */
   model?: string;
+  /** A rare part's colour on its tint meshes (instead of the paint slot), so it reads as a new part on a reused model (spec §7.6, D24). */
+  modelTint?: string;
 }
 /** The move kind each move-giving part grants (spec §7.1). Mouths give the basic Bite instead. */
 export const PART_MOVES: Readonly<Record<string, MoveKind>> = {
@@ -57,7 +59,12 @@ const grantsOf = (id: string): Pick<PartSpec, 'basicAttacks' | 'activeGrants'> =
 const p = (id: string, name: string, kind: PartKind, stage: number, cost: number, stats: Partial<Stats>, tint: TintSlot, mirror: boolean, t: number, angle: number, blurb: string, diet?: Diet): PartSpec =>
   ({ id, name, kind, stage, cost, stats, tint, mirror, t, angle, blurb, diet, traits: TRAITS[id] ?? (kind === 'mouth' ? ['weapon'] : []), sockets: SOCKETS[id] ?? [], ...grantsOf(id) });
 const HALF = Math.PI / 2;
-export const PARTS: readonly PartSpec[] = [
+/** A rare part (spec §7.6, D24): the model part's GLB, rig, sockets, traits and placement, with its own grant, stats, cost and tint. */
+const rare = (id: string, name: string, model: string, kind: PartKind, stage: number, cost: number, stats: Partial<Stats>, mirror: boolean, modelTint: string, blurb: string, diet?: Diet): PartSpec => {
+  const m = PARTS_BASE.find(x => x.id === model)!;
+  return { ...m, id, name, kind, stage, cost, stats, mirror, blurb, diet, rare: true, model, modelTint, ...grantsOf(id) };
+};
+const PARTS_BASE: readonly PartSpec[] = [
   p('mouth_nibbler', 'Nibbler', 'mouth', 0, 0, { reach: .2 }, 'belly', false, 0, 0, 'Soft lips for plants.', 'herbivore'),
   p('mouth_snapper', 'Snapper', 'mouth', 0, 0, { bite: 1 }, 'belly', false, 0, 0, 'A toothy snap for meat.', 'carnivore'),
   p('mouth_beak', 'Beak', 'mouth', 1, 20, { bite: 1 }, 'accent', false, 0, 0, 'Cracks anything. Eats everything.', 'omnivore'),
@@ -93,10 +100,17 @@ export const PARTS: readonly PartSpec[] = [
   p('star_crown', 'Star crown', 'cosmic', 4, 35, { sense: 2, bite: 2 }, 'accent', false, .15, 0, 'Ruler of the snack universe.'),
   p('nebula_fin', 'Nebula fin', 'cosmic', 4, 40, { speed: 2 }, 'accent', true, .5, HALF - .3, 'Swim through the stars.'),
 ];
+export const PARTS: readonly PartSpec[] = [
+  ...PARTS_BASE,
+  rare('claw_mother', 'Clawmother pincer', 'claw_pincer', 'arm', 0, 18, { bite: 2 }, true, '#b5523b', 'The old queen’s pincer. Holds bigger prey.'),
+];
 export type PartId = typeof PARTS[number]['id'];
 const byId = new Map(PARTS.map(part => [part.id, part]));
 export const part = (id: string): PartSpec | undefined => byId.get(id);
-export const PART_ASSETS = PARTS.map(part => `part_${part.id}`);
+/** The part whose GLB and rig a part uses (a rare part reuses its model's). */
+export const modelOf = (id: string): string => part(id)?.model ?? id;
+/** The part GLBs to load, once each. */
+export const PART_ASSETS = [...new Set(PARTS.map(p => `part_${p.model ?? p.id}`))];
 /** Defeating a species that fights unlocks one part before its stage. */
 export const DROPS: Partial<Record<string, string>> = { crab: 'leg_crab', jellyfish: 'glow_bulb', squid: 'tentacle_long', plane: 'jet_vent' };
 export const KIND_LABELS: Record<PartKind, string> = { mouth: 'Mouths', eye: 'Eyes', fin: 'Fins', tail: 'Tails', leg: 'Legs', wing: 'Wings', jet: 'Jets', arm: 'Arms', armor: 'Armor', sense: 'Senses', cosmic: 'Cosmic' };

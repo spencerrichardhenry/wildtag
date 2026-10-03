@@ -2,7 +2,7 @@
 // bone for each spine point, and Blender parts attached to the bones.
 import * as T from 'three';
 import { asset } from './assets';
-import { part, type PartSpec, type TintSlot } from './parts';
+import { modelOf, part, type PartSpec, type TintSlot } from './parts';
 import type { Genome, PlacedPart } from './genome';
 import { layout, SPACING, surface, type Layout } from './body-geometry';
 import { CHOMP_PITCH, createRigPose, rigPoseInto, type RigPose } from './rig';
@@ -124,11 +124,18 @@ export class CreatureModel {
     if (!m) { m = this.countMaterial(source.clone()); m.color.set(this.genome.paint[slot]); this.tints.set(slot, m); }
     return m;
   }
+  /** A rare part's own tint material, one per colour (spec §7.6, D24): it does not follow the paint. */
+  private rareTint(color: string, source: T.MeshStandardMaterial) {
+    let m = this.rareTints.get(color);
+    if (!m) { m = this.countMaterial(source.clone()); m.color.set(color); this.rareTints.set(color, m); }
+    return m;
+  }
+  private readonly rareTints = new Map<string, T.MeshStandardMaterial>();
   /** Clones `object`'s tint meshes onto the model's tint materials and records each mesh's base material. */
   private prepare(object: T.Group, spec: PartSpec) {
     object.traverse(node => {
       if (!(node instanceof T.Mesh) || Array.isArray(node.material)) return;
-      if (node.material.name === 'Tide_tint') node.material = this.tint(spec.tint, node.material as T.MeshStandardMaterial);
+      if (node.material.name === 'Tide_tint') node.material = spec.modelTint ? this.rareTint(spec.modelTint, node.material as T.MeshStandardMaterial) : this.tint(spec.tint, node.material as T.MeshStandardMaterial);
       node.userData.baseMaterial = node.material;
     });
   }
@@ -140,7 +147,7 @@ export class CreatureModel {
   }
   private attach(placed: PlacedPart, copy: 0 | 1) {
     const spec = part(placed.id); if (!spec) return;
-    const object = asset(`part_${placed.id}`);
+    const object = asset(`part_${modelOf(placed.id)}`);
     this.prepare(object, spec);
     const pivots: Pivot[] = [];
     object.traverse(node => {
@@ -213,7 +220,7 @@ export class CreatureModel {
     if (!pool) { pool = []; this.ghostPool.set(placed.id, pool); }
     const copies = placed.mirror ? 2 : 1;
     while (pool.length < copies) {
-      const object = asset(`part_${placed.id}`);
+      const object = asset(`part_${modelOf(placed.id)}`);
       this.prepare(object, spec);
       object.userData.ghost = true;
       object.traverse(node => { if (node instanceof T.Mesh && !Array.isArray(node.material)) node.material = this.styledMaterial('ghost', node.userData.baseMaterial as T.Material); });
@@ -256,7 +263,7 @@ export class CreatureModel {
   setFlash(on: boolean) {
     if (on === (this.unflashed.size > 0)) return;
     if (!on) { for (const [m, e] of this.unflashed) { m.emissive.copy(e.color); m.emissiveIntensity = e.intensity; } this.unflashed.clear(); return; }
-    for (const m of [this.bodyMaterial, ...this.tints.values()]) { this.unflashed.set(m, { color: m.emissive.clone(), intensity: m.emissiveIntensity }); m.emissive.set('#ffffff'); m.emissiveIntensity = .8; }
+    for (const m of [this.bodyMaterial, ...this.tints.values(), ...this.rareTints.values()]) { this.unflashed.set(m, { color: m.emissive.clone(), intensity: m.emissiveIntensity }); m.emissive.set('#ffffff'); m.emissiveIntensity = .8; }
   }
   /** Procedural motion. `chomp` is 0–1, `swim` is 0 when idle and 1 when moving. */
   animate(time: number, swim: number, chomp: number) {
@@ -277,8 +284,8 @@ export class CreatureModel {
   get length() { return this.layout.front - this.layout.rear; }
   dispose() {
     this.body.geometry.dispose(); this.counters.disposedGeometries++; this.body.skeleton.dispose();
-    for (const m of [this.bodyMaterial, ...this.tints.values(), ...this.styled.values()]) { m.dispose(); this.counters.disposedMaterials++; }
-    this.tints.clear(); this.styled.clear();
+    for (const m of [this.bodyMaterial, ...this.tints.values(), ...this.rareTints.values(), ...this.styled.values()]) { m.dispose(); this.counters.disposedMaterials++; }
+    this.tints.clear(); this.rareTints.clear(); this.styled.clear();
     this.group.removeFromParent();
   }
 }

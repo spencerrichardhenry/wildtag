@@ -497,6 +497,8 @@ export class CombatWorld {
         inLair: ai.home && c.behaviour.lair ? Math.hypot(p.centre.x - ai.home.x, p.centre.z - ai.home.z) <= c.behaviour.lair.radiusBodyLengths * L : undefined,
         tokenRetryAt: c.tokenRetryAt,
       });
+      // An alpha has no ecosystem pursuit (its lair is its leash): its mode mirrors the AI, engaged ('angry') unless idle or resetting.
+      if (e.spec.alpha) { const mode = ai.name === 'idle' || ai.name === 'reset' ? 'calm' : 'angry'; if (e.mode !== mode) { e.mode = mode; e.modeTime = 0; } }
       if (out.roar) {   // a phase change: the roar starts at once and cancels a busy action (its token returns; no cooldown)
         for (const a of c.rt.actions) { if (a.phase === 'interrupted') continue; if (a.heldTarget === PLAYER_ID) { endHold(c.rt, a); p.rt.heldBy = null; p.rt.breakProgress = 0; } endNow(c.rt, a, 0); this.director.release(a.instanceId); }
         c.immuneUntil = now + ROAR_SECONDS; res.roars.push(e);

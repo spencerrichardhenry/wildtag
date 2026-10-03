@@ -5,9 +5,12 @@ import { makeBiomes, PLAYER_HALF, populate, seabedHeight, SIZES, SPAWN_HALF, spa
 import { EDGE_SOFT_START } from './edge';
 import type { Actor, AdmissionContext, Capsule, ContactHazard, LegalityContext, MotionRequest, MovementMode, MutVec3, Orientation, PursuitPolicy, Vec3, WorldQueries } from './combat-types';
 import { findRecoveryPose, projectVelocity, resolveMotion } from './motion';
-import { speciesActor } from './mount';
+import { playerActor, speciesActor } from './mount';
 import { habitat, movement, pursuit } from './profiles';
 import { HAZARDS } from './registries';
+import { BEHAVIOURS } from './bestiary';
+import { starterFor } from './genome';
+import { PLANS } from './plans';
 import type { Species } from './species';
 import { stageSolids } from './reef';
 import { stageWorldQueries, supportHeight } from './world-queries';
@@ -47,6 +50,8 @@ export interface EcoContext {
   playerHull: readonly Capsule[];
   /** False while the player can not be noticed (menu, evolving, fainted). */
   perceivable: boolean; stealthFactor: number;
+  /** The run's unlocked parts: an alpha whose reward part is unlocked was defeated and is gone for the run (spec §10.4, D23). */
+  unlocked?: readonly string[];
 }
 /** Damage acceptance is not decided here; the damage resolution accepts or rejects every event. */
 export interface EcoEvent { type: 'hazard'; entity: Entity; hazard: ContactHazard; damage: number; point: Vec3; normal: Vec3; time: number }
@@ -74,8 +79,25 @@ const pursuitState = () => ({ lastKnown: null, lastKnownHull: null, lastSeenAt: 
 /** A spawn point inside a reef solid of its tier, grown by the body radius (owner playtest P4), is rejected. */
 const inReef = (seed: number) => (tier: number, x: number, y: number, z: number) => stageSolids(tier, seed).solidAt(x, y, z, .7 * SIZES[tier]!) !== null;
 
+/** The longest player at a size (plan review R15): the fully grown (× 1.38) starter of each plan of that size. */
+const longestPlayer = new Map<number, number>();
+function longestPlayerAt(size: number): number {
+  let L = longestPlayer.get(size);
+  if (L === undefined) { L = Math.max(...PLANS.filter(p => p.size === size).map(p => playerActor(p, starterFor(p), size, 1.38).bodyLength)); longestPlayer.set(size, L); }
+  return L;
+}
+/** An alpha's lair centre (spec §11.2, plan review R15; physical units, on the seabed). The spec's point (radius (22 + 8 × rand) × S around the
+ *  world centre) could put the start anchor inside the lair, so the lair is pushed away from the anchor (found next to the world centre): its
+ *  centre is resetOutsideFactor × the lair radius + 5 longest player body lengths + (1 + rand) × S from the centre, near a diagonal
+ *  (angle π/4 + k π/2 ± .05) so that the whole lair stays inside the spawn square. Installation then finds the nearest admitted pose (≤ 4 L). */
+export function lairOf(seed: number, e: { id: number; spec: Species }): Vec3 {
+  const a = e.spec.alpha!, S = SIZES[a.size]!, lair = BEHAVIOURS[e.spec.behaviourId!]!.lair!, radius = lair.radiusBodyLengths * speciesActor(e).bodyLength;
+  const rand = random(seed * 131 + e.id * 7 + 3), angle = Math.PI / 4 + Math.floor(4 * rand()) * Math.PI / 2 + (rand() - .5) * .1;
+  const d = lair.resetOutsideFactor * radius + 5 * longestPlayerAt(a.size) + (1 + rand()) * S, x = Math.sin(angle) * d, z = Math.cos(angle) * d;
+  return { x, y: seabedHeight(x, z) + .35 * SIZES[e.spec.tier]! * (e.spec.bodyScale ?? 1), z };
+}
 export function makeEntities(seed: number): Entity[] {
-  return populate(seed, inReef(seed)).map(spawn => ({
+  return populate(seed, inReef(seed)).map(spawn => spawn.spec.alpha ? { ...spawn, ...lairOf(seed, spawn) } : spawn).map(spawn => ({
     id: spawn.id, spec: spawn.spec, x: spawn.x, y: spawn.y, z: spawn.z, hx: spawn.x, hy: spawn.y, hz: spawn.z,
     groundOffset: spawn.y - seabedHeight(spawn.x, spawn.z), heading: spawn.phase, phase: spawn.phase,
     hp: spawn.spec.hp, eaten: false, respawn: -1, mode: 'calm', modeTime: 0, active: false, ...pursuitState(),
@@ -197,7 +219,8 @@ export class Ecosystem {
   consume(e: Entity) {
     e.eaten = true; e.mode = 'calm'; e.modeTime = 0; e.combat = null;
     const [lo, hi] = e.spec.hunts.includes(this.stage) ? HUNTER_RESPAWN_TIME : RESPAWN_TIME;
-    e.respawn = e.spec.kind === 'planet' ? -1 : lo + this.rand() * (hi - lo);
+    // Planets and alphas never come back (an alpha's defeat unlocks its part: it is gone for the run).
+    e.respawn = e.spec.kind === 'planet' || e.spec.alpha ? -1 : lo + this.rand() * (hi - lo);
   }
 
   /** The end of the faint give-up window (D27); world time. */
@@ -228,6 +251,16 @@ export class Ecosystem {
   step(ctx: EcoContext): EcoEvent[] {
     const events: EcoEvent[] = []; this.stage = ctx.stage;
     for (const e of this.entities) {
+      // An alpha is present only while the player's size is its own and its reward part is locked (spec §10.4); back at its lair, fresh.
+      if (e.spec.alpha) {
+        const present = ctx.stage === e.spec.alpha.size && !(ctx.unlocked ?? []).includes(e.spec.alpha.rewardPartId);
+        if (!present) { if (!e.eaten) { e.eaten = true; e.combat = null; this.setMode(e, 'calm'); } e.respawn = -1; e.active = false; continue; }
+        if (e.eaten) {
+          const lair = lairOf(this.seed, e);
+          Object.assign(e, lair, { hx: lair.x, hy: lair.y, hz: lair.z, groundOffset: lair.y - seabedHeight(lair.x, lair.z), hp: e.spec.hp, eaten: false, respawn: -1, mode: 'calm' as Mode, modeTime: 0, combat: null, ...pursuitState() });
+          if (!this.install(e)) continue;
+        }
+      }
       const relevant = Math.abs(e.spec.tier - ctx.stage) <= 1;
       if (e.eaten) { e.active = relevant; this.tickRespawn(e, ctx); continue; }
       e.modeTime += ctx.dt;
@@ -265,6 +298,9 @@ export class Ecosystem {
   private think(e: Entity, ctx: EcoContext): boolean {
     const spec = e.spec, now = ctx.now, p = ctx.player;
     const distance = Math.hypot(p.x - e.x, p.y - e.y, p.z - e.z), perceived = this.perceives(e, ctx, distance);
+    // An alpha has no pursuit (T14/T16 carry): its lair is its leash and its AI decides (the combat world mirrors the AI state into `mode`).
+    // So no acquisition, no give-up, and no full heal on a return to calm (it heals by the lair reset, D37).
+    if (spec.alpha) return perceived;
     if (e.mode === 'hunt' || e.mode === 'angry') {
       if (perceived) remember(e, p, now, ctx.playerHull);
       this.updateReachability(e, now);

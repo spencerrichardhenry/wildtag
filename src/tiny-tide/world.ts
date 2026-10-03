@@ -41,6 +41,8 @@ function speciesPrefab(model: FoodKind, key: string): T.Group {
 const IMPACT_POOL = 64;
 /** Pose cues (spec §9.1 item 4) at full wind-up: rear back 15°, crouch to .8 height, inflate × 1.35, coil to .75 length, sink half a size into
  *  the sand, spin up to 12 rad/s. */
+/** An alpha under the sand: its model sinks by this × its size (fully buried), and the dust trail puffs every DUST_EVERY seconds. */
+const SUNK_DEPTH = .8, DUST_EVERY = .15;
 const CUE_REAR = 15 * Math.PI / 180, CUE_CROUCH = .2, CUE_INFLATE = .35, CUE_COIL = .25, CUE_BURROW = .5, CUE_SPIN = 12;
 // The soft world edge (edge.ts): in the push zone the water gets darker and foggier, and scenery past the hard bound
 // (render units = stage-local units, so the bound is at ±PLAYER_HALF) fades into the fog colour.
@@ -87,6 +89,9 @@ export class TideWorld {
   private readonly flashUntil = new Map<number | 'player', number>();
   private readonly cues = new Map<number, { cue: TelegraphView['cue']; t: number; flash: boolean }>();
   private frozen: { player: boolean; entities: ReadonlySet<number> } = { player: false, entities: new Set() };
+  /** Alphas under the sand (the burrow pattern, spec §11.6): their model sinks and a dust trail shows on the seabed. */
+  private sunk: ReadonlyMap<number, number> = new Map();
+  private dustClock = 0;
   private worldTime = 0;
   private readonly impacts: { mesh: T.Mesh<T.SphereGeometry, T.MeshBasicMaterial>; life: number; velocity: T.Vector3 }[] = [];
   private nextImpact = 0;
@@ -348,8 +353,8 @@ export class TideWorld {
   /** Camera shake (1 = the hurt shake); none under reduced motion. */
   shakeBy(amount: number) { if (!this.reducedMotion) this.shake = Math.max(this.shake, amount); }
   /** This frame's telegraphs (volumes and pose cues) and the actors in a hit-stop (their animation stops). */
-  setCombatView(views: readonly TelegraphView[], frozen: { player: boolean; entities: ReadonlySet<number> }) {
-    this.telegraphs.update(views, .03 * this.scale); this.frozen = frozen; this.cues.clear();
+  setCombatView(views: readonly TelegraphView[], frozen: { player: boolean; entities: ReadonlySet<number> }, sunk: ReadonlyMap<number, number> = new Map()) {
+    this.telegraphs.update(views, .03 * this.scale); this.frozen = frozen; this.sunk = sunk; this.cues.clear();
     for (const v of views) this.cues.set(v.entityId, { cue: v.cue, t: v.phase === 'windup' ? v.fill : 1, flash: v.flash });
   }
   /** Impact particles at a render-unit point, from the pool (no allocation after the first use). */
@@ -494,11 +499,17 @@ export class TideWorld {
         else if (cue.cue === 'spin' && !this.frozen.entities.has(e.id)) f.model.rotation.y += CUE_SPIN * t * dt;
       }
       if (cue?.cue !== 'rear' && f.model.rotation.x !== 0) f.model.rotation.x = 0;
+      const depth = this.sunk.get(e.id);
+      if (depth !== undefined) {
+        f.model.position.y -= SUNK_DEPTH * size * depth;
+        if (this.dustClock <= 0 && depth > .5) this.impact(e.x / this.scale, seabedHeight(e.x, e.z) / this.scale + .05, e.z / this.scale, '#d8c49a', 5);
+      }
       if (this.frozen.entities.has(e.id)) continue;
       if (f.tier === 0) f.model.rotation.z = Math.sin(time * 1.7 + f.data.phase) * .1;
       else if (kind === 'planet') f.model.rotation.y += dt * .07;
       else if (kind === 'boat') f.model.rotation.z = Math.sin(time * 1.1 + f.data.phase) * .04;
     }
+    this.dustClock = this.dustClock <= 0 ? DUST_EVERY : this.dustClock - dt;
     for (const set of this.instances) {
       // Future giants remain visible without casting an ocean-sized shadow
       // across the tiny player's entire habitat.

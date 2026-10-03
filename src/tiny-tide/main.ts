@@ -17,7 +17,8 @@ import { cardSummary, COAST_READY, eligibleChildren, leadsTo, type BodyPlan } fr
 import { quoteDesign } from './economy';
 import { newRuntime, type Actor, type CombatInput, type Constraint, type Tuple4, type Vec3, type WorldQueries } from './combat-types';
 import { aimChevron, aimPitch, autoAim, BRACE_AUTO_AIM_HALF_ANGLE, dragAim, mouseButtons, NO_MOUSE, pitched, pointerAim, POINTER_FRESH_SECONDS, readIntent, RELEASED, type AimCandidate, type AimSource, type MouseState } from './input';
-import { CombatHud, CombatOverlay, EdgeArrowMemory, edgeArrowAt, faintMessage, FLOATER_COLOURS, floaterClass, floaterText, HP_BAR_SECONDS, slotViews, type EdgeArrow, type HpBar } from './combat-hud';
+import { BURROW } from './bestiary';
+import { AlphaBar, alphaView, CombatHud, CombatOverlay, EdgeArrowMemory, edgeArrowAt, faintMessage, FLOATER_COLOURS, floaterClass, floaterText, HP_BAR_SECONDS, slotViews, type AlphaView, type EdgeArrow, type HpBar } from './combat-hud';
 import { forwardOf } from './orientation';
 import { blockHint, blockHintDue, newBlockHintGate, PITCH_LIMIT, type PlayerStepResult, newTapWatch, tapTargetStalled } from './player-motion';
 import { canChooseNextPlan, evolutionDestination, reconcileAfterCommit } from './lifecycle';
@@ -92,7 +93,7 @@ app.innerHTML = `
 const el = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 /** A touch-first device (no fine pointer): the camera turns with a swipe, not a middle drag (spec §8.1). */
 const coarsePointer = () => matchMedia('(pointer: coarse)').matches;
-const combatHud = new CombatHud(document.querySelector<HTMLElement>('#game-ui .actions')!), overlay = new CombatOverlay(document.getElementById('game-ui')!);
+const combatHud = new CombatHud(document.querySelector<HTMLElement>('#game-ui .actions')!), overlay = new CombatOverlay(document.getElementById('game-ui')!), alphaBar = new AlphaBar(document.getElementById('game-ui')!);
 /** Reduced motion follows the OS setting only (D31): no camera shake. */
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 /** This frame's telegraphs (read-only diagnostics), the ones whose edge arrow shows, and the edge-arrow memory. */
@@ -354,7 +355,8 @@ function syncHearts() {
 function presentKill(e: Entity, dna: number, drop: string | null) {
   const food = world.foods.find(f => f.entity === e);
   if (food) { const pos = world.screenPoint(new T.Vector3(food.data.x, food.data.y + 1, food.data.z)); if (pos.visible) floater(dna > 0 ? `+${dna} DNA` : 'Driven off!', pos.x, pos.y); }
-  if (drop) { toast(`New part found: ${part(drop)!.name}! Open the editor to use it.`); audio.found(); }
+  if (drop && e.spec.alpha) { toast(`You defeated the ${e.spec.label}! +${dna} DNA and a RARE part: ${part(drop)!.name}.`); audio.found(); }
+  else if (drop) { toast(`New part found: ${part(drop)!.name}! Open the editor to use it.`); audio.found(); }
   if (evolveReady(run) && !readyToasted) { readyToasted = true; toast('Ready to evolve! Tap Evolve when you want to grow.'); audio.found(); }
 }
 /** The survivor bonus (spec §10.4, D22): a DNA floater at the hunter and a toast. */
@@ -619,11 +621,18 @@ function presentCombat(t: CombatTick) {
 }
 /** The bottom of the top HUD band (the stage card, the growth card and the objective), in CSS pixels: world-anchored labels (threat
  *  markers, HP bars) stay below it (T16b live look: over a close crab they sat on the DNA bar and the objective). */
-let bandCache = { frame: -1, bottom: 90 };
-function hudBand(): number {
-  if (bandCache.frame !== frameNo) bandCache = { frame: frameNo, bottom: Math.max(90, ...['.stage-card', '.growth-card', '#objective'].map(q => document.querySelector(q)?.getBoundingClientRect().bottom ?? 0)) };
-  return bandCache.bottom;
+let bandCache = { frame: -1, bottom: 90, alpha: 0 };
+function bandNow() {
+  if (bandCache.frame !== frameNo) {
+    const a = alphaBar.root, r = a.hidden ? null : a.getBoundingClientRect();
+    bandCache = { frame: frameNo, bottom: Math.max(90, ...['.stage-card', '.growth-card', '#objective'].map(q => document.querySelector(q)?.getBoundingClientRect().bottom ?? 0)), alpha: r ? r.bottom : 0 };
+  }
+  return bandCache;
 }
+/** The top HUD band without the alpha bar (the alpha bar sits just below it). */
+const baseBand = () => bandNow().bottom;
+/** The top HUD band, the alpha bar included while it shows (T17 live look: labels and HP bars sat on it). */
+function hudBand(): number { const b = bandNow(); return Math.max(b.bottom, b.alpha); }
 /** The threat marker box (CSS: a 26 px "!" over an 8 px label, translate(-50%, -100%), a 6 px bob): its height in pixels. */
 const MARKER_HEIGHT = 52;
 /** The bottom of each entity's threat marker this frame (screen pixels): its HP bar goes at least 4 px below it. */
@@ -642,21 +651,34 @@ function onScreen(p: Vec3): boolean {
   const s = world.screenPoint(new T.Vector3(p.x, p.y, p.z).divideScalar(world.scale));
   return s.visible && s.x >= 0 && s.y >= 0 && s.x <= innerWidth && s.y <= innerHeight;
 }
+/** The alpha bar's content this frame (read-only diagnostics). */
+let shownAlpha: AlphaView | null = null;
 /** Every frame: telegraph volumes and pose cues, hit-stop freezes, the wind-up tone, HP bars, edge arrows and the break-free prompt.
  *  Reads the simulation only. */
 function presentCombatView() {
   const playing = mode === 'playing' || mode === 'fainted' || mode === 'evolving';
   world.reducedMotion = reducedMotion.matches;
   telegraphViews = playing ? sim.combat.telegraphs(time, onScreen, seabedHeight) : [];
-  const frozen = new Set<number>();
-  for (const c of sim.combat.entities.values()) if (time < c.rt.hitStopUntil) frozen.add(c.entity.id);
-  world.setCombatView(telegraphViews, { player: time < rt.hitStopUntil, entities: frozen });
+  const frozen = new Set<number>(), sunk = new Map<number, number>();
+  for (const c of sim.combat.entities.values()) {
+    if (time < c.rt.hitStopUntil) frozen.add(c.entity.id);
+    // The Clawmother under the sand (spec §11.6): it sinks over the sink time, stays under while it travels, and rises over the emerge wind-up.
+    const ai = c.ai, id = c.entity.id;
+    if (ai?.name === 'sink') sunk.set(id, Math.min(1, (time - ai.since) / BURROW.sinkSeconds));
+    else if (ai?.name === 'burrowed') sunk.set(id, 1);
+    else if (ai?.name === 'emerge') { const v = telegraphViews.find(t => t.entityId === id && t.phase === 'windup'); if (v) sunk.set(id, 1 - v.fill); }
+  }
+  world.setCombatView(telegraphViews, { player: time < rt.hitStopUntil, entities: frozen }, sunk);
+  const alpha = shownAlpha = playing ? alphaView(sim.combat.entities.values(), sim.physical) : null;
+  if (alpha) alphaBar.root.style.top = `${baseBand() + 8}px`;
+  alphaBar.sync(alpha);
   arrowed = arrowMemory.update(telegraphViews);
   audio.windupTones(new Map(telegraphViews.filter(v => v.phase === 'windup' && v.targetsPlayer).map(v => [v.actionId, v.fill])));
   const bars: HpBar[] = [], arrows: EdgeArrow[] = [];
   let band: number | undefined;
   if (playing) for (const c of sim.combat.entities.values()) {
     if (c.entity.eaten || !c.entity.active || time - c.lastDamagedAt > HP_BAR_SECONDS) continue;
+    if (alpha && c.entity.spec.alpha) continue;   // the alpha bar shows its HP
     const top = world.screenPoint(new T.Vector3(c.entity.x, c.entity.y + .9 * SIZES[c.entity.spec.tier]!, c.entity.z).divideScalar(world.scale));
     if (!top.visible) continue;
     const below = markerBottoms.get(c.entity.id), bar = { x: top.x, y: Math.max(top.y, (band ??= hudBand()) + 12), fraction: c.entity.hp / c.maxHp };
@@ -1002,6 +1024,7 @@ function combatDiagnostics() {
     hits: sim.combat.log.map(e => ({ outcome: e.outcome, attacker: e.attackerId, target: e.targetId, attack: e.attackId, amount: e.amount, unit: e.unit, time: e.time })),
     slots: sim.moves ? [...sim.moves.slots.slots] : [], tokens: sim.combat.director.tokens.map(t => ({ ...t })),
     heldBy: rt.heldBy, breakProgress: rt.breakProgress, hp: Object.fromEntries([...sim.combat.entities.values()].map(c => [c.id, c.entity.hp])), reducedMotion: reducedMotion.matches,
+    alpha: shownAlpha && { ...shownAlpha }, ai: Object.fromEntries([...sim.combat.entities.values()].filter(c => c.entity.spec.alpha).map(c => [c.id, { name: c.ai?.name ?? null, phase: c.ai?.phase ?? 0, eaten: c.entity.eaten, x: c.entity.x / world.scale, y: c.entity.y / world.scale, z: c.entity.z / world.scale }])),
   };
 }
 // Read-only diagnostics allow browser verification to steer with real controls.

@@ -3,7 +3,8 @@
 import './controls.css';
 import type { CombatRuntime, HitOutcome, MoveKind } from './combat-types';
 import { damageText } from './combat-profiles';
-import { PLAYER_ID, type TelegraphView } from './combat-world';
+import { PLAYER_ID, type EntityCombat, type TelegraphView } from './combat-world';
+import { speciesActor } from './mount';
 import type { MoveSet, SlotAssignment } from './moves';
 
 const svg = (body: string) => `<svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
@@ -112,6 +113,37 @@ export class CombatOverlay {
     this.prompt.hidden = breakProgress === null;
     const step = breakProgress === null ? -1 : Math.round(Math.min(1, breakProgress) * 40);
     if (step !== this.shownBreak) { this.shownBreak = step; if (step >= 0) this.ring.style.background = `conic-gradient(#fff2b3 ${step * 9}deg, #ffffff33 0)`; }
+  }
+}
+/** The alpha bar's content (spec §9.3): the name, the HP fraction and the phase (0-based) of `phases`. */
+export interface AlphaView { name: string; fraction: number; phase: number; phases: number }
+/** The alpha the player is near: inside resetOutsideFactor (1.5) × the lair radius of its lair centre (horizontal; physical units). An alpha
+ *  before its first AI tick has no lair centre yet and shows no bar. */
+export function alphaView(combats: Iterable<EntityCombat>, player: { x: number; z: number }): AlphaView | null {
+  for (const c of combats) {
+    const e = c.entity, lair = c.behaviour.lair, home = c.ai?.home;
+    if (!e.spec.alpha || !lair || !home || e.eaten) continue;
+    if (Math.hypot(player.x - home.x, player.z - home.z) > lair.resetOutsideFactor * lair.radiusBodyLengths * speciesActor(e).bodyLength) continue;
+    return { name: e.spec.label, fraction: Math.max(0, e.hp / c.maxHp), phase: c.ai?.phase ?? 0, phases: c.behaviour.phases?.length ?? 1 };
+  }
+  return null;
+}
+/** The alpha bar at the top centre: the name, the HP bar and the phase pips (the current phase and those before it lit). Writes on a change. */
+export class AlphaBar {
+  readonly root = document.createElement('div');
+  private shown = '';
+  constructor(host: HTMLElement) {
+    this.root.id = 'alpha-bar'; this.root.hidden = true; this.root.setAttribute('role', 'status');
+    this.root.innerHTML = '<strong></strong><i class="alpha-hp"><b></b></i><span class="alpha-pips"></span>';
+    host.append(this.root);
+  }
+  sync(v: AlphaView | null): void {
+    const key = v ? `${v.name}|${Math.round(v.fraction * 200)}|${v.phase}|${v.phases}` : '';
+    if (key === this.shown) return; this.shown = key;
+    this.root.hidden = v === null; if (!v) return;
+    this.root.querySelector('strong')!.textContent = v.name;
+    (this.root.querySelector('.alpha-hp b') as HTMLElement).style.width = `${Math.max(0, Math.min(1, v.fraction)) * 100}%`;
+    this.root.querySelector('.alpha-pips')!.innerHTML = Array.from({ length: v.phases }, (_, i) => `<i class="${i <= v.phase ? 'on' : ''}"></i>`).join('');
   }
 }
 /** Where an edge arrow sits (screen pixels): on an ellipse 36 px inside the screen edge, toward the off-screen point; a point behind the
