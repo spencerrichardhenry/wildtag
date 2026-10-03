@@ -28,7 +28,7 @@ import { freshRun, type Run } from '../../src/tiny-tide/state';
 import { readIntent, RELEASED, type InputSources } from '../../src/tiny-tide/input';
 import { stageBounds, stageWorldQueries } from '../../src/tiny-tide/world-queries';
 import type { CombatInput, Vec3 } from '../../src/tiny-tide/combat-types';
-import { newSimState, playerActorCached, qaAlphaHealth, qaEncounter, simBegin, simFrame, type SimWorld } from '../../src/tiny-tide/sim';
+import { newSimState, playerActorCached, qaAlphaHealth, qaCrowd, qaEncounter, simBegin, simFrame, type SimWorld } from '../../src/tiny-tide/sim';
 
 const GOLDEN = 'tests/tiny-tide-core/sim-golden.json', DT = 1 / 60;
 /** `rescues`: trap rescues found so far (each starts a glide). */
@@ -128,6 +128,21 @@ describe('QA parameters (spec §14.2)', () => {
     const want = { x: s.physical.x + Math.sin(yaw) * 3 * L, z: s.physical.z + Math.cos(yaw) * 3 * L };
     expect(Math.hypot(crab.x - want.x, crab.z - want.z)).toBeLessThanOrEqual(4 * SIZES[1]! * 1.4);   // recovery searches within 4 crab body lengths
     expect(qaEncounter(s, w, '9:none')).toBeNull();
+  });
+  it('qaCrowd installs every live instance of the listed species on a ring of 3 player L around the player, in calm', () => {
+    const run = freshRun(7); run.stage = 1;
+    const w = world(7), s = newSimState(run);
+    w.eco.reset(run.eatenPlanets); simBegin(s, w, run, null);
+    const keys = ['1:sardine', '1:puffer'], live = w.eco.entities.filter(e => !e.eaten && keys.includes(e.spec.key)).length;
+    const ids = qaCrowd(s, w, keys), L = playerActorCached(s).bodyLength;
+    expect(live).toBeGreaterThanOrEqual(13); expect(ids.length).toBeGreaterThanOrEqual(13);
+    for (const id of ids) {
+      const e = w.eco.entities.find(x => x.id === id)!;
+      expect(keys).toContain(e.spec.key); expect(e.mode).toBe('calm');
+      const r = Math.hypot(e.x - s.physical.x, e.z - s.physical.z);   // recovery may move each body within 4 of its own body lengths
+      expect(r).toBeGreaterThan(3 * L - 4 * SIZES[1]! * 1.4); expect(r).toBeLessThan(3 * L + 4 * SIZES[1]! * 1.4);
+    }
+    expect(qaCrowd(s, w, ['9:none'])).toEqual([]);
   });
   it('qaAlphaHealth starts every alpha at that fraction of its HP', () => {
     const w = world(7); qaAlphaHealth(w, .62);

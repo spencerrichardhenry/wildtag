@@ -95,9 +95,14 @@ export function makeFixture(spec: FixtureSpec = {}): Fixture {
   let funded = false;
   /** Construction money, so that every design is affordable; the wallet is set at the end. */
   const fund = () => { if (!funded) { run.economy = { ...run.economy, wallet: { banked: run.economy.wallet.banked + 100000, atRisk: 0 } }; funded = true; } };
-  if (spec.add?.[0] || spec.mouth?.[0]) {
+  // A size-0 mouth is the start's choice: it is set on the fresh run with its diet (applyDesign refuses a diet change between evolutions).
+  if (spec.mouth?.[0]) {
+    const m = run.genome.parts.find(p => part(p.id)?.kind === 'mouth'); if (!m) throw new Error('fixture: no mouth to swap');
+    m.id = spec.mouth[0]; run.diet = part(spec.mouth[0])?.diet ?? run.diet;
+  }
+  if (spec.add?.[0]) {
     fund();
-    const d = design(run.genome, run.nextPartSerial, spec.mouth?.[0], spec.add?.[0]);
+    const d = design(run.genome, run.nextPartSerial, undefined, spec.add?.[0]);
     const r = applyDesign(run, d.genome, run.name, build, d.next, catalog);
     if (!r.ok) throw new Error(`fixture: stage 0 design: ${r.reason}`);
   }

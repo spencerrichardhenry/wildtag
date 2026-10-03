@@ -22,7 +22,7 @@ import { AlphaBar, alphaView, CombatHud, CombatOverlay, EdgeArrowMemory, edgeArr
 import { forwardOf } from './orientation';
 import { blockHint, blockHintDue, newBlockHintGate, PITCH_LIMIT, type PlayerStepResult, newTapWatch, tapTargetStalled } from './player-motion';
 import { canChooseNextPlan, evolutionDestination, reconcileAfterCommit } from './lifecycle';
-import { admitted as simAdmitted, checkPose, playerActorCached as simActor, qaAlphaHealth, qaEncounter, refreshDerived as simRefreshDerived, simBegin, simEvolve, simFrame, simOwnedState, simSuspend, worldHull as simWorldHull, type GameMode, type SimEvent, type SimState, type SimWorld } from './sim';
+import { admitted as simAdmitted, checkPose, playerActorCached as simActor, qaAlphaHealth, qaCrowd, qaEncounter, refreshDerived as simRefreshDerived, simBegin, simEvolve, simFrame, simOwnedState, simSuspend, worldHull as simWorldHull, type GameMode, type SimEvent, type SimState, type SimWorld } from './sim';
 import { hintIcon, Hints, hintText, type HintId, type HintStorage } from './hints';
 import type { ChompResult } from './feeding';
 import { PLAYER_ID, type CombatTick, type TelegraphView } from './combat-world';
@@ -137,6 +137,11 @@ let qaHoldStart = qaParams.get('qaHoldStart') === '1';
 let qaEncounterKey = qaParams.get('qaEncounter');
 /** The entity that `qaEncounter` installed (diagnostics). */
 let qaEncounterId: number | null = null;
+/** `?qaCrowd=<species key>,<species key>…` (for example `1:sardine,1:puffer`): at the first start of this page load, every live non-alpha
+ *  instance of those species is installed on a ring of 3 player body lengths around the player, in calm (the frame-time check, review R18). */
+let qaCrowdKeys: string[] | null = qaParams.get('qaCrowd')?.split(',').filter(Boolean) ?? null;
+/** The entities that `qaCrowd` installed (diagnostics). */
+let qaCrowdIds: number[] = [];
 /** `?qaAlphaHealth=<0..1>`: at the first start of this page load, every live alpha starts with that fraction of its HP (at least 1). */
 let qaAlpha: number | null = (() => { const v = Number(qaParams.get('qaAlphaHealth')); return qaParams.has('qaAlphaHealth') && Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : null; })();
 /** The part catalog (every shipped part has its real grants since sub-project 3a; `?qaGrantCatalog` is gone, D32). */
@@ -438,6 +443,7 @@ function begin(fresh = false) {
   // QA, once per page load: the alpha health, then the encounter in front of the player.
   if (qaAlpha !== null) { qaAlphaHealth(simWorld, qaAlpha); qaAlpha = null; }
   if (qaEncounterKey !== null && mode === 'playing') { qaEncounterId = qaEncounter(sim, simWorld, qaEncounterKey); qaEncounterKey = null; }
+  if (qaCrowdKeys !== null && mode === 'playing') { qaCrowdIds = qaCrowd(sim, simWorld, qaCrowdKeys); qaCrowdKeys = null; }
   syncUI(); save();
   if (qaHoldStart) { qaHoldStart = false; holdingStart = true; }
 }
@@ -1121,7 +1127,7 @@ function combatDiagnostics() {
     slots: sim.moves ? [...sim.moves.slots.slots] : [], tokens: sim.combat.director.tokens.map(t => ({ ...t })),
     heldBy: rt.heldBy, breakProgress: rt.breakProgress, hp: Object.fromEntries([...sim.combat.entities.values()].map(c => [c.id, c.entity.hp])), reducedMotion: reducedMotion.matches,
     alphas: [...sim.combat.entities.values()].filter(c => c.entity.spec.alpha).map(c => ({ id: c.id, key: c.entity.spec.key, hp: c.entity.hp, maxHp: c.maxHp, phase: c.ai?.phase ?? 0, state: c.ai?.name ?? 'idle', eaten: c.entity.eaten })),
-    encounter: encounterView(), hints: [...hints.shown], aim: lastIntent.aim ? { ...lastIntent.aim } : null, aimSource: lastIntent.aimSource,
+    encounter: encounterView(), crowd: qaCrowdIds.map(id => world.eco.entities.find(x => x.id === id)).filter(e => !!e && !e.eaten).map(e => ({ id: e!.id, key: e!.spec.key, x: e!.x, y: e!.y, z: e!.z })), hints: [...hints.shown], aim: lastIntent.aim ? { ...lastIntent.aim } : null, aimSource: lastIntent.aimSource,
     alpha: shownAlpha && { ...shownAlpha }, ai: Object.fromEntries([...sim.combat.entities.values()].filter(c => c.entity.spec.alpha).map(c => [c.id, { name: c.ai?.name ?? null, phase: c.ai?.phase ?? 0, eaten: c.entity.eaten, x: c.entity.x / world.scale, y: c.entity.y / world.scale, z: c.entity.z / world.scale }])),
   };
 }

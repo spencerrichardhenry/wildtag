@@ -55,6 +55,7 @@ try {
  for(const viewport of [{width:320,height:568},{width:844,height:390}]) {await page.setViewportSize(viewport);await page.waitForTimeout(200);
   const boxes={};
   for(const sel of ['#joystick','#chomp','#special','#dive','#pause','#edit','#hearts','#slot-1','#slot-2','#slot-3','#slot-4']){if(sel.startsWith('#slot')&&!await page.locator(sel).isVisible())continue;const b=await page.locator(sel).boundingBox();assert.ok(b && b.x>=0 && b.y>=0 && b.x+b.width<=viewport.width+1 && b.y+b.height<=viewport.height+1,`${sel} fits ${viewport.width}x${viewport.height}`);boxes[sel]=b;}
+  for(const b of await page.locator('.slot-button:not([hidden])').all()){const r=await b.boundingBox();assert.ok(r.x>=0&&r.y>=0&&r.x+r.width<=viewport.width+1&&r.y+r.height<=viewport.height+1,`slot fits ${viewport.width}x${viewport.height}`);assert.ok(r.width>=48&&r.height>=48,`slot is at least 48×48 at ${viewport.width}x${viewport.height}`);}
   assert.ok(await page.locator('#slot-1').isVisible(),`slot 1 (the swimmer's Dash) shows at ${viewport.width}x${viewport.height}`);
   for(const sel of Object.keys(boxes).filter(k=>k.startsWith('#slot')))assert.ok(boxes[sel].width>=48&&boxes[sel].height>=48,`${sel} is at least 48x48`);
   assert.ok(boxes['#chomp'].width>=80&&boxes['#chomp'].height>=80,'the basic button is at least 80x80');

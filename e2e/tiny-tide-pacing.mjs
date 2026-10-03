@@ -18,7 +18,7 @@ import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, createWriteStream, unlinkSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { control, launch, makeFixture, openGame, start, state, watchErrors } from './fixtures/tiny-tide-fixtures.mjs';
+import { aimAt, control, dodge, launch, makeFixture, openGame, start, state, unreachableHunter, watchErrors } from './fixtures/tiny-tide-fixtures.mjs';
 
 const BRANCHES = {
   darter: ['swimmer', 'darter', 'sky_drifter', 'star_swimmer'],
@@ -44,7 +44,7 @@ const KNOWN_LIMITS = [
   'A single Spike at size 1 gives no mitigation: damage after armor is max(1, damage − floor(armor / 2)), and one Spike is armor 1.',
   "Shellback's Shell plate adds armor that today's hazards cannot use: Shellback already has armor 4 or more (2 from parts, +2 plan), so every hit already costs the 1-point minimum.",
   'The shopping lists are reference builds, not optimal ones.',
-  'The bot is the journey bot, not a person. It eats the nearest approachable food of its diet and does not flee hunters.',
+  'The bot is the journey bot, not a person. It eats the nearest approachable food of its diet, aims at it with the pointer, dodges telegraphed attacks (strafe and Dash) and does not flee hunters.',
   'Wall time depends on machine load. Compare the calibration runs (one at a time) with the same runs in the parallel batch.',
 ];
 const MAX_RUN_MINUTES = 90;
@@ -205,8 +205,11 @@ async function child(r, outFile = `${RUNS_DIR}/${runId(r)}.json`) {
           }
         }
       }
+      // The journey bot dodges a telegraphed attack first (spec §3.2, review R12): strafe and Dash, Space held.
+      if (await dodge(page, s)) continue;
       // The journey bot: the nearest approachable food of the diet. A target whose distance has not dropped by .5 in 3 s is skipped for 12 s.
-      const edible = s.foods.filter(f => !f.eaten && f.approachable === true && !(skipped.get(f.id) > s.time) && (f.tag === 'any' || s.diet === 'omnivore' || (s.diet === 'herbivore') === (f.tag === 'plant')));
+      // Review R12(5): no fight with a hunter the bot cannot reach.
+      const edible = s.foods.filter(f => !f.eaten && f.approachable === true && !unreachableHunter(s, f) && !(skipped.get(f.id) > s.time) && (f.tag === 'any' || s.diet === 'omnivore' || (s.diet === 'herbivore') === (f.tag === 'plant')));
       const reach = f => Math.hypot(f.x - s.player.x, f.z - s.player.z) + Math.abs(f.y - s.player.y);
       const sorted = edible.sort((a, b) => reach(a) - reach(b));
       let f = sorted.find(x => x.id === targetId);
@@ -222,6 +225,7 @@ async function child(r, outFile = `${RUNS_DIR}/${runId(r)}.json`) {
       if (s.caps.rise && !s.caps.breach && f.y - s.player.y > .8) { desired.push('KeyE'); up = true; }
       if (s.caps.dive && s.arc === null && s.player.y - f.y > .8) { desired.push('KeyQ'); up = true; }
       if (up) vertical.add(`${s.stage}:${f.id}`);
+      await aimAt(page, s, f);   // pointer aim at the target (T17 finding)
       await control(page, desired); await page.waitForTimeout(130);
       if (loops % 300 === 0) console.log('progress', { stage: s.stage, plan: s.plan, stageDna: s.stageDna, goal: s.goal, dna: s.dna, active: Math.round(s.elapsed), wallMin: ((Date.now() - t0) / 60000).toFixed(1) });
     }

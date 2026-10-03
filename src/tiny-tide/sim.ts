@@ -412,6 +412,18 @@ export function qaEncounter(s: SimState, w: SimWorld, key: string): number | nul
   }
   return best && w.eco.placeAt(best, at) ? best.id : null;
 }
+/** QA (`?qaCrowd=<species keys>`, T24 frame-time check, plan review R18): every live non-alpha instance of the listed species, of a tier next
+ *  to the stage, is installed on a ring of 3 player body lengths around the player, in calm (the ring order is the entity order). Returns the
+ *  ids of the installed entities (an instance without a legal pose there is left out). */
+export function qaCrowd(s: SimState, w: SimWorld, keys: readonly string[]): number[] {
+  const L = playerActorCached(s).bodyLength, p = s.physical, ids: number[] = [];
+  const crowd = w.eco.entities.filter(e => !e.eaten && !e.spec.alpha && keys.includes(e.spec.key) && Math.abs(e.spec.tier - s.run.stage) <= 1);
+  crowd.forEach((e, i) => {
+    const a = 2 * Math.PI * i / crowd.length;
+    if (w.eco.placeAt(e, { x: p.x + Math.sin(a) * 3 * L, y: p.y, z: p.z + Math.cos(a) * 3 * L })) ids.push(e.id);
+  });
+  return ids;
+}
 /** QA (`?qaAlphaHealth=<0..1>`, spec §14.2): every live alpha starts with that fraction of its HP (at least 1). */
 export function qaAlphaHealth(w: SimWorld, fraction: number): void {
   const f = Math.min(1, Math.max(0, fraction));

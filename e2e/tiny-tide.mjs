@@ -1,7 +1,7 @@
 import { chromium } from 'playwright';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
-import { GAME, makeFixture, toFixturePage } from './fixtures/tiny-tide-fixtures.mjs';
+import { aimAt, dodge, GAME, makeFixture, toFixturePage, unreachableHunter } from './fixtures/tiny-tide-fixtures.mjs';
 /** The evolution line of the journey: TIDE_LINE=crawler, else the swimmer line. */
 const LINE = process.env.TIDE_LINE === 'crawler' ? ['crawler', 'shellback', 'colossus', 'star_crawler'] : ['swimmer', 'darter', 'sky_drifter', 'star_swimmer'];
 const out = '.codex-drafts/tiny-tide-qa'; mkdirSync(out, { recursive: true });
@@ -108,7 +108,7 @@ try {
       for (const k of [...held]) if (!wanted.includes(k)) { await page.keyboard.up(k); held.delete(k); }
       for (const k of wanted) if (!held.has(k)) { await page.keyboard.down(k); held.add(k); }
     }
-    const eatenKinds = new Set(), diets = new Set(), skipped = new Map(); let loops = 0, targetId = null, lastStage = -1, sawHit = false, approach = { best: Infinity, since: 0 }, lastDna = -1, lastDnaLoop = 0;
+    const eatenKinds = new Set(), diets = new Set(), skipped = new Map(); let loops = 0, dodges = 0, targetId = null, lastStage = -1, sawHit = false, approach = { best: Infinity, since: 0 }, lastDna = -1, lastDnaLoop = 0;
     while (!(await state()).completed && loops++ < 8000) {
       s = await state();
       if (s.health < s.maxHealth) sawHit = true;
@@ -147,8 +147,11 @@ try {
         continue;
       }
       if (s.stage !== lastStage) { diets.add(`${s.stage}:${s.diet}`); await shot(`stage-${s.stage}`); console.log('Playing stage', s.stage, s.diet, 'dna', s.dna, 'render', s.render); lastStage = s.stage; }
+      // Dodge a telegraphed attack first (spec §3.2, review R12): strafe and Dash; Space stays held, so a combat species in the Bite cone is bitten back.
+      if (await dodge(page, s, control)) { dodges++; continue; }
       // Only approachable foods of the creature's diet. A target whose distance has not dropped by .5 in 3 s is dropped for a while.
-      const edible = s.foods.filter(f => !f.eaten && f.approachable === true && !(skipped.get(f.id) > s.time) && (f.tag === 'any' || s.diet === 'omnivore' || (s.diet === 'herbivore') === (f.tag === 'plant')));
+      // Review R12(5): no fight with a hunter the bot cannot reach (it is dodged, and the bot keeps feeding).
+      const edible = s.foods.filter(f => !f.eaten && f.approachable === true && !unreachableHunter(s, f) && !(skipped.get(f.id) > s.time) && (f.tag === 'any' || s.diet === 'omnivore' || (s.diet === 'herbivore') === (f.tag === 'plant')));
       const reach = f => Math.hypot(f.x - s.player.x, f.z - s.player.z) + Math.abs(f.y - s.player.y);
       const sorted = edible.sort((a, b) => reach(a) - reach(b));
       let f = sorted.find(f => f.id === targetId);
@@ -162,6 +165,7 @@ try {
       if (s.caps.breach && s.arc === null && ((f.kind === 'bird' && distance < 2.5) || (f.y - s.player.y > 1.6 && distance < 3))) await page.keyboard.press('KeyE');
       if (s.caps.rise && !s.caps.breach && f.y - s.player.y > .8) desired.push('KeyE');
       if (s.caps.dive && s.arc === null && s.player.y - f.y > .8) desired.push('KeyQ');
+      await aimAt(page, s, f);   // the bot aims at its target with the pointer (T17 finding: no keyboard-only aim)
       await control(desired); await page.waitForTimeout(130);
       const after = await state(); for (const food of s.foods) if (!after.foods.find(o => o.id === food.id) && after.stage === s.stage) eatenKinds.add(`${food.tier}:${food.kind}`);
       // A stall report: no DNA for 600 loops (about 80 s) prints what the bot sees.
@@ -180,7 +184,7 @@ try {
     assert.deepEqual([...diets], ['0:herbivore', '1:carnivore', '2:omnivore', '3:omnivore', '4:omnivore']);
     assert.ok(['0:plant', '0:kelp_snack', '0:seagrape', '0:lettuce'].some(k => eatenKinds.has(k)), 'Herbivore ate plants');
     assert.ok(['1:shrimp', '1:crab', '1:snail', '1:jellyfish'].some(k => eatenKinds.has(k)), 'Carnivore ate meat');
-    console.log('Hits taken during the journey:', sawHit, 'kinds', [...eatenKinds].join(' '));
+    console.log('Hits taken during the journey:', sawHit, 'dodges', dodges, 'faints', done.deaths, 'kinds', [...eatenKinds].join(' '));
     await page.getByRole('dialog', { name: /All full/ }).waitFor(); await shot('07-victory');
     await page.locator('#play-again').click();
     s = await state(); assert.equal(s.stage, 0); assert.equal(s.bites, 0); assert.equal(s.name, 'Little Tide'); assert.notEqual(s.world.seed, done.world.seed, 'A new adventure has a new world');

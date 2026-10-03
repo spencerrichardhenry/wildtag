@@ -93,6 +93,41 @@ export function steer(s, target, slack = .55) {
   if (lx > slack) keys.push('KeyD'); if (lx < -slack) keys.push('KeyA'); if (lz > slack) keys.push('KeyS'); if (lz < -slack) keys.push('KeyW');
   return keys;
 }
+/** The first species wind-up at the player: its telegraph, or null. */
+const windupAtPlayer = s => { const c = s.combat; return c ? c.telegraphs.find(v => v.phase === 'windup' && c.actions.some(a => a.instance === v.action && a.target === 'player')) ?? null : null; };
+/** Camera-relative keys that strafe away from the first species wind-up at the player, or null (spec §3.2: the journey bots dodge
+ *  telegraphs). Space stays the caller's choice: held Space bites back a combat species in the Bite cone. */
+export function dodgeKeys(s) {
+  const t = windupAtPlayer(s); if (!t) return null;
+  const sh = t.shapes[0], from = sh.kind === 'cone' ? sh.apex : sh.start, ax = s.physical.x - from.x, az = s.physical.z - from.z, l = Math.hypot(ax, az) || 1;
+  // Sideways from the attack's line (the side away from the shape's centre line); world (x, z) to camera-relative keys as in `steer`.
+  const px = -az / l, pz = ax / l, yaw = s.world.yaw, lx = Math.cos(yaw) * px - Math.sin(yaw) * pz, lz = Math.sin(yaw) * px + Math.cos(yaw) * pz, keys = [];
+  if (lx > .3) keys.push('KeyD'); if (lx < -.3) keys.push('KeyA'); if (lz > .3) keys.push('KeyS'); if (lz < -.3) keys.push('KeyW');
+  return keys.length ? keys : ['KeyD'];
+}
+const dashed = new WeakMap();
+/** The journey bots' dodge (spec §3.2, plan review R12): while a species winds up at the player, strafe away from it (dodgeKeys) and press the
+ *  Dash slot once per wind-up when the design has Dash (the dash goes along the held strafe). Holds Space too, so a combat species in the Bite
+ *  cone is bitten back. True when it dodged (the caller skips its own step this loop). `hold` holds keys (default: `control`). */
+export async function dodge(page, s, hold = keys => control(page, keys)) {
+  const keys = dodgeKeys(s); if (!keys) return false;
+  await hold(['Space', ...keys]);
+  const t = windupAtPlayer(s), slot = s.combat.slots.indexOf('dash');
+  let done = dashed.get(page); if (!done) { done = new Set(); dashed.set(page, done); }
+  if (slot >= 0 && !done.has(t.action)) { done.add(t.action); await page.waitForTimeout(40); await page.keyboard.press(`Digit${slot + 1}`); }
+  await page.waitForTimeout(100);
+  return true;
+}
+/** Points the mouse at a stage-local point at the player's height (pointer aim, spec §8.4: the pointer ray meets the horizontal plane through
+ *  the player), so that the aim is toward it. Bots must aim (T17 finding). False when that point is not on screen. */
+export async function aimAt(page, s, local) {
+  const scale = s.world.scale, v = await page.evaluate(p => window.__tinyTide.screenOf(p), { x: local.x * scale, y: s.physical.y, z: local.z * scale });
+  const vp = page.viewportSize(); if (!v.visible || v.x < 2 || v.y < 2 || v.x > vp.width - 2 || v.y > vp.height - 2) return false;
+  await page.mouse.move(v.x, v.y); return true;
+}
+/** A hunter (mode hunt or angry) that a ground mover cannot Bite: its height differs by more than the reach the HUD names "OUT OF REACH"
+ *  (2.1 stage-local units, main.ts updateGuide). Plan review R12(5): the journey bots do not fight it; they dodge it and keep feeding. */
+export const unreachableHunter = (s, f) => s.caps.ground && (f.mode === 'hunt' || f.mode === 'angry') && Math.abs(f.y - s.player.y) > 2.1;
 /** Eats one approachable food of the creature's diet with real controls (bounded). */
 export async function eatOnce(page, label) {
   const before = (await state(page)).bites;

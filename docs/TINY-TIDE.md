@@ -594,6 +594,7 @@ node e2e/tiny-tide.mjs                     # swimmer line; TIDE_LINE=crawler for
 node e2e/tiny-tide-paths.mjs               # 18 checks with 5b, 5c, 5d, 7b, 7c and 12b; pass check ids (for example 3 5c) to run some
 node e2e/tiny-tide-mobile.mjs              # also the phone triangle budget (1.6M per frame) at stages 0–3
 node e2e/tiny-tide-replay.mjs
+node e2e/tiny-tide-combat.mjs             # 10 combat checks (spec §14.2 and the frame-time check); pass check ids to run some; TIDE_SEED=<n> (default 1501)
 node e2e/tiny-tide-pacing.mjs              # the pacing study (a diagnostic, not a gate; long: run in the background)
 ```
 
@@ -622,6 +623,7 @@ one once, at load. None of them changes a running game from outside.
 | `qaHoldStart=1` | After the first start, the simulation and the game clock stay still until the first key or pointer press in play. |
 | `qaEncounter=<species key>` | For example `qaEncounter=1:crab`. At the first start of the page load, the nearest live instance of that species (of a tier next to the stage) moves 3 player body lengths in front of the player, in calm. Its pose is recovered like any install (within 4 of its body lengths). Diagnostics: `combat.encounter` (id, key, physical position, body length, mode, eaten), or null when no instance or no legal pose was found. |
 | `qaAlphaHealth=<0..1>` | At the first start of the page load, every live alpha starts with that fraction of its HP (at least 1 HP). Diagnostics: `combat.alphas`. |
+| `qaCrowd=<species key>,<species key>…` | For example `qaCrowd=1:sardine,1:puffer`. At the first start of the page load, every live non-alpha instance of those species (of a tier next to the stage) moves onto a ring of 3 player body lengths around the player, in calm (the T24 frame-time check, plan review R18). Each pose is recovered like any install. Diagnostics: `combat.crowd` (id, key, physical position of each installed entity that is still live). |
 
 First-time hints (spec §12.3, D30) use the toast: one per move kind in a
 slot, one for the first wind-up at the player and one for the first red
