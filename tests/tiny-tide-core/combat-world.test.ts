@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { SIZES } from '../../src/tiny-tide/biomes';
 import { activeStartedAt, stagger } from '../../src/tiny-tide/action-engine';
 import { resetRuntime } from '../../src/tiny-tide/lifecycle';
-import { AIM_PITCH_LIMIT, clampAimPitch } from '../../src/tiny-tide/combat-world';
+import { AIM_PITCH_LIMIT, clampAimPitch, CombatWorld } from '../../src/tiny-tide/combat-world';
 import type { AttackSpec, Vec3, WorldShape } from '../../src/tiny-tide/combat-types';
 import type { Entity } from '../../src/tiny-tide/ecosystem';
 import { RELEASED } from '../../src/tiny-tide/input';
@@ -36,6 +36,23 @@ describe('combat world', () => {
     for (let i = 0; i < 30 && !hit; i++) { now += 1 / 60; hit = tick(s, [crab], now).r.events[0] ?? null; }
     expect(hit).toMatchObject({ outcome: 'hit', targetId: 'e1', unit: 'hp', amount: 4 });   // Snapper at scale 1
     expect(crab.hp).toBe(16); expect(s.rt.hitStopUntil).toBeGreaterThan(now); expect(s.combat.stateOf(crab)!.rt.hitStopUntil).toBe(s.rt.hitStopUntil);
+  });
+  // Final review I2: the Bite cone starts at the hull centre and its range adds the centre-to-mouth distance, so a creature pressed against
+  // the player (under or beside the mouth) is still Bitten; before, a gap of 0–.1 L dispatched a chomp.
+  it('a Bite reaches a combat species touching the player, straight ahead and 30° off', () => {
+    for (const [gapL, deg] of [[0, 0], [.1, 0], [0, 30], [.1, 30]] as const) {
+      // A size-1 Speck (stage 1) and a size-1 crab (its hull radius .14 of the Speck's L): the review's case.
+      const s = speck(); s.run.stage = 1; s.actorCache = null; s.combat = new CombatWorld();   // the real behaviours (the crab is a combat species)
+      const actor = playerActorCached(s), body = playerBody(s, actor), L = body.L, pr = Math.max(...actor.hull.map(h => h.radius)), c = body.centre;
+      const spec = SPECIES.find(x => x.key === '1:crab')!, r = speciesCombatPose(entity(9, spec, c), 0).hull[0]!.radius;
+      const a = deg * Math.PI / 180, d = pr + r + gapL * L, crab = entity(9, spec, { x: c.x + Math.sin(a) * d, y: c.y - r, z: c.z + Math.cos(a) * d });
+      const hc = speciesCombatPose(crab, 0).hull[0]!.start, n = Math.hypot(hc.x - c.x, hc.y - c.y, hc.z - c.z), aim = { x: (hc.x - c.x) / n, y: (hc.y - c.y) / n, z: (hc.z - c.z) / n };
+      const first = tick(s, [crab], 0, { basicPressed: true, basicHeld: true, aim });
+      expect(first.r.started, `gap ${gapL} L, ${deg}°`).toEqual(['bite']); expect(first.r.chomp).toBe(false);
+      let now = 0, hit = null;
+      for (let i = 0; i < 40 && !hit; i++) { now += 1 / 60; hit = tick(s, [crab], now, { aim }).r.events[0] ?? null; }
+      expect(hit, `gap ${gapL} L, ${deg}°`).toMatchObject({ outcome: 'hit', targetId: 'e9' });
+    }
   });
   it('kills once and reports the kill', () => {
     const s = speck(), prey = entity(2, { ...FX_FLEER, hp: 3 }, { x: 0, y: .65, z: 2.1 });   // in front of the bite socket (z 1.61)

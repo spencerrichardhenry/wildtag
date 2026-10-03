@@ -433,6 +433,11 @@ An actor can start an action only when all of these are true:
   `|aim.y| > 0.98`, the body forward is used); `x = y × z`. Local numbers
   are multiplied by `L_a`.
 - **Cone:** apex = origin; axis = aim; range = `range × L_a`.
+- **Player cone** (Bite, Grab's pinch; final review I2): apex = the player's
+  hull centre; range = `(range + m) × L`, where `m` is the centre-to-socket
+  distance in L; the half angle is unchanged. A creature pressed against the
+  player (beside or under the mouth) is inside it. The dispatch cone (§8.3)
+  uses the same rule with `range × 1.25 + m`.
 - **Capsule:** start and end = origin + frame × (local × `L_a`); radius =
   `radius × L_a`.
 - A mirrored pair (`shared-cast`): one action; the shape is the union of the

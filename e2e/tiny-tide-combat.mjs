@@ -80,13 +80,16 @@ async function aimAt(page, s, e) {
 async function clickAt(page, s, e) { const v = await aimAt(page, s, e); if (v) await page.mouse.click(v.x, v.y); return !!v; }
 /** The player's body length L (physical units). */
 const bodyLength = page => page.evaluate(() => { const t = window.__tinyTide; return t.poseAgreement().bodyLength * t.world.scale; });
-/** The gap between the player's centre and the encounter creature's hull (centre distance less about .35 of its length), in player L. */
-const gapL = (page, s) => { const e = s.combat.encounter; return e ? (dist(s.physical, e) - .35 * e.bodyLength) / page.bodyLength : Infinity; };
+/** A combat species' hull radius in its own body lengths (src/tiny-tide/combat-shapes.ts SPECIES_HULL_RADIUS; review M11: was .35 here). */
+const SPECIES_HULL_RADIUS = .25;
+/** The gap between the player's centre and the encounter creature's hull (the distance to its hull centre less its hull radius), in player L
+ *  (it includes the player's own hull radius, about .26 L). */
+const gapL = (page, s) => { const e = s.combat.encounter; return e ? (dist(s.physical, aimPoint(s, e)) - SPECIES_HULL_RADIUS * e.bodyLength) / page.bodyLength : Infinity; };
 /** The player faces the creature within `deg` of yaw. */
 const facing = (s, e, deg = 25) => { const want = Math.atan2(e.x - s.physical.x, e.z - s.physical.z), d = want - s.orientation.yaw; return Math.abs(Math.atan2(Math.sin(d), Math.cos(d))) <= deg * DEG; };
-/** In Bite reach: facing the creature with a gap of .45–.9 L. The Bite cone starts at the mouth (about .5 L ahead of the centre), so a creature
- *  closer than that lies beside or under the mouth, outside the cone. */
-const inReach = (page, s) => { const g = gapL(page, s); return g >= .45 && g <= .9 && facing(s, s.combat.encounter); };
+/** In Bite reach: facing the creature with a gap of .2–.9 L. The Bite cone starts at the hull centre (final review I2), so a creature
+ *  pressed against the player is in it; the bot backs off only when it is closer than that (the facing test needs some room). */
+const inReach = (page, s) => { const g = gapL(page, s); return g >= .2 && g <= .9 && facing(s, s.combat.encounter); };
 /** Dive (Q) or Rise (E) toward a target's height when the plan can (a free mover drifts off the seabed while it aims down). */
 function verticalKeys(page, s, e) {
   const dy = e.y - s.physical.y, L = page.bodyLength;
@@ -103,7 +106,7 @@ async function approach(page, near, label, wallSeconds = 40) {
     const size = SIZES[s.stage];
     await aimAt(page, s, e);
     // Too close: back off first; then walk at it (the walk turns the body toward it).
-    const away = gapL(page, s) < .45, goal = away ? { x: 2 * s.player.x - e.x / size, z: 2 * s.player.z - e.z / size } : { x: e.x / size, z: e.z / size };
+    const away = gapL(page, s) < .2, goal = away ? { x: 2 * s.player.x - e.x / size, z: 2 * s.player.z - e.z / size } : { x: e.x / size, z: e.z / size };
     await control(page, [...steer(s, goal, .2), ...verticalKeys(page, s, e)]); await page.waitForTimeout(away ? 150 : 60);
   }
   const s = await state(page), e = s.combat.encounter;

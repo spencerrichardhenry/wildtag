@@ -7,7 +7,7 @@ import { BEHAVIOURS, hostileSizes, SPECIES_ATTACKS, type SpeciesBehaviour } from
 import { SIZES } from './biomes';
 import { aiLandedHit, aiRefused, aiStarted, aiStep, newAiState, ROAR_SECONDS, schoolFlee, type AiState } from './combat-ai';
 import { actionShapes, aimFrame, closestOnSegment, crossingOk, hurtboxesHit, nearestTargets, obstructionClear, shapeCentroid, telegraphDescriptor, truncateCapsule, worldShape, type TelegraphDescriptor } from './combat-shapes';
-import { newRuntime, type ActionPhase, type TelegraphProfile, type ActionState, type ActiveSlot, type ActorId, type AttackSpec, type CombatInput, type CombatPose, type CombatRuntime, type EmitterSource, type MovementMode, type ResolvedMove, type Vec3, type WorldQueries, type WorldShape } from './combat-types';
+import { newRuntime, type ActionPhase, type TelegraphProfile, type ActionState, type ActiveSlot, type ActorId, type AttackShape, type AttackSpec, type CombatInput, type CombatPose, type CombatRuntime, type EmitterSource, type MovementMode, type ResolvedMove, type Vec3, type WorldQueries, type WorldShape } from './combat-types';
 import { engage, provoke, type Entity, type EntityMotion } from './ecosystem';
 import { biteDispatch } from './feeding';
 import { addBreakProgress, armCounters, isFlick, releaseHold, resolveAll, squeezesDue, type CombatEvent, type Fighter, type HitRequestIn } from './hit-resolver';
@@ -125,6 +125,14 @@ export interface TelegraphView extends TelegraphDescriptor {
 export const WINDUP_FLASH = .1;
 const statusOf = (id: string) => { const s = EFFECTS[id]?.status; return s ? { seconds: s.seconds, speedFactor: s.speedFactor } : null; };
 
+type ConeShape = Extract<AttackShape, { kind: 'cone' }>;
+/** A player cone attack (Bite, Grab's pinch; final review I2): the apex is the player's hull centre and the range adds the centre-to-socket
+ *  distance, so a creature pressed against the player (beside or under the mouth) is inside it. The half angle is the shape's. One helper for
+ *  the dispatch (biteCone) and the hit test (playerShapes). */
+function playerCone(p: PlayerBody, shape: ConeShape, socket: Vec3, aim: Vec3): WorldShape {
+  const m = Math.hypot(socket.x - p.centre.x, socket.y - p.centre.y, socket.z - p.centre.z) / p.L;
+  return worldShape({ ...shape, range: shape.range + m }, aimFrame(p.centre, aim, forwardOf(p.rt.orientation)), p.L);
+}
 export class CombatWorld {
   readonly entities = new Map<number, EntityCombat>();
   /** The last EVENT_LOG hit outcomes (diagnostics). */
@@ -202,13 +210,15 @@ export class CombatWorld {
   private playerShapes(p: PlayerBody, a: ActionState): WorldShape[] {
     const attack = a.resolved.attack; if (!attack || a.source.kind !== 'part') return [];
     const src = a.source, origins = p.pose.emitters.filter(e => e.source.kind === 'part' && e.source.partUid === src.partUid && e.source.socketId === src.socketId).map(e => e.origin);
+    if (attack.shape.kind === 'cone') return (origins.length ? origins : [p.centre]).map(o => playerCone(p, attack.shape as ConeShape, o, a.aim));
     return actionShapes(attack.shape, origins.length ? origins : [p.centre], a.aim, forwardOf(p.rt.orientation), p.L);
   }
-  /** The Bite cone of the dispatch rule: the resolved Bite shape with the current aim and its range × 1.25 (spec §8.3). */
+  /** The Bite cone of the dispatch rule: the resolved Bite shape with the current aim and its range × 1.25 (spec §8.3), from the hull
+   *  centre (playerCone). */
   biteCone(p: PlayerBody, moves: MoveSet, aim: Vec3): WorldShape | null {
     const b = moves.basic, attack = b?.resolved.attack; if (!b || !attack || attack.shape.kind !== 'cone') return null;
     const origin = p.pose.emitters.find(e => e.source.kind === 'part' && e.source.partUid === b.partUid && e.source.socketId === 'bite')?.origin ?? p.centre;
-    return worldShape({ ...attack.shape, range: attack.shape.range * 1.25 }, aimFrame(origin, aim, forwardOf(p.rt.orientation)), p.L);
+    return playerCone(p, { ...attack.shape, range: attack.shape.range * 1.25 }, origin, aim);
   }
   private releasePlayerHold(a: ActionState, rt: CombatRuntime, now: number) {
     const held = a.heldTarget === null ? undefined : [...this.entities.values()].find(c => c.id === a.heldTarget);
