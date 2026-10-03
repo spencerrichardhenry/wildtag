@@ -31,7 +31,8 @@ export interface AiState {
   fleeDir: Vec3 | null;
   /** A started choice: its chain follows when the action ends. */
   current: AttackChoice | null;
-  chain: { attackId: string; at: number } | null;
+  /** `expires`: a chain that is refused until then is dropped (the hunter repositions). */
+  chain: { attackId: string; at: number; expires: number } | null;
   /** hunter engagements (the survivor bonus, spec §10.4). */
   engagedSince: number | null; windups: number;
   /** alpha */
@@ -206,6 +207,8 @@ function hunter(b: SpeciesBehaviour, s: AiState, i: AiInput, choices: readonly A
     set(s, 'notice', now); s.engagedSince = now; s.windups = 0;
     return out(HOLD, { marker: true });
   }
+  // Notice: the pursuit mode comes from the ecosystem's acquisition, which must give line of sight (T16: `visibility()`/`segmentClear`,
+  // review I9); the hunter itself does not test it again.
   if (s.name === 'notice') {
     if (now - s.since < b.reactionSeconds - 1e-9) return out(HOLD, { marker: true });
     set(s, 'approach', now);
@@ -213,7 +216,8 @@ function hunter(b: SpeciesBehaviour, s: AiState, i: AiInput, choices: readonly A
   if (s.name === 'attack') {
     if (i.self.busy) return out(HOLD);
     const next = s.current?.chainNextId;
-    if (next && !s.chain) s.chain = { attackId: next, at: now + (s.current?.chainGapSeconds ?? 0) };
+    if (next && !s.chain) { const at = now + (s.current?.chainGapSeconds ?? 0); s.chain = { attackId: next, at, expires: at + CHAIN_WAIT_SECONDS }; }
+    if (s.chain && now >= s.chain.expires - 1e-9) s.chain = null;   // refused for too long: drop it
     if (s.chain) {
       if (now < s.chain.at || now < waitUntil(s, i)) return out(HOLD);
       s.current = null;
@@ -240,6 +244,8 @@ function hunter(b: SpeciesBehaviour, s: AiState, i: AiInput, choices: readonly A
   }
   return out(chase);
 }
+/** A refused chain is dropped after this wait (fix round 1, M-b). */
+const CHAIN_WAIT_SECONDS = 1;
 /** Strafe around the player at `repositionSpeedFactor`, keeping d in [.4, .9] L. */
 function strafe(b: SpeciesBehaviour, s: AiState, i: AiInput, pull: (p: Vec3) => Vec3): MoveIntent {
   const p = i.player.position, from = sub(i.self.position, p), h = Math.hypot(from.x, from.z) || 1, a = Math.atan2(from.x, from.z) + s.strafe * .6;
@@ -268,6 +274,9 @@ function ambusher(b: SpeciesBehaviour, s: AiState, i: AiInput): AiOutput {
     default: {
       // out: as a hunter for den.outSeconds after its last hit lands (the caller moves `until` on a landed hit), then back to the den.
       if (s.name === 'out') set(s, 'approach', now);
+      // The pursuit policy (review R12: leash, give-up, the 6 s give-up after a faint) ends the outing: back to the den.
+      const giveUp = i.pursuit === 'return' || i.pursuit === 'calm';
+      if (giveUp && !i.self.busy && s.name !== 'attack') { set(s, 'retreat', now); s.chain = null; s.current = null; return out({ kind: 'toward', point: s.home, speedFactor: 1 }); }
       if (now >= s.outUntil && !i.self.busy && (s.name === 'approach' || s.name === 'reposition')) { set(s, 'retreat', now); return out({ kind: 'toward', point: s.home, speedFactor: 1 }); }
       return hunter(b, s, { ...i, pursuit: 'hunt' }, b.attacks, b.gapSeconds, 1);
     }
@@ -295,6 +304,7 @@ function alpha(b: SpeciesBehaviour, s: AiState, i: AiInput): AiOutput {
     else return out({ kind: 'toward', point: centre, speedFactor: 1 }, { heal: lair.healPerSecond });
   }
   const phase = alphaPhase(phases, i.self.hp, i.self.maxHp);
+  // The roar starts at once, even during an action: the caller cancels a busy action when `roar` is set (T17).
   if (phase > s.phase) { s.phase = phase; set(s, 'roar', now); s.chain = null; s.current = null; s.emerges = 0; s.charges = 0; return out(HOLD, { roar: true }); }
   if (s.name === 'roar') { if (now - s.since < ROAR_SECONDS - 1e-9) return out(HOLD); set(s, 'approach', now); }
   const p = phases[s.phase]!, bound = (q: Vec3) => clampToDisc(q, centre, radius * (p.lairFraction ?? 1));
@@ -302,22 +312,28 @@ function alpha(b: SpeciesBehaviour, s: AiState, i: AiInput): AiOutput {
     if (!i.inLair || !i.hostile || !i.player.targetable) return out({ kind: 'toward', point: centre, speedFactor: .5 });
     set(s, 'notice', now); return out(HOLD, { marker: true });
   }
+  // An alpha does not follow the pursuit policy: its lair rules are its leash (targets clamped to the lair disc, the slow reset outside
+  // resetOutsideFactor × the lair), so its hunter steps run with pursuit 'hunt'.
   if (p.pattern === 'burrow') return burrow(b, s, i, p, bound);
   if (p.pattern === 'laps') return laps(s, i, p, centre, radius);
   return hunter(b, s, { ...i, pursuit: 'hunt' }, p.attacks, p.gapSeconds, p.speedFactor, bound);
 }
+/** A refused emerge surfaces after this wait (fix round 1, M-b). */
+const EMERGE_WAIT_SECONDS = 1;
 /** Burrow (spec §11.6): sink .4 s, travel 1.2 s at × 1.6 under the sand toward the player (untargetable, inside the lair), then emerge at the
  *  player's position; two emerges, then one pinch combo; repeat. */
 function burrow(b: SpeciesBehaviour, s: AiState, i: AiInput, p: BehaviourPhase, bound: (q: Vec3) => Vec3): AiOutput {
   const now = i.now;
   if (s.emerges >= BURROW.emerges) {
-    const o = hunter(b, s, { ...i, pursuit: 'hunt' }, p.attacks, p.gapSeconds, p.speedFactor, bound);
-    if (s.name === 'reposition') s.emerges = 0;   // the combo is over
+    const wasAttack = s.name === 'attack', o = hunter(b, s, { ...i, pursuit: 'hunt' }, p.attacks, p.gapSeconds, p.speedFactor, bound);
+    if (wasAttack && s.name === 'reposition') s.emerges = 0;   // the combo is over (a refused ask also repositions: the combo stays due)
     return o;
   }
   switch (s.name) {
     case 'sink': if (now - s.since >= BURROW.sinkSeconds - 1e-9) set(s, 'burrowed', now); return out(HOLD, { untargetable: true });
     case 'burrowed': {
+      // Refused for EMERGE_WAIT_SECONDS after the travel: surface in place (a spent emerge), never untargetable for long.
+      if (now - s.since >= BURROW.travelSeconds + EMERGE_WAIT_SECONDS - 1e-9) { s.emerges++; s.gapUntil = now + p.gapSeconds; set(s, s.emerges >= BURROW.emerges ? 'approach' : 'reposition', now); return out(HOLD); }
       if (now - s.since < BURROW.travelSeconds - 1e-9 || now < waitUntil(s, i)) return out({ kind: 'toward', point: bound(i.player.position), speedFactor: p.speedFactor * BURROW.speedFactor }, { untargetable: true });
       return out(HOLD, { untargetable: true, attack: request(s, i, null, p.patternAttackId!) });
     }

@@ -1,8 +1,8 @@
 // tests/tiny-tide-core/combat-ai.test.ts — spec §11.2 with seeded fixtures: the shipped behaviours, a scripted player, and an attack that keeps
 // the entity busy for its windup + active + recovery once the AI's request is started.
 import { describe, expect, it } from 'vitest';
-import { aiRefused, aiStarted, aiStep, alphaPhase, chooseAttack, clampToDisc, newAiState, schoolFlee, ROAR_SECONDS, type AiInput, type AiOutput, type AiState } from '../../src/tiny-tide/combat-ai';
-import { BEHAVIOURS, SPECIES_ATTACKS, type SpeciesBehaviour } from '../../src/tiny-tide/bestiary';
+import { aiLandedHit, aiRefused, aiStarted, aiStep, alphaPhase, chooseAttack, clampToDisc, newAiState, schoolFlee, ROAR_SECONDS, type AiInput, type AiOutput, type AiState } from '../../src/tiny-tide/combat-ai';
+import { BEHAVIOURS, LAPS, SPECIES_ATTACKS, type SpeciesBehaviour } from '../../src/tiny-tide/bestiary';
 import type { Vec3 } from '../../src/tiny-tide/combat-types';
 
 const DT = 1 / 30;
@@ -10,13 +10,13 @@ const base = (over: Partial<AiInput> = {}): AiInput => ({ now: 0, self: { positi
   player: { position: { x: 0, y: 0, z: 10 }, d: 6, visible: true, targetable: true }, hostile: true, pursuit: 'calm', hit: false, fleeDistance: 7, ready: () => true, ...over });
 /** Runs `seconds` of AI ticks; `input(t, s)` gives each tick's input. A requested attack is started (or refused by `refuse`) and keeps the
  *  entity busy for its timeline. Returns the states, outputs and attack ids by tick. */
-function drive(b: SpeciesBehaviour, s: AiState, seconds: number, input: (t: number, s: AiState) => Partial<AiInput>, refuse: (t: number) => boolean = () => false, t0 = 0) {
+function drive(b: SpeciesBehaviour, s: AiState, seconds: number, input: (t: number, s: AiState) => Partial<AiInput>, refuse: (t: number, attackId: string) => boolean = () => false, t0 = 0) {
   const log: { t: number; state: string; out: AiOutput }[] = [];
   let busyUntil = -1;
   for (let k = 0; k < Math.round(seconds / DT); k++) {
     const t = t0 + k * DT, i = base({ now: t, ...input(t, s) }), o = aiStep(b, s, { ...i, self: { ...i.self, busy: t < busyUntil } });
     if (o.attack) {
-      if (refuse(t)) aiRefused(s, t);
+      if (refuse(t, o.attack.attackId)) aiRefused(s, t);
       else { aiStarted(s, t); const a = SPECIES_ATTACKS[o.attack.attackId]!; busyUntil = t + a.windupSeconds + a.activeSeconds + a.recoverySeconds; }
     }
     log.push({ t, state: s.name, out: o });
@@ -37,7 +37,7 @@ describe('combat AI: prey', () => {
     expect(log.at(-1)!.state).toBe('idle');
   });
   it('sardine school flees together in one direction', () => {
-    const mk = (id: number, x: number) => ({ state: newAiState(1, id), position: at(x, 0), L: 1 }), school = [mk(1, 0), mk(2, 2), mk(3, 4), mk(4, 30)];
+    const mk = (id: number, x: number, z: number) => ({ state: newAiState(1, id), position: at(x, z), L: 1 }), school = [mk(1, 0, 0), mk(2, 1, 1.5), mk(3, 2, -1), mk(4, 30, 0)];
     const player = at(-3, 0);
     // Only the first member is near the player; it flees after its reaction; the others within 6 L join on the same tick.
     let t = 0;
@@ -47,7 +47,9 @@ describe('combat AI: prey', () => {
     }
     expect(school.slice(0, 3).map(m => m.state.name)).toEqual(['flee', 'flee', 'flee']); expect(school[3]!.state.name).toBe('idle');
     const dirs = school.slice(0, 3).map(m => m.state.fleeDir!);
-    expect(dirs[1]).toEqual(dirs[0]); expect(dirs[2]).toEqual(dirs[0]); expect(dirs[0]!.x).toBeCloseTo(1);   // away from the player, from the centroid
+    expect(dirs[1]).toEqual(dirs[0]); expect(dirs[2]).toEqual(dirs[0]);
+    // Away from the player, from the centroid (1, 1/6) of the three: not from the starter (that gives (1, 0)).
+    expect(dirs[0]!.x).toBeCloseTo(4 / Math.hypot(4, 1 / 6), 6); expect(dirs[0]!.z).toBeCloseTo((1 / 6) / Math.hypot(4, 1 / 6), 6);
   });
   it('snail retaliates when hit and when cornered', () => {
     const hit = newAiState(1, 2), logHit = drive(BEHAVIOURS['spiny-snail']!, hit, 3, t => ({ hit: t < DT, player: { position: at(0, 1), d: .8, visible: true, targetable: true } }));
@@ -94,19 +96,47 @@ describe('combat AI: hunters', () => {
     const asks = log.filter(l => l.out.attack).map(l => l.t);
     expect(asks[1]! - asks[0]!).toBeCloseTo(.2, 1);
   });
-  it('a token refusal repositions and waits for the director retry time (controller binding)', () => {
-    // The director answered 'token' with tokenRetryAt 1.0: the crab strafes (its reposition data) and asks again only at or after 1.0.
-    const s = newAiState(1, 13), i = base({ now: 0, pursuit: 'hunt', player: { position: at(0, 1), d: .3, visible: true, targetable: true } });
-    aiStep(BEHAVIOURS.crab!, s, i); aiStep(BEHAVIOURS.crab!, s, { ...i, now: .4 });
-    const o = aiStep(BEHAVIOURS.crab!, s, { ...i, now: .5 }); expect(o.attack).not.toBeNull();
-    aiRefused(s, .5, 1.0);
-    const log = drive(BEHAVIOURS.crab!, s, 1, () => ({ pursuit: 'hunt', tokenRetryAt: 1.0, player: { position: at(0, 1), d: .3, visible: true, targetable: true } }), () => false, .5 + DT);
-    const before = log.filter(l => l.t < 1 - 1e-9);
-    expect(before.every(l => !l.out.attack)).toBe(true);
-    expect(before.every(l => l.state === 'reposition')).toBe(true);
-    expect(before[0]!.out.intent).toMatchObject({ kind: 'toward', speedFactor: BEHAVIOURS.crab!.repositionSpeedFactor });
-    expect(before[0]!.out.intent).not.toMatchObject({ point: at(0, 1) });
-    expect(log.find(l => l.out.attack)!.t).toBeGreaterThanOrEqual(1 - 1e-9);
+  // Controller binding: a token refusal or a pending tokenRetryAt makes the hunter strafe (its reposition data) and ask only at or after 1.0.
+  const crabAt = (over: Partial<AiInput> = {}) => ({ pursuit: 'hunt' as const, player: { position: at(0, 1), d: .3, visible: true, targetable: true }, ...over });
+  const firstAsk = (s: AiState) => { for (const t of [0, .4]) aiStep(BEHAVIOURS.crab!, s, base({ now: t, ...crabAt() })); const o = aiStep(BEHAVIOURS.crab!, s, base({ now: .5, ...crabAt() })); expect(o.attack).not.toBeNull(); };
+  const expectStrafeUntil = (log: { t: number; state: string; out: AiOutput }[], retry: number) => {
+    const before = log.filter(l => l.t < retry - 1e-9);
+    expect(before.length).toBeGreaterThan(5);
+    expect(before.every(l => !l.out.attack && l.state === 'reposition')).toBe(true);
+    for (const l of before) { expect(l.out.intent).toMatchObject({ kind: 'toward', speedFactor: BEHAVIOURS.crab!.repositionSpeedFactor }); expect(l.out.intent).not.toMatchObject({ point: at(0, 1) }); }
+    expect(log.find(l => l.out.attack)!.t).toBeGreaterThanOrEqual(retry - 1e-9);
+  };
+  it('a token refusal with the director retry time repositions until then (aiRefused 3rd argument, no tokenRetryAt input)', () => {
+    const s = newAiState(1, 13); firstAsk(s); aiRefused(s, .5, 1.0); expect(s.name).toBe('reposition');
+    // Even with the player out of every band (it backed off), the refused crab strafes instead of chasing.
+    expect(aiStep(BEHAVIOURS.crab!, s, base({ now: .5 + DT / 2, ...crabAt({ player: { position: at(0, 3), d: 1.6, visible: true, targetable: true } }) })).intent).toMatchObject({ kind: 'toward', speedFactor: BEHAVIOURS.crab!.repositionSpeedFactor });
+    expectStrafeUntil(drive(BEHAVIOURS.crab!, s, 1, () => crabAt(), () => false, .5 + DT), 1.0);
+  });
+  it('a pending tokenRetryAt in the input repositions until then (aiRefused without the 3rd argument)', () => {
+    const s = newAiState(1, 13); firstAsk(s); aiRefused(s, .5);
+    expectStrafeUntil(drive(BEHAVIOURS.crab!, s, 1, () => crabAt({ tokenRetryAt: 1.0 }), () => false, .5 + DT), 1.0);
+  });
+  it('the gap after an action', () => {
+    // No reposition time, so only the 1 s gap holds the next ask back.
+    const crab = { ...BEHAVIOURS.crab!, repositionSeconds: [0, 0] as const }, s = newAiState(1, 6), log = drive(crab, s, 6, () => crabAt());
+    const asks = log.filter(l => l.out.attack), a = SPECIES_ATTACKS[asks[0]!.out.attack!.attackId]!, end = asks[0]!.t + a.windupSeconds + a.activeSeconds + a.recoverySeconds;
+    expect(asks[1]!.t).toBeGreaterThanOrEqual(end + crab.gapSeconds - 1e-6); expect(asks[1]!.t).toBeLessThan(end + crab.gapSeconds + 2 * DT);
+  });
+  it('held and staggered: hold, no attack', () => {
+    for (const k of ['held', 'staggered'] as const) {
+      const s = newAiState(1, 14); for (const t of [0, .4]) aiStep(BEHAVIOURS.crab!, s, base({ now: t, ...crabAt() }));
+      const o = aiStep(BEHAVIOURS.crab!, s, base({ now: .5, ...crabAt(), self: { ...base().self, [k]: true } }));
+      expect(o.intent).toEqual({ kind: 'hold' }); expect(o.attack).toBeNull();
+      if (k === 'held') expect(s.name).toBe('held');
+    }
+  });
+  it('same seed and entity: same choices; another entity id: other choices', () => {
+    const run = (seed: number, id: number) => drive(BEHAVIOURS.crab!, newAiState(seed, id), 30, () => crabAt()).filter(l => l.out.attack).map(l => `${l.t.toFixed(3)} ${l.out.attack!.attackId}`);
+    expect(run(1, 6)).toEqual(run(1, 6)); expect(run(1, 7)).not.toEqual(run(1, 6)); expect(run(2, 6)).not.toEqual(run(1, 6));
+  });
+  it('chooseAttack refuses a choice below its band', () => {
+    expect(chooseAttack(BEHAVIOURS.crab!.attacks, .47, false, () => true, () => .01)!.attackId).toBe('crab-sweep');   // the lunge starts at .5
+    expect(chooseAttack(BEHAVIOURS.crab!.attacks, .3, false, id => id !== 'crab-pinch', () => .01)!.attackId).toBe('crab-sweep');   // not ready
   });
   it('crab gives up by pursuit rules and heals', () => {
     // The pursuit mode is the ecosystem's (memory, leash, give-up); the AI follows it and reports the engagement (the caller heals at calm).
@@ -124,6 +154,30 @@ describe('combat AI: hunters', () => {
     const ambush = log.find(l => l.out.attack)!; expect(ambush.out.attack!.attackId).toBe('eel-ambush'); expect(ambush.t).toBeCloseTo(1, 1);   // reaction 0 in the den
     expect(log.find(l => l.state === 'retreat')).toBeTruthy();
     expect(log.find(l => l.state === 'retreat')!.out.intent).toMatchObject({ kind: 'toward', point: { x: 0, y: 0, z: 0 } });
+  });
+});
+
+describe('combat AI: ambusher rules', () => {
+  const eelOut = (s: AiState) => { s.home = at(0, 0); aiStep(BEHAVIOURS.eel!, s, base({ now: 0, pursuit: 'hunt', player: { position: at(0, 1), d: .3, visible: true, targetable: true } })); aiStarted(s, 0); aiStep(BEHAVIOURS.eel!, s, base({ now: 1, pursuit: 'hunt', self: { ...base().self, position: at(0, 3) } })); expect(s.name).toBe('out'); };
+  it('the eel out of its den follows the pursuit policy (return or calm: retreat)', () => {
+    for (const pursuit of ['return', 'calm'] as const) {
+      const s = newAiState(1, 20); eelOut(s);
+      const o = aiStep(BEHAVIOURS.eel!, s, base({ now: 1.5, pursuit, self: { ...base().self, position: at(0, 3) }, player: { position: at(0, 4), d: .3, visible: true, targetable: true } }));
+      expect(s.name).toBe('retreat'); expect(o.attack).toBeNull(); expect(o.intent).toMatchObject({ kind: 'toward', point: { x: 0, y: 0, z: 0 } });
+    }
+  });
+  it('the den does not trigger on a player it cannot see', () => {
+    const s = newAiState(1, 21), log = drive(BEHAVIOURS.eel!, s, 2, () => ({ pursuit: 'hunt', player: { position: at(0, 1), d: .3, visible: false, targetable: true } }));
+    expect(log.every(l => !l.out.attack && l.state === 'den')).toBe(true);
+  });
+  it('a landed hit keeps the eel out longer', () => {
+    const s = newAiState(1, 22); eelOut(s); expect(s.outUntil).toBeCloseTo(5);
+    aiLandedHit(BEHAVIOURS.eel!, s, 3); expect(s.outUntil).toBeCloseTo(7);
+    aiLandedHit(BEHAVIOURS.eel!, s, 1); expect(s.outUntil).toBeCloseTo(7);   // never shortens
+    const far = { pursuit: 'hunt' as const, self: { ...base().self, position: at(0, 3) }, player: { position: at(0, 40), d: 30, visible: true, targetable: true } };
+    aiStep(BEHAVIOURS.eel!, s, base({ now: 6, ...far })); expect(s.name).not.toBe('retreat');
+    aiStep(BEHAVIOURS.eel!, s, base({ now: 7.1, ...far })); expect(s.name).toBe('retreat');
+    const crab = newAiState(1, 23); aiLandedHit(BEHAVIOURS.crab!, crab, 3); expect(crab.outUntil).toBe(0);
   });
 });
 
@@ -155,5 +209,67 @@ describe('combat AI: alphas', () => {
     expect(firstT(log, 'reset')).toBeCloseTo(4, 1);   // 3 s outside
     expect(log.find(l => l.state === 'reset')!.out).toMatchObject({ heal: .04, intent: { kind: 'toward', point: { x: 0, y: 0, z: 0 } } });
     aiStep(mother, s, base({ now: 9, ...alphaInput(80, { player: far, inLair: false }) })); expect(s.name).toBe('idle'); expect(s.phase).toBe(0);   // full HP: phase 1
+  });
+  it('the roar holds still; the caller cancels a busy action', () => {
+    const s = newAiState(1, 30); s.home = at(0, 0); drive(mother, s, 1, () => alphaInput(80));
+    const o = aiStep(mother, s, base({ now: 2, ...alphaInput(40) })); expect(o.intent).toEqual({ kind: 'hold' }); expect(o.attack).toBeNull();
+  });
+  it('the alpha does not notice a player outside its lair', () => {
+    const s = newAiState(1, 31); s.home = at(0, 0);
+    const log = drive(mother, s, 2, () => alphaInput(80, { inLair: false }));
+    expect(log.every(l => l.state === 'idle' && !l.out.marker && !l.out.attack)).toBe(true);
+    expect(log[0]!.out.intent).toMatchObject({ kind: 'toward', point: { x: 0, y: 0, z: 0 } });
+  });
+  it('the pinch combo chains with its gap', () => {
+    const s = newAiState(1, 32); s.home = at(0, 0);
+    const asks = drive(mother, s, 4, () => alphaInput(80)).filter(l => l.out.attack);
+    expect(asks.slice(0, 2).map(l => l.out.attack!.attackId)).toEqual(['mother-pinch', 'mother-pinch-2']);
+    const a = SPECIES_ATTACKS['mother-pinch']!, end = asks[0]!.t + a.windupSeconds + a.activeSeconds + a.recoverySeconds;
+    expect(asks[1]!.t - end).toBeGreaterThanOrEqual(.2 - 1e-6); expect(asks[1]!.t - end).toBeLessThan(.2 + 2 * DT);
+  });
+  it('a refused chain is dropped after 1 s', () => {
+    const s = newAiState(1, 33); s.home = at(0, 0);
+    const log = drive(mother, s, 5, () => alphaInput(80), (_t, id) => id === 'mother-pinch-2');
+    const asks = log.filter(l => l.out.attack), firstChain = asks.find(l => l.out.attack!.attackId === 'mother-pinch-2')!;
+    expect(asks.filter(l => l.out.attack!.attackId === 'mother-pinch-2' && l.t > firstChain.t + 1 + 1e-6 && l.t < firstChain.t + 1.5)).toEqual([]);
+    expect(log.find(l => l.t > firstChain.t + 1 + 1e-6)!.state).toBe('reposition');
+  });
+  it('the burrow: two emerges, then the pinch combo', () => {
+    const s = newAiState(1, 34); s.home = at(0, 0);
+    const asks = drive(mother, s, 14, () => alphaInput(40)).filter(l => l.out.attack).map(l => l.out.attack!.attackId);
+    expect(asks.slice(0, 4)).toEqual(['mother-emerge', 'mother-emerge', 'mother-pinch', 'mother-pinch-2']);
+  });
+  it('a refused combo pinch in the burrow phase is asked again, not dropped', () => {
+    const s = newAiState(1, 35); s.home = at(0, 0); let refused = false;
+    const asks = drive(mother, s, 14, () => alphaInput(40), (_t, id) => { if (!refused && id === 'mother-pinch') { refused = true; return true; } return false; }).filter(l => l.out.attack).map(l => l.out.attack!.attackId);
+    expect(refused).toBe(true);
+    expect(asks.slice(0, 4)).toEqual(['mother-emerge', 'mother-emerge', 'mother-pinch', 'mother-pinch']);
+  });
+  it('a refused emerge does not stay under the sand', () => {
+    const s = newAiState(1, 36); s.home = at(0, 0);
+    const log = drive(mother, s, 6, () => alphaInput(40), () => true);
+    const ask = log.find(l => l.out.attack)!;
+    expect(log.filter(l => l.t > ask.t + 1 + DT && l.t < ask.t + 1.2).some(l => !l.out.untargetable)).toBe(true);
+  });
+  const tyrant = BEHAVIOURS['reef-tyrant']!, TL = 10;
+  const tyrantInput = (hp: number, over: Partial<AiInput> = {}) => ({ self: { ...base().self, L: TL, hp, maxHp: 80, speed: 30, position: at(0, 17.6) }, inLair: true, pursuit: 'hunt' as const, player: { position: at(0, 5), d: .3, visible: true, targetable: true }, ...over });
+  it('the Tyrant phase 1 keeps within lairFraction of its lair', () => {
+    const s = newAiState(1, 37); s.home = at(0, 0);
+    const log = drive(tyrant, s, 2.5, () => tyrantInput(80, { player: { position: at(0, 40), d: 4, visible: true, targetable: true } }));
+    const r = .6 * 2.2 * TL, pts = log.flatMap(l => l.out.intent.kind === 'toward' ? [Math.hypot(l.out.intent.point.x, l.out.intent.point.z)] : []);
+    expect(pts.length).toBeGreaterThan(0); for (const h of pts) expect(h).toBeLessThanOrEqual(r + 1e-6);
+    expect(Math.max(...pts)).toBeCloseTo(r, 3);
+  });
+  it('the Tyrant laps: a charge every half lap, two charges, then a 1.5 s rest', () => {
+    const s = newAiState(1, 38); s.home = at(0, 0);
+    const log = drive(tyrant, s, 12, () => tyrantInput(40));
+    const r = .8 * 2.2 * TL, half = Math.PI * r / (30 * 1.4), a = SPECIES_ATTACKS['tyrant-charge']!, busy = a.windupSeconds + a.activeSeconds + a.recoverySeconds;
+    const asks = log.filter(l => l.out.attack); expect(asks.every(l => l.out.attack!.attackId === 'tyrant-charge')).toBe(true);
+    expect(asks[0]!.t - ROAR_SECONDS).toBeCloseTo(half, 1);
+    expect(asks[1]!.t - (asks[0]!.t + busy)).toBeCloseTo(half, 1);
+    const restAt = firstT(log, 'lap-rest')!; expect(restAt).toBeCloseTo(asks[1]!.t + busy, 1);
+    expect(log.filter(l => l.t >= restAt && l.t < restAt + LAPS.restSeconds - DT).every(l => l.state === 'lap-rest' && !l.out.attack)).toBe(true);
+    expect(asks[2]!.t - restAt).toBeCloseTo(LAPS.restSeconds + half, 1);
+    for (const l of log) if (l.state === 'lap') expect(l.out.intent).toMatchObject({ kind: 'toward', speedFactor: 1.4 });
   });
 });
