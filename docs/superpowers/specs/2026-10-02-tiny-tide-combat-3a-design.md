@@ -505,28 +505,32 @@ id, then by target id. It processes them one at a time. Then contact hazards
    `${actionInstanceId}:${hitGroupId}:${targetId}`, the count is below
    `maxHitsPerTarget` and `now − lastHit ≥ repeatHitSeconds`. The action has
    hit fewer than `maxTargets` targets. Else drop it, with no ledger entry.
-2. **Guard and counter.**
-   - Counter window open on the target and `parryable` → `countered` (§6.3).
-     Stop.
-   - Brace up on the target (after startup), `blockable`, and the source in
-     front (§6.4) → `blocked` or `guard-broken`. Go on to step 4 with the
-     block multiplier.
+2. **Counter.** Counter window open on the target (or a Counter armed against
+   this action at its active start, §6.3) and `parryable` → `countered`
+   (§6.3). Stop. A Counter still counters while the target is immune.
 3. **Immunity.** `damageable` false, or world time `< invulnerableUntil`, or
    the target is in dash invulnerability → `evaded` (dash) or `immune`. The
-   ledger records it. Stop.
-4. **Damage.**
+   ledger records it (D12). Stop. An immune target takes no damage, no guard
+   break and no stagger, even while it braces (controller ruling, T5 fix
+   round 1).
+4. **Brace.** Brace active on the target (after startup), `blockable`, and
+   the source in front (§6.4) → `blocked` or `guard-broken`. Go on to step 5
+   with the block multiplier.
+5. **Damage.**
    - Player target: `hh = damageAfterArmor(raw, armor)`; blocked:
      `floor(hh × (1 − blockFraction))`; guard broken:
      `floor(hh × (1 − blockFraction / 2))`. `health −= hh / 2`. Then
-     `invulnerableUntil = now + 0.4` when `hh > 0`.
+     `invulnerableUntil = max(invulnerableUntil, now + 0.4)` when the dealt
+     amount is above 0 (the grace never shortens).
    - Species target: `hp −= damage`. Species have no armor in 3a.
-5. **Stagger.** Not when blocked. Player: §5.8. Species: poise (§5.8).
-6. **Impulse.** `J = impulse × L_a × min(m_a, 2 m_t)` along the direction from
+   - A grab catch then follows §6.6 and stops (no stagger, no impulse).
+6. **Stagger.** Not when blocked. Player: §5.8. Species: poise (§5.8).
+7. **Impulse.** `J = impulse × L_a × min(m_a, 2 m_t)` along the direction from
    the shape origin to the hit point, made horizontal for ground targets. The
    contract formula then gives `Δv = J / m_t × (1 − kr)`. Blocked: × 0.3.
    Guard broken: × 0.6. `kr` is the plan's knockback resistance (player) or
    the behaviour's (species).
-7. **Ledger and events.** Record the hit. Emit a `CombatEvent` with the
+8. **Ledger and events.** Record the hit. Emit a `CombatEvent` with the
    outcome, the point, the damage and the hit-stop.
 
 ### 6.3 Counter (Spike)
@@ -565,7 +569,9 @@ id, then by target id. It processes them one at a time. Then contact hazards
 ### 6.6 Grab (Pincer, squid, eel)
 
 - **Catch:** the first `hit` of a grab attack is a catch. The target takes
-  `damage` (player grab: HP; species grab: `hold.startHalfHearts`).
+  `damage` (player grab: HP; species grab: `hold.startHalfHearts`). A catch
+  gives no impulse and no poise (controller ruling, T5 fix round 1). A target
+  that is already held is not held again.
 - **Size rule:** the target is held only when `L_t ≤ sizeFactor × L_a` and
   the target is grabbable (alphas are not). Otherwise it "breaks free" at
   once: it takes the catch damage and a 0.3 s stagger, and there is no hold.

@@ -254,4 +254,105 @@ describe('hit resolver', () => {
     const q = player(), hit = resolveHit(req(q, c, { ...POKE, damageUnit: 'hp', damage: 6, poiseDamageMultiplier: 1 }), 2)!;   // poise 6: staggered
     expect(hit.outcome).toBe('hit'); expect(r.action.phase).toBe('recovery'); expect(r.action.heldTarget).toBeNull();
   });
+  // ---- fix round 1 ----
+  it('a Counter still counters while the target is invulnerable', () => {
+    const p = player(), c = crab(); guard(p.rt, 'counter-spike'); p.rt.invulnerableUntil = 3;
+    const e = resolveHit(req(c, p, POKE), 1)!;
+    expect(e.outcome).toBe('countered'); expect(c.health).toBe(17);
+    const off = player(); guard(off.rt, 'counter-spike'); off.rt.damageable = false;
+    expect(resolveHit(req(crab(), off, POKE), 1)!.outcome).toBe('countered');
+  });
+  it('immunity comes before the Brace: no block, no guard break, no stagger, no damage', () => {
+    const p = player(), b = guard(p.rt, 'brace-shell'); p.rt.invulnerableUntil = 3;
+    const r = req(crab(), p, { ...POKE, damage: 6 }), e = resolveHit(r, 1)!;
+    expect(e.outcome).toBe('immune'); expect(e.amount).toBe(0); expect(p.health).toBe(6);
+    expect(b.phase).toBe('active'); expect(p.rt.staggerUntil).toBe(0); expect(p.rt.cooldowns.has(b.cooldownKey)).toBe(false);
+    expect(p.rt.externalVelocity.z).toBe(0); expect(r.action.hitCounts.get(ledgerKey(r.action, 'g', 'player'))).toBe(1);
+    const d = player(), db = guard(d.rt, 'brace-shell'); activeNow(act(d.rt, resolveMove({ abilityId: 'dash-side-fin' }, 1)));
+    expect(resolveHit(req(crab(), d, { ...POKE, damage: 6 }), 1)!.outcome).toBe('evaded'); expect(db.phase).toBe('active'); expect(d.rt.staggerUntil).toBe(0);
+    const n = player(), nb = guard(n.rt, 'brace-shell'); n.rt.damageable = false;
+    expect(resolveHit(req(crab(), n, { ...POKE, damage: 6 }), 1)!.outcome).toBe('immune'); expect(nb.phase).toBe('active');
+  });
+  it('a grab on a target that is already held does not hold it', () => {
+    const p = player(); p.rt.heldBy = 'e8';
+    const c = crab(), r = req(c, p, WRAP), e = resolveHit(r, 1)!;
+    expect(e.held).toBe(false); expect(e.outcome).toBe('hit'); expect(p.rt.heldBy).toBe('e8'); expect(r.action.heldTarget).toBeNull();
+  });
+  it('a catch gives no impulse and no poise', () => {
+    const p = player(), e = resolveHit(req(crab(), p, { ...WRAP, impulse: 4 }), 1)!;
+    expect(e.outcome).toBe('grabbed'); expect(e.impulse).toEqual({ x: 0, y: 0, z: 0 }); expect(p.rt.externalVelocity).toEqual({ x: 0, y: 0, z: 0 });
+    const prey = crab({ L: 1 }), pinch = resolveMove({ abilityId: 'grab-pincer' }, 1).attack!;
+    resolveHit(req(player(), prey, { ...pinch, poiseDamageMultiplier: 1 }, { action: activeNow(act(newRuntime(), resolveMove({ abilityId: 'grab-pincer' }, 1))) }), 1);
+    expect(prey.poise!.value).toBe(0); expect(prey.rt.staggerUntil).toBe(0);
+  });
+  it('player stagger: an unblocked hit staggers staggerSeconds; a blocked hit does not', () => {
+    const p = player(); resolveHit(req(crab(), p, POKE), 1); expect(p.rt.staggerUntil).toBeCloseTo(.3);
+    const b = player(); guard(b.rt, 'brace-shell'); expect(resolveHit(req(crab(), b, POKE), 1)!.outcome).toBe('blocked'); expect(b.rt.staggerUntil).toBe(0);
+  });
+  it('species stagger resistance .5 halves the stagger', () => {
+    const c = crab({ staggerResist: .5 }), hit = { ...POKE, damageUnit: 'hp' as const, damage: 6, poiseDamageMultiplier: 1, staggerSeconds: .3 };
+    resolveHit(req(player(), c, hit), 1); expect(c.rt.staggerUntil).toBeCloseTo(.15);
+    const d = crab(); resolveHit(req(player(), d, hit), 1); expect(d.rt.staggerUntil).toBeCloseTo(.3);
+  });
+  it('killed: on a target kill and on a reflect kill', () => {
+    const c = crab({ health: 4 }), e = resolveHit(req(player(), c, { ...POKE, damageUnit: 'hp', damage: 4 }), 1)!;
+    expect(e.killed).toBe('e7');
+    const alive = crab({ health: 5 }); expect(resolveHit(req(player(), alive, { ...POKE, damageUnit: 'hp', damage: 4 }), 1)!.killed).toBeNull();
+    const p = player(); guard(p.rt, 'counter-spike'); const k = crab({ health: 3 });
+    expect(resolveHit(req(k, p, POKE), 1)!.killed).toBe('e7');
+    const q = player(); guard(q.rt, 'counter-spike'); expect(resolveHit(req(crab({ health: 4 }), q, POKE), 1)!.killed).toBeNull();
+    const faint = player({ health: 1 }); expect(resolveHit(req(crab(), faint, POKE), 1)!.killed).toBeNull();   // a player faints; it is never `killed`
+  });
+  it('ink status is applied on a hit, not when blocked', () => {
+    const inky = { ...POKE, statusEffectId: 'ink' }, statusOf = (id: string) => id === 'ink' ? { seconds: 2, speedFactor: .5 } : null;
+    const p = player(), e = resolveHit(req(crab(), p, inky), 1, statusOf)!;
+    expect(e.status).toBe('inked'); expect(p.rt.status).toEqual({ id: 'inked', until: 3, speedFactor: .5 });
+    const b = player(); guard(b.rt, 'brace-shell'); const f = resolveHit(req(crab(), b, inky), 1, statusOf)!;
+    expect(f.outcome).toBe('blocked'); expect(f.status).toBeNull(); expect(b.rt.status).toBeNull();
+  });
+  it('same attacker and start: requests are sorted by target id', () => {
+    const c = crab(), a = activeNow(act(c.rt, speciesMove({ ...POKE, maxTargets: 2 }), 1));
+    const x = req(c, player({ id: 'p2' }), POKE, { action: a }), y = req(c, player({ id: 'p1' }), POKE, { action: a });
+    expect([x, y].sort(compareRequests).map(r => r.target.id)).toEqual(['p1', 'p2']);
+    expect(compareRequests(x, x)).toBe(0);
+  });
+  it('hit-stop: a strike stops the attacker too; a blocked hit gives 60 ms', () => {
+    const p = player(), c = crab(), e = resolveHit(req(c, p, POKE), 1)!;
+    expect(e.hitStop).toBeCloseTo(.07); expect(c.rt.hitStopUntil).toBeCloseTo(1.07); expect(p.rt.hitStopUntil).toBeCloseTo(1.07);   // 2 half-hearts: 60 + 10 ms
+    const b = player(), bc = crab(); guard(b.rt, 'brace-shell'); const f = resolveHit(req(bc, b, POKE), 1)!;
+    expect(f.hitStop).toBeCloseTo(.06); expect(bc.rt.hitStopUntil).toBeCloseTo(1.06); expect(b.rt.hitStopUntil).toBeCloseTo(1.06);
+    // A blocked hit that still deals 3 half-hearts is 60 ms, not the 80 ms of a 3-half-heart hit.
+    const w = player(), wb = guard(w.rt, 'brace-shell'); wb.resolved = { ...wb.resolved, guard: { ...wb.resolved.guard!, blockFraction: .25, breakHalfHearts: 99 } };
+    const h = resolveHit(req(crab(), w, { ...POKE, damage: 4 }), 1)!;
+    expect(h.outcome).toBe('blocked'); expect(h.amount).toBe(3); expect(h.hitStop).toBeCloseTo(.06);
+  });
+  it('D14: Counter beats grab and Dash beats grab', () => {
+    const p = player(), c = crab(); guard(p.rt, 'counter-spike'); const r = req(c, p, WRAP), e = resolveHit(r, 1)!;
+    expect(e.outcome).toBe('countered'); expect(p.rt.heldBy).toBeNull(); expect(r.action.heldTarget).toBeNull(); expect(p.health).toBe(6);
+    const d = player(); activeNow(act(d.rt, resolveMove({ abilityId: 'dash-side-fin' }, 1)));
+    const f = resolveHit(req(crab(), d, WRAP), 1)!;
+    expect(f.outcome).toBe('evaded'); expect(d.rt.heldBy).toBeNull(); expect(d.health).toBe(6);
+  });
+  it('grace never shortens', () => {
+    const p = player(); expect(resolveHit(req(crab(), p, POKE), 1)!.outcome).toBe('hit'); expect(p.rt.invulnerableUntil).toBeCloseTo(1.4);
+    const rt = newRuntime(); rt.heldBy = 'e7'; rt.invulnerableUntil = 10;
+    const c = crab(), g = activeNow(act(c.rt, speciesMove(WRAP))); g.phase = 'hold'; g.heldTarget = 'player';
+    releaseHold(c.rt, g, rt, 4, true); expect(rt.invulnerableUntil).toBe(10);
+  });
+  it('a hold ended by the held fighter frees it in the resolver', () => {
+    // The held player bites the grabber: poise 6 reached, the grabber is staggered, its hold ends, and the player is free.
+    const p = player(), c = crab(), r = req(c, p, WRAP); resolveHit(r, 1); r.action.phase = 'hold';
+    p.rt.breakProgress = .5;
+    const bite = resolveHit(req(p, c, { ...POKE, damageUnit: 'hp', damage: 6, poiseDamageMultiplier: 1 }), 2)!;
+    expect(bite.outcome).toBe('hit'); expect(r.action.phase).toBe('recovery'); expect(p.rt.heldBy).toBeNull(); expect(p.rt.breakProgress).toBe(0);
+    // The held fighter counters a strike of its grabber: the counter staggers the grabber and frees the held fighter.
+    const q = player(), k = crab(), w = req(k, q, WRAP); resolveHit(w, 1); w.action.phase = 'hold'; q.rt.breakProgress = .25;
+    guard(q.rt, 'counter-spike'); q.rt.invulnerableUntil = 0;
+    expect(resolveHit(req(k, q, POKE), 3)!.outcome).toBe('countered');
+    expect(w.action.phase).toBe('interrupted'); expect(q.rt.heldBy).toBeNull(); expect(q.rt.breakProgress).toBe(0);
+    // A third fighter's hit on the grabber ends the hold, but the resolver has no runtime of the held fighter: it stays for reconcileHolds.
+    const h = player(), g = crab(), x = req(g, h, WRAP); resolveHit(x, 1); x.action.phase = 'hold';
+    resolveHit(req(player({ id: 'p9' }), g, { ...POKE, damageUnit: 'hp', damage: 6, poiseDamageMultiplier: 1 }), 2);
+    expect(x.action.phase).toBe('recovery'); expect(h.rt.heldBy).toBe('e7');
+  });
 });

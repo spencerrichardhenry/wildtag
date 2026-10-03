@@ -1,7 +1,7 @@
 // The combat contract: plain data types shared by profiles, registries, motion, mounts and the ecosystem.
 // Ownership rules: positions and velocities are physical (not stage-local); `CombatRuntime` is never saved;
 // cooldown keys are `${actorId}:${partUid}:${grantId}`; hit ledger keys are `${actionInstanceId}:${hitGroupId}:${targetId}`;
-// hit resolution order is guard/counter -> immunity -> damage -> stagger -> impulse; an impulse changes `externalVelocity`
+// hit resolution order is counter -> immunity -> brace -> damage -> stagger -> impulse; an impulse changes `externalVelocity`
 // by `impulse / mass x (1 - knockbackResistance)`; cooldowns start at the end of recovery; the resolver never owns a velocity.
 import type { Medium } from './plans';
 export type Vec3 = Readonly<{ x: number; y: number; z: number }>;

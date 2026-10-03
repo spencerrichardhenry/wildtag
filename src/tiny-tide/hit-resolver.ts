@@ -1,7 +1,7 @@
-// Hit resolution (spec §6): one hit request at a time, in the contract order — validity, guard and counter, immunity, damage, stagger,
-// impulse, ledger and event. Pure: it changes the fighters' runtimes, health and ledgers it is given and returns combat events; it never
+// Hit resolution (spec §6): one hit request at a time, in the contract order — validity and ledger, Counter, immunity, Brace, damage,
+// grab catch, stagger, impulse, ledger and event. Pure: it changes the fighters' runtimes, health and ledgers it is given and returns combat events; it never
 // moves a body (an impulse only changes `externalVelocity`).
-import { addPoise, applyHitStop, endHold, endNow, interruptible, stagger, type PoiseMeter } from './action-engine';
+import { addPoise, applyHitStop, endHold, endNow, interruptible, stagger, type PoiseMeter, type StaggerResult } from './action-engine';
 import { hitStopFor } from './combat-profiles';
 import type { ActionState, ActorId, AttackSpec, CombatRuntime, HitOutcome, Vec3 } from './combat-types';
 import { damageAfterArmor } from './state';
@@ -69,8 +69,10 @@ export function targetsHit(a: ActionState): Set<ActorId> {
 function record(a: ActionState, key: string, now: number) { a.hitCounts.set(key, (a.hitCounts.get(key) ?? 0) + 1); a.lastHitAt.set(key, now); }
 /** A guard counts only while its action is active (a Brace in its startup or recovery does not block). */
 const guardAction = (rt: CombatRuntime, kind: 'brace' | 'counter') => rt.actions.find(a => a.phase === 'active' && a.resolved.guard?.kind === kind);
-/** Review R5 (amends spec §6.3): a Counter whose window is open when a parryable action enters `active` is armed against that action. The
- *  caller (combat world) calls this for each possible target on the tick the attacker's action enters active. */
+/** Review R5 (amends spec §6.3): a Counter whose window is open when a parryable action enters `active` is armed against that action.
+ *  Call it only on the tick the attacker's action enters active (`tickAction` → `enteredActive`), once for each possible target: the
+ *  combat world (T8) must do this, or a late lunge contact is not countered. A call at any other time would arm a Counter that was not
+ *  open at the active start. */
 export function armCounters(a: ActionState, target: CombatRuntime): void {
   if (!a.resolved.attack?.parryable) return;
   const counter = guardAction(target, 'counter');
@@ -79,6 +81,11 @@ export function armCounters(a: ActionState, target: CombatRuntime): void {
 /** The Counter that answers a contact of `a`: an open one, else one (not ended) that was armed against `a` at its active start. */
 const counterFor = (rt: CombatRuntime, a: ActionState) => guardAction(rt, 'counter')
   ?? rt.actions.find(c => c.phase !== 'interrupted' && c.resolved.guard?.kind === 'counter' && !c.countered && c.armedAgainst?.includes(a.instanceId));
+/** A stagger on `staggered` that ended its hold on `other` frees `other` here: the resolver has that runtime. A hold on a fighter that is not
+ *  in this request is freed by the combat world (T8 reconcileHolds). */
+function freeHeld(staggered: Fighter, res: StaggerResult, other: Fighter): void {
+  if (res.releasedTargets.includes(other.id) && other.rt.heldBy === staggered.id) { other.rt.heldBy = null; other.rt.breakProgress = 0; }
+}
 const dashing = (rt: CombatRuntime) => rt.actions.some(a => a.phase === 'active' && a.resolved.evasion);
 const unit = (v: Vec3): Vec3 => { const l = Math.hypot(v.x, v.y, v.z); return l > 1e-9 ? { x: v.x / l, y: v.y / l, z: v.z / l } : { x: 0, y: 0, z: 0 }; };
 function inFront(target: Fighter, origin: Vec3, halfAngle: number): boolean {
@@ -97,59 +104,62 @@ export function resolveHit(r: HitRequestIn, now: number, statusOf: (id: string) 
   if ((action.hitCounts.get(key) ?? 0) >= attack.maxHitsPerTarget || now - (action.lastHitAt.get(key) ?? -Infinity) < attack.repeatHitSeconds - 1e-9) return null;
   const hit = targetsHit(action);
   if (!hit.has(target.id) && hit.size >= attack.maxTargets) return null;
-  // 2. Guard and counter.
+  // 2. Counter (before immunity: a Counter still counters while its owner is invulnerable).
   const counter = attack.parryable ? counterFor(target.rt, action) : undefined;
   if (counter) {
     const g = counter.resolved.guard!, reflect = g.reflectDamage;
     counter.countered = true; endNow(target.rt, counter);
     attacker.health -= reflect;
-    stagger(attacker.rt, g.attackerStaggerSeconds, true);
+    freeHeld(attacker, stagger(attacker.rt, g.attackerStaggerSeconds, true), target);
     record(action, key, now);
     const stop = hitStopFor('countered', { targetIsPlayer: target.isPlayer, amount: 0 });
     applyHitStop(attacker.rt, now, stop); applyHitStop(target.rt, now, stop);
     return event(r, 'countered', now, { reflect, hitStop: stop, killed: !attacker.isPlayer && attacker.health <= 0 ? attacker.id : null });
   }
+  // 3. Immunity (controller ruling, fix round 1): an immune target takes no damage, no guard break and no stagger, even while bracing.
+  //    The ledger records it (D12).
+  if (!target.rt.damageable || now < target.rt.invulnerableUntil || dashing(target.rt)) {
+    record(action, key, now);
+    return event(r, dashing(target.rt) ? 'evaded' : 'immune', now);
+  }
+  // 4. Brace: blocked, or a heavy hit breaks the guard.
   let guard: 'blocked' | 'guard-broken' | null = null, blockFraction = 0;
   const brace = guardAction(target.rt, 'brace');
   if (brace && attack.blockable && inFront(target, r.origin, brace.resolved.guard!.frontHalfAngle ?? 0)) {
     const g = brace.resolved.guard!;
     blockFraction = g.blockFraction;
     guard = g.breakHalfHearts !== null && damageAfterArmor(attack.damage, target.armor) >= g.breakHalfHearts ? 'guard-broken' : 'blocked';
-    if (guard === 'guard-broken') { endNow(target.rt, brace, g.brokenCooldownSeconds); stagger(target.rt, g.breakStaggerSeconds); }
+    if (guard === 'guard-broken') { endNow(target.rt, brace, g.brokenCooldownSeconds); freeHeld(target, stagger(target.rt, g.breakStaggerSeconds), attacker); }
   }
-  // 3. Immunity (a blocked hit goes on to damage).
-  if (!guard && (!target.rt.damageable || now < target.rt.invulnerableUntil || dashing(target.rt))) {
-    record(action, key, now);
-    return event(r, dashing(target.rt) ? 'evaded' : 'immune', now);
-  }
-  // 4. Damage.
+  // 5. Damage. Post-hit grace never shortens a longer invulnerability.
   const catchHold = attack.hold && !guard ? attack.hold : null;
   let amount: number;
   if (target.isPlayer) {
     const raw = catchHold && attack.damageUnit === 'half-heart' ? catchHold.startHalfHearts : attack.damage, hh = damageAfterArmor(raw, target.armor);
     amount = guard === 'blocked' ? Math.floor(hh * (1 - blockFraction)) : guard === 'guard-broken' ? Math.floor(hh * (1 - blockFraction / 2)) : hh;
     target.health -= amount / 2;
-    if (amount > 0) { target.rt.invulnerableUntil = now + POST_HIT_INVULNERABLE; target.rt.lastDamageAt = now; }
+    if (amount > 0) { target.rt.invulnerableUntil = Math.max(target.rt.invulnerableUntil, now + POST_HIT_INVULNERABLE); target.rt.lastDamageAt = now; }
   } else { amount = attack.damage; target.health -= amount; }
   action.connected = true;
-  // 6 (grab). A catch: held when the target fits and is grabbable, else it breaks free at once (spec §6.6).
+  // 6 (grab). A catch: held when the target fits, is grabbable and is not already held, else it breaks free at once (spec §6.6).
+  //    A catch gives no impulse and no poise (controller ruling, fix round 1): it returns before the stagger and impulse steps.
   if (catchHold) {
     record(action, key, now);
     const fits = target.L <= catchHold.sizeFactor * attacker.L + 1e-9 && target.grabbable && target.rt.heldBy === null && target.health > 0;
     if (fits) {
       action.heldTarget = target.id; target.rt.heldBy = attacker.id; target.rt.breakProgress = 0;
       for (const a of target.rt.actions) if (interruptible(a)) endNow(target.rt, a);
-    } else stagger(target.rt, BREAK_FREE_STAGGER);
+    } else freeHeld(target, stagger(target.rt, BREAK_FREE_STAGGER), attacker);
     const stop = hitStopFor('grabbed', { targetIsPlayer: target.isPlayer, amount });
     applyHitStop(attacker.rt, now, stop); applyHitStop(target.rt, now, stop);
     return event(r, fits ? 'grabbed' : 'hit', now, { amount, hitStop: stop, caught: true, held: fits, killed: !target.isPlayer && target.health <= 0 ? target.id : null });
   }
-  // 5. Stagger (not when blocked).
+  // 7. Stagger (not when blocked).
   if (guard !== 'blocked') {
-    if (target.isPlayer) { if (attack.staggerSeconds > 0) stagger(target.rt, attack.staggerSeconds); }
-    else if (target.poise && addPoise(target.poise, amount * attack.poiseDamageMultiplier, target.rt.actionClock, target.poiseMax)) stagger(target.rt, attack.staggerSeconds * (1 - target.staggerResist));
+    if (target.isPlayer) { if (attack.staggerSeconds > 0) freeHeld(target, stagger(target.rt, attack.staggerSeconds), attacker); }
+    else if (target.poise && addPoise(target.poise, amount * attack.poiseDamageMultiplier, target.rt.actionClock, target.poiseMax)) freeHeld(target, stagger(target.rt, attack.staggerSeconds * (1 - target.staggerResist)), attacker);
   }
-  // 6. Impulse: J = impulse × L_a × min(m_a, 2 m_t) along origin → point (horizontal for ground targets); Δv = J / m_t × (1 − kr).
+  // 8. Impulse: J = impulse × L_a × min(m_a, 2 m_t) along origin → point (horizontal for ground targets); Δv = J / m_t × (1 − kr).
   let dir = { x: r.point.x - r.origin.x, y: target.ground ? 0 : r.point.y - r.origin.y, z: r.point.z - r.origin.z };
   dir = unit(dir);
   // The knock after resistance is capped at KNOCKBACK_CAP × L_t; the guard then scales the capped knock.
@@ -161,7 +171,7 @@ export function resolveHit(r: HitRequestIn, now: number, statusOf: (id: string) 
   let status: CombatEvent['status'] = null;
   const s = attack.statusEffectId && guard !== 'blocked' ? statusOf(attack.statusEffectId) : null;
   if (s) { target.rt.status = { id: 'inked', until: now + s.seconds, speedFactor: s.speedFactor }; status = 'inked'; }
-  // 7. Ledger and event.
+  // 9. Ledger and event.
   record(action, key, now);
   const outcome: HitOutcome = guard ?? 'hit', stop = hitStopFor(outcome, { targetIsPlayer: target.isPlayer, amount });
   applyHitStop(attacker.rt, now, stop); applyHitStop(target.rt, now, stop);
