@@ -5,7 +5,8 @@ import { entityRadius, provoke, type Entity } from './ecosystem';
 import { SIZES } from './biomes';
 import { dietCanEat, eat, inReach, reward, unlock, type Run } from './state';
 import { dietOf, type Derived } from './genome';
-import type { Capsule, Vec3 } from './combat-types';
+import type { Capsule, Vec3, WorldShape } from './combat-types';
+import { hurtboxesHit } from './combat-shapes';
 
 /** Seconds between chomps (main.ts `cooldown`). */
 export const CHOMP_COOLDOWN = .24;
@@ -15,7 +16,7 @@ export function biteTargets(run: Run, entities: readonly Entity[], player: Vec3,
   const size = SIZES[run.stage]!, p = { x: player.x / size, y: player.y / size, z: player.z / size }, diet = dietOf(run.genome);
   const out: BiteTarget[] = []; let wrongDiet: string | null = null;
   for (const e of entities) {
-    if (e.eaten) continue;
+    if (e.eaten || e.spec.behaviourId) continue;   // combat species are never chomp targets (spec §8.3)
     const tier = e.spec.tier, attacking = e.mode === 'hunt' || e.mode === 'angry';
     if (tier !== run.stage && !(attacking && tier === run.stage + 1)) continue;
     const radius = tier > run.stage ? entityRadius(e) / size : 0, food = { x: e.x / size, y: e.y / size, z: e.z / size };
@@ -47,4 +48,14 @@ export function chomp(run: Run, eco: { readonly entities: readonly Entity[]; con
   else { dna = Math.round(e.spec.dna * .5); reward(run, dna, e.spec.tier === run.stage); }
   eco.consume(e);
   return { kind: 'ate', entity: e, dna, won, drop };
+}
+/** The basic dispatch rule (spec §8.3): the first combat species that is not eaten, of the player's tier or one above, with a hurtbox in the
+ *  Bite cone (the resolved Bite shape with the current aim, range × 1.25). `isCombat` also applies the herbivore rule (review R17).
+ *  Null: today's chomp runs. */
+export function biteDispatch(cone: WorldShape, entities: readonly Entity[], stage: number, isCombat: (e: Entity) => boolean, hurtboxesOf: (e: Entity) => readonly Capsule[]): Entity | null {
+  for (const e of entities) {
+    if (e.eaten || !e.active || (e.spec.tier !== stage && e.spec.tier !== stage + 1) || !isCombat(e)) continue;
+    if (hurtboxesHit(hurtboxesOf(e), [cone])) return e;
+  }
+  return null;
 }

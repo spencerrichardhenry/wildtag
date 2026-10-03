@@ -1,7 +1,8 @@
 // tests/tiny-tide-core/mount.test.ts
 import { describe, expect, it } from 'vitest';
 import * as T from 'three';
-import { bodyHull, bodyLengthOf, hullOffsets, massFor, resolveMount, sampleCombatPose } from '../../src/tiny-tide/mount';
+import { bodyHull, bodyLengthOf, hullOffsets, massFor, resolveMount, sampleCombatPose, speciesActor, speciesCombatPose } from '../../src/tiny-tide/mount';
+import { species } from '../../src/tiny-tide/species';
 import { boneMatricesInto, createRigPose, restBoneMatrices, restRig, rigPoseInto, type RigPose } from '../../src/tiny-tide/rig';
 import { layout, surface, SPACING } from '../../src/tiny-tide/body-geometry';
 import { starterGenome, type Genome } from '../../src/tiny-tide/genome';
@@ -85,5 +86,14 @@ describe('mounts and combat poses', () => {
   it('gives the renderer a reflected local transform for copy 1', () => {
     const g = withPart('claw_pincer', .3, 2), p = new T.Vector3(), q = new T.Quaternion(), s = new T.Vector3();
     resolveMount(g, g.parts[4]!, 1).local.decompose(p, q, s); expect(s.x).toBeLessThan(0);
+  });
+  it('scales a species actor by bodyScale and gives its pose a centre emitter at the hull centre (spec §5.10, §11.3)', () => {
+    const crab = species(1, 'crab'), big = { id: 7, spec: { ...crab, bodyScale: 1.5 } };
+    expect(speciesActor(big).hull[0]!.radius).toBeCloseTo(.35 * 4 * 1.5); expect(speciesActor(big).bodyLength).toBeCloseTo(4 * 1.5 * 1.4);
+    expect(speciesActor({ id: 8, spec: crab }).hull[0]!.radius).toBeCloseTo(.35 * 4);
+    const pose = speciesCombatPose({ ...big, x: 1, y: 2, z: 3, heading: Math.PI / 2 }, 0), centre = pose.emitters.find(e => e.source.kind === 'actor' && e.source.socketId === 'centre')!;
+    expect(centre.origin).toEqual(pose.hull[0]!.start); expect(centre.origin.y).toBeCloseTo(2 + .35 * 6);
+    expect(centre.forward.x).toBeCloseTo(1); expect(new T.Vector3().setFromMatrixPosition(new T.Matrix4().fromArray([...centre.localToWorld])).y).toBeCloseTo(centre.origin.y);
+    expect(pose.emitters.map(e => e.source.kind === 'actor' && e.source.socketId)).toEqual(['root', 'centre']);
   });
 });

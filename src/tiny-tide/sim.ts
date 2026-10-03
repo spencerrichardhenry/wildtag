@@ -9,7 +9,10 @@ import { derive, effectiveStats, type Derived } from './genome';
 import { basicRequested } from './input';
 import { beginRespawn, growthPose, newTrapWatch, recoverPlayer, resetRuntime, resolveHazards, resolveRespawn, rescueFreeRun, TRAP_MOVE, trapDue, trapFailed, trapRescued, rescueBudget, UnstickSearch, wedged, type TrapWatch } from './lifecycle';
 import { startAnchor } from './motion';
-import { bodyLengthOf, hullFitOf, hullOffsets, massFor } from './mount';
+import { bodyLengthOf, hullFitOf, hullOffsets, massFor, sampleCombatPose } from './mount';
+import { CombatWorld, playerMatrix, type PlayerBody } from './combat-world';
+import { assignSlots, movesOf, NO_PINS, type MoveSet, type SlotAssignment } from './moves';
+import { createRigPose, type RigPose } from './rig';
 import { orientedHeave, orientedSway, rotateInto } from './orientation';
 import { newStepSnapshot, restoreStep, snapshotStep, stepPlayer, type PlayerStepResult, type StepSnapshot } from './player-motion';
 import { habitat, movement, movementCapabilities } from './profiles';
@@ -37,6 +40,8 @@ export interface SimState {
   stepCalls: number; rescueCalls: number;
   actorCache: ActorCache | null; hullRescaled: boolean; hullGrew: boolean;
   acceptedHits: number; rejectedHits: number; faintLog: { time: number; hadPermit: boolean; hadArc: boolean }[];
+  /** The combat world (spec §3.1) and the player's moves, cached per genome revision. */
+  combat: CombatWorld; moves: { revision: number; set: MoveSet; slots: SlotAssignment; rig: RigPose } | null;
 }
 export type SimEvent =
   /** A pose was installed (`snap`: the camera jumps there too: start, respawn). */
@@ -52,10 +57,10 @@ export type SimEvent =
   | { type: 'resume-fainted' };
 export interface SimInput { dt: number; intent: CombatInput; wish: Vec3; held: boolean }
 
-type SimOwned = Pick<SimState, 'trap' | 'unstick' | 'glide' | 'beforeStep' | 'rescueLog' | 'trapRescues' | 'lastSolids' | 'stepCalls' | 'rescueCalls' | 'actorCache' | 'hullRescaled' | 'hullGrew' | 'faintLog'>;
+type SimOwned = Pick<SimState, 'trap' | 'unstick' | 'glide' | 'beforeStep' | 'rescueLog' | 'trapRescues' | 'lastSolids' | 'stepCalls' | 'rescueCalls' | 'actorCache' | 'hullRescaled' | 'hullGrew' | 'faintLog' | 'combat' | 'moves'>;
 /** The fields only the simulation owns (main.ts spreads them into its bound state). */
 export const simOwnedState = (): SimOwned => ({ trap: newTrapWatch(), unstick: null, glide: null, beforeStep: newStepSnapshot(), rescueLog: { searches: 0, found: 0, failed: 0, last: null },
-  trapRescues: 0, lastSolids: [], stepCalls: 0, rescueCalls: 0, actorCache: null, hullRescaled: false, hullGrew: false, faintLog: [] });
+  trapRescues: 0, lastSolids: [], stepCalls: 0, rescueCalls: 0, actorCache: null, hullRescaled: false, hullGrew: false, faintLog: [], combat: new CombatWorld(), moves: null });
 /** A plain state (tests and the combat probe). */
 export function newSimState(run: Run): SimState {
   return { run, rt: newRuntime(), physical: { x: 0, y: 0, z: 0 }, time: 0, mode: 'menu', derived: derive(effectiveStats(run.genome, currentPlan(run))), genomeRevision: 0,
@@ -144,6 +149,20 @@ export function tryRespawn(s: SimState, w: SimWorld, events: SimEvent[]): boolea
   installPose(s, w, anchor, actor, events, true); refreshDerived(s); return true;
 }
 
+/** The player's moves and slots, cached per genome revision (pins: none until the loadout carries them). */
+export function playerMoves(s: SimState): NonNullable<SimState['moves']> {
+  if (!s.moves || s.moves.revision !== s.genomeRevision) s.moves = { revision: s.genomeRevision, set: movesOf(s.run.genome), slots: assignSlots(s.run.genome, NO_PINS), rig: createRigPose(s.run.genome) };
+  return s.moves;
+}
+/** The player's combat body at its installed pose (spec §5.10: sampleCombatPose on the rest rig). The centre is the middle of the hull. */
+export function playerBody(s: SimState, actor: Actor): PlayerBody {
+  const plan = currentPlan(s.run), m = playerMoves(s), scale = SIZES[s.run.stage]! * growthOf(s.run), caps = movementCapabilities(plan);
+  const pose = sampleCombatPose({ actorId: 'player', genome: s.run.genome, plan, world: playerMatrix(s.physical, s.rt.orientation, scale), rig: m.rig, physicalLength: actor.bodyLength });
+  const hull = worldHull(s, actor), first = hull[0]!, last = hull[hull.length - 1]!;
+  const centre = { x: (first.start.x + last.end.x) / 2, y: (first.start.y + last.end.y) / 2, z: (first.start.z + last.end.z) / 2 };
+  return { rt: s.rt, position: s.physical, centre, L: actor.bodyLength, mass: massFor(plan, s.run.genome, actor.bodyLength), knockbackResistance: plan.physics.knockbackResistance,
+    armor: s.derived.armor, ground: caps.ground, mode: movement(plan.movement).mode, inBreachArc: s.rt.arc !== null, health: s.run.health, pose };
+}
 /** One frame of the simulation (main.ts `frame` without presentation). */
 export function simFrame(s: SimState, w: SimWorld, input: SimInput): SimEvent[] {
   const events: SimEvent[] = [], { dt, held } = input, run = s.run;

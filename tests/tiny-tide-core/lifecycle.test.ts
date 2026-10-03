@@ -32,6 +32,11 @@ describe('lifecycle', () => {
     expect(rt).toMatchObject({ permit: null, arc: null, breachReadyAt: 0, invulnerableUntil: 0, staggerUntil: 0, guardProfileId: null, damageable: true, targetable: true, perceivable: true, actions: [], orientation: { yaw: 1, pitch: 0 } });
     expect(rt.controlledVelocity).toEqual({ x: 0, y: 0, z: 0 }); expect(rt.externalVelocity).toEqual({ x: 0, y: 0, z: 0 }); expect(rt.cooldowns.size).toBe(0);
   });
+  it('resets the combat fields (spec §13): action clock, hit-stop, buffer, holds and status', () => {
+    const rt = busy(); Object.assign(rt, { actionClock: 7, hitStopUntil: 8, buffered: { input: 'basic', at: 6.9 }, heldBy: 'e3', breakProgress: .5, status: { id: 'inked', until: 9, speedFactor: .7 } });
+    resetRuntime(rt);
+    expect(rt).toMatchObject({ actionClock: 0, hitStopUntil: 0, buffered: null, heldBy: null, breakProgress: 0, status: null });
+  });
   it('faints once, even when called twice, and resolves once with a legal anchor', () => {
     const run = freshRun(1), rt = busy(), before = structuredClone(run.economy);
     expect(beginRespawn(run, rt)).toBe(true); const after = structuredClone(run.economy);

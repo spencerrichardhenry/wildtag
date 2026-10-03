@@ -45,6 +45,9 @@ export interface AttackSpec { id: string; shape: AttackShape; poseProfileId: str
   whiffRecoverySeconds?: number;
   /** A status applied on hit (ink). */
   statusEffectId?: string;
+  /** Review R4: 'target' places the shape origin at the target's hurtbox centre at wind-up start (a `fixed-at-start` point attack, the
+   *  Clawmother's `mother-emerge`). Unset: the hull front (species, review R2) or the socket (player). */
+  origin?: 'target';
   /** Player attacks only. */
   scaling?: MoveScaling; pair?: PairBonus | null }
 export interface AbilitySpec { id: string; cooldownSeconds: number; allowedMotionModes: readonly MovementMode[]; effectProfileId: string;
@@ -165,6 +168,8 @@ export interface ActionState { instanceId: string; definitionId: string; grantId
   lockedShapes: WorldShape[] | null;
   /** Squeezes dealt in the hold phase. */
   squeezes: number;
+  /** Review R4: the shape origin of a target-origin attack, fixed at wind-up start (world space). */
+  originPoint?: Vec3;
   /** A Counter only: the instance ids of the parryable attacker actions it was open at the active start of (review R5, hit-resolver.ts armCounters). */
   armedAgainst?: string[];
   /** The cooldown key (contract: `${actorId}:${partUid}:${grantId}`; species `${actorId}:root:${attackId}`). */

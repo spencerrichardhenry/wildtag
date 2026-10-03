@@ -276,6 +276,7 @@ catalog must report nothing).
 | V18 | Species: a species with `behaviourId` has no `contactHazardId`; a species with `hunts` or `stingsStages` has a `contactHazardId` or a hunter, ambush or alpha behaviour (replaces today's "hazard missing" rule). |
 | V19 | Species: `bodyScale` finite and in `[0.3, 3]`; `alpha.size` in `[0, 4]`; `alpha.rewardDna` a non-negative safe integer; an alpha species has `count: 1` and an alpha behaviour. |
 | V20 | Species: `model` names a food kind that has a GLB. |
+| V21 | Behaviour (plan review R2): every `AttackChoice.band[1]` ≤ the forward reach of its attack's shape from the hull front (cone: `range`; capsule: the far end's `z` + `radius`; a lunge: the full committed capsule). An attack's optional `origin` is `'target'` only with `aimMode: 'fixed-at-start'` (R4). |
 
 ## 5. The action engine (`action-engine.ts`)
 
@@ -333,8 +334,10 @@ An actor can start an action only when all of these are true:
 ### 5.4 Aim tracking and lock
 
 - At start, `aim` is the input aim (player) or the direction to the target's
-  hurtbox centre (species). Free-moving species clamp the pitch to ±0.6 rad;
-  ground species (`ground` movement mode) aim level.
+  hurtbox centre (species). Every species clamps the pitch to ±0.6 rad,
+  ground species included (plan review R3: a ground attacker on a ledge aims
+  down at a target lower on the seabed). The wanted aim while tracking is
+  clamped the same way. Impulses stay horizontal for ground targets (§6.2).
 - In windup, until `τ − τ0 ≥ aimLockAtSeconds`, the aim turns toward the
   wanted aim on the great circle, by at most
   `maxTrackingRadiansPerSecond × Δτ`.
@@ -418,6 +421,12 @@ An actor can start an action only when all of these are true:
 - The shape origin is the emitter origin of the action's socket in the pose.
   The player pose comes from `sampleCombatPose`; a species pose from
   `speciesCombatPose`, which gets a `centre` socket at its hull centre.
+- Species origin (plan review R2): for `aimMode` `input` and `fixed-at-start`,
+  the origin is the hull front: hull centre + aim × hull radius. A `centre`
+  attack keeps the hull centre. The claw point of a species hold uses the same
+  origin. An attack with `origin: 'target'` (R4, `mother-emerge`) is centred
+  on the target's hurtbox centre at wind-up start; the action stores that
+  point, and the telegraph and the hit use it.
 - The engine samples the pose at the start and at the lock. Between them, the
   live pose is sampled each tick (at most once per actor per tick).
 - The local frame: `z` = aim; `y` = world up made orthogonal to `z` (if
@@ -857,6 +866,12 @@ When the basic input is pressed or held:
 3. Else, today's chomp runs (`biteTargets` and `chomp`, moved to
    `feeding.ts`). Combat species are not chomp targets.
 
+Herbivores (plan review R17): in step 2, a herbivore takes only a combat
+species that is engaged with it: its mode is `hunt` or `angry`, it has an
+action that targets the player, or it hit the player in the last 3 s
+(`ENGAGED_SECONDS`). Otherwise CHOMP eats. Meat and omnivore diets keep the
+rule above.
+
 This rule is the same for Space, the left mouse and the phone button. Space
 keeps its eat-food meaning when no enemy is in the cone.
 
@@ -1217,7 +1232,8 @@ Speeds are in tier-local units per second (× `SIZES[tier]`). HP is in HP.
 
 All species attacks: `damageUnit: 'half-heart'`, `crossing: 'same-medium'`,
 `obstruction: 'terrain-and-cover'`, `maxTargets: 1`, `hitGroup:
-'shared-grant'`, socket `centre`. Shape numbers in `L_e`. "Lock" is
+'shared-grant'`, socket `centre`; the shape origin is the hull front, or the
+hull centre for `centre` attacks (§5.10, plan review R2). Shape numbers in `L_e`. "Lock" is
 `aimLockAtSeconds`. Telegraph: amber solid unless the attack is unblockable
 (red stripes). `staggerSeconds` is the player's stagger. "Int." = interruptible
 (in windup; lunges in windup only).

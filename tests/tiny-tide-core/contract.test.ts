@@ -11,6 +11,7 @@ import { SPECIES } from '../../src/tiny-tide/species';
 import { HABITAT_FACTS, plan, PLANS } from '../../src/tiny-tide/plans';
 import { starterGenome, type Genome } from '../../src/tiny-tide/genome';
 import { fixtureCatalogs } from './combat-fixture';
+import { forwardReach } from '../../src/tiny-tide/combat-shapes';
 
 const synthetic = (): Catalogs => fixtureCatalogs();
 const mutate = (f: (c: Catalogs) => void) => { const c = structuredClone(synthetic()); f(c); return validateContract(c); };
@@ -66,6 +67,8 @@ describe('combat contract', () => {
       // V2
       [c => { c.attacks.poke!.damageUnit = 'hearts' as never; }, 'attack poke: damageUnit'],
       [c => { c.attacks.poke!.aimMode = 'psychic' as never; }, 'attack poke: aimMode'],
+      [c => { c.attacks.poke!.origin = 'target'; }, 'attack poke: origin'],   // review R4: a target origin needs fixed-at-start
+      [c => { c.attacks.poke!.origin = 'beside' as never; c.attacks.poke!.aimMode = 'fixed-at-start'; c.attacks.poke!.aimLockAtSeconds = 0; }, 'attack poke: origin'],
       [c => { c.attacks.poke!.moveSpeedFactor = 1.2; }, 'attack poke: moveSpeedFactor'],
       [c => { c.attacks.poke!.poiseDamageMultiplier = -1; }, 'attack poke: poiseDamageMultiplier'],
       // V3
@@ -156,10 +159,22 @@ describe('combat contract', () => {
       [c => { c.species = c.species.map(s => s.key === '1:fx_alpha' ? { ...s, alpha: { ...s.alpha!, size: 5 } } : s); }, 'species 1:fx_alpha: alpha'],
       [c => { c.species = c.species.map(s => s.key === '1:fx_alpha' ? { ...s, alpha: { ...s.alpha!, rewardDna: 1.5 } } : s); }, 'species 1:fx_alpha: alpha'],
       [c => { c.species = c.species.map(s => s.key === '1:fx_alpha' ? { ...s, count: 2 } : s); }, 'species 1:fx_alpha: alpha count or behaviour'],
+      // V21 (review R2): a band reaches no farther than the shape from the hull front.
+      [c => { c.behaviours['fx-hunter']!.attacks = [{ attackId: 'poke', band: [0, 1.3], weight: 3 }, { attackId: 'wrap', band: [0, .6], weight: 1 }]; }, 'behaviour fx-hunter: reach poke'],
+      [c => { c.behaviours['fx-hunter']!.attacks = [{ attackId: 'poke', band: [0, 1.2], weight: 3 }, { attackId: 'wrap', band: [0, .81], weight: 1 }]; }, 'behaviour fx-hunter: reach wrap'],
+      [c => { c.behaviours['fx-alpha']!.phases = c.behaviours['fx-alpha']!.phases!.map(p => ({ ...p, attacks: [{ attackId: 'smash', band: [0, 1.01], weight: 1 }] })); }, 'behaviour fx-alpha: reach smash'],
       // V20
       [c => { c.species = c.species.map(s => s.key === '0:fx_fleer' ? { ...s, model: 'eel' as never } : s); }, 'species 0:fx_fleer: model eel'],
     ];
     for (const [f, message] of cases) expect(mutate(f), message).toContain(message);
+  });
+  it('V21 measures the forward reach of a shape: cone range, capsule far end + radius, the full lunge capsule', () => {
+    expect(forwardReach({ kind: 'cone', range: 1.2, halfAngle: .5 })).toBe(1.2);
+    expect(forwardReach({ kind: 'capsule', start: { x: 0, y: 0, z: .1 }, end: { x: 0, y: 0, z: .75 }, radius: .12 })).toBeCloseTo(.87, 9);
+    expect(forwardReach({ kind: 'capsule', start: { x: 0, y: 0, z: 0 }, end: { x: 0, y: 0, z: 0 }, radius: 1.6 })).toBe(1.6);
+    const lunge = (band: number) => mutate(c => { c.attacks.wrap = { ...c.attacks.wrap!, lunge: { distanceBodyLengths: .5 } };
+      c.behaviours['fx-hunter']!.attacks = [{ attackId: 'poke', band: [0, 1.2], weight: 3 }, { attackId: 'wrap', band: [.2, band], weight: 1 }]; });
+    expect(lunge(.8)).toEqual([]); expect(lunge(.81)).toContain('behaviour fx-hunter: reach wrap');   // a lunge reaches its full committed capsule
   });
   it('names the hostile sizes and their minimum wind-ups (spec §11.1)', () => {
     expect(hostileSizes(SPECIES.find(s => s.key === '1:crab')!)).toEqual([0, 1]);   // hunts 0; fights at its own tier 1

@@ -30,6 +30,9 @@ export function worldShape(shape: AttackShape, f: AimFrame, L: number): WorldSha
 export const actionShapes = (shape: AttackShape, origins: readonly Vec3[], aim: Vec3, bodyForward: Vec3, L: number): WorldShape[] =>
   origins.map(o => worldShape(shape, aimFrame(o, aim, bodyForward), L));
 
+/** How far a shape reaches forward of its origin along the aim, in L (contract V21, review R2): a cone's range; a capsule's far end + its
+ *  radius (a lunge capsule is the full committed capsule). */
+export const forwardReach = (shape: AttackShape): number => shape.kind === 'cone' ? shape.range : Math.max(shape.start.z, shape.end.z) + shape.radius;
 /** The closest point to c on the segment ab. */
 export function closestOnSegment(c: Vec3, a: Vec3, b: Vec3): Vec3 {
   const ab = sub(b, a), l2 = dot(ab, ab);

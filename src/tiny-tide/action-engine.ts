@@ -110,12 +110,15 @@ export function sweepEnded(rt: CombatRuntime): ActionState[] {
   if (ended.length) rt.actions = rt.actions.filter(a => a.phase !== 'interrupted');
   return ended;
 }
-/** A hold ends (break-free, a blocked grab motion, a stagger): the grabber goes to recovery now. Returns the released target id. */
+/** A hold ends (break-free, a blocked grab motion, a stagger): the grabber goes to recovery now. A catch in the active phase (before the
+ *  hold phase starts) ends the same way. Returns the released target id. */
 export function endHold(rt: CombatRuntime, a: ActionState): ActorId | null {
-  if (a.phase !== 'hold') return null;
+  if (a.phase !== 'hold' && !(a.phase === 'active' && a.heldTarget !== null)) return null;
   const target = a.heldTarget; a.heldTarget = null; a.phase = 'recovery'; a.phaseStartedAt = rt.actionClock;
   return target;
 }
+/** The action of `rt` that holds `who` (a catch in active, or the hold phase). */
+export const holdingAction = (rt: CombatRuntime, who: ActorId): ActionState | undefined => rt.actions.find(a => (a.phase === 'hold' || a.phase === 'active') && a.heldTarget === who);
 
 // ---- tick (spec §5.2, §5.4, §5.5) ----
 /** Turns `aim` toward `wanted` on the great circle by at most `maxAngle` radians. */
@@ -217,7 +220,7 @@ export function stagger(rt: CombatRuntime, seconds: number, force = false): Stag
   rt.staggerUntil = Math.max(rt.staggerUntil, rt.actionClock + seconds);
   for (const a of rt.actions) {
     if (a.phase === 'interrupted') continue;
-    if (a.phase === 'hold') { const t = endHold(rt, a); if (t !== null) out.releasedTargets.push(t); if (force) { endNow(rt, a); out.interrupted.push(a); } continue; }
+    if (a.phase === 'hold' || (a.phase === 'active' && a.heldTarget !== null)) { const t = endHold(rt, a); if (t !== null) out.releasedTargets.push(t); if (force) { endNow(rt, a); out.interrupted.push(a); } continue; }
     if (force ? a.phase === 'windup' || a.phase === 'active' : interruptible(a)) { endNow(rt, a); out.interrupted.push(a); }
   }
   return out;

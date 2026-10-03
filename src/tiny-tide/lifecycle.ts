@@ -13,6 +13,8 @@ export function resetRuntime(rt: CombatRuntime, orientation: Orientation = { yaw
   rt.controlledVelocity = { x: 0, y: 0, z: 0 }; rt.externalVelocity = { x: 0, y: 0, z: 0 };
   rt.actions = []; rt.cooldowns.clear(); rt.permit = null; rt.arc = null; rt.breachReadyAt = 0; rt.invulnerableUntil = 0; rt.staggerUntil = 0; rt.guardProfileId = null;
   rt.targetable = rt.perceivable = rt.damageable = true; rt.groundOffset = 0; rt.orientation = { yaw: orientation.yaw, pitch: orientation.pitch };
+  // Combat (spec §13): the action clock, hit-stop, the input buffer, holds and status start over.
+  rt.actionClock = 0; rt.hitStopUntil = 0; rt.buffered = null; rt.heldBy = null; rt.breakProgress = 0; rt.status = null;
 }
 
 /** Faints once. The caller saves at once, before the animation. */

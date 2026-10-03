@@ -157,9 +157,9 @@ export function playerActor(plan: BodyPlan, genome: Genome, stage: number, growt
   const scale = SIZES[stage]! * growth, fit = hullFitOf(plan);
   return { id: 'player', hull: hullOffsets(genome, scale, fit), habitat: habitat(plan.habitat), bodyLength: bodyLengthOf(genome) * scale, ...(fit === 'tight' ? { fit } : {}) };
 }
-/** One sphere standing on the origin (food models stand on their origin). */
-export function speciesActor(e: { id: number; spec: Pick<Species, 'tier' | 'habitatProfileId'> }): Actor {
-  const size = SIZES[e.spec.tier]!, ro = .35 * size, centre = { x: 0, y: ro, z: 0 };
+/** One sphere standing on the origin (food models stand on their origin), × the species' bodyScale (spec §11.3). */
+export function speciesActor(e: { id: number; spec: Pick<Species, 'tier' | 'habitatProfileId' | 'bodyScale'> }): Actor {
+  const size = SIZES[e.spec.tier]! * (e.spec.bodyScale ?? 1), ro = .35 * size, centre = { x: 0, y: ro, z: 0 };
   return { id: `e${e.id}`, hull: [{ start: centre, end: centre, radius: ro, sway: 0, heave: 0 }], habitat: habitat(e.spec.habitatProfileId), bodyLength: size * 1.4 };
 }
 
@@ -200,12 +200,15 @@ export function sampleCombatPose(input: PoseInput): CombatPose {
     mass: massFor(input.plan, g, input.physicalLength), knockbackResistance: input.plan.physics.knockbackResistance, hull, hurtboxes, emitters };
 }
 
-/** One hull sphere at the entity, hurtboxes = hull, one root emitter facing the heading; mass = body length. */
+const poseMatrix = new T.Matrix4();
+/** One hull sphere at the entity, hurtboxes = hull; a root emitter at the origin and a `centre` emitter at the hull centre (spec §5.10),
+ *  both facing the heading; mass = body length. One scratch matrix (review R18): only the returned pose is allocated. */
 export function speciesCombatPose(e: { id: number; spec: Species; x: number; y: number; z: number; heading: number }, _now: number): CombatPose {
   const actor = speciesActor(e), at = (p: Vec3): Vec3 => ({ x: p.x + e.x, y: p.y + e.y, z: p.z + e.z });
   const hull = actor.hull.map(c => ({ ...c, start: at(c.start), end: at(c.end) })), position = { x: e.x, y: e.y, z: e.z };
-  const forward = { x: Math.sin(e.heading), y: 0, z: Math.cos(e.heading) };
-  const localToWorld = [...new T.Matrix4().makeRotationY(e.heading).setPosition(e.x, e.y, e.z).elements];
+  const forward = { x: Math.sin(e.heading), y: 0, z: Math.cos(e.heading) }, centre = hull[0]!.start;
+  const root = [...poseMatrix.makeRotationY(e.heading).setPosition(e.x, e.y, e.z).elements], mid = [...poseMatrix.setPosition(centre.x, centre.y, centre.z).elements];
   return { actorId: actor.id, position, forward, bodyLength: actor.bodyLength, mass: actor.bodyLength, knockbackResistance: 0, hull, hurtboxes: hull,
-    emitters: [{ source: { kind: 'actor', actorId: actor.id, mountId: 'root', socketId: 'root' }, origin: { ...position }, forward: { ...forward }, localToWorld }] };
+    emitters: [{ source: { kind: 'actor', actorId: actor.id, mountId: 'root', socketId: 'root' }, origin: { ...position }, forward: { ...forward }, localToWorld: root },
+      { source: { kind: 'actor', actorId: actor.id, mountId: 'root', socketId: 'centre' }, origin: { ...centre }, forward: { ...forward }, localToWorld: mid }] };
 }
