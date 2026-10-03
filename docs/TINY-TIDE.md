@@ -516,7 +516,7 @@ or a counter.
 | Input (desktop) | Action |
 | --- | --- |
 | W A S D, arrow keys | Move |
-| Mouse pointer | Aim. Put the pointer on a creature to aim at it (also above or below you, and also when the mouse is still). With no creature under the pointer, the aim is where the pointer meets the seabed, a rock or the flat plane through your creature, beyond your creature. After 4 s without a pointer move and with no creature under it, the aim is the camera direction. |
+| Mouse pointer | Aim. Put the pointer on a creature to aim at it (also above or below you, and also when the mouse is still). With no creature under the pointer, the aim is where the pointer meets the seabed, a rock or the flat plane through your creature, beyond your creature. With the pointer off the game, the aim is the camera direction. |
 | Left mouse, Space | Chomp: Bite or eat (see below) |
 | Right mouse | Slot 1. Hold it for Brace. |
 | 1, 2, 3, 4 | Slots 1 to 4 |
@@ -918,7 +918,7 @@ prints `PASSED: all 11 combat checks`. Pass check ids to run some.
 
 | Check | What it proves |
 | --- | --- |
-| `desktop-controls` | A left click starts Bite with a crab in the cone. Right mouse held keeps Brace up. Keys 1 to 4 start slots 1 to 4. The aim is within 5 degrees of the pointer. With no pointer move for 4 s, the aim is the camera direction. A middle drag turns the camera. |
+| `desktop-controls` | A left click starts Bite with a crab in the cone. Right mouse held keeps Brace up. Keys 1 to 4 start slots 1 to 4. The aim is within 5 degrees of the pointer, also after 4.3 s with the pointer still. With the pointer off the game, the aim is the camera direction. A middle drag turns the camera. |
 | `pointer-pick` | With the pointer on a crab's real screen position, the aim yaw is within 10 degrees of the crab at 0, 1.5 and 3 L above it, and a Bite aimed that way lands. |
 | `desktop-chomp` | Space with only a plant in reach eats it. |
 | `phone-controls` | At 320 x 568 and 844 x 390, for a swimmer, a crawler and a Darter: every control is on screen and none overlap. Slots are at least 48 x 48 px and Chomp at least 80 x 80 px. Two real touches move and aim at once. A slot tap starts its move. A canceled touch ends Brace. |

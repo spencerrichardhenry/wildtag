@@ -16,7 +16,7 @@ import { renderPreview } from './preview';
 import { cardSummary, COAST_READY, eligibleChildren, leadsTo, type BodyPlan } from './plans';
 import { quoteDesign } from './economy';
 import { newRuntime, type Actor, type CombatInput, type Constraint, type MoveKind, type Tuple4, type Vec3, type WorldQueries } from './combat-types';
-import { aimChevron, aimPitch, autoAim, BRACE_AUTO_AIM_HALF_ANGLE, dragAim, aimToward, mouseButtons, NO_MOUSE, pickAimTarget, pitched, pointerAim, POINTER_FRESH_SECONDS, type PickCandidate, readIntent, RELEASED, type AimCandidate, type AimSource, type MouseState } from './input';
+import { aimChevron, aimPitch, autoAim, BRACE_AUTO_AIM_HALF_ANGLE, dragAim, aimToward, mouseButtons, NO_MOUSE, pickAimTarget, pitched, pointerAim, type PickCandidate, readIntent, RELEASED, type AimCandidate, type AimSource, type MouseState } from './input';
 import { BURROW } from './bestiary';
 import { AlphaBar, alphaView, avoidKeepOut, CombatHud, CombatOverlay, EdgeArrowMemory, edgeArrowAt, faintMessage, FLOATER_COLOURS, floaterClass, floaterText, HP_BAR_SECONDS, MOVE_ICONS, slotViews, type AlphaView, type EdgeArrow, type HpBar } from './combat-hud';
 import { forwardOf } from './orientation';
@@ -992,13 +992,14 @@ function pointerPick(): Vec3 | null {
   });
   return pickAimTarget(origin, ray.dir, candidates, { x: pointerX, y: pointerY });
 }
-/** The aim (spec §8.4): a phone drag on the basic button; else the desktop pointer: the combat species under it (while the pointer is over
- *  the canvas, also when it is still: review M1), else, while it moved in the last 4 s, where its ray meets the seabed, a solid or the
+/** The aim (spec §8.4): a phone drag on the basic button; else the desktop pointer while it is over the canvas (moving or still): the combat
+ *  species under it, else where its ray meets the seabed, a solid or the
  *  player's height plane beyond the player (never a point behind the player: review C1); else on a phone auto-aim (or the facing, source
  *  none); else the camera forward. Free movers pitch toward a pick or a soft-lock target (D9); ground movers aim level. Render units:
  *  only directions leave this function. */
 function currentAim(caps: { pitch: boolean }): { aim: Vec3; source: AimSource } {
-  const p = world.player.position, fresh = pointerOver && performance.now() - pointerAt < POINTER_FRESH_SECONDS * 1000;
+  // Fix round 3 (re-review Minor 2): the pointer counts while it is over the canvas, moving or still (no drift to the camera forward).
+  const p = world.player.position, fresh = pointerOver && pointerAt > -Infinity;
   let flat: Vec3 | null = null, source: AimSource = 'camera'; lastAimPick = null;
   if (chompDrag?.aim) { flat = chompDrag.aim; source = 'drag'; }
   else if (pointerOver && !touchMode) {

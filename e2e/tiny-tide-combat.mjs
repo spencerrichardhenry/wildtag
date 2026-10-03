@@ -134,9 +134,14 @@ check('desktop-controls', async () => {
   const aimYaw = Math.atan2(s.combat.aim.x, s.combat.aim.z), want = Math.atan2(P.x - s.physical.x, P.z - s.physical.z), off = Math.abs(Math.atan2(Math.sin(aimYaw - want), Math.cos(aimYaw - want)));
   facts.pointerAimErrorDeg = +(off / DEG).toFixed(2); 
   assert.ok(off <= 5 * DEG, `the aim yaw is within 5° of the pointer direction (${(off / DEG).toFixed(1)}°)`);
-  // No pointer movement for 4 s: the camera forward.
+  // Fix round 3 (re-review Minor 2): a still pointer over the canvas keeps the aim (no drift to the camera forward after 4 s); a pointer that
+  // left the canvas gives the camera forward.
   await page.waitForTimeout(4300); s = await state(page);
-  assert.equal(s.combat.aimSource, 'camera', 'a still pointer gives the camera forward after 4 s');
+  assert.equal(s.combat.aimSource, 'pointer', 'a still pointer over the canvas keeps the pointer aim after 4 s');
+  { const y = Math.atan2(s.combat.aim.x, s.combat.aim.z), w = Math.atan2(P.x - s.physical.x, P.z - s.physical.z), o = Math.abs(Math.atan2(Math.sin(y - w), Math.cos(y - w)));
+    facts.stillPointerErrorDeg = +(o / DEG).toFixed(2); assert.ok(o <= 5 * DEG, `after 4.3 s still, the aim is within 5° of the pointer direction (${(o / DEG).toFixed(1)}°)`); }
+  await page.evaluate(() => document.querySelector('#ocean, canvas')?.dispatchEvent(new PointerEvent('pointerleave', { pointerType: 'mouse' }))); await frames(page, 3);
+  s = await state(page); assert.equal(s.combat.aimSource, 'camera', 'a pointer that left the canvas gives the camera forward');
   // A middle drag turns the camera; a left click does not.
   const look0 = s.world;
   await page.mouse.move(900, 380); await page.mouse.down({ button: 'middle' }); await page.mouse.move(980, 400, { steps: 8 }); await page.mouse.up({ button: 'middle' });

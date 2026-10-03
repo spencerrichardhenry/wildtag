@@ -64,8 +64,6 @@ export function mouseButtons(prev: MouseState, buttons: number, leftIsLook = fal
 }
 
 // ---- aim (spec §8.4) ----
-/** The desktop pointer counts for this long after it last moved over the canvas; then the aim is the camera forward. */
-export const POINTER_FRESH_SECONDS = 4;
 /** The horizontal aim of the pointer ray (render or physical units, the caller's choice) with no creature under it (spec §8.4, final review C1):
  *  toward the first point of the ray beyond the player's depth along it (`t > t_player`) that is either on the horizontal plane through
  *  `origin` or blocked (`blocked`: the seabed or a solid, sampled every `reach` / 32 up to `reach` beyond the player). A point between the
