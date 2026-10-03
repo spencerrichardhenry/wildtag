@@ -620,10 +620,21 @@ one once, at load. None of them changes a running game from outside.
 | `forcedSpawn=x,y,z` | The first start of the page load searches from this stage-local point instead of the start anchor. The spawn is still recovered to a legal pose. A pending respawn ignores it. |
 | `qaRejectSubmit=1` | The first editor submit returns the failure "QA rejection". |
 | `qaHoldStart=1` | After the first start, the simulation and the game clock stay still until the first key or pointer press in play. |
+| `qaEncounter=<species key>` | For example `qaEncounter=1:crab`. At the first start of the page load, the nearest live instance of that species (of a tier next to the stage) moves 3 player body lengths in front of the player, in calm. Its pose is recovered like any install (within 4 of its body lengths). Diagnostics: `combat.encounter` (id, key, physical position, body length, mode, eaten), or null when no instance or no legal pose was found. |
+| `qaAlphaHealth=<0..1>` | At the first start of the page load, every live alpha starts with that fraction of its HP (at least 1 HP). Diagnostics: `combat.alphas`. |
+
+First-time hints (spec §12.3, D30) use the toast: one per move kind in a
+slot, one for the first wind-up at the player and one for the first red
+(unblockable) wind-up. Each shows once per browser profile; the shown ids are
+in `localStorage` key `tiny-tide-hints-v1` (never in the run save). A hint
+waits for a free toast and keeps 6 s from the last hint. In a fight only the
+telegraph hints show; a move hint waits until the fight ends. To see the hints
+again, remove the key. Diagnostics: `combat.hints` (the shown ids).
 
 Read-only diagnostics on `window.__tinyTide` include `editorProjection(target)`
 (the screen point of a visible part, by uid, or of a body point `{ t, angle }`
-in the open editor) and `poseAgreement()` (rendered socket transforms against
+in the open editor), `screenOf(physicalPoint)` (the CSS-pixel screen point of a
+physical point, for pointer-aim checks) and `poseAgreement()` (rendered socket transforms against
 `sampleCombatPose`)), `lastContactSolid` (the solid of the last 'solid' contact),
 `solidsNear` (the nearest reef solids of the stage, in local units),
 `solidOverlap` (the reef solid the player's hull overlaps, from the admission's

@@ -283,6 +283,12 @@ export class Ecosystem {
   }
   /** True inside the faint give-up window (D27). The combat AI reads it as `hostile: false` for alphas (T16 wires it into aiTick). */
   givingUp(now: number): boolean { return now < this.giveUpUntil; }
+  /** QA (`qaEncounter`, spec §14.2): moves a live entity and its home to the nearest legal pose near `p` (recovery within 4 body lengths), in
+   *  calm. False when no legal pose was found (the entity is then removed until its retry, like any failed install). */
+  placeAt(e: Entity, p: Vec3): boolean {
+    e.x = p.x; e.y = p.y; e.z = p.z; this.setMode(e, 'calm'); e.returnUntil = 0;
+    return this.install(e);
+  }
   /** The roaming bound of an entity's tier: tighter for hunters. */
   private boundsOf(e: Entity) { return (isHunter(e.spec) ? this.hunterBounds : this.bounds)[e.spec.tier]!; }
   /** Moves the entity (and its home) to the nearest legal pose within 4 body lengths, or removes it until a retry. */

@@ -44,6 +44,10 @@ export interface FixtureSpec {
   /** The wallet afterwards (banked). Default: unchanged for a plain start, 100 when the fixture had to be paid for. */
   dna?: number;
   health?: number;
+  /** The at-risk wallet afterwards (the faint check). */
+  atRisk?: number;
+  /** The growth bar afterwards; overrides `ready`. */
+  stageDna?: number;
   /** Parts added to the design of a stage before it is committed (stage 0: through applyDesign). */
   add?: Record<number, PartIn[]>;
   /** The mouth of a stage's design. */
@@ -107,9 +111,9 @@ export function makeFixture(spec: FixtureSpec = {}): Fixture {
     if (!('planId' in prepared)) throw new Error(`fixture: ${id}: ${prepared.reason}`);
     commitEvolution(run, prepared, catalog);
   });
-  if (spec.dna !== undefined || funded) run.economy = { ...run.economy, wallet: { banked: spec.dna ?? 100, atRisk: 0 } };
+  if (spec.dna !== undefined || funded || spec.atRisk !== undefined) run.economy = { ...run.economy, wallet: { banked: spec.dna ?? (funded ? 100 : run.economy.wallet.banked), atRisk: spec.atRisk ?? 0 } };
   if (spec.pins) run.loadout = { slots: [...spec.pins] as Tuple4<SlotPin> };
-  run.stageDna = spec.ready && run.stage < 4 ? STAGES[run.stage]!.goal : 0;
+  run.stageDna = spec.stageDna ?? (spec.ready && run.stage < 4 ? STAGES[run.stage]!.goal : 0);
   run.health = spec.health ?? maxHealthOf(run);
   run.pendingRespawn = !!spec.pendingRespawn;
   const issues = validateRun(run, build, catalog);

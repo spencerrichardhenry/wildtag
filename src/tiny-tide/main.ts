@@ -22,7 +22,8 @@ import { AlphaBar, alphaView, CombatHud, CombatOverlay, EdgeArrowMemory, edgeArr
 import { forwardOf } from './orientation';
 import { blockHint, blockHintDue, newBlockHintGate, PITCH_LIMIT, type PlayerStepResult, newTapWatch, tapTargetStalled } from './player-motion';
 import { canChooseNextPlan, evolutionDestination, reconcileAfterCommit } from './lifecycle';
-import { admitted as simAdmitted, checkPose, playerActorCached as simActor, refreshDerived as simRefreshDerived, simBegin, simEvolve, simFrame, simOwnedState, simSuspend, type GameMode, type SimEvent, type SimState, type SimWorld } from './sim';
+import { admitted as simAdmitted, checkPose, playerActorCached as simActor, qaAlphaHealth, qaEncounter, refreshDerived as simRefreshDerived, simBegin, simEvolve, simFrame, simOwnedState, simSuspend, type GameMode, type SimEvent, type SimState, type SimWorld } from './sim';
+import { Hints, hintText, type HintId, type HintStorage } from './hints';
 import type { ChompResult } from './feeding';
 import { PLAYER_ID, type CombatTick, type TelegraphView } from './combat-world';
 import { damageText, EFFECTS, FLASH_SECONDS, IMPACT_COLOURS, IMPACT_PARTICLES, shakeForPlayerHit, shakeForPlayerStrike } from './combat-profiles';
@@ -30,7 +31,7 @@ import { movement, movementCapabilities } from './profiles';
 import { admissionClock, makeWorldQueries, resetAdmissionClock, stageBounds, stageWorldQueries, zoneLabel } from './world-queries';
 import { ROCK_FIT, stageSolids } from './reef';
 import { startAnchor } from './motion';
-import { bodyLengthOf, playerActor } from './mount';
+import { bodyLengthOf, playerActor, speciesActor } from './mount';
 import { designDelta } from './design-delta';
 import { TideAudio } from './audio';
 import { TideWorld } from './world';
@@ -131,6 +132,13 @@ let qaRejectSubmit = qaParams.get('qaRejectSubmit') === '1';
 /** `?qaHoldStart=1`: after the first start, the simulation (player, ecosystem, game clock) does not advance until the first
  *  real key or pointer press in play. */
 let qaHoldStart = qaParams.get('qaHoldStart') === '1';
+/** `?qaEncounter=<species key>` (for example `1:crab`): at the first start of this page load, the nearest live instance of that species (of a
+ *  tier next to the stage) is installed 3 player body lengths in front of the player, in calm (spec §14.2). */
+let qaEncounterKey = qaParams.get('qaEncounter');
+/** The entity that `qaEncounter` installed (diagnostics). */
+let qaEncounterId: number | null = null;
+/** `?qaAlphaHealth=<0..1>`: at the first start of this page load, every live alpha starts with that fraction of its HP (at least 1). */
+let qaAlpha: number | null = (() => { const v = Number(qaParams.get('qaAlphaHealth')); return qaParams.has('qaAlphaHealth') && Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : null; })();
 /** The part catalog (every shipped part has its real grants since sub-project 3a; `?qaGrantCatalog` is gone, D32). */
 const CATALOG = PARTS;
 /** The first QA rejection, if `?qaRejectSubmit=1` asked for one. */
@@ -415,6 +423,9 @@ function begin(fresh = false) {
   const forced = next.pendingRespawn ? null : forcedSpawn; if (!next.pendingRespawn) forcedSpawn = null;
   respawnToasted = false;
   presentSim(simBegin(sim, simWorld, next, forced), 0);
+  // QA, once per page load: the alpha health, then the encounter in front of the player.
+  if (qaAlpha !== null) { qaAlphaHealth(simWorld, qaAlpha); qaAlpha = null; }
+  if (qaEncounterKey !== null && mode === 'playing') { qaEncounterId = qaEncounter(sim, simWorld, qaEncounterKey); qaEncounterKey = null; }
   syncUI(); save();
   if (qaHoldStart) { qaHoldStart = false; holdingStart = true; }
 }
@@ -652,6 +663,32 @@ function inCombat(): boolean {
 function onScreen(p: Vec3): boolean {
   const s = world.screenPoint(new T.Vector3(p.x, p.y, p.z).divideScalar(world.scale));
   return s.visible && s.x >= 0 && s.y >= 0 && s.x <= innerWidth && s.y <= innerHeight;
+}
+/** First-time hints (spec §12.3, D30): the moves in the slots, the first wind-up at the player and the first unblockable one. A hint shows
+ *  only when no toast is up and no other hint showed in the last 6 s. In a fight only the telegraph hints show (a move hint waits). */
+const hints = new Hints((() => { try { return localStorage as HintStorage; } catch { return null; } })());
+const TELEGRAPH_HINTS: ReadonlySet<HintId> = new Set<HintId>(['telegraph', 'telegraph-red']);
+function offerHints() {
+  const touch = touchMode || coarsePointer();
+  if (sim.moves) sim.moves.slots.slots.forEach((k, i) => { if (k) hints.request(`move-${k}`, hintText(`move-${k}`, { slot: i, touch })); });
+  for (const v of telegraphViews) {
+    if (v.phase !== 'windup' || !v.targetsPlayer) continue;
+    hints.request('telegraph', hintText('telegraph', { slot: 0, touch }));
+    if (v.color === 'red') hints.request('telegraph-red', hintText('telegraph-red', { slot: 0, touch }));
+  }
+  const fight = inCombat();
+  const h = hints.next(time, toastTimer <= 0 && hintClock <= 0, fight ? id => TELEGRAPH_HINTS.has(id) : undefined);
+  if (h) { toast(h.text); hintClock = 6; }
+}
+/** The phone layouts (portrait and landscape): the toast always uses the objective's slot there. */
+const phoneLayout = matchMedia('(max-width: 650px), (max-height: 560px)');
+/** Every played frame (T22, review of D30): a shown toast sits in the objective's slot on a phone and in a fight, so it covers no control, not
+ *  the creature and no telegraph near it; elsewhere it keeps its low place. Below the Evolve button when that shows. */
+function placeToast() {
+  const ui = el('game-ui'), up = el('toast').classList.contains('show') && (phoneLayout.matches || inCombat());
+  ui.classList.toggle('toast-top', up); if (!up) return;
+  const evolve = el('evolve'), top = evolve.hidden ? parseFloat(getComputedStyle(el('objective')).top) : evolve.getBoundingClientRect().bottom + 8;
+  if (Number.isFinite(top)) ui.style.setProperty('--toast-top', `${Math.round(top)}px`);
 }
 /** The alpha bar's content this frame (read-only diagnostics). */
 let shownAlpha: AlphaView | null = null;
@@ -924,6 +961,8 @@ function frame(now: number) {
   if (mode !== 'menu' && sim.moves) combatHud.sync(slotViews(sim.moves.slots, sim.moves.set, rt));
   presentCombatView();
   syncAimChevron(intent);
+  if (playing) offerHints();
+  if (mode === 'playing') placeToast();
   if (playing) {
     const v = rt.controlledVelocity; moving = Math.hypot(v.x, v.y, v.z) > .5 * SIZES[stage]!;
     saveClock += dt; if (saveClock >= 5) { save(); saveClock = 0; }
@@ -1016,6 +1055,13 @@ function poseAgreement() {
   }
   return { sockets, positionError, angleError, reflectionsAgree, bodyLength, time };
 }
+/** The `qaEncounter` creature (physical position, body length, pursuit mode), or null. */
+function encounterView() {
+  const e = qaEncounterId === null ? undefined : world.eco.entities.find(x => x.id === qaEncounterId);
+  return e ? { id: e.id, key: e.spec.key, x: e.x, y: e.y, z: e.z, bodyLength: speciesActor(e).bodyLength, mode: e.mode, eaten: e.eaten } : null;
+}
+/** QA: the screen point (CSS pixels) of a physical point, for pointer-aim checks. */
+function screenOf(p: Vec3) { const v = world.screenPoint(new T.Vector3(p.x, p.y, p.z).divideScalar(world.scale)); return { x: v.x, y: v.y, visible: v.visible }; }
 /** Read-only (QA, spec §14.2): actions, telegraphs, action clocks, the last 20 hit outcomes, hit-stop ends, slots, director tokens and holds. */
 function combatDiagnostics() {
   const clone = <V>(v: V): V => JSON.parse(JSON.stringify(v)) as V;
@@ -1028,6 +1074,8 @@ function combatDiagnostics() {
     hits: sim.combat.log.map(e => ({ outcome: e.outcome, attacker: e.attackerId, target: e.targetId, attack: e.attackId, amount: e.amount, unit: e.unit, time: e.time })),
     slots: sim.moves ? [...sim.moves.slots.slots] : [], tokens: sim.combat.director.tokens.map(t => ({ ...t })),
     heldBy: rt.heldBy, breakProgress: rt.breakProgress, hp: Object.fromEntries([...sim.combat.entities.values()].map(c => [c.id, c.entity.hp])), reducedMotion: reducedMotion.matches,
+    alphas: [...sim.combat.entities.values()].filter(c => c.entity.spec.alpha).map(c => ({ id: c.id, key: c.entity.spec.key, hp: c.entity.hp, maxHp: c.maxHp, phase: c.ai?.phase ?? 0, state: c.ai?.name ?? 'idle', eaten: c.entity.eaten })),
+    encounter: encounterView(), hints: [...hints.shown], aim: lastIntent.aim ? { ...lastIntent.aim } : null, aimSource: lastIntent.aimSource,
     alpha: shownAlpha && { ...shownAlpha }, ai: Object.fromEntries([...sim.combat.entities.values()].filter(c => c.entity.spec.alpha).map(c => [c.id, { name: c.ai?.name ?? null, phase: c.ai?.phase ?? 0, eaten: c.entity.eaten, x: c.entity.x / world.scale, y: c.entity.y / world.scale, z: c.entity.z / world.scale }])),
   };
 }
@@ -1038,7 +1086,7 @@ if (QA) {
     plan: currentPlan(run).id, plans: [...run.plans], zone: zoneNow(), velocity: copy(rt.controlledVelocity), externalVelocity: copy(rt.externalVelocity),
     orientation: { ...rt.orientation }, permit: rt.permit ? { ...rt.permit } : null, arc: rt.arc ? { ...rt.arc } : null, breachReadyAt: rt.breachReadyAt, invulnerableUntil: rt.invulnerableUntil,
     pendingRespawn: run.pendingRespawn, caps: capsOf(), physical: copy(physical), legal: mode === 'menu' ? null : admittedNow(playerActor(currentPlan(run), run.genome, run.stage, growthOf(run))), contactNow, lastContact: lastContact === null ? null : `${lastContact}`, lastContactSolid, trapRescues: sim.trapRescues, rescueLog: JSON.parse(JSON.stringify(sim.rescueLog)), contactSolids: [...sim.lastSolids], groundOffset: rt.groundOffset, solidOverlap: mode === 'menu' ? null : solidOverlap(), solidsNear: mode === 'menu' ? [] : solidsNear(32), edge: { inZone: edgeNow, hinted: edgeHinted, half: PLAYER_HALF, softStart: EDGE_SOFT_START * PLAYER_HALF }, hazardSources: hazardSources(), growth: growthOf(run), acceptedHits, rejectedHits,
-    faintLog: sim.faintLog.map(f => ({ ...f })), stage: run.stage, dna: dnaOf(run), stageDna: run.stageDna, goal: STAGES[run.stage]!.goal, health: run.health, maxHealth: derived.maxHealth, deaths: run.deaths, diet: dietOf(run.genome), genome: structuredClone(run.genome), name: run.name, unlocked: [...run.unlocked], evolveReady: evolveReady(run), bites: run.bites, totalDna: run.totalDna, elapsed: run.elapsed, completed: run.completed, eatenPlanets: [...run.eatenPlanets], player: { x: world.player.position.x, y: world.player.position.y, z: world.player.position.z }, foods: world.edibleFoods.map(f => ({ ...f.data, tag: f.entity.spec.tag, label: f.entity.spec.label, mode: f.entity.mode, hp: f.entity.hp, approachable: approachable(f.entity) })), threats: world.threats.map(f => ({ ...f.data, label: f.entity.spec.label, mode: f.entity.mode })), landmarks: world.foods.filter(f => f.model.visible && f.tier > run.stage).map(f => ({ tier: f.tier, kind: f.data.kind, x: f.data.x, y: f.data.y, z: f.data.z })), world: world.diagnostics, assets: assetDiagnostics(), saveKey: writeKey, loadedKey, time, holdingStart, editorProjection, editorFrame, poseAgreement, admission: admissionStats.map(a => { const per = (v: number) => a.frames ? v / a.frames : 0; return { frames: a.frames, msPerFrame: per(a.ms), callsPerFrame: per(a.calls), worstMs: a.worst, contactsPerFrame: per(a.contacts),
+    faintLog: sim.faintLog.map(f => ({ ...f })), stage: run.stage, dna: dnaOf(run), stageDna: run.stageDna, goal: STAGES[run.stage]!.goal, health: run.health, maxHealth: derived.maxHealth, deaths: run.deaths, diet: dietOf(run.genome), genome: structuredClone(run.genome), name: run.name, unlocked: [...run.unlocked], evolveReady: evolveReady(run), bites: run.bites, totalDna: run.totalDna, elapsed: run.elapsed, completed: run.completed, eatenPlanets: [...run.eatenPlanets], player: { x: world.player.position.x, y: world.player.position.y, z: world.player.position.z }, foods: world.edibleFoods.map(f => ({ ...f.data, tag: f.entity.spec.tag, label: f.entity.spec.label, mode: f.entity.mode, hp: f.entity.hp, approachable: approachable(f.entity) })), threats: world.threats.map(f => ({ ...f.data, label: f.entity.spec.label, mode: f.entity.mode })), landmarks: world.foods.filter(f => f.model.visible && f.tier > run.stage).map(f => ({ tier: f.tier, kind: f.data.kind, x: f.data.x, y: f.data.y, z: f.data.z })), world: world.diagnostics, assets: assetDiagnostics(), saveKey: writeKey, loadedKey, time, holdingStart, editorProjection, editorFrame, poseAgreement, screenOf, admission: admissionStats.map(a => { const per = (v: number) => a.frames ? v / a.frames : 0; return { frames: a.frames, msPerFrame: per(a.ms), callsPerFrame: per(a.calls), worstMs: a.worst, contactsPerFrame: per(a.contacts),
       player: { msPerFrame: per(a.player.ms), callsPerFrame: per(a.player.calls), worstMs: a.player.worst, worstCalls: a.player.worstCalls }, rescueWorstCalls: a.rescueWorstCalls, ecosystem: { msPerFrame: per(a.ecosystem.ms), callsPerFrame: per(a.ecosystem.calls), worstMs: a.ecosystem.worst }, guide: { msPerFrame: per(a.guide.ms), callsPerFrame: per(a.guide.calls), worstMs: a.guide.worst } }; }), render: { calls: world.renderer.info.render.calls, triangles: world.renderer.info.render.triangles, geometries: world.renderer.info.memory.geometries }, combat: combatDiagnostics() }) });
 }
 requestAnimationFrame(frame);

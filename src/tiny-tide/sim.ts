@@ -400,6 +400,23 @@ export function simBegin(s: SimState, w: SimWorld, run: Run, forced: Vec3 | null
   }
   return events;
 }
+/** QA (`?qaEncounter=<species key>`, spec §14.2): the nearest live instance of that species, of a tier next to the stage, is installed 3 player
+ *  body lengths in front of the player, in calm. Returns its entity id, or null (no instance, or no legal pose there). */
+export function qaEncounter(s: SimState, w: SimWorld, key: string): number | null {
+  const L = playerActorCached(s).bodyLength, yaw = s.rt.orientation.yaw, p = s.physical;
+  const at = { x: p.x + Math.sin(yaw) * 3 * L, y: p.y, z: p.z + Math.cos(yaw) * 3 * L };
+  let best: Entity | null = null, bestDistance = Infinity;
+  for (const e of w.eco.entities) {
+    if (e.eaten || e.spec.key !== key || Math.abs(e.spec.tier - s.run.stage) > 1) continue;
+    const d = Math.hypot(e.x - p.x, e.y - p.y, e.z - p.z); if (d < bestDistance) { best = e; bestDistance = d; }
+  }
+  return best && w.eco.placeAt(best, at) ? best.id : null;
+}
+/** QA (`?qaAlphaHealth=<0..1>`, spec §14.2): every live alpha starts with that fraction of its HP (at least 1). */
+export function qaAlphaHealth(w: SimWorld, fraction: number): void {
+  const f = Math.min(1, Math.max(0, fraction));
+  for (const e of w.eco.entities) if (e.spec.alpha && !e.eaten) e.hp = Math.max(1, Math.round(e.spec.hp * f));
+}
 /** The game stops for a pause, a help dialog or the editor (spec §5.7, review R19): nothing is buffered across it, so the buffered press is
  *  dropped (the action clock is stopped while the game is stopped, so the press would otherwise survive). */
 export function simSuspend(s: SimState, mode: 'paused' | 'editing'): void { s.mode = mode; clearBuffer(s.rt); }

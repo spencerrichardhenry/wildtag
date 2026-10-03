@@ -23,11 +23,12 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { Ecosystem } from '../../src/tiny-tide/ecosystem';
+import { SIZES } from '../../src/tiny-tide/biomes';
 import { freshRun, type Run } from '../../src/tiny-tide/state';
 import { readIntent, RELEASED, type InputSources } from '../../src/tiny-tide/input';
 import { stageBounds, stageWorldQueries } from '../../src/tiny-tide/world-queries';
 import type { CombatInput, Vec3 } from '../../src/tiny-tide/combat-types';
-import { newSimState, simBegin, simFrame, type SimWorld } from '../../src/tiny-tide/sim';
+import { newSimState, playerActorCached, qaAlphaHealth, qaEncounter, simBegin, simFrame, type SimWorld } from '../../src/tiny-tide/sim';
 
 const GOLDEN = 'tests/tiny-tide-core/sim-golden.json', DT = 1 / 60;
 /** `rescues`: trap rescues found so far (each starts a glide). */
@@ -115,5 +116,23 @@ describe('regeneration', () => {
     const samples: number[] = [];
     for (let f = 1; f <= 12 * 60; f++) { simFrame(s, w, { dt: DT, intent: RELEASED, wish: { x: 0, y: 0, z: 0 }, held: false }); if (f % 60 === 0) samples.push(s.run.health); }
     expect(samples).toEqual([4, 4, 4, 4, 4, 4, 4, 4, 4.5, 4.5, 5, 5]);   // 7 s quiet, then +.5 at 9 s and 11 s
+  });
+});
+describe('QA parameters (spec §14.2)', () => {
+  it('qaEncounter installs the nearest live instance 3 player L in front, in calm', () => {
+    const run = freshRun(7), w = world(7), s = newSimState(run);
+    w.eco.reset(run.eatenPlanets); simBegin(s, w, run, null);
+    const id = qaEncounter(s, w, '1:crab'), crab = w.eco.entities.find(e => e.id === id)!;
+    expect(crab.spec.key).toBe('1:crab'); expect(crab.mode).toBe('calm');
+    const L = playerActorCached(s).bodyLength, yaw = s.rt.orientation.yaw;
+    const want = { x: s.physical.x + Math.sin(yaw) * 3 * L, z: s.physical.z + Math.cos(yaw) * 3 * L };
+    expect(Math.hypot(crab.x - want.x, crab.z - want.z)).toBeLessThanOrEqual(4 * SIZES[1]! * 1.4);   // recovery searches within 4 crab body lengths
+    expect(qaEncounter(s, w, '9:none')).toBeNull();
+  });
+  it('qaAlphaHealth starts every alpha at that fraction of its HP', () => {
+    const w = world(7); qaAlphaHealth(w, .62);
+    const mother = w.eco.entities.find(e => e.spec.key === '1:clawmother')!;
+    expect(mother.hp).toBe(Math.round(80 * .62));
+    qaAlphaHealth(w, 0); expect(mother.hp).toBe(1);
   });
 });
