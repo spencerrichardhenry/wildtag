@@ -2,7 +2,8 @@
 // moves the entity by the intent through resolveMotion and the combat world starts the attack (with a director token at the player).
 // Pure: the RNG is seeded per entity from (run seed, entity id); every time is world time.
 import { random } from './biomes';
-import { BURROW, LAPS, type AttackChoice, type BehaviourPhase, type SpeciesBehaviour } from './bestiary';
+import { BURROW, LAPS, SPECIES_ATTACKS, type AttackChoice, type BehaviourPhase, type SpeciesBehaviour } from './bestiary';
+import { bandReach } from './combat-shapes';
 import type { Vec3 } from './combat-types';
 
 export type MoveIntent =
@@ -31,8 +32,9 @@ export interface AiState {
   fleeDir: Vec3 | null;
   /** A started choice: its chain follows when the action ends. */
   current: AttackChoice | null;
-  /** `expires`: a chain that is refused until then is dropped (the hunter repositions). */
-  chain: { attackId: string; at: number; expires: number } | null;
+  /** `expires`: a chain that is refused (or out of reach) until then is dropped (the hunter repositions). */
+  /** `reach`: the chained attack is asked only while the player is within this band distance (chainReach). */
+  chain: { attackId: string; at: number; expires: number; reach?: number } | null;
   /** hunter engagements (the survivor bonus, spec §10.4). */
   engagedSince: number | null; windups: number;
   /** alpha */
@@ -222,10 +224,13 @@ function hunter(b: SpeciesBehaviour, s: AiState, i: AiInput, choices: readonly A
   if (s.name === 'attack') {
     if (i.self.busy) return out(HOLD);
     const next = s.current?.chainNextId;
-    if (next && !s.chain) { const at = now + (s.current?.chainGapSeconds ?? 0); s.chain = { attackId: next, at, expires: at + CHAIN_WAIT_SECONDS }; }
-    if (s.chain && now >= s.chain.expires - 1e-9) s.chain = null;   // refused for too long: drop it
+    if (next && !s.chain) { const at = now + (s.current?.chainGapSeconds ?? 0); s.chain = { attackId: next, at, expires: at + CHAIN_WAIT_SECONDS, reach: chainReach(s.current!, next) }; }
+    if (s.chain && now >= s.chain.expires - 1e-9) s.chain = null;   // refused (or out of reach) for too long: drop it
     if (s.chain) {
       if (now < s.chain.at || now < waitUntil(s, i)) return out(HOLD);
+      // T23 (P0): the first hit's knockback can carry the player past the chain's reach (its parent's band); the chained attack is asked only
+      // in reach, and the attacker closes in meanwhile (the chain is dropped CHAIN_WAIT_SECONDS after it was due).
+      if (s.chain.reach !== undefined && i.player.d > s.chain.reach) return out({ kind: 'toward', point: pull(i.player.position), speedFactor: speed * (i.pursuit === 'angry' ? 1.15 : 1) });
       s.current = null;
       return out(HOLD, { attack: { attackId: s.chain.attackId, aim: aimAtPlayer(i), targetPlayer: true } });
     }
@@ -254,6 +259,8 @@ function hunter(b: SpeciesBehaviour, s: AiState, i: AiInput, choices: readonly A
   }
   return out(chase);
 }
+/** The band distance within which a chained attack is asked (T23): the parent's band end, and no farther than the chained attack reaches. */
+const chainReach = (parent: AttackChoice, next: string): number => { const a = SPECIES_ATTACKS[next]; return Math.min(parent.band[1], a ? bandReach(a) : Infinity); };
 /** A refused chain is dropped after this wait (fix round 1, M-b). */
 const CHAIN_WAIT_SECONDS = 1;
 /** Backing out of a player inside the nearest band aims this far (L) past the band's lower bound. */

@@ -1168,7 +1168,11 @@ pursuit policy is `retaliate` (memory only).
   cooldown is ready, pick by weight. When the player is more than 40° off the
   entity's forward, `flankWeight` replaces `weight`. A chain
   (`chainNextId`) starts the next attack after `chainGapSeconds` without a
-  new choice, but it needs its own token.
+  new choice, but it needs its own token. The chained attack starts only while
+  `d` is within its reach (the parent's band end, and no more than the chained
+  attack's own reach from the hull surface); until then the entity closes in.
+  A chain not started 1 s after it was due is dropped (T23 probe, P0: the
+  first hit's knockback carried the player out of reach of the second).
 - **Gap:** after an action ends, the hunter starts no attack for `gapSeconds`.
 - A hunter that returns to `calm` gets its full HP back, but not within 8 s
   of its last damage: then it heals once 8 s pass without damage (D37, T18

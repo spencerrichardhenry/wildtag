@@ -1,6 +1,6 @@
 // World shapes of attacks (spec §5.10–§5.11): the aim frame, cones and capsules in attacker body lengths, hit tests against hurtboxes,
 // crossing and obstruction, lunge truncation and telegraph descriptors. One `worldShape` serves the telegraph and the hit test. Pure.
-import type { AttackShape, Capsule, Vec3, WorldQueries, WorldShape } from './combat-types';
+import type { AttackShape, AttackSpec, Capsule, Vec3, WorldQueries, WorldShape } from './combat-types';
 
 const sub = (a: Vec3, b: Vec3): Vec3 => ({ x: a.x - b.x, y: a.y - b.y, z: a.z - b.z });
 const add = (a: Vec3, b: Vec3): Vec3 => ({ x: a.x + b.x, y: a.y + b.y, z: a.z + b.z });
@@ -33,6 +33,13 @@ export const actionShapes = (shape: AttackShape, origins: readonly Vec3[], aim: 
 /** How far a shape reaches forward of its origin along the aim, in L (contract V21, review R2): a cone's range; a capsule's far end + its
  *  radius (a lunge capsule is the full committed capsule). */
 export const forwardReach = (shape: AttackShape): number => shape.kind === 'cone' ? shape.range : Math.max(shape.start.z, shape.end.z) + shape.radius;
+/** The hull radius of every combat species in its own body lengths (mount.ts speciesActor: .35 × size on a body length of 1.4 × size). */
+export const SPECIES_HULL_RADIUS = .25;
+/** How far a species attack reaches from the attacker's hull surface, in L_e: the AI's band distance (spec §11.2) and V21. An attack from the
+ *  hull front reaches its forwardReach; a `centre` attack starts at the hull centre, so the hull radius is taken off (T23 probe, P0); a
+ *  target-origin attack (the emerge) is placed at the target and has no reach limit. */
+export const bandReach = (a: Pick<AttackSpec, 'shape' | 'aimMode' | 'origin'>): number =>
+  a.origin === 'target' ? Infinity : forwardReach(a.shape) - (a.aimMode === 'centre' ? SPECIES_HULL_RADIUS : 0);
 /** The closest point to c on the segment ab. */
 export function closestOnSegment(c: Vec3, a: Vec3, b: Vec3): Vec3 {
   const ab = sub(b, a), l2 = dot(ab, ab);

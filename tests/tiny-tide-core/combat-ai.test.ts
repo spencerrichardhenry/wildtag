@@ -318,6 +318,29 @@ describe('combat AI: alphas', () => {
     const a = SPECIES_ATTACKS['mother-pinch']!, end = asks[0]!.t + a.windupSeconds + a.activeSeconds + a.recoverySeconds;
     expect(asks[1]!.t - end).toBeGreaterThanOrEqual(.2 - 1e-6); expect(asks[1]!.t - end).toBeLessThan(.2 + 2 * DT);
   });
+  it('a chained pinch steps in to its band before it is asked (T23 P0: the first pinch knocks the player out of reach)', () => {
+    const a = SPECIES_ATTACKS['mother-pinch']!, probe = newAiState(1, 36); probe.home = at(0, 0);
+    const first = drive(mother, probe, 2, () => alphaInput(80)).find(l => l.out.attack)!;
+    expect(first.out.attack!.attackId).toBe('mother-pinch');
+    // The player stands at .3 L_e for the first pinch, then (knocked back) at .6 L_e, outside the [0, .4] band, until 2.0 s.
+    const firstEnd = first.t + a.windupSeconds + a.activeSeconds + a.recoverySeconds, back = 2.0;
+    const s = newAiState(1, 36); s.home = at(0, 0);
+    const log = drive(mother, s, 4, t => alphaInput(80, { player: { position: at(0, 5), d: t < firstEnd || t >= back ? .3 : .6, visible: true, targetable: true } }));
+    const chained = log.find(l => l.out.attack?.attackId === 'mother-pinch-2')!;
+    expect(chained.t).toBeGreaterThanOrEqual(back - 1e-6);
+    // While the chain waits out of reach, the alpha closes in on the player (it does not hold in place or ask).
+    const waiting = log.filter(l => l.t > firstEnd + .2 + DT && l.t < back - DT);
+    expect(waiting.length).toBeGreaterThan(0);
+    expect(waiting.every(l => l.out.intent.kind === 'toward' && !l.out.attack)).toBe(true);
+  });
+  it('the rage pinch is asked within its own reach (.4), not the sweep band (.6)', () => {
+    const a = SPECIES_ATTACKS['mother-sweep']!, enraged = (id: number) => { const s = newAiState(1, id); s.home = at(0, 0); s.phase = 2; return s; };
+    let id = 50; for (; id < 90; id++) if (drive(mother, enraged(id), 2, () => alphaInput(20)).find(l => l.out.attack)?.out.attack!.attackId === 'mother-sweep') break;
+    const first = drive(mother, enraged(id), 2, () => alphaInput(20)).find(l => l.out.attack)!;
+    const firstEnd = first.t + a.windupSeconds + a.activeSeconds + a.recoverySeconds, back = firstEnd + .6;
+    const log = drive(mother, enraged(id), 4, t => alphaInput(20, { player: { position: at(0, 5), d: t < firstEnd || t >= back ? .3 : .5, visible: true, targetable: true } }));
+    expect(log.find(l => l.out.attack?.attackId === 'mother-pinch-rage')!.t).toBeGreaterThanOrEqual(back - 1e-6);
+  });
   it('a refused chain is dropped after 1 s', () => {
     const s = newAiState(1, 33); s.home = at(0, 0);
     const log = drive(mother, s, 5, () => alphaInput(80), (_t, id) => id === 'mother-pinch-2');
