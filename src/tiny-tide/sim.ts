@@ -18,8 +18,9 @@ import { admissionClock, admissionCount, supportHeight } from './world-queries';
 
 export type GameMode = 'menu' | 'playing' | 'paused' | 'evolving' | 'editing' | 'fainted' | 'stuck' | 'won';
 export interface SimLegality { queries: WorldQueries; bounds: { half: number; maxY?: number } }
-/** What the tick reads from outside: the ecosystem, the cached world queries of a stage, and the start grace (seconds). */
-export interface SimWorld { eco: Ecosystem; legality(stage: number): SimLegality; startGrace: number }
+/** What the tick reads from outside: the ecosystem, the cached world queries of a stage, and the start grace (seconds). `qa`: keep the
+ *  QA-only diagnostics (`lastSolids`, read by the rescue log); off in production, as main.ts did with its QA flag. */
+export interface SimWorld { eco: Ecosystem; legality(stage: number): SimLegality; startGrace: number; qa?: boolean }
 type MutCapsule = { start: MutVec3; end: MutVec3; radius: number; radii?: [number, number]; sway: number; heave: number };
 interface ActorCache { key: string; unit: Capsule[]; unitLength: number; hull: MutCapsule[]; actor: Actor; scale: number }
 export interface Glide { path: { position: Vec3; orientation: Orientation }[]; index: number }
@@ -192,7 +193,7 @@ export function simFrame(s: SimState, w: SimWorld, input: SimInput): SimEvent[] 
         s.unstick = null;
       }
     }
-    s.lastSolids = r.contacts.filter(c => c.solidId).map(c => c.solidId!);
+    if (w.qa) s.lastSolids = r.contacts.filter(c => c.solidId).map(c => c.solidId!);
     events.push({ type: 'step', result: r });
     if (s.mode === 'playing' && basicRequested(intent) && s.chompCooldown <= 0) {
       s.chompCooldown = CHOMP_COOLDOWN;

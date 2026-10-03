@@ -63,6 +63,8 @@ export function runLegacy(scenario: Scenario): Sample[] {
   const admitted = (actor: Actor) => legality(run.stage).queries.overlapHull(actor, physical, rt.orientation, { time, permit: rt.permit, bounds: legality(run.stage).bounds }).ok;
   function recover(actor: Actor, at: number, from: Vec3 = physical): boolean { const rec = recoverPlayer(actor, from, rt.orientation, { ...legality(run.stage), time: at }, anchorFor(actor), 20 * actor.bodyLength); if (!rec.ok) return false; installPose(rec, actor); return true; }
   function applyStartGrace() { rt.invulnerableUntil = START_GRACE > 0 ? time + START_GRACE : 0; }
+  // main.ts enterStuck also calls clearInput(), which resets lastIntent to RELEASED. Not ported: the scripted input is not cleared (no
+  // golden scenario gets stuck). T6b: main.ts clears input on the sim's `stuck` event.
   function enterStuck() { mode = 'stuck'; stuckRetry = 1; }
   function checkPose(actor: Actor) { cancelRescue(); if (admitted(actor)) settleOffset(actor); else if (!recover(actor, time)) enterStuck(); }
   function checkGrownPose(actor: Actor) { const lifted = growthPose(actor, physical, rt, { ...legality(run.stage), time }); if (!lifted) { checkPose(actor); return; } cancelRescue(); physical = lifted; settleOffset(actor); }
@@ -93,6 +95,8 @@ export function runLegacy(scenario: Scenario): Sample[] {
   }
   function takeHit(event: EcoEvent) {
     sinceHit = 0; const fainted = hurt(run, event.damage, derived.armor); if (!fainted) return;
+    // main.ts takeHit also calls clearInput() here (lastIntent = RELEASED). Not ported: the faint scenarios do not read input while
+    // fainted, and the script's previous intent only feeds the tap edges. T6b: main.ts clears input on a `hurt` event with `fainted: true`.
     if (!beginRespawn(run, rt)) return; mode = 'fainted'; respawnClock = 1.8;
   }
   function tickFaint(dt: number) { respawnClock -= dt; if (respawnClock > 0) return; if (tryRespawn()) { mode = 'playing'; sinceHit = 99; return; } respawnClock = 1; }
@@ -144,7 +148,7 @@ export function runLegacy(scenario: Scenario): Sample[] {
     }
     if (mode === 'fainted') tickFaint(dt);
     if (active) time += dt;
-    if (f % scenario.every === 0) out.push({ t: round(time), x: round(physical.x), y: round(physical.y), z: round(physical.z), health: run.health, stageDna: run.stageDna, dna: run.economy.wallet.atRisk + run.economy.wallet.banked, bites: run.bites, mode, rescues: trapRescues });
+    if (f % scenario.every === 0) out.push({ t: round(time), x: round(physical.x), y: round(physical.y), z: round(physical.z), health: run.health, stageDna: run.stageDna, dna: run.economy.wallet.atRisk + run.economy.wallet.banked, bites: run.bites, mode, rescues: trapRescues, deaths: run.deaths });
   }
   void rescueCalls;
   return out;
