@@ -157,6 +157,8 @@ export interface ActionState { instanceId: string; definitionId: string; grantId
   heldTarget: ActorId | null; windupExtension: number; released: boolean;
   /** A Counter that countered a hit (it ends with no recovery). */
   countered: boolean;
+  /** The attack landed (hit, grabbed, blocked or guard-broken); a grab that did not connect recovers for `whiffRecoverySeconds`. */
+  connected: boolean;
   /** Body lengths a lunge has moved. */
   lungeDone: number;
   /** The world shapes fixed at the lock (a mirrored pair has two), or null before it. */

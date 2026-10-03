@@ -11,5 +11,5 @@ export const resolvedOf = (attack: AttackSpec): ResolvedMove => ({ kind: 'specie
 /** A complete ActionState for tests: windup at clock 0, the synthetic attack. */
 export const blankAction = (over: Partial<ActionState> = {}): ActionState => ({ instanceId: 'a1', definitionId: 'pinch', grantId: 'snap', source: { kind: 'part', partUid: 'p5', copy: 0, socketId: 'pinch' },
   phase: 'windup', startedAt: 0, aim: { x: 0, y: 0, z: 1 }, committedPose: null, hitCounts: new Map(), lastHitAt: new Map(), phaseStartedAt: 0, aimLocked: false,
-  resolved: resolvedOf(syntheticAttack), targetId: null, heldTarget: null, windupExtension: 0, released: false, countered: false, lungeDone: 0, lockedShapes: null, squeezes: 0,
+  resolved: resolvedOf(syntheticAttack), targetId: null, heldTarget: null, windupExtension: 0, released: false, countered: false, connected: false, lungeDone: 0, lockedShapes: null, squeezes: 0,
   cooldownKey: 'player:p5:snap', ...over });
