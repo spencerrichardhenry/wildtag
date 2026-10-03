@@ -718,6 +718,7 @@ function placeEvolve() {
 }
 function placeToast() {
   const ui = el('game-ui'), t = el('toast'), up = t.classList.contains('show') && (phoneLayout.matches || inCombat());
+  t.classList.remove('toast-compact', 'toast-line'); t.removeAttribute('title');
   ui.classList.toggle('toast-top', up); if (!up) return;
   const evolve = el('evolve'), slot = parseFloat(getComputedStyle(el('objective')).top);
   ui.style.removeProperty('--toast-left'); ui.style.removeProperty('--toast-max');
@@ -740,9 +741,11 @@ function placeToast() {
       const topBar = box('.topbar')?.bottom ?? 0;
       top = Math.max(topBar + 4, Math.min(slot, limit - t.offsetHeight));
     } else if (top + t.offsetHeight > limit) {
-      // Final review I9: a portrait phone with the Evolve button raised over the creature has no room under the cards for a two-line toast;
-      // the toast (a few seconds) then goes over the cards, never over the top bar, the button or the creature.
-      top = Math.max((box('.topbar')?.bottom ?? 0) + 4, limit - t.offsetHeight);
+      // Fix round 2: a portrait phone with the Evolve button raised over the creature has a short band under the cards. The toast stays in it
+      // and covers no card: first compact (smaller type, the full text), then one line with an ellipsis (the full text in its title).
+      t.classList.add('toast-compact');
+      if (floor + t.offsetHeight > limit) { t.classList.add('toast-line'); t.title = t.textContent ?? ''; }
+      top = floor;
     }
   }
   if (Number.isFinite(top)) ui.style.setProperty('--toast-top', `${Math.round(top)}px`);
@@ -1058,7 +1061,7 @@ function frame(now: number) {
   presentCombatView();
   syncAimChevron(intent);
   if (playing) offerHints();
-  if (mode === 'playing') { placeEvolve(); placeToast(); }
+
   if (playing) {
     const v = rt.controlledVelocity; moving = Math.hypot(v.x, v.y, v.z) > .5 * SIZES[stage]!;
     saveClock += dt; if (saveClock >= 5) { save(); saveClock = 0; }
@@ -1089,6 +1092,9 @@ function frame(now: number) {
       el('evolve').hidden = !canEvolve; el('objective').hidden = canEvolve;
     }
   }
+  // Fix round 2: last in the frame, after every UI update of this frame (a card that changed width after the toast was placed let a landscape
+  // toast overlap the stage card for a frame).
+  if (mode === 'playing') { placeEvolve(); placeToast(); }
   if (admissionClock.on) {
     if (mode === 'playing' && !held) {
       const a = admissionStats[stage]!, by = admissionClock.by; a.frames++; a.ms += admissionClock.ms; a.calls += admissionClock.calls; a.worst = Math.max(a.worst, admissionClock.ms); a.contacts += frameContacts;

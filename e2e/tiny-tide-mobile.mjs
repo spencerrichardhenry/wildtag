@@ -140,11 +140,13 @@ try {
     if(t.classList.contains('show')&&s.mode==='playing'){acc.frames++;acc.texts.add(t.textContent);const tb=box(t),ev=document.getElementById('evolve');
      if(!ev.hidden){acc.evolveFrames++;if(hit(tb,box(ev)))acc.bad.push(['evolve',t.textContent,tb]);}
      for(const c of document.querySelectorAll('#joystick,#chomp,#special,#dive,.slot-button,.icon-button'))if(c.offsetParent!==null&&c.getBoundingClientRect().width>0&&hit(tb,box(c)))acc.bad.push([c.id||c.className,t.textContent,tb]);
-     const cb=s.creatureBox();if(cb&&hit(tb,cb))acc.bad.push(['creature',t.textContent,tb,cb]);}
+     const cb=s.creatureBox();if(cb&&hit(tb,cb))acc.bad.push(['creature',t.textContent,tb,cb]);
+     // Fix round 2: nor the stage and growth cards (at 320x568 with Evolve up the toast went over them).
+     for(const c of document.querySelectorAll('.stage-card,.growth-card'))if(hit(tb,box(c)))acc.bad.push([c.className,t.textContent,tb,box(c)]);}
     if(s.time-t0>10)return resolve({...acc,texts:[...acc.texts],bad:acc.bad.slice(0,5)});requestAnimationFrame(tick);};tick();}));
   await pg.screenshot({path:`${out}/mobile-toast-evolve-${w}x${h}.png`});await pc.close();
   assert.ok(r.frames>60&&r.evolveFrames>60,`${w}x${h}: toasts with the Evolve button were sampled (${r.frames} frames, ${r.evolveFrames} with Evolve)`);
-  assert.deepEqual(r.bad,[],`${w}x${h}: the toast covers no creature, control or Evolve button (${JSON.stringify(r.texts)})`);}
+  assert.deepEqual(r.bad,[],`${w}x${h}: the toast covers no creature, control, card or Evolve button (${JSON.stringify(r.texts)})`);}
  // Final review I9: the Evolve button (up until tapped) never covers the creature: landscape puts it in the top band under the growth card,
  // portrait above the creature box. 2 s of frames at four phone sizes with a ready size-1 Swimmer: Evolve is on screen, at least 4 px clear
  // of the creature's screen box, and overlaps no control, card or the hearts.

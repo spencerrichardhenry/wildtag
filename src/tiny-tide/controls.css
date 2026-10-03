@@ -84,3 +84,7 @@
 /* A phone move hint names the button and shows its slot icon inline (T22 fix round 1). */
 #toast .hint-icon{display:inline-block;width:1.35em;height:1.35em;margin:0 .15em;vertical-align:-.3em}
 #toast .hint-icon svg{width:100%;height:100%}
+
+/* Fix round 2: a portrait phone toast in the short band between the cards and a raised Evolve button: compact (full text), else one line. */
+#game-ui.toast-top #toast.toast-compact{font-size:9.5px;line-height:1.15;padding:5px 12px}
+#game-ui.toast-top #toast.toast-line{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
