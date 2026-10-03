@@ -205,7 +205,7 @@ describe('combat species in the ecosystem (T16)', () => {
     const drifter = SPECIES.find(s => s.key === '0:drifter')!, snail = SPECIES.find(s => s.key === '0:spiny_snail')!, crab = SPECIES.find(s => s.key === '1:crab')!;
     expect(drifter).toMatchObject({ tier: 0, model: 'shrimp', behaviourId: 'drifter', hp: 3 });
     expect(snail).toMatchObject({ tier: 0, model: 'snail', behaviourId: 'spiny-snail', attackIds: ['snail-poke'], fights: true, pursuitId: 'retaliate', hp: 6 });
-    expect(crab).toMatchObject({ hp: 20, behaviourId: 'crab', attackIds: ['crab-pinch', 'crab-lunge', 'crab-sweep'] }); expect(crab.contactHazardId).toBeUndefined();
+    expect(crab).toMatchObject({ hp: 30, behaviourId: 'crab', attackIds: ['crab-pinch', 'crab-lunge', 'crab-sweep'] }); expect(crab.contactHazardId).toBeUndefined();
     expect(HAZARDS['crab-pinch']).toBeUndefined();
     expect(FOOD_MODEL_KINDS).not.toContain('drifter'); expect(FOOD_MODEL_KINDS).not.toContain('spiny_snail'); expect(FOOD_MODEL_KINDS).toContain('snail');
     // The new rows come after every legacy row, so the legacy spawns of each tier keep their seeded places.
@@ -225,7 +225,7 @@ describe('combat species in the ecosystem (T16)', () => {
     const eco = new Ecosystem(7), crab = crabOf(eco), ray = eco.entities.find(e => e.spec.key === '2:ray' && !e.eaten)!;
     eco.step(ctx({ x: 0, y: 900, z: 0 }, 0, { perceivable: false, playerHull: [] }));
     crab.hp = 5; crab.mode = 'return'; crab.returnUntil = 0;
-    eco.step(ctx({ x: 0, y: 900, z: 0 }, .1, { perceivable: false, playerHull: [] })); expect(crab.mode).toBe('calm'); expect(crab.hp).toBe(20);
+    eco.step(ctx({ x: 0, y: 900, z: 0 }, .1, { perceivable: false, playerHull: [] })); expect(crab.mode).toBe('calm'); expect(crab.hp).toBe(crab.spec.hp); expect(crab.hp).toBe(30);
     eco.step(ctx({ x: 0, y: 900, z: 0 }, .2, { stage: 1, perceivable: false, playerHull: [] }));
     ray.hp = 1; ray.mode = 'return'; ray.returnUntil = 0; ray.x = ray.hx; ray.z = ray.hz;
     eco.step(ctx({ x: 0, y: 900, z: 0 }, .3, { stage: 1, perceivable: false, playerHull: [] })); expect(ray.mode).toBe('calm'); expect(ray.hp).toBe(1);
@@ -284,8 +284,8 @@ describe('size-1 combat species (T18)', () => {
     const row = (key: string) => SPECIES.find(s => s.key === key)!;
     expect(row('1:sardine')).toMatchObject({ tier: 1, behavior: 'school', hp: 4, model: 'fish', behaviourId: 'sardine', fights: false });
     expect(row('1:puffer')).toMatchObject({ tier: 1, hp: 10, model: 'fish', behaviourId: 'puffer', attackIds: ['puffer-burst'], fights: true, pursuitId: 'retaliate' });
-    expect(row('2:eel')).toMatchObject({ tier: 2, hp: 22, model: 'worm', behaviourId: 'eel', attackIds: ['eel-ambush', 'eel-bite', 'eel-wrap'], hunts: [1], pursuitId: 'ambusher' });
-    expect(row('2:squid')).toMatchObject({ hp: 26, hunts: [1, 2], behaviourId: 'squid', attackIds: ['squid-ink', 'squid-grab', 'squid-lunge'] });
+    expect(row('2:eel')).toMatchObject({ tier: 2, hp: 33, model: 'worm', behaviourId: 'eel', attackIds: ['eel-ambush', 'eel-bite', 'eel-wrap'], hunts: [1], pursuitId: 'ambusher' });
+    expect(row('2:squid')).toMatchObject({ hp: 52, hunts: [1, 2], behaviourId: 'squid', attackIds: ['squid-ink', 'squid-grab', 'squid-lunge'] });
     expect(row('2:squid').contactHazardId).toBeUndefined(); expect(HAZARDS['squid-grab']).toBeUndefined();
     expect(PURSUITS.ambusher).toMatchObject({ id: 'ambusher', memorySeconds: 3, blockedWaitSeconds: 1, reacquireSeconds: 4, leashBodyLengths: 3, giveUpBodyLengths: 4 });   // final review I4 (were 1.5 and 3)
   });

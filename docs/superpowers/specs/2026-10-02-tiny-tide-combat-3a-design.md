@@ -1252,12 +1252,12 @@ Speeds are in tier-local units per second (× `SIZES[tier]`). HP is in HP.
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `0:drifter` | Drifter shrimp | 0 | shrimp (`#f6b58f`, 1.0) | meat | 8 | 14 | 3 | 3.0 | `drifter` (prey-flee) | 99 | 0 | 0 | yes |
 | `0:spiny_snail` | Spiny snail | 0 | snail + 3 `part_spike` (`#c9a3e6`, 1.0) | meat | 6 | 16 | 6 | 0.5 | `spiny-snail` (prey-fighter) | 4 | 0 | 0 | yes |
-| `1:crab` | Peach crab | 1 | crab (today) | meat | 8 | 24 | 20 | 1.3 | `crab` (hunter) | 6 | 0 | 0.2 | yes |
+| `1:crab` | Peach crab | 1 | crab (today) | meat | 8 | 24 | 30 (final review fix round 2; was 20) | 1.3 | `crab` (hunter) | 6 | 0 | 0.2 | yes |
 | `1:clawmother` | Old Clawmother | 1 | crab (`#9c3b2e`, 1.8) | meat | 1 | 0 | 80 | 1.0 | `clawmother` (alpha) | 14 | 0.5 | 0.6 | no |
 | `1:sardine` | Sunny sardine | 1 | fish (`#ffd36e`, 0.55) | meat | 12 | 15 | 4 | 3.2 | `sardine` (prey-school) | 99 | 0 | 0 | yes |
 | `1:puffer` | Puffer | 1 | fish (`#f2c94c`, 0.75) | meat | 6 | 20 | 10 | 0.9 | `puffer` (prey-fighter) | 6 | 0 | 0.2 | yes |
-| `2:squid` | Berry squid | 2 | squid (today) | meat | 8 | 30 | 26 | 1.1 | `squid` (hunter) | 7 | 0 | 0.3 | yes |
-| `2:eel` | Moray eel | 2 | worm (`#3d6b4f`, 1.0) | meat | 4 | 28 | 22 | 1.4 | `eel` (hunter-ambush) | 6 | 0 | 0.3 | yes |
+| `2:squid` | Berry squid | 2 | squid (today) | meat | 8 | 30 | 52 (fix round 2; was 26) | 1.1 | `squid` (hunter) | 7 | 0 | 0.3 | yes |
+| `2:eel` | Moray eel | 2 | worm (`#3d6b4f`, 1.0) | meat | 4 | 28 | 33 (fix round 2; was 22) | 1.4 | `eel` (hunter-ambush) | 6 | 0 | 0.3 | yes |
 | `2:reef_tyrant` | Reef Tyrant | 2 | worm (`#4b2f5e`, 1.6) | meat | 1 | 0 | 110 | 1.5 | `reef-tyrant` (alpha) | 16 | 0.5 | 0.6 | no |
 
 - `hunts`: crab `[0]` (today), Clawmother `[0]`, squid `[1, 2]` (today), eel

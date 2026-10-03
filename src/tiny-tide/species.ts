@@ -41,13 +41,13 @@ export const SPECIES: readonly Species[] = [
   s(1, 'seagrape', 'plant', 'Grape cluster', 'still', 9, 12),
   s(1, 'lettuce', 'plant', 'Lettuce bed', 'still', 9, 12),
   s(1, 'shrimp', 'meat', 'Little shrimp', 'skittish', 10, 16, { speed: 3.4 }),
-  s(1, 'crab', 'meat', 'Peach crab', 'graze', 8, 24, { hp: 20, speed: 1.3, hunts: [0], fights: true, pursuitId: 'hunter', behaviourId: 'crab', attackIds: ['crab-pinch', 'crab-lunge', 'crab-sweep'] }),
+  s(1, 'crab', 'meat', 'Peach crab', 'graze', 8, 24, { hp: 30, speed: 1.3, hunts: [0], fights: true, pursuitId: 'hunter', behaviourId: 'crab', attackIds: ['crab-pinch', 'crab-lunge', 'crab-sweep'] }),
   s(1, 'jellyfish', 'meat', 'Moon jelly', 'drift', 8, 14, { stingsStages: [1], contactHazardId: 'jelly-sting' }),
   s(1, 'snail', 'meat', 'Sea snail', 'graze', 8, 13, { speed: .5 }),
   s(2, 'kelp_snack', 'plant', 'Kelp frond', 'still', 10, 16),
   s(2, 'plant', 'plant', 'Sprout grove', 'still', 9, 16),
   s(2, 'fish', 'meat', 'Silver tuna', 'school', 13, 20, { speed: 3 }),
-  s(2, 'squid', 'meat', 'Berry squid', 'skittish', 8, 30, { hp: 26, speed: 1.1, hunts: [1, 2], fights: true, pursuitId: 'hunter', behaviourId: 'squid', attackIds: ['squid-ink', 'squid-grab', 'squid-lunge'] }),
+  s(2, 'squid', 'meat', 'Berry squid', 'skittish', 8, 30, { hp: 52, speed: 1.1, hunts: [1, 2], fights: true, pursuitId: 'hunter', behaviourId: 'squid', attackIds: ['squid-ink', 'squid-grab', 'squid-lunge'] }),
   s(2, 'ray', 'meat', 'Little ray', 'graze', 8, 22, { hp: 2, stingsStages: [1, 2], contactHazardId: 'ray-sting', pursuitId: 'retaliate', speed: 1.4, fights: true }),
   s(2, 'bird', 'meat', 'Seagull', 'flyer', 8, 20, { speed: 2 }),
   s(3, 'tree', 'any', 'Palm tree', 'still', 9, 16, { habitatProfileId: 'sp-prop' }),
@@ -64,7 +64,7 @@ export const SPECIES: readonly Species[] = [
   // Size-1 combat species (T18, spec §11.3, D26, D36): sardine schools of 4, the puffer, and the Moray eel at its den beside a reef solid.
   s(1, 'sardine', 'meat', 'Sunny sardine', 'school', 12, 15, { hp: 4, speed: 3.2, model: 'fish', tint: '#ffd36e', bodyScale: .55, behaviourId: 'sardine' }),
   s(1, 'puffer', 'meat', 'Puffer', 'drift', 6, 20, { hp: 10, speed: .9, model: 'fish', tint: '#f2c94c', bodyScale: .75, behaviourId: 'puffer', attackIds: ['puffer-burst'], fights: true, pursuitId: 'retaliate' }),
-  s(2, 'eel', 'meat', 'Moray eel', 'skittish', 4, 28, { hp: 22, speed: 1.4, model: 'worm', tint: '#3d6b4f', behaviourId: 'eel', attackIds: ['eel-ambush', 'eel-bite', 'eel-wrap'], hunts: [1], fights: true, pursuitId: 'ambusher' }),
+  s(2, 'eel', 'meat', 'Moray eel', 'skittish', 4, 28, { hp: 33, speed: 1.4, model: 'worm', tint: '#3d6b4f', behaviourId: 'eel', attackIds: ['eel-ambush', 'eel-bite', 'eel-wrap'], hunts: [1], fights: true, pursuitId: 'ambusher' }),
   // The size-1 alpha (T19, spec §11.3, §11.6), last in tier 2: no spawn of tiers 0–2 changes; tier 3 and 4 ids move up by one, and their
   // places stay (each tier has its own random stream, and a reef fallback is seeded by the legacy key).
   s(2, 'reef_tyrant', 'meat', 'Reef Tyrant', 'skittish', 1, 0, { hp: 110, speed: 1.5, model: 'worm', tint: '#4b2f5e', bodyScale: 1.6, behaviourId: 'reef-tyrant', hunts: [1], fights: true, pursuitId: 'hunter',
