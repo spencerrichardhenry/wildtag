@@ -628,8 +628,22 @@ slot, one for the first wind-up at the player and one for the first red
 (unblockable) wind-up. Each shows once per browser profile; the shown ids are
 in `localStorage` key `tiny-tide-hints-v1` (never in the run save). A hint
 waits for a free toast and keeps 6 s from the last hint. In a fight only the
-telegraph hints show; a move hint waits until the fight ends. To see the hints
-again, remove the key. Diagnostics: `combat.hints` (the shown ids).
+telegraph hints show; a move hint waits until the fight ends. The first
+wind-up hint is the exception to the 6 s gap: it shows at the first wind-up at
+the player and may replace a non-critical toast (another hint, or the stage
+text), never a message such as a found part or "Ready to evolve!". On a phone
+a move hint names the button ("Tap Dash") and shows the move's slot icon after
+the name. To see the hints again, remove the key. Diagnostics: `combat.hints`
+(the shown ids).
+
+Toast placement: on a phone (portrait or landscape), and in a fight on any
+layout, a toast sits in the objective pill's slot, clear of the controls and
+the creature. While it is there (up to 4.5 s) the objective pill is hidden, and
+the wide toast also covers the depth label ("THE SEAFLOOR") at the left edge.
+When the Evolve button shows, a phone toast stays above the button (never below
+it); a desktop toast in a fight goes 8 px below it. A phone toast also rises
+(never over the stage and growth cards) so that it ends 4 px above the
+creature's screen box (its world hull, projected; QA `creatureBox()`).
 
 Read-only diagnostics on `window.__tinyTide` include `editorProjection(target)`
 (the screen point of a visible part, by uid, or of a body point `{ t, angle }`

@@ -79,5 +79,8 @@
    the camera and the player. While the toast is there the objective pill is hidden (its box stays, so the HUD band does not move); when
    the Evolve button shows, the toast goes below it. `--toast-top` is set by main.ts. */
 #game-ui.toast-top #objective{visibility:hidden}
-#game-ui.toast-top #toast{top:var(--toast-top,200px);bottom:auto;width:max-content;max-width:min(560px,calc(100vw - 40px));white-space:normal;text-align:center;line-height:1.3}
-@media (max-width:650px),(max-height:560px){#game-ui.toast-top #toast{font-size:11px;padding:9px 14px}}
+#game-ui.toast-top #toast{top:var(--toast-top,200px);left:var(--toast-left,50%);bottom:auto;width:max-content;max-width:var(--toast-max,min(560px,calc(100vw - 40px)));white-space:normal;text-align:center;line-height:1.3}
+@media (max-width:650px),(max-height:560px){#game-ui.toast-top #toast{font-size:11px;line-height:1.25;padding:8px 14px}}
+/* A phone move hint names the button and shows its slot icon inline (T22 fix round 1). */
+#toast .hint-icon{display:inline-block;width:1.35em;height:1.35em;margin:0 .15em;vertical-align:-.3em}
+#toast .hint-icon svg{width:100%;height:100%}

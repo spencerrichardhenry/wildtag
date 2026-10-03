@@ -124,5 +124,25 @@ try {
   tris[stage]=most;await pc.close();}
  console.log('Phone triangles per frame (most of 20 samples):',JSON.stringify(tris));
  for(const [stage,count] of Object.entries(tris)) assert.ok(count<=PHONE_TRIANGLE_BUDGET,`stage ${stage}: ${count} triangles within the phone budget ${PHONE_TRIANGLE_BUDGET}`);
- assert.deepEqual(errors,[]);console.log('PASSED: v1 migration (-v1 unchanged), genuine multitouch move + rise, swipe camera, stable hover, Dive, touch cancellation, the basic-button drag aim and touch mode, 390/320 portrait and landscape control layout (slots visible, at least 48 px, no overlap), phone Evolve → Swimmer → Undo all problem line, the phone editor creature band at 320x568 and 844x390 (framing, alerts above it, 44 px sheet slots, tap swap, 44 px tool sliders and a touch size drag, the 375x667 top bar fit), phone triangle budget at stages 0–3.');
+ // T22 fix round 1: with the Evolve button on screen (a ready save) the toast sits above it in the objective slot. Every frame with a shown
+ // toast for 10 s of game time (the stage text, then the first-time hints of a crab fight): the toast box overlaps neither the creature's
+ // screen box (`creatureBox()`: its world hull capsules, ends ± radius on each axis, projected), nor any control, nor the Evolve button.
+ for(const [w,h] of [[320,568],[844,390]]){const pc=await browser.newContext({viewport:{width:w,height:h},deviceScaleFactor:2,isMobile:true,hasTouch:true});const pg=await pc.newPage();
+  pg.on('pageerror',e=>errors.push(e.message));pg.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
+  const fx=await makeFixture(pg,{ready:true,add:{0:[{id:'claw_pincer',t:.5}]},pins:['grab',null,null,null]});
+  await openGame(pg,{storage:{[fx.key]:fx.json},query:'qaEncounter=1:crab&qaStartGrace=0'});await start(pg);
+  const r=await pg.evaluate(()=>new Promise(resolve=>{
+   const t0=window.__tinyTide.time,acc={frames:0,evolveFrames:0,texts:new Set(),bad:[]};
+   const box=e=>{const b=e.getBoundingClientRect();return{left:b.left,top:b.top,right:b.right,bottom:b.bottom};};
+   const hit=(a,b)=>a.left<b.right&&b.left<a.right&&a.top<b.bottom&&b.top<a.bottom;
+   const tick=()=>{const s=window.__tinyTide,t=document.getElementById('toast');
+    if(t.classList.contains('show')&&s.mode==='playing'){acc.frames++;acc.texts.add(t.textContent);const tb=box(t),ev=document.getElementById('evolve');
+     if(!ev.hidden){acc.evolveFrames++;if(hit(tb,box(ev)))acc.bad.push(['evolve',t.textContent,tb]);}
+     for(const c of document.querySelectorAll('#joystick,#chomp,#special,#dive,.slot-button,.icon-button'))if(c.offsetParent!==null&&c.getBoundingClientRect().width>0&&hit(tb,box(c)))acc.bad.push([c.id||c.className,t.textContent,tb]);
+     const cb=s.creatureBox();if(cb&&hit(tb,cb))acc.bad.push(['creature',t.textContent,tb,cb]);}
+    if(s.time-t0>10)return resolve({...acc,texts:[...acc.texts],bad:acc.bad.slice(0,5)});requestAnimationFrame(tick);};tick();}));
+  await pg.screenshot({path:`${out}/mobile-toast-evolve-${w}x${h}.png`});await pc.close();
+  assert.ok(r.frames>60&&r.evolveFrames>60,`${w}x${h}: toasts with the Evolve button were sampled (${r.frames} frames, ${r.evolveFrames} with Evolve)`);
+  assert.deepEqual(r.bad,[],`${w}x${h}: the toast covers no creature, control or Evolve button (${JSON.stringify(r.texts)})`);}
+ assert.deepEqual(errors,[]);console.log('PASSED: v1 migration (-v1 unchanged), genuine multitouch move + rise, swipe camera, stable hover, Dive, touch cancellation, the basic-button drag aim and touch mode, 390/320 portrait and landscape control layout (slots visible, at least 48 px, no overlap), phone Evolve → Swimmer → Undo all problem line, the phone editor creature band at 320x568 and 844x390 (framing, alerts above it, 44 px sheet slots, tap swap, 44 px tool sliders and a touch size drag, the 375x667 top bar fit), phone triangle budget at stages 0–3, the toast above Evolve at 320x568 and 844x390 (clear of the creature and every control).');
 } finally {await browser.close();}

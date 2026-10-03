@@ -1,14 +1,18 @@
 // tests/tiny-tide-core/hints.test.ts — spec §12.3: first-time hints show once per profile, at most one every 6 s, never over another toast.
 import { describe, expect, it } from 'vitest';
-import { HINTS_KEY, hintText, Hints, type HintStorage } from '../../src/tiny-tide/hints';
+import { HINTS_KEY, hintIcon, hintText, Hints, type HintStorage } from '../../src/tiny-tide/hints';
 
 const memory = (init: Record<string, string> = {}): HintStorage & { data: Record<string, string> } => {
   const data = { ...init }; return { data, getItem: k => data[k] ?? null, setItem: (k, v) => { data[k] = v; } };
 };
 describe('hints', () => {
-  it('uses the slot key on desktop and the glyph on a phone', () => {
+  it('uses the slot key on desktop and the move name (plus its icon) on a phone', () => {
     expect(hintText('move-dash', { slot: 1, touch: false })).toBe('New move: Dash. Press 2 to zip through attacks.');
-    expect(hintText('move-dash', { slot: 1, touch: true })).toBe('New move: Dash. Tap ⟫ to zip through attacks.');
+    expect(hintText('move-dash', { slot: 1, touch: true })).toBe('New move: Dash. Tap Dash to zip through attacks.');
+    expect(hintText('move-brace', { slot: 0, touch: true })).toBe('New move: Brace. Hold Brace to block in front of you.');
+    expect(hintText('move-grab', { slot: 3, touch: true })).toBe('New move: Grab. Tap Grab to hold a small creature.');
+    expect(hintIcon('move-dash', true)).toBe('dash'); expect(hintIcon('move-dash', false)).toBeNull(); expect(hintIcon('telegraph', true)).toBeNull();
+    for (const t of ['move-dash', 'move-brace', 'move-counter', 'move-grab', 'move-sweep'] as const) expect(hintText(t, { slot: 0, touch: true })).toMatch(/^[\x20-\x7e]+$/);   // no text glyphs (tofu risk)
     expect(hintText('move-brace', { slot: 0, touch: false })).toBe('New move: Brace. Hold 1 to block in front of you.');
     expect(hintText('move-counter', { slot: 2, touch: false })).toBe('New move: Counter. Press 3 just before a hit lands.');
     expect(hintText('move-grab', { slot: 3, touch: false })).toBe('New move: Grab. Press 4 to hold a small creature.');
@@ -24,11 +28,11 @@ describe('hints', () => {
   });
   it('waits for a free toast and keeps 6 s between hints, in order', () => {
     const h = new Hints(memory());
-    h.request('move-dash', 'D'); h.request('telegraph', 'T');
+    h.request('move-dash', 'D'); h.request('telegraph-red', 'R');   // (not the priority hint: see the next test)
     expect(h.next(0, false)).toBeNull();
     expect(h.next(1, true)?.id).toBe('move-dash');
     expect(h.next(6.9, true)).toBeNull();
-    expect(h.next(7, true)?.id).toBe('telegraph');
+    expect(h.next(7, true)?.id).toBe('telegraph-red');
   });
   it('in a fight only an allowed hint shows; the others keep their place', () => {
     const h = new Hints(memory());
@@ -36,6 +40,15 @@ describe('hints', () => {
     expect(h.next(0, true, id => id === 'telegraph')?.id).toBe('telegraph');
     expect(h.next(6, true, id => id === 'telegraph')).toBeNull();
     expect(h.next(6, true)?.id).toBe('move-dash');
+  });
+  it('the first telegraph hint skips the 6 s gap and may replace a non-critical toast, not a critical one', () => {
+    const h = new Hints(memory());
+    h.request('move-dash', 'D'); expect(h.next(0, true)?.id).toBe('move-dash');
+    h.request('telegraph', 'T'); h.request('telegraph-red', 'R');
+    expect(h.next(1, false, undefined, false)).toBeNull();                 // a critical toast is up: it waits
+    expect(h.next(1.5, false, undefined, true)?.id).toBe('telegraph');     // inside the gap, over a non-critical toast
+    expect(h.next(2, true, undefined, true)).toBeNull();                   // the red hint keeps the gap
+    expect(h.next(7.5, true)?.id).toBe('telegraph-red');
   });
   it('treats a storage error as not shown and goes on', () => {
     const broken: HintStorage = { getItem: () => { throw new Error('denied'); }, setItem: () => { throw new Error('denied'); } };

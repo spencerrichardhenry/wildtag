@@ -15,15 +15,15 @@ import { openPathScreen, type PathChoice } from './path-screen';
 import { renderPreview } from './preview';
 import { cardSummary, COAST_READY, eligibleChildren, leadsTo, type BodyPlan } from './plans';
 import { quoteDesign } from './economy';
-import { newRuntime, type Actor, type CombatInput, type Constraint, type Tuple4, type Vec3, type WorldQueries } from './combat-types';
+import { newRuntime, type Actor, type CombatInput, type Constraint, type MoveKind, type Tuple4, type Vec3, type WorldQueries } from './combat-types';
 import { aimChevron, aimPitch, autoAim, BRACE_AUTO_AIM_HALF_ANGLE, dragAim, mouseButtons, NO_MOUSE, pitched, pointerAim, POINTER_FRESH_SECONDS, readIntent, RELEASED, type AimCandidate, type AimSource, type MouseState } from './input';
 import { BURROW } from './bestiary';
-import { AlphaBar, alphaView, CombatHud, CombatOverlay, EdgeArrowMemory, edgeArrowAt, faintMessage, FLOATER_COLOURS, floaterClass, floaterText, HP_BAR_SECONDS, slotViews, type AlphaView, type EdgeArrow, type HpBar } from './combat-hud';
+import { AlphaBar, alphaView, CombatHud, CombatOverlay, EdgeArrowMemory, edgeArrowAt, faintMessage, FLOATER_COLOURS, floaterClass, floaterText, HP_BAR_SECONDS, MOVE_ICONS, slotViews, type AlphaView, type EdgeArrow, type HpBar } from './combat-hud';
 import { forwardOf } from './orientation';
 import { blockHint, blockHintDue, newBlockHintGate, PITCH_LIMIT, type PlayerStepResult, newTapWatch, tapTargetStalled } from './player-motion';
 import { canChooseNextPlan, evolutionDestination, reconcileAfterCommit } from './lifecycle';
-import { admitted as simAdmitted, checkPose, playerActorCached as simActor, qaAlphaHealth, qaEncounter, refreshDerived as simRefreshDerived, simBegin, simEvolve, simFrame, simOwnedState, simSuspend, type GameMode, type SimEvent, type SimState, type SimWorld } from './sim';
-import { Hints, hintText, type HintId, type HintStorage } from './hints';
+import { admitted as simAdmitted, checkPose, playerActorCached as simActor, qaAlphaHealth, qaEncounter, refreshDerived as simRefreshDerived, simBegin, simEvolve, simFrame, simOwnedState, simSuspend, worldHull as simWorldHull, type GameMode, type SimEvent, type SimState, type SimWorld } from './sim';
+import { hintIcon, Hints, hintText, type HintId, type HintStorage } from './hints';
 import type { ChompResult } from './feeding';
 import { PLAYER_ID, type CombatTick, type TelegraphView } from './combat-world';
 import { damageText, EFFECTS, FLASH_SECONDS, IMPACT_COLOURS, IMPACT_PARTICLES, shakeForPlayerHit, shakeForPlayerStrike } from './combat-profiles';
@@ -345,7 +345,19 @@ function viewOriginal() {
 }
 function escapeHtml(text: string) { return text.replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`); }
 syncHome();
-function toast(message: string) { el('toast').textContent = message; el('toast').classList.add('show'); toastTimer = 4.5; }
+/** What the toast on screen is (T22 fix round 1): the first wind-up hint may replace a 'hint' toast (block, edge, wrong diet, first-time
+ *  hints) or the 'stage' text (the objective pill repeats it), never a 'message' (parts, evolve, survivals, stuck, respawn, warnings). */
+let toastKind: 'hint' | 'stage' | 'message' = 'message';
+/** Shows a toast for 4.5 s. `icon`: a move whose slot icon follows the last use of `iconAfter` in the text (a phone move hint). */
+function toast(message: string, kind: 'hint' | 'stage' | 'message' = 'message', icon: { kind: MoveKind; after: string } | null = null) {
+  const t = el('toast'), at = icon ? message.lastIndexOf(icon.after) : -1;
+  if (icon && at >= 0) {
+    const end = at + icon.after.length, mark = document.createElement('span');
+    mark.className = 'hint-icon'; mark.innerHTML = MOVE_ICONS[icon.kind];   // our own static SVG
+    t.replaceChildren(message.slice(0, end), mark, message.slice(end));
+  } else t.textContent = message;
+  t.classList.add('show'); toastTimer = 4.5; toastKind = kind;
+}
 /** The float-up animation's rise (style.css `float-up`: 65 px) plus half a floater's height. */
 const FLOATER_RISE = 65 + 18;
 function floater(text: string, x: number, y: number, kind = '', colour?: string) {
@@ -418,7 +430,7 @@ function begin(fresh = false) {
   world.build(next.stage, next); el('evolution-banner').hidden = true; el('faint').hidden = true; clearInput(); readyToasted = evolveReady(next); lastBiome = '';
   hintClock = 0; blockGate.blockedFor = 0; blockGate.shown = false; contactNow = false; lastContact = null; lastContactSolid = null; edgeNow = false; edgeHinted = false;
   el('home').hidden = true; el('game-ui').hidden = false; el('pause').hidden = false; el('edit').hidden = false; el('corner-note').hidden = true; el('mode-label').textContent = 'NIBBLE. GROW. REPEAT.';
-  document.body.classList.add('is-playing'); toast(STAGES[next.stage]!.description);
+  document.body.classList.add('is-playing'); toast(STAGES[next.stage]!.description, 'stage');
   // A pending respawn ignores the forced spawn (it stays for the next start).
   const forced = next.pendingRespawn ? null : forcedSpawn; if (!next.pendingRespawn) forcedSpawn = null;
   respawnToasted = false;
@@ -554,12 +566,12 @@ function presentStep(r: PlayerStepResult, dt: number) {
   contactNow = !!contact; frameContacts += r.contacts.length;
   if (contact) { lastContact = contact.constraint; lastContactSolid = contact.solidId ?? null; }
   // A block hint only for a real, sustained block (not a slide), and never over another toast (final review I1).
-  if (blockHintDue(blockGate, r, dt, hintClock <= 0 && toastTimer <= 0) && contact) { toast(blockHint(plan, contact)); hintClock = 6; }
+  if (blockHintDue(blockGate, r, dt, hintClock <= 0 && toastTimer <= 0) && contact) { toast(blockHint(plan, contact), 'hint'); hintClock = 6; }
   // The soft edge: the edge hint shows once per entry into the push zone, rate-limited with the block hints, and only when no other
   // toast is on screen (so a one-shot message is never replaced).
   edgeNow = inEdgeZone(physical, legal.bounds.half);
   if (!edgeNow) edgeHinted = false;
-  else if (!edgeHinted && hintClock <= 0 && toastTimer <= 0) { toast(EDGE_HINT); edgeHinted = true; hintClock = 6; }
+  else if (!edgeHinted && hintClock <= 0 && toastTimer <= 0) { toast(EDGE_HINT, 'hint'); edgeHinted = true; hintClock = 6; }
   if (r.breachStarted) { audio.breach(); world.burst(p.x, world.surface, p.z, '#d6fff1', 22); }
   if (r.arcEnded) world.burst(p.x, world.surface, p.z, '#d6fff1', 18);
 }
@@ -568,7 +580,7 @@ function presentChomp(c: ChompResult) {
   chompPulse = 1;
   if (c.kind === 'miss') {
     audio.tone(170, 0, .065);
-    if (c.wrongDiet && wrongDietClock <= 0 && !inCombat()) { toast(`A ${dietOf(run.genome)} can’t eat ${c.wrongDiet.toLowerCase()}. Try another mouth in the editor.`); wrongDietClock = 6; }
+    if (c.wrongDiet && wrongDietClock <= 0 && !inCombat()) { toast(`A ${dietOf(run.genome)} can’t eat ${c.wrongDiet.toLowerCase()}. Try another mouth in the editor.`, 'hint'); wrongDietClock = 6; }
     return;
   }
   const food = world.foods.find(f => f.entity === c.entity)!, pos = world.screenPoint(new T.Vector3(food.data.x, food.data.y + 1, food.data.z));
@@ -677,18 +689,52 @@ function offerHints() {
     if (v.color === 'red') hints.request('telegraph-red', hintText('telegraph-red', { slot: 0, touch }));
   }
   const fight = inCombat();
-  const h = hints.next(time, toastTimer <= 0 && hintClock <= 0, fight ? id => TELEGRAPH_HINTS.has(id) : undefined);
-  if (h) { toast(h.text); hintClock = 6; }
+  const h = hints.next(time, toastTimer <= 0 && hintClock <= 0, fight ? id => TELEGRAPH_HINTS.has(id) : undefined, toastTimer <= 0 || toastKind !== 'message');
+  const kind = h && hintIcon(h.id, touch);
+  if (h) { toast(h.text, 'hint', kind ? { kind, after: `${kind[0]!.toUpperCase()}${kind.slice(1)}` } : null); hintClock = 6; }
 }
 /** The phone layouts (portrait and landscape): the toast always uses the objective's slot there. */
 const phoneLayout = matchMedia('(max-width: 650px), (max-height: 560px)');
 /** Every played frame (T22, review of D30): a shown toast sits in the objective's slot on a phone and in a fight, so it covers no control, not
- *  the creature and no telegraph near it; elsewhere it keeps its low place. Below the Evolve button when that shows. */
+ *  the creature and no telegraph near it; elsewhere it keeps its low place. With the Evolve button on screen (the objective is then hidden):
+ *  on a phone the toast stays in the objective's slot ABOVE the button, raised so that its bottom is 6 px over the button (fix round 1: below
+ *  the button it covered the creature at 320x568 and Dash at 844x390); on a desktop in a fight it goes 8 px below the button (room there). */
 function placeToast() {
-  const ui = el('game-ui'), up = el('toast').classList.contains('show') && (phoneLayout.matches || inCombat());
+  const ui = el('game-ui'), t = el('toast'), up = t.classList.contains('show') && (phoneLayout.matches || inCombat());
   ui.classList.toggle('toast-top', up); if (!up) return;
-  const evolve = el('evolve'), top = evolve.hidden ? parseFloat(getComputedStyle(el('objective')).top) : evolve.getBoundingClientRect().bottom + 8;
+  const evolve = el('evolve'), slot = parseFloat(getComputedStyle(el('objective')).top);
+  ui.style.removeProperty('--toast-left'); ui.style.removeProperty('--toast-max');
+  let top = slot;
+  if (!evolve.hidden && !phoneLayout.matches) top = evolve.getBoundingClientRect().bottom + 8;
+  else if (phoneLayout.matches) {
+    // The toast ends 6 px over the Evolve button and 4 px over the creature's screen box. Full width, it never goes over the stage and growth
+    // cards; when it does not fit there (a landscape phone: the cards stand side by side), it narrows to the gap between the cards and may
+    // rise to just under the top bar.
+    const box = (q: string) => document.querySelector(q)?.getBoundingClientRect();
+    const creature = creatureBox(), limit = Math.min(evolve.hidden ? Infinity : evolve.getBoundingClientRect().top - 6, creature ? creature.top - 4 : Infinity);
+    const stageCard = box('.stage-card'), growthCard = box('.growth-card');
+    const floor = Math.max(stageCard?.bottom ?? 0, growthCard?.bottom ?? 0) + 4;
+    top = Math.max(floor, Math.min(slot, limit - t.offsetHeight));
+    if (top + t.offsetHeight > limit && stageCard && growthCard && growthCard.left - stageCard.right >= 160) {
+      ui.style.setProperty('--toast-left', `${Math.round((stageCard.right + growthCard.left) / 2)}px`);
+      ui.style.setProperty('--toast-max', `${Math.round(growthCard.left - stageCard.right - 16)}px`);
+      const topBar = box('.topbar')?.bottom ?? 0;
+      top = Math.max(topBar + 4, Math.min(slot, limit - t.offsetHeight));
+    }
+  }
   if (Number.isFinite(top)) ui.style.setProperty('--toast-top', `${Math.round(top)}px`);
+}
+/** The creature's box on screen (CSS pixels): every capsule of its world hull, ends ± radius on each axis, projected; null when no point is
+ *  visible. Read-only (QA `creatureBox()` too). */
+function creatureBox(): { left: number; top: number; right: number; bottom: number } | null {
+  if (mode === 'menu') return null;
+  let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
+  for (const c of simWorldHull(sim, playerActorCached())) for (const e of [c.start, c.end]) for (const [x, y, z] of [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]] as const) {
+    const v = world.screenPoint(new T.Vector3(e.x + x * c.radius, e.y + y * c.radius, e.z + z * c.radius).divideScalar(world.scale));
+    if (!v.visible) continue;
+    left = Math.min(left, v.x); right = Math.max(right, v.x); top = Math.min(top, v.y); bottom = Math.max(bottom, v.y);
+  }
+  return Number.isFinite(top) ? { left, top, right, bottom } : null;
 }
 /** The alpha bar's content this frame (read-only diagnostics). */
 let shownAlpha: AlphaView | null = null;
@@ -976,7 +1022,7 @@ function frame(now: number) {
     // The body ends at the simulation's destination; if the world changed, recover.
     mode = 'playing'; el('evolution-banner').hidden = true;
     const events: SimEvent[] = []; checkPose(sim, simWorld, playerActorCached(), events); presentSim(events, 0);
-    if (mode === 'playing') toast(STAGES[run.stage]!.description);
+    if (mode === 'playing') toast(STAGES[run.stage]!.description, 'stage');
     syncUI();
   }
   const depth = world.player.position.y / world.surface;
@@ -1086,7 +1132,7 @@ if (QA) {
     plan: currentPlan(run).id, plans: [...run.plans], zone: zoneNow(), velocity: copy(rt.controlledVelocity), externalVelocity: copy(rt.externalVelocity),
     orientation: { ...rt.orientation }, permit: rt.permit ? { ...rt.permit } : null, arc: rt.arc ? { ...rt.arc } : null, breachReadyAt: rt.breachReadyAt, invulnerableUntil: rt.invulnerableUntil,
     pendingRespawn: run.pendingRespawn, caps: capsOf(), physical: copy(physical), legal: mode === 'menu' ? null : admittedNow(playerActor(currentPlan(run), run.genome, run.stage, growthOf(run))), contactNow, lastContact: lastContact === null ? null : `${lastContact}`, lastContactSolid, trapRescues: sim.trapRescues, rescueLog: JSON.parse(JSON.stringify(sim.rescueLog)), contactSolids: [...sim.lastSolids], groundOffset: rt.groundOffset, solidOverlap: mode === 'menu' ? null : solidOverlap(), solidsNear: mode === 'menu' ? [] : solidsNear(32), edge: { inZone: edgeNow, hinted: edgeHinted, half: PLAYER_HALF, softStart: EDGE_SOFT_START * PLAYER_HALF }, hazardSources: hazardSources(), growth: growthOf(run), acceptedHits, rejectedHits,
-    faintLog: sim.faintLog.map(f => ({ ...f })), stage: run.stage, dna: dnaOf(run), stageDna: run.stageDna, goal: STAGES[run.stage]!.goal, health: run.health, maxHealth: derived.maxHealth, deaths: run.deaths, diet: dietOf(run.genome), genome: structuredClone(run.genome), name: run.name, unlocked: [...run.unlocked], evolveReady: evolveReady(run), bites: run.bites, totalDna: run.totalDna, elapsed: run.elapsed, completed: run.completed, eatenPlanets: [...run.eatenPlanets], player: { x: world.player.position.x, y: world.player.position.y, z: world.player.position.z }, foods: world.edibleFoods.map(f => ({ ...f.data, tag: f.entity.spec.tag, label: f.entity.spec.label, mode: f.entity.mode, hp: f.entity.hp, approachable: approachable(f.entity) })), threats: world.threats.map(f => ({ ...f.data, label: f.entity.spec.label, mode: f.entity.mode })), landmarks: world.foods.filter(f => f.model.visible && f.tier > run.stage).map(f => ({ tier: f.tier, kind: f.data.kind, x: f.data.x, y: f.data.y, z: f.data.z })), world: world.diagnostics, assets: assetDiagnostics(), saveKey: writeKey, loadedKey, time, holdingStart, editorProjection, editorFrame, poseAgreement, screenOf, admission: admissionStats.map(a => { const per = (v: number) => a.frames ? v / a.frames : 0; return { frames: a.frames, msPerFrame: per(a.ms), callsPerFrame: per(a.calls), worstMs: a.worst, contactsPerFrame: per(a.contacts),
+    faintLog: sim.faintLog.map(f => ({ ...f })), stage: run.stage, dna: dnaOf(run), stageDna: run.stageDna, goal: STAGES[run.stage]!.goal, health: run.health, maxHealth: derived.maxHealth, deaths: run.deaths, diet: dietOf(run.genome), genome: structuredClone(run.genome), name: run.name, unlocked: [...run.unlocked], evolveReady: evolveReady(run), bites: run.bites, totalDna: run.totalDna, elapsed: run.elapsed, completed: run.completed, eatenPlanets: [...run.eatenPlanets], player: { x: world.player.position.x, y: world.player.position.y, z: world.player.position.z }, foods: world.edibleFoods.map(f => ({ ...f.data, tag: f.entity.spec.tag, label: f.entity.spec.label, mode: f.entity.mode, hp: f.entity.hp, approachable: approachable(f.entity) })), threats: world.threats.map(f => ({ ...f.data, label: f.entity.spec.label, mode: f.entity.mode })), landmarks: world.foods.filter(f => f.model.visible && f.tier > run.stage).map(f => ({ tier: f.tier, kind: f.data.kind, x: f.data.x, y: f.data.y, z: f.data.z })), world: world.diagnostics, assets: assetDiagnostics(), saveKey: writeKey, loadedKey, time, holdingStart, editorProjection, editorFrame, poseAgreement, screenOf, creatureBox, admission: admissionStats.map(a => { const per = (v: number) => a.frames ? v / a.frames : 0; return { frames: a.frames, msPerFrame: per(a.ms), callsPerFrame: per(a.calls), worstMs: a.worst, contactsPerFrame: per(a.contacts),
       player: { msPerFrame: per(a.player.ms), callsPerFrame: per(a.player.calls), worstMs: a.player.worst, worstCalls: a.player.worstCalls }, rescueWorstCalls: a.rescueWorstCalls, ecosystem: { msPerFrame: per(a.ecosystem.ms), callsPerFrame: per(a.ecosystem.calls), worstMs: a.ecosystem.worst }, guide: { msPerFrame: per(a.guide.ms), callsPerFrame: per(a.guide.calls), worstMs: a.guide.worst } }; }), render: { calls: world.renderer.info.render.calls, triangles: world.renderer.info.render.triangles, geometries: world.renderer.info.memory.geometries }, combat: combatDiagnostics() }) });
 }
 requestAnimationFrame(frame);
