@@ -92,11 +92,12 @@ export function clampAimPitch(v: Vec3, forward: Vec3): Vec3 {
 /** A species start refusal: the engine's, 'no-target' (an attack on the player or a target-origin attack without the target point), or
  *  'no-context' (an attack on the player without `onScreen`, `playerHeld` and `tick`; T11 fix round 1: the caller must give real values). */
 export type SpeciesRefusal = StartRefusal | 'no-target' | 'no-context';
-/** What the telegraph view draws for one species action in windup or active (spec §9.1). `arrow`: the shape's centroid was off-screen at
- *  some time in the windup; the edge arrow shows to the end of active. `flash`: the attacker flashes (WINDUP_FLASH at the windup start, and
+/** What the telegraph view draws for one species action in windup or active (spec §9.1). `edgeArrow`: the profile shows an edge arrow
+ *  (main.ts remembers which telegraphs went off-screen in the windup: EdgeArrowMemory). `targetsPlayer`: the action targets the player
+ *  (only those play the wind-up tone). `flash`: the attacker flashes (WINDUP_FLASH at the windup start, and
  *  the profile's flash lead before active). `activeIn`: action-clock seconds to the active start (0 in active). */
 export interface TelegraphView extends TelegraphDescriptor {
-  actionId: string; attackerId: ActorId; entityId: number; attackId: string; phase: ActionPhase; onScreen: boolean; arrow: boolean; flash: boolean;
+  actionId: string; attackerId: ActorId; entityId: number; attackId: string; phase: ActionPhase; onScreen: boolean; edgeArrow: boolean; targetsPlayer: boolean; flash: boolean;
   cue: TelegraphProfile['poseCue']; activeIn: number;
 }
 /** The attacker's colour flash lasts this long at the windup start (spec §9.1 item 5). */
@@ -112,15 +113,12 @@ export class CombatWorld {
   /** Attack tokens for wind-ups at the player (spec §9.4). */
   readonly director = new Director();
   private serial = 0;
-  /** Actions whose telegraph centroid went off-screen in the windup (their edge arrow shows to the end of active). Presentation memory only:
-   *  no tick reads it. */
-  private readonly arrowed = new Set<string>();
   /** Review R18: inside a tick, each entity's pose is sampled once (keyed by entity id); outside a tick nothing is cached. */
   private readonly poses = new Map<number, { entity: Entity; pose: CombatPose }>();
   private inTick = false;
   constructor(private readonly behaviours: Record<string, SpeciesBehaviour> = BEHAVIOURS) {}
   /** A fresh state for a new run or a load (spec §13). */
-  reset(): void { this.entities.clear(); this.log.length = 0; this.poses.clear(); this.arrowed.clear(); this.director.releaseAll(); }
+  reset(): void { this.entities.clear(); this.log.length = 0; this.poses.clear(); this.director.releaseAll(); }
   /** Faint and evolve (spec §10.3, §13): every species action at the player ends, its token returns, and holds on the player end. */
   cancelAttacksOnPlayer(playerRt: CombatRuntime): void {
     for (const c of this.entities.values()) for (const a of c.rt.actions) if (a.targetId === PLAYER_ID && a.phase !== 'interrupted') { if (a.heldTarget === PLAYER_ID) endHold(c.rt, a); endNow(c.rt, a, 0); }
@@ -334,8 +332,9 @@ export class CombatWorld {
     return { x: c.x + a.aim.x * h.radius, y: c.y + a.aim.y * h.radius, z: c.z + a.aim.z * h.radius };
   }
   /** A species action's world shapes from its origin (spec §5.10, review R2/R4); a `fixed-at-start` aim is set by the caller. */
-  speciesShapes(c: EntityCombat, a: ActionState, now: number): WorldShape[] {
-    const attack = a.resolved.attack!, pose = this.poseOf(c.entity, now);
+  speciesShapes(c: EntityCombat, a: ActionState, now: number): WorldShape[] { return this.shapesAt(a, this.poseOf(c.entity, now)); }
+  private shapesAt(a: ActionState, pose: CombatPose): WorldShape[] {
+    const attack = a.resolved.attack!;
     return actionShapes(attack.shape, [this.speciesOrigin(a, pose)], a.aim, pose.forward, pose.bodyLength);
   }
   /** The hit volume that a species action's active phase tests now (plan review R11 checks it against the telegraph). */
@@ -431,9 +430,10 @@ export class CombatWorld {
   }
   /** The telegraphs of every species action in windup or active (spec §9.1): the shapes the hit test uses (the live aim before the lock,
    *  the locked shapes after it), the fill (τ − τ0) / (windup + extension), the depth ring, the colour code, the edge arrow and the flash.
-   *  Read-only for the combat state; `isOnScreen` takes a physical point. */
+   *  Read-only: it samples poses directly (not through the tick's pose cache or its `poseSamples` counter) and keeps no memory.
+   *  `isOnScreen` takes a physical point. */
   telegraphs(now: number, isOnScreen: (p: Vec3) => boolean, groundAt: (x: number, z: number) => number): TelegraphView[] {
-    const out: TelegraphView[] = [], seen = new Set<string>();
+    const out: TelegraphView[] = [];
     for (const c of this.entities.values()) {
       if (c.entity.eaten || !c.entity.active) continue;
       for (const a of c.rt.actions) {
@@ -441,16 +441,13 @@ export class CombatWorld {
         const attack = a.resolved.attack; if (!attack) continue;
         const profile = TELEGRAPHS[attack.telegraphProfileId]; if (!profile || profile.color === 'none') continue;
         const windup = windupLength(a), elapsed = c.rt.actionClock - a.phaseStartedAt, fill = a.phase === 'windup' ? elapsed / Math.max(1e-9, windup) : 1;
-        const shapes = a.lockedShapes ?? this.speciesShapes(c, a, now), d = telegraphDescriptor(shapes, fill, profile.color, profile.pattern, a.aimLocked, groundAt), onScreen = isOnScreen(d.centroid);
-        if (a.phase === 'windup' && !onScreen) this.arrowed.add(a.instanceId);
-        seen.add(a.instanceId);
+        const shapes = a.lockedShapes ?? this.shapesAt(a, speciesCombatPose(c.entity, now)), d = telegraphDescriptor(shapes, fill, profile.color, profile.pattern, a.aimLocked, groundAt), onScreen = isOnScreen(d.centroid);
         const activeIn = a.phase === 'windup' ? Math.max(0, windup - elapsed) : 0;
         const flash = a.phase === 'windup' && (elapsed < WINDUP_FLASH - 1e-9 || activeIn <= profile.flashLeadSeconds + 1e-9);
-        out.push({ ...d, actionId: a.instanceId, attackerId: c.id, entityId: c.entity.id, attackId: attack.id, phase: a.phase, onScreen, arrow: profile.edgeArrow && this.arrowed.has(a.instanceId), flash,
+        out.push({ ...d, actionId: a.instanceId, attackerId: c.id, entityId: c.entity.id, attackId: attack.id, phase: a.phase, onScreen, edgeArrow: profile.edgeArrow, targetsPlayer: a.targetId === PLAYER_ID, flash,
           cue: profile.poseCue, activeIn });
       }
     }
-    for (const id of [...this.arrowed]) if (!seen.has(id)) this.arrowed.delete(id);
     return out;
   }
   /** Tokens follow their actions (spec §9.4, plan review R6), at the end of each tick (`now`, length `dt`; the clocks cover the tick):

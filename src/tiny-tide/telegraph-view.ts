@@ -56,7 +56,10 @@ export function outlineGeometry(s: WorldShape): T.BufferGeometry {
       polyline(i => { const t = i / ARC * Math.PI / 2; return [c * Math.cos(t), d * Math.cos(t), r + Math.sin(t)]; }, ARC);
     }
   }
-  g = new T.BufferGeometry().setAttribute('position', new T.Float32BufferAttribute(out, 3));
+  // Line distances for the dashed (red) outline, per segment pair as LineSegments.computeLineDistances writes them.
+  const dist: number[] = [];
+  for (let i = 0; i < out.length; i += 6) { const from = i === 0 ? 0 : dist[dist.length - 1]!; dist.push(from, from + Math.hypot(out[i + 3]! - out[i]!, out[i + 4]! - out[i + 1]!, out[i + 5]! - out[i + 2]!)); }
+  g = new T.BufferGeometry().setAttribute('position', new T.Float32BufferAttribute(out, 3)).setAttribute('lineDistance', new T.Float32BufferAttribute(dist, 1));
   outlines.set(key, g); return g;
 }
 const q = new T.Quaternion(), p = new T.Vector3(), d = new T.Vector3(), sc = new T.Vector3();
@@ -71,19 +74,21 @@ export function telegraphMatrix(s: WorldShape, fraction: number, target: T.Matri
   return target.compose(p, q, sc.setScalar(Math.max(1e-9, size)));
 }
 
-/** Diagonal stripes for unblockable attacks (made on first use: tests run without a DOM). */
+/** Diagonal stripes for unblockable attacks (made on first use: tests run without a DOM): white and near-black, so the pattern stays clear
+ *  in greyscale and for colour-blind players (the stripes, not the hue, say "cannot be blocked"). */
 let stripeTexture: T.Texture | null = null;
 function stripes(): T.Texture {
   if (stripeTexture) return stripeTexture;
   const c = document.createElement('canvas'); c.width = 64; c.height = 64;
-  const g = c.getContext('2d')!; g.fillStyle = '#fff'; g.fillRect(0, 0, 64, 64); g.fillStyle = '#5a1010';
+  const g = c.getContext('2d')!; g.fillStyle = '#fff'; g.fillRect(0, 0, 64, 64); g.fillStyle = '#111';
   for (let i = -64; i < 128; i += 16) { g.beginPath(); g.moveTo(i, 0); g.lineTo(i + 8, 0); g.lineTo(i + 72, 64); g.lineTo(i + 64, 64); g.fill(); }
   stripeTexture = new T.CanvasTexture(c); stripeTexture.wrapS = stripeTexture.wrapT = T.RepeatWrapping; stripeTexture.repeat.set(3, 3);
   return stripeTexture;
 }
 const surface = (opacity: number) => new T.MeshBasicMaterial({ color: AMBER, transparent: true, opacity, depthWrite: false, side: T.DoubleSide });
-/** One drawn shape: its volume, the fill, and the outline with and without the depth test. */
-interface ShapeSlot { volume: T.Mesh; fill: T.Mesh; outline: T.LineSegments; xray: T.LineSegments; striped: boolean }
+/** One drawn shape: its volume, the fill, and the outline with and without the depth test. A red (striped) telegraph puts the stripes on
+ *  the volume and the fill and draws its outlines dashed. */
+interface ShapeSlot { volume: T.Mesh; fill: T.Mesh; outline: T.LineSegments; xray: T.LineSegments; solid: [T.LineBasicMaterial, T.LineBasicMaterial]; dashed: [T.LineDashedMaterial, T.LineDashedMaterial]; striped: boolean }
 /** One telegraph's depth ring and its dashed line. */
 interface RingSlot { ring: T.Mesh; line: T.Line }
 const ringGeometry = new T.RingGeometry(.92, 1, 48).rotateX(-Math.PI / 2);
@@ -99,11 +104,13 @@ export class TelegraphLayer {
     if (s) return s;
     const empty = unitGeometry({ kind: 'cone', apex: { x: 0, y: 0, z: 0 }, axis: { x: 0, y: 0, z: 1 }, range: 1, halfAngle: .5 });
     const volume = new T.Mesh(empty, surface(.16)), fill = new T.Mesh(empty, surface(.3));
-    const outline = new T.LineSegments(empty, new T.LineBasicMaterial({ color: AMBER, transparent: true, opacity: .9 }));
-    const xray = new T.LineSegments(empty, new T.LineBasicMaterial({ color: AMBER, transparent: true, opacity: .35, depthTest: false, depthWrite: false }));
+    const solid: ShapeSlot['solid'] = [new T.LineBasicMaterial({ color: AMBER, transparent: true, opacity: .9 }), new T.LineBasicMaterial({ color: AMBER, transparent: true, opacity: .35, depthTest: false, depthWrite: false })];
+    const dash = { dashSize: .12, gapSize: .08 };
+    const dashed: ShapeSlot['dashed'] = [new T.LineDashedMaterial({ color: AMBER, transparent: true, opacity: .9, ...dash }), new T.LineDashedMaterial({ color: AMBER, transparent: true, opacity: .35, depthTest: false, depthWrite: false, ...dash })];
+    const outline = new T.LineSegments(empty, solid[0]), xray = new T.LineSegments(empty, solid[1]);
     for (const o of [volume, fill, outline, xray]) { o.matrixAutoUpdate = false; o.frustumCulled = false; this.root.add(o); }
     volume.renderOrder = 6; fill.renderOrder = 6; outline.renderOrder = 7; xray.renderOrder = 8;
-    s = { volume, fill, outline, xray, striped: false }; this.shapes[i] = s; return s;
+    s = { volume, fill, outline, xray, solid, dashed, striped: false }; this.shapes[i] = s; return s;
   }
   private ringSlot(i: number): RingSlot {
     let r = this.rings[i];
@@ -123,10 +130,12 @@ export class TelegraphLayer {
         s.volume.geometry = volume; s.fill.geometry = volume; s.outline.geometry = outline; s.xray.geometry = outline;
         telegraphMatrix(shape, 1, s.volume.matrix); s.outline.matrix.copy(s.volume.matrix); s.xray.matrix.copy(s.volume.matrix);
         telegraphMatrix(shape, Math.max(.02, v.fill), s.fill.matrix);
-        for (const o of [s.volume, s.fill, s.outline, s.xray]) { (o.material as T.MeshBasicMaterial | T.LineBasicMaterial).color.copy(color); o.visible = true; }
         if (s.striped !== striped) {
-          const m = s.volume.material as T.MeshBasicMaterial; m.map = striped ? stripes() : null; m.needsUpdate = true; s.striped = striped;
+          // Stripes darken half the surface: a striped volume and fill are more opaque so the pattern reads under water.
+          for (const [o, plain, ruled] of [[s.volume, .16, .3], [s.fill, .3, .5]] as const) { const m = o.material as T.MeshBasicMaterial; m.map = striped ? stripes() : null; m.opacity = striped ? ruled : plain; m.needsUpdate = true; }
+          [s.outline.material, s.xray.material] = striped ? s.dashed : s.solid; s.striped = striped;
         }
+        for (const o of [s.volume, s.fill, s.outline, s.xray]) { (o.material as T.MeshBasicMaterial | T.LineBasicMaterial).color.copy(color); o.visible = true; }
       }
       const r = this.ringSlot(i), c = v.centroid, ground = v.groundY + lift;
       r.ring.position.set(c.x, ground, c.z); r.ring.scale.setScalar(Math.max(lift, v.ringRadius));

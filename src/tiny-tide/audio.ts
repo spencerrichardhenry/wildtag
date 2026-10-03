@@ -27,12 +27,29 @@ export class TideAudio {
   dash() { this.tone(420, 0, .12, 'sine'); this.tone(840, .03, .1, 'sine'); }
   grab() { this.tone(240, 0, .14, 'sawtooth'); }
   breakFree() { this.tone(520, 0, .08, 'triangle'); this.tone(780, .05, .12, 'triangle'); }
-  /** A quiet tone that rises over `seconds` (the time left to the active start). */
-  windup(seconds: number) {
-    if (!this.context || !this.bus || this.muted || seconds <= 0) return;
-    const now = this.context.currentTime, osc = this.context.createOscillator(), gain = this.context.createGain();
-    osc.type = 'sine'; osc.frequency.setValueAtTime(220, now); osc.frequency.exponentialRampToValueAtTime(520, now + seconds);
-    gain.gain.setValueAtTime(0, now); gain.gain.linearRampToValueAtTime(.18, now + seconds); gain.gain.linearRampToValueAtTime(0, now + seconds + .05);
-    osc.connect(gain); gain.connect(this.bus); osc.start(now); osc.stop(now + seconds + .06); osc.onended = () => { osc.disconnect(); gain.disconnect(); };
+  guardBreak() { this.tone(560, 0, .05, 'square'); this.tone(240, .03, .16, 'sawtooth'); }
+  /** The rising wind-up tones (a cue only: the telegraph never needs the sound), one per action. */
+  private readonly windups = new Map<string, { osc: OscillatorNode; gain: GainNode }>();
+  /** This frame's wind-ups at the player, by action id and fill (0–1). A tone starts with its action, its pitch and volume follow the fill
+   *  (so a later director extension slows it), and it stops when the action is not in the list (active, interrupted or gone). */
+  windupTones(fills: ReadonlyMap<string, number>) {
+    for (const [id, w] of this.windups) if (!fills.has(id)) { this.stopTone(w); this.windups.delete(id); }
+    if (!this.context || !this.bus || this.muted) { for (const w of this.windups.values()) this.stopTone(w); this.windups.clear(); return; }
+    const now = this.context.currentTime;
+    for (const [id, fill] of fills) {
+      let w = this.windups.get(id);
+      if (!w) {
+        const osc = this.context.createOscillator(), gain = this.context.createGain();
+        osc.type = 'sine'; osc.frequency.setValueAtTime(220, now); gain.gain.setValueAtTime(0, now);
+        osc.connect(gain); gain.connect(this.bus); osc.start(now); osc.onended = () => { osc.disconnect(); gain.disconnect(); };
+        w = { osc, gain }; this.windups.set(id, w);
+      }
+      const f = Math.max(0, Math.min(1, fill));
+      w.osc.frequency.setTargetAtTime(220 * (520 / 220) ** f, now, .03); w.gain.gain.setTargetAtTime(.18 * f, now, .03);
+    }
+  }
+  private stopTone(w: { osc: OscillatorNode; gain: GainNode }) {
+    if (!this.context) return;
+    const now = this.context.currentTime; w.gain.gain.cancelScheduledValues(now); w.gain.gain.setTargetAtTime(0, now, .015); w.osc.stop(now + .08);
   }
 }

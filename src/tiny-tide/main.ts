@@ -17,7 +17,7 @@ import { cardSummary, COAST_READY, eligibleChildren, leadsTo, type BodyPlan } fr
 import { quoteDesign } from './economy';
 import { newRuntime, type Actor, type CombatInput, type Constraint, type Tuple4, type Vec3, type WorldQueries } from './combat-types';
 import { aimChevron, aimPitch, autoAim, BRACE_AUTO_AIM_HALF_ANGLE, dragAim, mouseButtons, NO_MOUSE, pitched, pointerAim, POINTER_FRESH_SECONDS, readIntent, RELEASED, type AimCandidate, type AimSource, type MouseState } from './input';
-import { CombatHud, CombatOverlay, edgeArrowAt, floaterText, HP_BAR_SECONDS, slotViews, type EdgeArrow, type HpBar } from './combat-hud';
+import { CombatHud, CombatOverlay, EdgeArrowMemory, edgeArrowAt, floaterText, HP_BAR_SECONDS, slotViews, type EdgeArrow, type HpBar } from './combat-hud';
 import { forwardOf } from './orientation';
 import { blockHint, blockHintDue, newBlockHintGate, PITCH_LIMIT, type PlayerStepResult, newTapWatch, tapTargetStalled } from './player-motion';
 import { canChooseNextPlan, evolutionDestination, reconcileAfterCommit } from './lifecycle';
@@ -95,9 +95,9 @@ const coarsePointer = () => matchMedia('(pointer: coarse)').matches;
 const combatHud = new CombatHud(document.querySelector<HTMLElement>('#game-ui .actions')!), overlay = new CombatOverlay(document.getElementById('game-ui')!);
 /** Reduced motion follows the OS setting only (D31): no camera shake. */
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
-/** This frame's telegraphs (read-only diagnostics) and the wind-ups already announced by the rising tone. */
-let telegraphViews: TelegraphView[] = [];
-const toned = new Set<string>();
+/** This frame's telegraphs (read-only diagnostics), the ones whose edge arrow shows, and the edge-arrow memory. */
+let telegraphViews: TelegraphView[] = [], arrowed = new Set<string>();
+const arrowMemory = new EdgeArrowMemory();
 const audio = new TideAudio();
 let world: TideWorld;
 try {
@@ -569,7 +569,7 @@ function presentCombat(t: CombatTick) {
     const colour = e.outcome === 'countered' ? IMPACT_COLOURS.counter : e.outcome === 'blocked' || e.outcome === 'guard-broken' ? IMPACT_COLOURS.block : toPlayer ? IMPACT_COLOURS.hurt : IMPACT_COLOURS.hit;
     if (e.outcome !== 'evaded' && e.outcome !== 'immune' ) world.impact(local.x, local.y, local.z, colour, IMPACT_PARTICLES);
     if (e.outcome === 'hit') { if (toPlayer) audio.hurt(); else audio.hit(); }
-    else if (e.outcome === 'blocked') audio.block(); else if (e.outcome === 'guard-broken') audio.breakFree(); else if (e.outcome === 'countered') audio.counter();
+    else if (e.outcome === 'blocked') audio.block(); else if (e.outcome === 'guard-broken') audio.guardBreak(); else if (e.outcome === 'countered') audio.counter();
     else if (e.outcome === 'grabbed') audio.grab(); else if (e.outcome === 'evaded') audio.dash();
     if (toPlayer && e.amount > 0) {
       world.flash('player', FLASH_SECONDS); syncHearts(); el('hearts').classList.remove('hit'); void el('hearts').offsetWidth; el('hearts').classList.add('hit');
@@ -600,15 +600,15 @@ function presentCombatView() {
   const frozen = new Set<number>();
   for (const c of sim.combat.entities.values()) if (time < c.rt.hitStopUntil) frozen.add(c.entity.id);
   world.setCombatView(telegraphViews, { player: time < rt.hitStopUntil, entities: frozen });
-  for (const v of telegraphViews) if (v.phase === 'windup' && !toned.has(v.actionId)) { toned.add(v.actionId); audio.windup(v.activeIn); }
-  for (const id of [...toned]) if (!telegraphViews.some(v => v.actionId === id)) toned.delete(id);
+  arrowed = arrowMemory.update(telegraphViews);
+  audio.windupTones(new Map(telegraphViews.filter(v => v.phase === 'windup' && v.targetsPlayer).map(v => [v.actionId, v.fill])));
   const bars: HpBar[] = [], arrows: EdgeArrow[] = [];
   if (playing) for (const c of sim.combat.entities.values()) {
     if (c.entity.eaten || !c.entity.active || time - c.lastDamagedAt > HP_BAR_SECONDS) continue;
     const top = world.screenPoint(new T.Vector3(c.entity.x, c.entity.y + .9 * SIZES[c.entity.spec.tier]!, c.entity.z).divideScalar(world.scale));
     if (top.visible) bars.push({ x: top.x, y: top.y, fraction: c.entity.hp / c.maxHp });
   }
-  for (const v of telegraphViews) if (v.arrow && !v.onScreen) {
+  for (const v of telegraphViews) if (arrowed.has(v.actionId) && !v.onScreen) {
     const at = edgeArrowAt(world.screenPoint(new T.Vector3(v.centroid.x, v.centroid.y, v.centroid.z).divideScalar(world.scale)), innerWidth, innerHeight);
     arrows.push({ ...at, color: v.color, fill: v.fill });
   }
@@ -934,7 +934,7 @@ function combatDiagnostics() {
   const actors = [{ actor: PLAYER_ID, rt }, ...[...sim.combat.entities.values()].map(c => ({ actor: c.id, rt: c.rt }))];
   return {
     actions: actors.flatMap(x => x.rt.actions.map(a => ({ actor: x.actor, id: a.definitionId, instance: a.instanceId, phase: a.phase, aim: { ...a.aim }, target: a.targetId, shape: clone(a.lockedShapes), windupExtension: a.windupExtension }))),
-    telegraphs: telegraphViews.map(v => ({ action: v.actionId, attacker: v.attackerId, attack: v.attackId, phase: v.phase, shapes: clone(v.shapes), fill: v.fill, onScreen: v.onScreen, arrow: v.arrow, flash: v.flash, color: v.color, pattern: v.pattern, locked: v.locked, cue: v.cue })),
+    telegraphs: telegraphViews.map(v => ({ action: v.actionId, attacker: v.attackerId, attack: v.attackId, phase: v.phase, shapes: clone(v.shapes), fill: v.fill, onScreen: v.onScreen, arrow: arrowed.has(v.actionId), targetsPlayer: v.targetsPlayer, flash: v.flash, color: v.color, pattern: v.pattern, locked: v.locked, cue: v.cue })),
     telegraphMeshes: world.telegraphs.counts,
     clocks: Object.fromEntries(actors.map(x => [x.actor, x.rt.actionClock])), hitStop: Object.fromEntries(actors.map(x => [x.actor, x.rt.hitStopUntil])),
     hits: sim.combat.log.map(e => ({ outcome: e.outcome, attacker: e.attackerId, target: e.targetId, attack: e.attackId, amount: e.amount, unit: e.unit, time: e.time })),

@@ -3,7 +3,7 @@
 import './controls.css';
 import type { CombatRuntime, HitOutcome, MoveKind } from './combat-types';
 import { damageText } from './combat-profiles';
-import { PLAYER_ID } from './combat-world';
+import { PLAYER_ID, type TelegraphView } from './combat-world';
 import type { MoveSet, SlotAssignment } from './moves';
 
 const svg = (body: string) => `<svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
@@ -108,4 +108,20 @@ export class CombatOverlay {
 export function edgeArrowAt(point: { x: number; y: number; visible: boolean }, width: number, height: number): { x: number; y: number; angle: number } {
   const cx = width / 2, cy = height / 2, k = point.visible ? 1 : -1, angle = Math.atan2((point.y - cy) * k, (point.x - cx) * k);
   return { x: cx + Math.cos(angle) * (cx - 36), y: cy + Math.sin(angle) * (cy - 36), angle };
+}
+/** Which telegraphs show their edge arrow (spec §9.1): one whose centroid went off-screen at some time in its windup keeps the arrow to
+ *  the end of its active phase (a profile without an edge arrow never shows one). Presentation memory (main.ts), not combat state. */
+export class EdgeArrowMemory {
+  private readonly gone = new Set<string>();
+  /** Call once per frame with all of this frame's telegraphs; returns the ids whose arrow shows. Forgets telegraphs that ended. */
+  update(views: readonly TelegraphView[]): Set<string> {
+    const live = new Set<string>(), out = new Set<string>();
+    for (const v of views) {
+      live.add(v.actionId);
+      if (v.phase === 'windup' && !v.onScreen) this.gone.add(v.actionId);
+      if (v.edgeArrow && this.gone.has(v.actionId)) out.add(v.actionId);
+    }
+    for (const id of [...this.gone]) if (!live.has(id)) this.gone.delete(id);
+    return out;
+  }
 }

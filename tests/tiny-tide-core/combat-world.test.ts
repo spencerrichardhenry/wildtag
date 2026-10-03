@@ -19,6 +19,7 @@ import { SPECIES, type Species } from '../../src/tiny-tide/species';
 import { WINDUP_FLASH } from '../../src/tiny-tide/combat-world';
 import { FLASH_LEAD_SECONDS } from '../../src/tiny-tide/combat-profiles';
 import { outlineGeometry, telegraphMatrix, unitGeometry } from '../../src/tiny-tide/telegraph-view';
+import { EdgeArrowMemory } from '../../src/tiny-tide/combat-hud';
 import * as T from 'three';
 
 const ahead = (d: number) => ({ x: 0, y: 1 - .35 * SIZES[1]!, z: d });   // a tier-1 entity's origin so that its hull centre is level with the Speck
@@ -484,13 +485,32 @@ describe('telegraphs (spec §9.1)', () => {
     const locked = s.combat.telegraphs(now, onScreen, ground)[0]!;
     expect(locked.locked).toBe(true); expect(locked.shapes).toBe(a.lockedShapes);
     const w = s.combat.startSpecies(s.combat.stateOf(entity(21, FX_HUNTER, ahead(5)))!, 'wrap', WRAP, { x: 0, y: 0, z: -1 }, null, now); if (typeof w === 'string') throw new Error(w);
-    expect(s.combat.telegraphs(now, onScreen, ground).find(t => t.attackId === 'wrap')).toMatchObject({ color: 'red', pattern: 'stripes', cue: 'coil' });
+    expect(s.combat.telegraphs(now, onScreen, ground).find(t => t.attackId === 'wrap')).toMatchObject({ color: 'red', pattern: 'stripes', cue: 'coil', targetsPlayer: false });
+    expect(locked.targetsPlayer).toBe(true);
   });
-  it('the edge arrow shows from going off-screen to the end of active; the attacker flashes at windup start and before active', () => {
+  it('the fill and the time to active include the director\'s extension (review I2)', () => {
+    const s = speck(), crab = entity(23, FX_HUNTER, ahead(3)), c = s.combat.stateOf(crab)!;
+    const a = s.combat.startSpecies(c, 'poke', POKE, { x: 0, y: 0, z: -1 }, 'player', 0, { ...AT_PLAYER, targetAt: AT }); if (typeof a === 'string') throw new Error(a);
+    a.windupExtension = .2;   // as a later director extension sets it
+    let now = 0; for (let i = 0; i < 21; i++) { now += 1 / 60; tick(s, [crab], now); }   // .35 s of a .5 + .2 s windup
+    expect(a.windupExtension).toBeCloseTo(.2, 9);
+    const v = s.combat.telegraphs(now, () => true, () => 0)[0]!;
+    expect(v.phase).toBe('windup'); expect(v.fill).toBeCloseTo(.35 / .7, 6); expect(v.activeIn).toBeCloseTo(.35, 6);
+    expect(v.flash).toBe(false);   // .35 s before active: outside the flash lead
+  });
+  it('reading telegraphs samples no pose through the tick cache (review M1)', () => {
+    const s = speck(), crab = entity(24, FX_HUNTER, ahead(3)), c = s.combat.stateOf(crab)!;
+    s.combat.startSpecies(c, 'poke', POKE, { x: 0, y: 0, z: -1 }, 'player', 0, { ...AT_PLAYER, targetAt: AT });
+    const before = s.combat.poseSamples;
+    for (let i = 0; i < 5; i++) s.combat.telegraphs(0, () => true, () => 0);
+    expect(s.combat.poseSamples).toBe(before);
+  });
+  it('the edge arrow (main.ts memory) shows from going off-screen to the end of active; the attacker flashes at windup start and before active', () => {
     const s = speck(), crab = entity(22, FX_HUNTER, ahead(3)), c = s.combat.stateOf(crab)!;
     s.combat.startSpecies(c, 'poke', POKE, { x: 0, y: 0, z: -1 }, 'player', 0, { ...AT_PLAYER, targetAt: AT });
-    let screen = true; const at = (now: number) => s.combat.telegraphs(now, () => screen, () => 0)[0];
-    expect(at(0)).toMatchObject({ arrow: false, flash: true, onScreen: true });   // windup start
+    let screen = true; const memory = new EdgeArrowMemory();
+    const at = (now: number) => { const views = s.combat.telegraphs(now, () => screen, () => 0), shown = memory.update(views); return views[0] && { ...views[0], arrow: shown.has(views[0].actionId) }; };
+    expect(at(0)).toMatchObject({ arrow: false, flash: true, onScreen: true, edgeArrow: true });   // windup start
     expect(WINDUP_FLASH).toBe(.1);
     let now = 0; for (let i = 0; i < 12; i++) { now += 1 / 60; tick(s, [crab], now); }
     expect(at(now)).toMatchObject({ arrow: false, flash: false });
@@ -499,6 +519,7 @@ describe('telegraphs (spec §9.1)', () => {
     expect(.5 - now).toBeLessThanOrEqual(FLASH_LEAD_SECONDS); expect(at(now)!.flash).toBe(true);
     for (let i = 0; i < 20; i++) { now += 1 / 60; tick(s, [crab], now); }   // past active
     expect(at(now)).toBeUndefined();
+    expect(memory.update([])).toEqual(new Set());
   });
 });
 
@@ -560,22 +581,41 @@ describe('telegraph = hit volume for every species attack (plan review R11)', ()
     if (got.kind === 'cone' && want.kind === 'cone') { close(got.apex, want.apex, 9); close(got.axis, want.axis, 9); expect(got.range).toBeCloseTo(want.range, 9); expect(got.halfAngle).toBeCloseTo(want.halfAngle, 12); }
     if (got.kind === 'capsule' && want.kind === 'capsule') { close(got.start, want.start, 9); close(got.end, want.end, 9); expect(got.radius).toBeCloseTo(want.radius, 9); }
   }
-  /** The drawn mesh: every vertex of the volume and outline lies in the shape, and the mesh reaches the shape's far point and rim. */
+  /** The distance from q to the segment ab. */
+  const toSegment = (q: Vec3, a: Vec3, b: Vec3) => { const ab = sub(b, a), l2 = ab.x * ab.x + ab.y * ab.y + ab.z * ab.z, d = sub(q, a);
+    const t = l2 > 0 ? Math.max(0, Math.min(1, (d.x * ab.x + d.y * ab.y + d.z * ab.z) / l2)) : 0; return len(sub(q, add(a, mul(ab, t)))); };
+  /** The drawn mesh (review I1), checked separately for the volume and for the outline: every vertex lies on the shape's boundary (a cone's
+   *  apex, cap or side; a capsule's surface), and each geometry reaches the shape's far point and its rim (cone) or radius (capsule). */
   function drawnMatches(s: WorldShape) {
     // Vertices are float32: a relative tolerance of 1e-5 of the shape's size.
     const m = telegraphMatrix(s, 1, new T.Matrix4()), size = s.kind === 'cone' ? s.range : s.radius + len(sub(s.end, s.start)), tol = 1e-5 * size;
     const origin = s.kind === 'cone' ? s.apex : s.start, axis = s.kind === 'cone' ? s.axis : len(sub(s.end, s.start)) > 1e-12 ? norm(sub(s.end, s.start)) : null;
-    let far = -Infinity, rim = 0;
-    for (const g of [unitGeometry(s), outlineGeometry(s)]) {
+    const h = s.kind === 'cone' ? Math.min(Math.PI, s.halfAngle) : 0;
+    for (const [name, g] of [['volume', unitGeometry(s)], ['outline', outlineGeometry(s)]] as const) {
       const p = g.getAttribute('position'), v = new T.Vector3();
+      let far = -Infinity, rim = 0, radial = 0;
       for (let i = 0; i < p.count; i++) {
-        v.fromBufferAttribute(p, i).applyMatrix4(m); const q = v3(v.x, v.y, v.z);
-        expect(sphereHitsShape(q, tol, s), `${s.kind} vertex ${i}`).toBe(true);
-        if (axis) { const d = sub(q, origin), along = d.x * axis.x + d.y * axis.y + d.z * axis.z; far = Math.max(far, along); if (len(d) > 1e-9) rim = Math.max(rim, Math.acos(Math.max(-1, Math.min(1, along / len(d))))); }
+        v.fromBufferAttribute(p, i).applyMatrix4(m); const q = v3(v.x, v.y, v.z), d = sub(q, origin), at = `${s.kind} ${name} vertex ${i}`;
+        expect(sphereHitsShape(q, tol, s), at).toBe(true);
+        if (s.kind === 'cone') {
+          const dist = len(d), angle = dist > tol ? Math.acos(Math.max(-1, Math.min(1, (d.x * s.axis.x + d.y * s.axis.y + d.z * s.axis.z) / dist))) : 0;
+          expect(dist < tol || Math.abs(dist - s.range) < tol || Math.abs(angle - h) < 1e-4, `${at} on the boundary`).toBe(true);
+          far = Math.max(far, d.x * s.axis.x + d.y * s.axis.y + d.z * s.axis.z); if (dist > tol) rim = Math.max(rim, angle);
+        } else {
+          const r = toSegment(q, s.start, s.end); radial = Math.max(radial, r);
+          expect(Math.abs(r - s.radius), `${at} on the surface`).toBeLessThan(tol);
+          if (axis) far = Math.max(far, d.x * axis.x + d.y * axis.y + d.z * axis.z);
+        }
       }
+      if (s.kind === 'cone') { expect(Math.abs(far - s.range), `${name} reach`).toBeLessThan(tol); expect(Math.abs(rim - h), `${name} rim`).toBeLessThan(1e-4); }
+      else { expect(Math.abs(radial - s.radius), `${name} radius`).toBeLessThan(tol); if (axis) expect(Math.abs(far - (len(sub(s.end, s.start)) + s.radius)), `${name} reach`).toBeLessThan(tol); }
     }
-    if (s.kind === 'cone') { expect(Math.abs(far - s.range)).toBeLessThan(tol); expect(rim).toBeCloseTo(Math.min(Math.PI, s.halfAngle), 4); }
-    else if (axis) expect(Math.abs(far - (len(sub(s.end, s.start)) + s.radius))).toBeLessThan(tol);
+  }
+  /** Review M2: the aim the attack locked, from the test's numbers only: from the hull centre toward the target, pitch clamped to ±.6 rad. */
+  function expectedAim(e: Entity, target: Vec3, now: number): Vec3 {
+    const c = speciesCombatPose(e, now).hull[0]!.start, d = sub(target, c), flat = Math.hypot(d.x, d.z), pitch = Math.atan2(d.y, flat), limit = .6;
+    if (Math.abs(pitch) <= limit) return norm(d);
+    const p = Math.sign(pitch) * limit; return v3(d.x / flat * Math.cos(p), Math.sin(p), d.z / flat * Math.cos(p));
   }
   function check(attack: AttackSpec) {
     const real = SPECIES.find(sp => sp.attackIds.includes(attack.id)), spec: Species = real ? { ...real, behaviourId: 'fx-hunter' } : FX_HUNTER;
@@ -586,10 +626,14 @@ describe('telegraph = hit volume for every species attack (plan review R11)', ()
     e.x = target.x - offset.x; e.y = target.y - offset.y; e.z = target.z + hull.radius + gap - offset.z;
     const a = s.combat.startSpecies(c, attack.id, attack, v3(0, 0, -1), 'player', 0, { ...AT_PLAYER, targetAt: target });
     if (typeof a === 'string') throw new Error(`${attack.id}: ${a}`);
+    const startAim = expectedAim(e, target, 0);
+    close(a.aim, startAim, 9);
     let now = 0, lockChecked = false, activeTicks = 0;
     const lockCheck = () => {
       const view = s.combat.telegraphs(now, () => true, () => 0).find(v => v.actionId === a.instanceId)!;
       expect(view, attack.id).toBeDefined(); expect(view.locked).toBe(true); expect(view.shapes).toHaveLength(1);
+      // The aim: toward the target from the hull centre — at the start for an aim fixed at start, at the lock for a tracking aim.
+      close(a.aim, attack.aimMode === 'input' ? expectedAim(e, target, now) : startAim, 6);
       sameShape(view.shapes[0]!, expected(attack, e, a.aim, target, now)); sameShape(a.lockedShapes![0]!, view.shapes[0]!);
       drawnMatches(view.shapes[0]!); lockChecked = true;
     };
