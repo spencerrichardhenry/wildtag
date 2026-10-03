@@ -8,7 +8,7 @@ import type { Ecosystem, EcoEvent, Entity } from './ecosystem';
 import { chomp, CHOMP_COOLDOWN, type ChompResult } from './feeding';
 import { derive, dietOf, effectiveStats, type Derived } from './genome';
 import { basicRequested } from './input';
-import { beginRespawn, growthPose, newTrapWatch, recoverPlayer, resetRuntime, resolveHazards, resolveRespawn, rescueFreeRun, TRAP_MOVE, trapDue, trapFailed, trapRescued, rescueBudget, UnstickSearch, wedged, type TrapWatch } from './lifecycle';
+import { beginRespawn, growthPose, RESPAWN_GRACE, newTrapWatch, recoverPlayer, resetRuntime, resolveHazards, resolveRespawn, rescueFreeRun, TRAP_MOVE, trapDue, trapFailed, trapRescued, rescueBudget, UnstickSearch, wedged, type TrapWatch } from './lifecycle';
 import { startAnchor } from './motion';
 import { bodyLengthOf, hullFitOf, hullOffsets, massFor, sampleCombatPose } from './mount';
 import { CombatWorld, playerMatrix, type CombatTick, type MotionBody, type PlayerBody } from './combat-world';
@@ -19,7 +19,7 @@ import { orientedHeave, orientedSway, rotateInto } from './orientation';
 import { newStepSnapshot, restoreStep, snapshotStep, stepPlayer, type PlayerStepResult, type StepSnapshot } from './player-motion';
 import { habitat, movement, movementCapabilities } from './profiles';
 import { currentPlan, evolveReady, growthOf, hurt, killReward, STAGES, unlock, type Run } from './state';
-import { walletTotal } from './economy';
+import { faintLoss, type Economy } from './economy';
 import { admissionClock, admissionCount, supportHeight } from './world-queries';
 
 export type GameMode = 'menu' | 'playing' | 'paused' | 'evolving' | 'editing' | 'fainted' | 'stuck' | 'won';
@@ -60,7 +60,7 @@ export type SimEvent =
   /** An accepted hazard hit; `fainted` when it emptied the hearts (the run is already marked; save it at once); `lost`: the DNA the faint took. */
   | { type: 'hurt'; event: EcoEvent; damage: number; fainted: boolean; lost: number }
   | { type: 'respawned' } | { type: 'respawn-waiting' }
-  /** Combat damage emptied the hearts (the run is already marked; save it at once). `lost`: the DNA the faint took from the wallet. */
+  /** Combat damage emptied the hearts (the run is already marked; save it at once). `lost`: the at-risk DNA (wallet and part credit) the faint took. */
   | { type: 'fainted'; lost: number }
   /** A combat kill (spec §10.4): the DNA it paid (0 for a herbivore) and a part it unlocked. */
   | { type: 'killed'; entity: Entity; dna: number; drop: string | null }
@@ -184,18 +184,23 @@ export function playerBody(s: SimState, actor: Actor): PlayerBody {
 /** Regeneration (spec §10.2): half a heart every REGEN_EVERY seconds once REGEN_AFTER seconds have passed since the last damage and the
  *  last wind-up at the player. */
 export const REGEN_AFTER = 6, REGEN_EVERY = 2;
-/** After a faint, every creature hunting the player gives up for this long (D27). */
+/** After a faint, every creature hunting the player gives up, and stays off it for this long after the respawn grace (D27, T15 fix round 1:
+ *  a window counted from the faint ended 1.2 s after the grace, and a crab near the anchor fainted the player about every 8 s). */
 export const FAINT_GIVE_UP = 6;
+/** The DNA at risk (wallet and part credit): what a faint can take. */
+const atRisk = (e: Economy) => { const l = faintLoss(e); return l.wallet + l.parts; };
+/** A respawn: hunters stay off the player through the grace and FAINT_GIVE_UP after it (D27). */
+function afterRespawn(s: SimState, w: SimWorld): void { w.eco.giveUpAll(s.time, RESPAWN_GRACE + FAINT_GIVE_UP); }
 /** A faint at 0 hearts, once (the hazard path and the combat path share it). THE FAINT RULE itself is `applyFaintRule` (state.ts).
- *  Holds and attacks on the player end here, in the faint's frame (spec §13). Returns the wallet DNA the faint took, or null when no
- *  faint began. */
+ *  Holds and attacks on the player end here, in the faint's frame (spec §13). Returns the true loss (the at-risk wallet and part credit
+ *  the faint took), or null when no faint began. */
 function faintNow(s: SimState, w: SimWorld): number | null {
-  const hadPermit = s.rt.permit !== null, hadArc = s.rt.arc !== null, before = walletTotal(s.run.economy);
+  const hadPermit = s.rt.permit !== null, hadArc = s.rt.arc !== null, before = atRisk(s.run.economy);
   if (!beginRespawn(s.run, s.rt)) return null;
   s.combat.cancelAttacksOnPlayer(s.rt);   // spec §9.4, §13: every attack at the player ends, its token returns, and holds end
   w.eco.giveUpAll(s.time, FAINT_GIVE_UP);   // D27
   s.mode = 'fainted'; s.faintLog.push({ time: s.time, hadPermit, hadArc }); s.respawnClock = 1.8;
-  return before - walletTotal(s.run.economy);
+  return before - atRisk(s.run.economy);
 }
 /** One frame of the simulation (main.ts `frame` without presentation). */
 export function simFrame(s: SimState, w: SimWorld, input: SimInput): SimEvent[] {
@@ -298,7 +303,7 @@ function takeHit(s: SimState, w: SimWorld, event: EcoEvent, events: SimEvent[]):
 /** The faint timer: respawn at the start anchor, or wait and retry each second. */
 function tickFaint(s: SimState, w: SimWorld, dt: number, events: SimEvent[]): void {
   s.respawnClock -= dt; if (s.respawnClock > 0) return;
-  if (tryRespawn(s, w, events)) { s.mode = 'playing'; events.push({ type: 'respawned' }); return; }
+  if (tryRespawn(s, w, events)) { s.mode = 'playing'; afterRespawn(s, w); events.push({ type: 'respawned' }); return; }
   s.respawnClock = 1; events.push({ type: 'respawn-waiting' });
 }
 /** A new run or a load (main.ts `begin`, after the world is built): a fresh runtime, then the pending respawn, or the start anchor (or a
@@ -314,7 +319,7 @@ export function simBegin(s: SimState, w: SimWorld, run: Run, forced: Vec3 | null
   events.push({ type: 'installed', snap: true });
   if (run.pendingRespawn) {
     // A save made during a faint resolves once, before play starts.
-    if (!tryRespawn(s, w, events)) { s.mode = 'fainted'; s.respawnClock = 1; events.push({ type: 'resume-fainted' }); }
+    if (tryRespawn(s, w, events)) afterRespawn(s, w); else { s.mode = 'fainted'; s.respawnClock = 1; events.push({ type: 'resume-fainted' }); }
   } else {
     const anchor = anchorFor(s, w, actor), size = SIZES[run.stage]!;
     const start: RecoveryResult = forced && anchor.ok ? recoverPlayer(actor, { x: forced.x * size, y: forced.y * size, z: forced.z * size }, anchor.orientation,

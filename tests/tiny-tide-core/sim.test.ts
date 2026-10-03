@@ -5,9 +5,10 @@
 //   watch rescues twice (search in slices under the frame's admission budget, then the glide);
 // - `faint` (seed 3, 60 s, a slow circle): a hazard hit at 54.27 s, one rejected hit, a faint at 55.68 s and the respawn at 57.48 s;
 // - `regen` (seed 3, 80 s, from 3 of 6 hearts): the `faint` circle until 54.3 s, then +x. With no damage and no wind-up yet, the hearts
-//   come back half a heart every 2 s (spec §10.2) from 2 s to full at 12 s; the same hit and faint as `faint`; after the respawn every hunter gives up
-//   for 6 s (D27), so the crab comes back and the player faints twice more (T15 re-record: the run before T15 had one hit at 64.4 s
-//   and regen every 2.5 s after 5 s).
+//   come back half a heart every 2 s (spec §10.2) from 2 s to full at 12 s; the same hit and faint as `faint` (54.3 s, 55.7 s); the
+//   respawn at 57.5 s, and then no hit to the end: hunters stay off the player through the respawn grace and 6 s after it (D27).
+//   (T15 re-records: before T15 one hit at 64.4 s and regen every 2.5 s after 5 s; T15 itself, with the give-up counted from the faint,
+//   fainted the player again at 64.1 s and 72.4 s; fix round 1 counts it from the respawn.)
 // Not covered: the stuck retry, held frames, a win, and the modes other than playing and fainted.
 // A task that changes stage 0 on purpose re-records it from sim.ts with TIDE_SIM_RECORD=sim and says why in its commit.
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
@@ -81,6 +82,12 @@ describe('sim', () => {
     expect({ deaths: golden.faint.at(-1)!.deaths, mode: golden.faint.at(-1)!.mode }).toEqual({ deaths: 1, mode: 'playing' });
     expect(regens(golden.regen), 'regen from 3 hearts').toBeGreaterThanOrEqual(6);
     expect(runAll(runSim)).toEqual(golden);
+  }, 60_000);
+});
+describe('the faint give-up (D27, T15 fix round 1)', () => {
+  it('the regen script over 120 s faints once: hunters give up for 6 s after the respawn grace, not 6 s after the faint', () => {
+    const samples = runSim({ ...SCENARIOS.regen, health: undefined, frames: 120 * 60, every: 60 });
+    expect(samples.at(-1)!.deaths).toBe(1);
   }, 60_000);
 });
 describe('regeneration', () => {

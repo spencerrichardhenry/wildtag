@@ -151,8 +151,8 @@ async function installSampler(page) {
         for (let i = 0; i < hits; i++) {
           const src = [...(last.hazards ?? [])].sort((p, q) => dist(p, last.player) - dist(q, last.player))[0];
           const spec = src && sp.SPECIES.find(x => x.key === src.key), raw = spec?.contactHazardId ? rg.HAZARDS[spec.contactHazardId]?.damage : undefined;
-          const taken = raw === undefined ? Math.max(0, last.health - cur.health) : st.damageAfterArmor(raw, last.armor);
-          b.hits++; b.damage += taken; if (raw !== undefined) b.armorPrevented += raw - taken;
+          const taken = raw === undefined ? Math.max(0, last.health - cur.health) : st.damageAfterArmor(raw, last.armor) / 2;   // hazard damage is in half-hearts (T15)
+          b.hits++; b.damage += taken; if (raw !== undefined) b.armorPrevented += raw / 2 - taken;
           P.hits.push({ stage: last.stage, source: src?.key ?? null, raw: raw ?? null, armor: last.armor, taken, time: cur.time });
         }
         if (cur.deaths > last.deaths) b.faints += cur.deaths - last.deaths;
@@ -383,7 +383,7 @@ function summarize() {
       active: 'game seconds in mode playing (run.elapsed advances in this mode only)', editorWall: 'real seconds in mode editing (path screen, evolve editor and purchase edits; the game clock stops)',
       wall: 'real seconds in all modes at this size', travel: 'active seconds with no food of the diet in bite reach (inReach with the effective reach)', feeding: 'active seconds with a food of the diet in bite reach',
       contact: 'active seconds with contactNow true (a contact on the current frame)', damage: 'approximate hearts lost to accepted hits: derived, not observed — damageAfterArmor(raw, armor) with the raw damage of the hazard source nearest the player',
-      armorPrevented: 'approximate: derived, not observed — raw damage of the nearest hazard source minus damageAfterArmor(raw, armor)',
+      armorPrevented: 'approximate: derived, not observed — in hearts: (raw − damageAfterArmor(raw, armor)) / 2, raw being the half-heart damage of the nearest hazard source',
       meals: 'a meal is a food that disappears on the frame the bite count rises (nearest to the player first, as many as the bite increase); a food that disappears on a later frame is not counted',
       forageExtra: 'mealDna − dnaFor (the plan foraging bonus)', verticalMeals: "meals of a target for which the bot itself used Rise, Breach or Dive because of the target's height (not a game measure)",
       mandatoryNet: 'wallet before the path screen minus wallet after the evolution (Snapper/Beak, Fix for me, refunds)', T: 'mean total active seconds of completed runs' },

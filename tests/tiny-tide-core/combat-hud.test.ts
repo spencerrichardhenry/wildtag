@@ -1,7 +1,7 @@
 // tests/tiny-tide-core/combat-hud.test.ts — T9: the slot views (label and cooldown fraction on the action clock) and the ring step that
 // decides when a slot button is redrawn (a cooldown that is almost over must still differ from a ready slot).
 import { describe, expect, it } from 'vitest';
-import { edgeArrowAt, floaterText, ringStep, slotViews } from '../../src/tiny-tide/combat-hud';
+import { edgeArrowAt, faintMessage, floaterText, ringStep, slotViews } from '../../src/tiny-tide/combat-hud';
 import { playerMoves } from '../../src/tiny-tide/sim';
 import { speck } from './combat-fixture-world';
 
@@ -31,5 +31,12 @@ describe('combat floaters and edge arrows (T12)', () => {
     expect(right.angle).toBeCloseTo(0); expect(right.x).toBeCloseTo(800 - 36); expect(right.y).toBeCloseTo(300);
     const behind = edgeArrowAt({ x: 2000, y: 300, visible: false }, 800, 600);
     expect(Math.abs(behind.angle)).toBeCloseTo(Math.PI); expect(behind.x).toBeCloseTo(36);
+  });
+});
+describe('the faint overlay (T15 fix round 1)', () => {
+  it('shows the true loss (wallet and part credit at risk), or a neutral line when it is not known', () => {
+    expect(faintMessage(24)).toEqual({ title: 'Fainted!', line: 'You lost 24 DNA. Your body and parts stay.' });
+    expect(faintMessage(0)).toEqual({ title: 'Fainted!', line: 'No DNA was lost. Your body and parts stay.' });
+    expect(faintMessage(null)).toEqual({ title: 'Fainted!', line: 'Waking up at the start. Your body and parts stay.' });
   });
 });

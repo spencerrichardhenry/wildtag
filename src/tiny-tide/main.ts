@@ -17,7 +17,7 @@ import { cardSummary, COAST_READY, eligibleChildren, leadsTo, type BodyPlan } fr
 import { quoteDesign } from './economy';
 import { newRuntime, type Actor, type CombatInput, type Constraint, type Tuple4, type Vec3, type WorldQueries } from './combat-types';
 import { aimChevron, aimPitch, autoAim, BRACE_AUTO_AIM_HALF_ANGLE, dragAim, mouseButtons, NO_MOUSE, pitched, pointerAim, POINTER_FRESH_SECONDS, readIntent, RELEASED, type AimCandidate, type AimSource, type MouseState } from './input';
-import { CombatHud, CombatOverlay, EdgeArrowMemory, edgeArrowAt, floaterText, HP_BAR_SECONDS, slotViews, type EdgeArrow, type HpBar } from './combat-hud';
+import { CombatHud, CombatOverlay, EdgeArrowMemory, edgeArrowAt, faintMessage, floaterText, HP_BAR_SECONDS, slotViews, type EdgeArrow, type HpBar } from './combat-hud';
 import { forwardOf } from './orientation';
 import { blockHint, blockHintDue, newBlockHintGate, PITCH_LIMIT, type PlayerStepResult, newTapWatch, tapTargetStalled } from './player-motion';
 import { canChooseNextPlan, evolutionDestination, reconcileAfterCommit } from './lifecycle';
@@ -514,7 +514,7 @@ function presentSim(events: readonly SimEvent[], dt: number) {
       case 'killed': presentKill(e.entity, e.dna, e.drop); break;
       case 'respawned': el('faint').hidden = true; save(); syncUI(); toast('You woke up at the start. Eat to grow again.'); break;
       case 'respawn-waiting': if (!respawnToasted) { respawnToasted = true; toast('Looking for a safe place to wake up…'); } break;
-      case 'resume-fainted': el('faint').hidden = false; break;
+      case 'resume-fainted': showFaintText(null); el('faint').hidden = false; break;   // the loss was taken before the save: not known here
     }
   }
 }
@@ -561,12 +561,15 @@ function presentHurt(event: EcoEvent, fainted: boolean, lost: number) {
   if (!fainted) { if (run.health <= 2) toast(`${event.entity.spec.label} is winning! Get away to heal.`); return; }
   presentFaint(lost);
 }
+/** The faint overlay's text: the true loss, or a neutral line when it is not known (null). */
+function showFaintText(lost: number | null) {
+  const m = faintMessage(lost), title = document.createElement('strong'), line = document.createElement('span');
+  title.textContent = m.title; line.textContent = m.line; el('faint').replaceChildren(title, line);
+}
 /** A faint (the simulation already began the respawn): save at once, clear the input (main.ts's takeHit did), then the overlay with the
- *  DNA the faint took (spec §10.3). */
+ *  true loss: the at-risk wallet and part credit the faint took (spec §10.3, T15 fix round 1). */
 function presentFaint(lost: number) {
-  const title = document.createElement('strong'), line = document.createElement('span');
-  title.textContent = 'Fainted!'; line.textContent = `${lost > 0 ? `The ${lost} DNA you found as a ${STAGES[run.stage]!.title.toLowerCase()} is gone.` : 'No DNA was lost.'} Your body and parts stay.`;
-  el('faint').replaceChildren(title, line);
+  showFaintText(lost);
   save(); respawnToasted = false;
   clearInput(); audio.faint(); el('faint').hidden = false; world.burst(world.player.position.x, world.player.position.y, world.player.position.z, '#ff8f7a', 40);
 }

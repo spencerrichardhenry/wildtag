@@ -60,6 +60,7 @@ describe('run v4', () => {
     expect(killReward(meat, snail)).toEqual({ dna: 13, counts: false }); expect(meat.stageDna).toBe(24);   // tier 1, does not hunt size 0
     const omni = freshRun(5); omni.diet = 'omnivore'; expect(killReward(omni, crab).dna).toBe(17);   // round(24 × .7) = round(16.8)
     const plants = freshRun(5); expect(killReward(plants, crab)).toEqual({ dna: 0, counts: false }); expect(plants.bites).toBe(0);
+    const zero = freshRun(5); zero.diet = 'carnivore'; expect(killReward(zero, { ...crab, dna: 0 })).toEqual({ dna: 0, counts: false }); expect(zero.bites).toBe(0);   // nothing paid: no bite
   });
   it('survivor bonus conditions', () => {
     const r = freshRun(6), squid = species(2, 'squid');

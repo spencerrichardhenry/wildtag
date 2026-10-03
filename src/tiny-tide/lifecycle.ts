@@ -23,11 +23,13 @@ export function beginRespawn(run: Run, rt: CombatRuntime): boolean {
   faint(run); resetRuntime(rt); return true;
 }
 
+/** Seconds of invulnerability after a respawn. */
+export const RESPAWN_GRACE = 3;
 /** Completes a pending respawn with a pose checked for the actual growth. The caller installs `anchor.position` and saves. */
 export function resolveRespawn(run: Run, rt: CombatRuntime, now: number, anchor: RecoveryResult): boolean {
   if (!run.pendingRespawn || !anchor.ok) return false;
   run.health = maxHealthOf(run); run.pendingRespawn = false;
-  resetRuntime(rt, anchor.orientation); rt.invulnerableUntil = now + 3; return true;
+  resetRuntime(rt, anchor.orientation); rt.invulnerableUntil = now + RESPAWN_GRACE; return true;
 }
 
 /** Current orientation, then level, then the anchor revalidated with its own orientation. The caller installs position and orientation together. */

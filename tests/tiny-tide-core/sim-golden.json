@@ -10749,7 +10749,7 @@
    "x": 28.210608,
    "y": 5.341443,
    "z": 0,
-   "health": 3,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
@@ -10762,7 +10762,7 @@
    "x": 28.760158,
    "y": 5.327886,
    "z": 0,
-   "health": 3,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
@@ -10775,7 +10775,7 @@
    "x": 29.309708,
    "y": 5.310738,
    "z": 0,
-   "health": 3,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
@@ -10788,7 +10788,7 @@
    "x": 29.859258,
    "y": 5.290048,
    "z": 0,
-   "health": 3,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
@@ -10801,7 +10801,7 @@
    "x": 30.408808,
    "y": 5.265914,
    "z": 0,
-   "health": 3,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
@@ -10814,7 +10814,7 @@
    "x": 30.958358,
    "y": 5.238436,
    "z": 0,
-   "health": 3,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
@@ -10827,7 +10827,7 @@
    "x": 31.507908,
    "y": 5.207722,
    "z": 0,
-   "health": 3,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
@@ -10840,7 +10840,7 @@
    "x": 32.057458,
    "y": 5.173886,
    "z": 0,
-   "health": 3,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
@@ -10853,7 +10853,7 @@
    "x": 32.607008,
    "y": 5.137043,
    "z": 0,
-   "health": 3,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
@@ -10866,7 +10866,7 @@
    "x": 33.156558,
    "y": 5.097318,
    "z": 0,
-   "health": 3,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
@@ -10879,7 +10879,7 @@
    "x": 33.706108,
    "y": 5.055599,
    "z": 0,
-   "health": 3,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
@@ -10892,7 +10892,7 @@
    "x": 34.255658,
    "y": 5.013126,
    "z": 0,
-   "health": 3,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
@@ -10905,7 +10905,7 @@
    "x": 34.805208,
    "y": 4.968026,
    "z": 0,
-   "health": 3,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
@@ -10918,7 +10918,7 @@
    "x": 35.354758,
    "y": 4.920435,
    "z": 0,
-   "health": 3,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
@@ -10928,242 +10928,242 @@
   },
   {
    "t": 64.1,
-   "x": 35.537942,
-   "y": 4.904041,
+   "x": 35.904308,
+   "y": 4.870491,
    "z": 0,
-   "health": 0,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
-   "mode": "fainted",
+   "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 64.2,
-   "x": 35.537942,
-   "y": 4.904041,
+   "x": 36.453858,
+   "y": 4.818337,
    "z": 0,
-   "health": 0,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
-   "mode": "fainted",
+   "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 64.3,
-   "x": 35.537942,
-   "y": 4.904041,
+   "x": 37.003408,
+   "y": 4.764118,
    "z": 0,
-   "health": 0,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
-   "mode": "fainted",
+   "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 64.4,
-   "x": 35.537942,
-   "y": 4.904041,
+   "x": 37.552958,
+   "y": 4.707984,
    "z": 0,
-   "health": 0,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
-   "mode": "fainted",
+   "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 64.5,
-   "x": 35.537942,
-   "y": 4.904041,
+   "x": 38.102508,
+   "y": 4.650085,
    "z": 0,
-   "health": 0,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
-   "mode": "fainted",
+   "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 64.6,
-   "x": 35.537942,
-   "y": 4.904041,
+   "x": 38.652058,
+   "y": 4.591348,
    "z": 0,
-   "health": 0,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
-   "mode": "fainted",
+   "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 64.7,
-   "x": 35.537942,
-   "y": 4.904041,
+   "x": 39.201608,
+   "y": 4.531378,
    "z": 0,
-   "health": 0,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
-   "mode": "fainted",
+   "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 64.8,
-   "x": 35.537942,
-   "y": 4.904041,
+   "x": 39.751158,
+   "y": 4.470002,
    "z": 0,
-   "health": 0,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
-   "mode": "fainted",
+   "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 64.9,
-   "x": 35.537942,
-   "y": 4.904041,
+   "x": 40.299847,
+   "y": 4.407479,
    "z": 0,
-   "health": 0,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
-   "mode": "fainted",
+   "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 65,
-   "x": 35.537942,
-   "y": 4.904041,
+   "x": 40.823902,
+   "y": 4.346751,
    "z": 0,
-   "health": 0,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
-   "mode": "fainted",
+   "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 65.1,
-   "x": 35.537942,
-   "y": 4.904041,
+   "x": 41.284571,
+   "y": 4.292663,
    "z": 0,
-   "health": 0,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
-   "mode": "fainted",
+   "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 65.2,
-   "x": 35.537942,
-   "y": 4.904041,
+   "x": 41.662632,
+   "y": 4.247854,
    "z": 0,
-   "health": 0,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
-   "mode": "fainted",
+   "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 65.3,
-   "x": 35.537942,
-   "y": 4.904041,
+   "x": 41.957307,
+   "y": 4.212701,
    "z": 0,
-   "health": 0,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
-   "mode": "fainted",
+   "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 65.4,
-   "x": 35.537942,
-   "y": 4.904041,
+   "x": 42.178655,
+   "y": 4.186182,
    "z": 0,
-   "health": 0,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
-   "mode": "fainted",
+   "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 65.5,
-   "x": 35.537942,
-   "y": 4.904041,
+   "x": 42.340689,
+   "y": 4.166714,
    "z": 0,
-   "health": 0,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
-   "mode": "fainted",
+   "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 65.6,
-   "x": 35.537942,
-   "y": 4.904041,
+   "x": 42.457216,
+   "y": 4.152688,
    "z": 0,
-   "health": 0,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
-   "mode": "fainted",
+   "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 65.7,
-   "x": 35.537942,
-   "y": 4.904041,
+   "x": 42.540002,
+   "y": 4.142711,
    "z": 0,
-   "health": 0,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
-   "mode": "fainted",
+   "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 65.8,
-   "x": 35.537942,
-   "y": 4.904041,
+   "x": 42.59833,
+   "y": 4.135676,
    "z": 0,
-   "health": 0,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
-   "mode": "fainted",
+   "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 65.9,
-   "x": 0.083333,
-   "y": 1.320291,
+   "x": 42.63919,
+   "y": 4.130745,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -11171,12 +11171,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 66,
-   "x": 0.458333,
-   "y": 1.509331,
+   "x": 42.667703,
+   "y": 4.127302,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -11184,12 +11184,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 66.1,
-   "x": 1.007883,
-   "y": 1.647808,
+   "x": 42.687545,
+   "y": 4.124906,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -11197,12 +11197,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 66.2,
-   "x": 1.557433,
-   "y": 1.786824,
+   "x": 42.701328,
+   "y": 4.123242,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -11210,12 +11210,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 66.3,
-   "x": 2.106983,
-   "y": 1.926222,
+   "x": 42.710889,
+   "y": 4.122087,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -11223,12 +11223,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 66.4,
-   "x": 2.656533,
-   "y": 2.065271,
+   "x": 42.717516,
+   "y": 4.121286,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -11236,12 +11236,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 66.5,
-   "x": 3.206083,
-   "y": 2.203498,
+   "x": 42.722107,
+   "y": 4.120732,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -11249,12 +11249,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 66.6,
-   "x": 3.755633,
-   "y": 2.34057,
+   "x": 42.725286,
+   "y": 4.120348,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -11262,12 +11262,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 66.7,
-   "x": 4.305183,
-   "y": 2.47623,
+   "x": 42.727486,
+   "y": 4.120082,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -11275,12 +11275,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 66.8,
-   "x": 4.854733,
-   "y": 2.610269,
+   "x": 42.729009,
+   "y": 4.119898,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -11288,12 +11288,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 66.9,
-   "x": 5.404283,
-   "y": 2.742502,
+   "x": 42.730062,
+   "y": 4.11977,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -11301,12 +11301,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 67,
-   "x": 5.953833,
-   "y": 2.87276,
+   "x": 42.730791,
+   "y": 4.119682,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -11314,12 +11314,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 67.1,
-   "x": 6.503383,
-   "y": 3.000884,
+   "x": 42.731296,
+   "y": 4.119621,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -11327,12 +11327,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 67.2,
-   "x": 7.052933,
-   "y": 3.126722,
+   "x": 42.731644,
+   "y": 4.119579,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -11340,12 +11340,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 67.3,
-   "x": 7.602483,
-   "y": 3.25013,
+   "x": 42.731886,
+   "y": 4.11955,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -11353,12 +11353,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 67.4,
-   "x": 8.152033,
-   "y": 3.370966,
+   "x": 42.732053,
+   "y": 4.11953,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -11366,12 +11366,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 67.5,
-   "x": 8.701583,
-   "y": 3.489095,
+   "x": 42.732168,
+   "y": 4.119516,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -11379,12 +11379,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 67.6,
-   "x": 9.251133,
-   "y": 3.604387,
+   "x": 42.732248,
+   "y": 4.119506,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -11392,12 +11392,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 67.7,
-   "x": 9.800683,
-   "y": 3.716715,
+   "x": 42.732304,
+   "y": 4.1195,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -11405,12 +11405,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 67.8,
-   "x": 10.350233,
-   "y": 3.825959,
+   "x": 42.732342,
+   "y": 4.119495,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -11418,12 +11418,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 67.9,
-   "x": 10.899783,
-   "y": 3.932003,
+   "x": 42.732368,
+   "y": 4.119492,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -11431,12 +11431,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 68,
-   "x": 11.449333,
-   "y": 4.034736,
+   "x": 42.732387,
+   "y": 4.11949,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -11444,12 +11444,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 68.1,
-   "x": 11.998883,
-   "y": 4.134054,
+   "x": 42.732399,
+   "y": 4.119488,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -11457,12 +11457,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 68.2,
-   "x": 12.548433,
-   "y": 4.229858,
+   "x": 42.732408,
+   "y": 4.119487,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -11470,12 +11470,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 68.3,
-   "x": 13.097983,
-   "y": 4.322053,
+   "x": 42.732414,
+   "y": 4.119486,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -11483,12 +11483,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 68.4,
-   "x": 13.647533,
-   "y": 4.410553,
+   "x": 42.732418,
+   "y": 4.119486,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -11496,12 +11496,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 68.5,
-   "x": 14.197083,
-   "y": 4.495276,
+   "x": 42.732421,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -11509,12 +11509,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 68.6,
-   "x": 14.746633,
-   "y": 4.576148,
+   "x": 42.732423,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -11522,12 +11522,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 68.7,
-   "x": 15.296183,
-   "y": 4.653098,
+   "x": 42.732425,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -11535,12 +11535,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 68.8,
-   "x": 15.845733,
-   "y": 4.726065,
+   "x": 42.732425,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -11548,12 +11548,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 68.9,
-   "x": 16.395283,
-   "y": 4.794993,
+   "x": 42.732426,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -11561,12 +11561,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 69,
-   "x": 16.944833,
-   "y": 4.859833,
+   "x": 42.732427,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -11574,12 +11574,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 69.1,
-   "x": 17.494383,
-   "y": 4.920542,
+   "x": 42.732427,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -11587,12 +11587,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 69.2,
-   "x": 18.043933,
-   "y": 4.977085,
+   "x": 42.732427,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -11600,12 +11600,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 69.3,
-   "x": 18.593483,
-   "y": 5.029433,
+   "x": 42.732427,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -11613,12 +11613,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 69.4,
-   "x": 19.143033,
-   "y": 5.077564,
+   "x": 42.732427,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -11626,12 +11626,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 69.5,
-   "x": 19.692583,
-   "y": 5.121463,
+   "x": 42.732427,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -11639,12 +11639,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 69.6,
-   "x": 20.242133,
-   "y": 5.161121,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -11652,12 +11652,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 69.7,
-   "x": 20.791683,
-   "y": 5.196538,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -11665,12 +11665,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 69.8,
-   "x": 21.341233,
-   "y": 5.22772,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -11678,12 +11678,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 69.9,
-   "x": 21.890783,
-   "y": 5.257696,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -11691,12 +11691,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 70,
-   "x": 22.440333,
-   "y": 5.284658,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -11704,12 +11704,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 70.1,
-   "x": 22.989883,
-   "y": 5.307417,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -11717,12 +11717,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 70.2,
-   "x": 23.539433,
-   "y": 5.325999,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -11730,12 +11730,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 70.3,
-   "x": 24.088983,
-   "y": 5.340438,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -11743,12 +11743,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 70.4,
-   "x": 24.638533,
-   "y": 5.353056,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -11756,12 +11756,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 70.5,
-   "x": 25.188083,
-   "y": 5.362132,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -11769,12 +11769,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 70.6,
-   "x": 25.737633,
-   "y": 5.367167,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -11782,12 +11782,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 70.7,
-   "x": 26.287183,
-   "y": 5.368216,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -11795,12 +11795,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 70.8,
-   "x": 26.836733,
-   "y": 5.36534,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -11808,441 +11808,441 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 70.9,
-   "x": 27.386283,
-   "y": 5.358608,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
-   "health": 3,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 71,
-   "x": 27.935833,
-   "y": 5.348094,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
-   "health": 3,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 71.1,
-   "x": 28.485383,
-   "y": 5.335103,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
-   "health": 3,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 71.2,
-   "x": 29.034933,
-   "y": 5.319761,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
-   "health": 3,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 71.3,
-   "x": 29.584483,
-   "y": 5.30083,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
-   "health": 3,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 71.4,
-   "x": 30.134033,
-   "y": 5.278405,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
-   "health": 3,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 71.5,
-   "x": 30.683583,
-   "y": 5.252586,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
-   "health": 3,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 71.6,
-   "x": 31.233133,
-   "y": 5.223477,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
-   "health": 3,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 71.7,
-   "x": 31.782683,
-   "y": 5.191187,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
-   "health": 3,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 71.8,
-   "x": 32.332233,
-   "y": 5.155833,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
-   "health": 3,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 71.9,
-   "x": 32.881783,
-   "y": 5.117533,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
-   "health": 3,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 72,
-   "x": 33.431333,
-   "y": 5.076413,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
-   "health": 3,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 72.1,
-   "x": 33.980883,
-   "y": 5.034699,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
-   "health": 3,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 72.2,
-   "x": 34.530433,
-   "y": 4.990896,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
-   "health": 3,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 72.3,
-   "x": 35.079983,
-   "y": 4.944533,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
-   "health": 3,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 2
+   "deaths": 1
   },
   {
    "t": 72.4,
-   "x": 35.171575,
-   "y": 4.936567,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
-   "health": 0,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
-   "mode": "fainted",
+   "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 72.5,
-   "x": 35.171575,
-   "y": 4.936567,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
-   "health": 0,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
-   "mode": "fainted",
+   "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 72.6,
-   "x": 35.171575,
-   "y": 4.936567,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
-   "health": 0,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
-   "mode": "fainted",
+   "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 72.7,
-   "x": 35.171575,
-   "y": 4.936567,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
-   "health": 0,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
-   "mode": "fainted",
+   "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 72.8,
-   "x": 35.171575,
-   "y": 4.936567,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
-   "health": 0,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
-   "mode": "fainted",
+   "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 72.9,
-   "x": 35.171575,
-   "y": 4.936567,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
-   "health": 0,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
-   "mode": "fainted",
+   "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 73,
-   "x": 35.171575,
-   "y": 4.936567,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
-   "health": 0,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
-   "mode": "fainted",
+   "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 73.1,
-   "x": 35.171575,
-   "y": 4.936567,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
-   "health": 0,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
-   "mode": "fainted",
+   "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 73.2,
-   "x": 35.171575,
-   "y": 4.936567,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
-   "health": 0,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
-   "mode": "fainted",
+   "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 73.3,
-   "x": 35.171575,
-   "y": 4.936567,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
-   "health": 0,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
-   "mode": "fainted",
+   "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 73.4,
-   "x": 35.171575,
-   "y": 4.936567,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
-   "health": 0,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
-   "mode": "fainted",
+   "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 73.5,
-   "x": 35.171575,
-   "y": 4.936567,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
-   "health": 0,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
-   "mode": "fainted",
+   "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 73.6,
-   "x": 35.171575,
-   "y": 4.936567,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
-   "health": 0,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
-   "mode": "fainted",
+   "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 73.7,
-   "x": 35.171575,
-   "y": 4.936567,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
-   "health": 0,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
-   "mode": "fainted",
+   "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 73.8,
-   "x": 35.171575,
-   "y": 4.936567,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
-   "health": 0,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
-   "mode": "fainted",
+   "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 73.9,
-   "x": 35.171575,
-   "y": 4.936567,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
-   "health": 0,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
-   "mode": "fainted",
+   "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 74,
-   "x": 35.171575,
-   "y": 4.936567,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
-   "health": 0,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
-   "mode": "fainted",
+   "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 74.1,
-   "x": 35.171575,
-   "y": 4.936567,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
-   "health": 0,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
-   "mode": "fainted",
+   "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 74.2,
-   "x": 0.125,
-   "y": 1.350488,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -12250,12 +12250,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 74.3,
-   "x": 0.549925,
-   "y": 1.532987,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -12263,12 +12263,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 74.4,
-   "x": 1.099475,
-   "y": 1.670908,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -12276,12 +12276,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 74.5,
-   "x": 1.649025,
-   "y": 1.810055,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -12289,12 +12289,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 74.6,
-   "x": 2.198575,
-   "y": 1.949436,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -12302,12 +12302,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 74.7,
-   "x": 2.748125,
-   "y": 2.088377,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -12315,12 +12315,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 74.8,
-   "x": 3.297675,
-   "y": 2.226431,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -12328,12 +12328,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 74.9,
-   "x": 3.847225,
-   "y": 2.363284,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -12341,12 +12341,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 75,
-   "x": 4.396775,
-   "y": 2.498688,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -12354,12 +12354,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 75.1,
-   "x": 4.946325,
-   "y": 2.632438,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -12367,12 +12367,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 75.2,
-   "x": 5.495875,
-   "y": 2.764353,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -12380,12 +12380,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 75.3,
-   "x": 6.045425,
-   "y": 2.894266,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -12393,12 +12393,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 75.4,
-   "x": 6.594975,
-   "y": 3.022019,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -12406,12 +12406,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 75.5,
-   "x": 7.144525,
-   "y": 3.147463,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -12419,12 +12419,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 75.6,
-   "x": 7.694075,
-   "y": 3.270452,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -12432,12 +12432,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 75.7,
-   "x": 8.243625,
-   "y": 3.390846,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -12445,12 +12445,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 75.8,
-   "x": 8.793175,
-   "y": 3.508511,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -12458,12 +12458,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 75.9,
-   "x": 9.342725,
-   "y": 3.623318,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -12471,12 +12471,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 76,
-   "x": 9.892275,
-   "y": 3.73514,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -12484,12 +12484,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 76.1,
-   "x": 10.441825,
-   "y": 3.843858,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -12497,12 +12497,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 76.2,
-   "x": 10.991375,
-   "y": 3.949358,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -12510,12 +12510,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 76.3,
-   "x": 11.540925,
-   "y": 4.051529,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -12523,12 +12523,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 76.4,
-   "x": 12.090475,
-   "y": 4.150268,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -12536,12 +12536,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 76.5,
-   "x": 12.640025,
-   "y": 4.245477,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -12549,12 +12549,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 76.6,
-   "x": 13.189575,
-   "y": 4.337062,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -12562,12 +12562,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 76.7,
-   "x": 13.739125,
-   "y": 4.424938,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -12575,12 +12575,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 76.8,
-   "x": 14.288675,
-   "y": 4.509024,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -12588,12 +12588,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 76.9,
-   "x": 14.838225,
-   "y": 4.589247,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -12601,12 +12601,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 77,
-   "x": 15.387775,
-   "y": 4.665537,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -12614,12 +12614,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 77.1,
-   "x": 15.937325,
-   "y": 4.737835,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -12627,12 +12627,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 77.2,
-   "x": 16.486875,
-   "y": 4.806085,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -12640,12 +12640,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 77.3,
-   "x": 17.036425,
-   "y": 4.870239,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -12653,12 +12653,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 77.4,
-   "x": 17.585975,
-   "y": 4.930256,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -12666,12 +12666,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 77.5,
-   "x": 18.135525,
-   "y": 4.986102,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -12679,12 +12679,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 77.6,
-   "x": 18.685075,
-   "y": 5.037748,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -12692,12 +12692,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 77.7,
-   "x": 19.234625,
-   "y": 5.085175,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -12705,12 +12705,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 77.8,
-   "x": 19.784175,
-   "y": 5.128367,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -12718,12 +12718,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 77.9,
-   "x": 20.333725,
-   "y": 5.167318,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -12731,12 +12731,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 78,
-   "x": 20.883275,
-   "y": 5.202029,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -12744,12 +12744,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 78.1,
-   "x": 21.432825,
-   "y": 5.232784,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -12757,12 +12757,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 78.2,
-   "x": 21.982375,
-   "y": 5.262483,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -12770,12 +12770,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 78.3,
-   "x": 22.531925,
-   "y": 5.288743,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -12783,12 +12783,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 78.4,
-   "x": 23.081475,
-   "y": 5.310803,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -12796,12 +12796,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 78.5,
-   "x": 23.631025,
-   "y": 5.328692,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -12809,12 +12809,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 78.6,
-   "x": 24.180575,
-   "y": 5.342444,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -12822,12 +12822,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 78.7,
-   "x": 24.730125,
-   "y": 5.354852,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -12835,12 +12835,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 78.8,
-   "x": 25.279675,
-   "y": 5.363251,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -12848,12 +12848,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 78.9,
-   "x": 25.829225,
-   "y": 5.367617,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -12861,12 +12861,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 79,
-   "x": 26.378775,
-   "y": 5.368007,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -12874,12 +12874,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 79.1,
-   "x": 26.928325,
-   "y": 5.364484,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -12887,12 +12887,12 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 79.2,
-   "x": 27.477875,
-   "y": 5.357116,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
    "health": 6,
    "stageDna": 0,
@@ -12900,111 +12900,111 @@
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 79.3,
-   "x": 28.027425,
-   "y": 5.345979,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
-   "health": 3,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 79.4,
-   "x": 28.576975,
-   "y": 5.332799,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
-   "health": 3,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 79.5,
-   "x": 29.126525,
-   "y": 5.316852,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
-   "health": 3,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 79.6,
-   "x": 29.676075,
-   "y": 5.297333,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
-   "health": 3,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 79.7,
-   "x": 30.225625,
-   "y": 5.274335,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
-   "health": 3,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 79.8,
-   "x": 30.775175,
-   "y": 5.24796,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
-   "health": 3,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 79.9,
-   "x": 31.324725,
-   "y": 5.218313,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
-   "health": 3,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   },
   {
    "t": 80,
-   "x": 31.874275,
-   "y": 5.185504,
+   "x": 42.732428,
+   "y": 4.119485,
    "z": 0,
-   "health": 3,
+   "health": 6,
    "stageDna": 0,
    "dna": 20,
    "bites": 0,
    "mode": "playing",
    "rescues": 0,
-   "deaths": 3
+   "deaths": 1
   }
  ]
 }

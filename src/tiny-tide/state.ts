@@ -94,7 +94,8 @@ export function hurt(run: Run, damage: number, armor: number): boolean {
  *  nothing (the creature is driven off). It counts for the growth bar for a species of the player's tier or one that hunts its size. */
 export function killReward(run: Run, spec: Species): { dna: number; counts: boolean } {
   if (run.diet === 'herbivore') return { dna: 0, counts: false };
-  const dna = mealDna(currentPlan(run), run.diet, spec), counts = spec.tier === run.stage || spec.hunts.includes(run.stage);
+  const dna = mealDna(currentPlan(run), run.diet, spec); if (dna <= 0) return { dna: 0, counts: false };   // nothing paid: no bite, no growth
+  const counts = spec.tier === run.stage || spec.hunts.includes(run.stage);
   run.bites++; reward(run, dna, counts);
   return { dna, counts };
 }

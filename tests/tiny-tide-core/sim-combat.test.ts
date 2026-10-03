@@ -11,6 +11,8 @@ import { stageBounds } from '../../src/tiny-tide/world-queries';
 import type { CombatInput } from '../../src/tiny-tide/combat-types';
 import { FAINT_GIVE_UP, playerActorCached, playerMotionBody, REGEN_AFTER, simBegin, simEvolve, simFrame, simSuspend, type SimEvent, type SimState, type SimWorld } from '../../src/tiny-tide/sim';
 import { earn } from '../../src/tiny-tide/economy';
+import { RESPAWN_GRACE } from '../../src/tiny-tide/lifecycle';
+import { currentPlan, mealDna } from '../../src/tiny-tide/state';
 import { FX_BEHAVIOURS, FX_FLEER, FX_HUNTER, POKE, WRAP } from './combat-fixture';
 import { AT_PLAYER, entity, FLAT, speck } from './combat-fixture-world';
 
@@ -58,13 +60,25 @@ describe('the combat tick in simFrame', () => {
   it('the faint event reports the at-risk DNA it took; hunters give up for FAINT_GIVE_UP (D27)', () => {
     const squid = entity(2, FX_HUNTER, { x: 0, y: 0, z: 0 }), { s, w } = begun([squid]);
     Object.assign(squid, ahead(s, 1.2, 1)); s.run.health = .5; s.run.economy = earn(s.run.economy, 9); s.run.stageDna = 9;
+    const uid = Object.keys(s.run.economy.parts)[0]!; s.run.economy.parts[uid]!.credit.atRisk += 5;   // part credit bought at this size
     const c = s.combat.stateOf(squid)!, centre = playerMotionBody(s, playerActorCached(s)).centre;
     s.combat.startSpecies(c, 'wrap', WRAP, { x: 0, y: 0, z: -1 }, 'player', s.time, { ...AT_PLAYER, targetAt: centre });
     const events: SimEvent[] = [];
     for (let i = 0; i < 60 && s.mode === 'playing'; i++) events.push(...frame(s, w));
-    expect(events.filter(e => e.type === 'fainted')).toEqual([{ type: 'fainted', lost: 9 }]);
+    expect(events.filter(e => e.type === 'fainted')).toEqual([{ type: 'fainted', lost: 14 }]);   // the true loss: wallet 9 + part credit 5
     expect(s.run.economy.wallet.atRisk).toBe(0); expect(s.run.stageDna).toBe(0);
     expect((w.eco as unknown as { giveUps: [number, number][] }).giveUps).toEqual([[s.time - DT, FAINT_GIVE_UP]]);
+  });
+  it('a respawn keeps hunters off for the grace plus FAINT_GIVE_UP: from the faint timer and from a save loaded during a faint', () => {
+    const squid = entity(2, FX_HUNTER, { x: 0, y: 0, z: 0 }), { s, w } = begun([squid]), giveUps = (w.eco as unknown as { giveUps: [number, number][] }).giveUps;
+    Object.assign(squid, ahead(s, 1.2, 1)); s.run.health = .5;
+    const c = s.combat.stateOf(squid)!, centre = playerMotionBody(s, playerActorCached(s)).centre;
+    s.combat.startSpecies(c, 'wrap', WRAP, { x: 0, y: 0, z: -1 }, 'player', s.time, { ...AT_PLAYER, targetAt: centre });
+    const events: SimEvent[] = [];
+    for (let i = 0; i < 400 && !events.some(e => e.type === 'respawned'); i++) events.push(...frame(s, w));
+    expect(giveUps.map(g => g[1])).toEqual([FAINT_GIVE_UP, RESPAWN_GRACE + FAINT_GIVE_UP]);
+    s.run.pendingRespawn = true; giveUps.length = 0; simBegin(s, w, s.run, null);
+    expect(s.run.pendingRespawn).toBe(false); expect(giveUps).toEqual([[s.time, RESPAWN_GRACE + FAINT_GIVE_UP]]);
   });
   it('holds on the player end AT the faint, in the same frame (spec §13)', () => {
     const squid = entity(2, FX_HUNTER, { x: 0, y: 0, z: 0 }), { s, w } = begun([squid]);
@@ -98,6 +112,27 @@ describe('the combat tick in simFrame', () => {
     expect(s.run.health).toBe(health);   // no heart comes back inside the wait
     while (s.time < hitAt + REGEN_AFTER + 2.1) frame(s, w);
     expect(s.run.health).toBe(health + .5);
+  });
+  it('a carnivore kill pays the meal DNA through simFrame: a killed event, growth and a bite (spec §10.4)', () => {
+    const prey = entity(1, { ...FX_FLEER, hp: 1, dna: 10 }, { x: 0, y: 0, z: 0 }), { s, w } = begun([prey]);
+    expect(s.run.diet).toBe('carnivore'); Object.assign(prey, ahead(s, 2.1));
+    const before = { stageDna: s.run.stageDna, bites: s.run.bites, atRisk: s.run.economy.wallet.atRisk }, dna = mealDna(currentPlan(s.run), s.run.diet, prey.spec);
+    expect(dna).toBeGreaterThan(0);
+    const events: SimEvent[] = [...frame(s, w, { basicPressed: true, basicHeld: true })];
+    for (let i = 0; i < 40; i++) events.push(...frame(s, w));
+    expect(events.filter(e => e.type === 'killed')).toEqual([{ type: 'killed', entity: prey, dna, drop: null }]);
+    expect(s.run.stageDna).toBe(before.stageDna + dna); expect(s.run.bites).toBe(before.bites + 1); expect(s.run.economy.wallet.atRisk).toBe(before.atRisk + dna);
+    expect(prey.eaten).toBe(true);
+  });
+  it('a herbivore kill pays nothing: dna 0, no bite, no growth; the creature is still removed', () => {
+    const prey = entity(1, { ...FX_FLEER, hp: 1, dna: 10 }, { x: 0, y: 0, z: 0 }), { s, w } = begun([prey], 'mouth_nibbler');
+    expect(s.run.diet).toBe('herbivore'); Object.assign(prey, ahead(s, 2.1)); prey.mode = 'angry';   // a herbivore Bites only a creature engaged with it (R17)
+    const before = { stageDna: s.run.stageDna, bites: s.run.bites, economy: structuredClone(s.run.economy) };
+    const events: SimEvent[] = [...frame(s, w, { basicPressed: true, basicHeld: true })];
+    for (let i = 0; i < 40; i++) events.push(...frame(s, w));
+    expect(events.filter(e => e.type === 'killed')).toEqual([{ type: 'killed', entity: prey, dna: 0, drop: null }]);
+    expect(s.run.stageDna).toBe(before.stageDna); expect(s.run.bites).toBe(before.bites); expect(s.run.economy).toEqual(before.economy);
+    expect(prey.eaten).toBe(true);
   });
   it('an attacker eaten on any path is forgotten after the frame: its token returns (fix round 1)', () => {
     const crab = entity(4, FX_HUNTER, { x: 0, y: 0, z: 0 }), { s, w } = begun([crab]);

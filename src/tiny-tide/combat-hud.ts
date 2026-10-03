@@ -59,6 +59,12 @@ export class CombatHud {
 
 /** The floater of one hit outcome (spec §9.2, T8 carry): a word for a block, a counter, a dodge or an immunity; else the damage when it is
  *  above 0; else none (a 0-damage hit, catch or guard break shows nothing, never "−0" or "− ♥"). */
+/** The faint overlay (spec §10.3, T15 fix round 1): the true loss (at-risk wallet and part credit), or a neutral line when it is not
+ *  known (a save loaded during a faint). */
+export function faintMessage(lost: number | null): { title: string; line: string } {
+  const head = lost === null ? 'Waking up at the start.' : lost > 0 ? `You lost ${lost} DNA.` : 'No DNA was lost.';
+  return { title: 'Fainted!', line: `${head} Your body and parts stay.` };
+}
 export function floaterText(outcome: HitOutcome, unit: 'hp' | 'half-heart', amount: number): string | null {
   if (outcome === 'blocked' || outcome === 'countered' || outcome === 'evaded') return damageText(outcome, unit, amount);
   if (outcome === 'immune') return 'IMMUNE';
