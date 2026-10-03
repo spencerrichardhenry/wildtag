@@ -97,7 +97,7 @@ describe('swim hull fit (owner playtest P3)', () => {
       expect(r.maxGap, text).toBeLessThanOrEqual(text.startsWith('genome 0 ') || text.startsWith('genome 1 ') || text.startsWith('genome 2 ') ? MAX_GAP : EDITED_GAP); expect(r.minRest, text).toBeGreaterThanOrEqual(0);
       expect(r.minTorso, text).toBeGreaterThanOrEqual(0); expect(r.minTail, text).toBeGreaterThanOrEqual(-TAIL_CLIP);
     }
-  }, 120_000);
+  }, 360_000);   // fix round 3: headroom beside two browser checks (about 20 s alone)
   it('holds every rest-pose body vertex in the tight hull (tapered frusta and end balls), for many genomes', () => {
     const genomes = fitGenomes();
     // A tapered capsule's cross-section in the plane of p (constant body z), or its end balls.

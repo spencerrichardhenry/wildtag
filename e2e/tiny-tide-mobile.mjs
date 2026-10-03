@@ -13,7 +13,13 @@ page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
 const state=()=>page.evaluate(()=>window.__tinyTide);
 const moved=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y,a.z-b.z);
 /** Braking-aware stop check: wait until the controlled velocity is zero, then the body must stay put for 200 ms. */
-async function assertStops(label){await page.waitForFunction(()=>{const v=window.__tinyTide.velocity;return Math.hypot(v.x,v.y,v.z)<.01;},{},{timeout:2000});const at=(await state()).player;await page.waitForTimeout(200);assert.ok(moved((await state()).player,at)<.01,`${label}: stays put after braking`);}
+/** Fix round 3: the re-review traced this check's rare failures to Vite reloading the page (a source file edited during the run). The page's
+ *  time origin must not change across the check, and the message carries the measured movement. */
+async function assertStops(label){const origin=await page.evaluate(()=>performance.timeOrigin);
+ await page.waitForFunction(()=>{const v=window.__tinyTide.velocity;return Math.hypot(v.x,v.y,v.z)<.01;},{},{timeout:2000});const at=(await state()).player;await page.waitForTimeout(200);
+ const after=(await state()).player,now=await page.evaluate(()=>performance.timeOrigin),d=moved(after,at);
+ assert.equal(now,origin,`${label}: the page did not reload during the check (a reload means a source file changed mid-run)`);
+ assert.ok(d<.01,`${label}: stays put after braking (moved ${d.toFixed(4)} units in 200 ms, from ${JSON.stringify(at)} to ${JSON.stringify(after)})`);}
 /** The controlled speed now and after the next frame. */
 const speedNextFrame=()=>page.evaluate(()=>new Promise(r=>{const v=()=>{const s=window.__tinyTide.velocity;return Math.hypot(s.x,s.y,s.z);};const a=v();requestAnimationFrame(()=>requestAnimationFrame(()=>r([a,v()])));}));
 try {

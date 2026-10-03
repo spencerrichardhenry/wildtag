@@ -25,7 +25,7 @@ describe('avoidance', () => {
       }
     }
     console.log(report.join('\n'));
-  }, 60_000);   // about 10 s alone: the crawler search recovers many mid-water candidates
+  }, 300_000);   // about 10 s alone: the crawler search recovers many mid-water candidates (fix round 3: headroom beside two browser checks)
   it('a player that flees outward from x = 38 into the edge current escapes: the hunter gives up at the push zone (owner ruling M11)', () => {
     const report: string[] = [];
     for (const [planId, hunterKey] of [['speck', '1:crab'], ['swimmer', '2:squid'], ['crawler', '2:squid'], ['darter', '2:squid']] as const) {
