@@ -46,6 +46,15 @@ describe('species installation', () => {
   });
 });
 describe('pursuit', () => {
+  it('giveUpAll (D27): every hunter of the player returns and acquires nothing inside the window', () => {
+    const eco = new Ecosystem(7), crab = crabOf(eco), p = at(crab, 6, 0); eco.step(ctx(p, 0)); expect(crab.mode).toBe('hunt');   // without a give-up it hunts on
+    expect(eco.givingUp(0)).toBe(false);
+    eco.giveUpAll(.1, 6); expect(crab.mode).toBe('return'); expect(eco.givingUp(.1)).toBe(true); expect(eco.givingUp(6.1)).toBe(false);
+    let again = -1;
+    for (let t = .2; t < 9; t = tick(t + .1)) { eco.step(ctx(p, t)); if (crab.mode === 'hunt' && again < 0) again = t; }
+    expect(again).toBeGreaterThanOrEqual(6.1); expect(again).toBeLessThan(9);   // the same player point, perceived again after the window
+    eco.reset([]); expect(eco.givingUp(.2)).toBe(false);
+  });
   it('keeps hunting through a one-frame escape', () => {
     const eco = new Ecosystem(7), crab = crabOf(eco), home = at(crab, 0, 0);
     eco.step(ctx(at(crab, 6, 0), 0)); expect(crab.mode).toBe('hunt');
@@ -127,7 +136,7 @@ describe('provocation and hazards', () => {
   it('lets a provoked crab retaliate against a bigger stage-1 player it cannot see', () => {
     const eco = new Ecosystem(7, { queries: tier => makeWorldQueries(makeTerrain(tier), { visibility: () => 0 }) }), crab = crabOf(eco), p = at(crab, 0, 0);
     provoke(crab, p, 0); expect(crab.mode).toBe('angry'); expect(crab.lastKnown).toEqual(p);
-    const events = eco.step(ctx(p, 0, { stage: 1 })).filter(e => e.entity === crab); expect(events).toHaveLength(1); expect(events[0]!.damage).toBe(2);   // 2 + max(0, 1 − 1)
+    const events = eco.step(ctx(p, 0, { stage: 1 })).filter(e => e.entity === crab); expect(events).toHaveLength(1); expect(events[0]!.damage).toBe(4);   // 4 + 2 × max(0, 1 − 1)
   });
   it('lets a provoked ray retaliate with its own policy and forget a hidden player', () => {
     const eco = new Ecosystem(7, { queries: tier => makeWorldQueries(makeTerrain(tier), { visibility: () => 0 }) }), ray = eco.entities.find(e => e.spec.key === '2:ray' && !e.eaten)!;
@@ -140,7 +149,7 @@ describe('provocation and hazards', () => {
     const eco = new Ecosystem(7, { queries: tier => makeWorldQueries(tier === 4 ? makeTerrain(4) : flatSea) }), crab = crabOf(eco), events: ReturnType<Ecosystem['step']> = [];
     eco.step(ctx({ x: 0, y: 500, z: 0 }, 0, { perceivable: false, playerHull: [] }));   // settle onto the flat ground first
     for (let i = 0; i <= 14; i++) events.push(...eco.step(ctx(at(crab, 0, 0), i / 10)).filter(e => e.entity === crab));
-    expect(events.map(e => e.time)).toEqual([0, 1.4]); expect(events[0]!.damage).toBe(3); expect(events[0]!.normal).toEqual({ x: 0, y: 1, z: 0 });   // 2 + (1 − 0); coincident centres
+    expect(events.map(e => e.time)).toEqual([0, 1.4]); expect(events[0]!.damage).toBe(6); expect(events[0]!.normal).toEqual({ x: 0, y: 1, z: 0 });   // 4 + 2 × (1 − 0) half-hearts; coincident centres
   });
   it('emits nothing when the hull is far away, even while the player point is seen', () => {
     const eco = new Ecosystem(7), crab = crabOf(eco), events: ReturnType<Ecosystem['step']> = [];

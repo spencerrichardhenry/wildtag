@@ -644,7 +644,7 @@ check('12b', 'Lost abilities (QA grant catalog)', async () => {
 check('13', 'Hazard integration and invulnerability', async () => {
   const { page, errors } = await newPage();
   const pick = await pickHazard(page, { stage: 0, key: '1:crab' }); assert.ok(pick, 'pickHazard found a crab');
-  const fx = await makeFixture(page, { seed: pick.seed }), damage = await damageAfterArmor(page, 3, fx.info.armor);
+  const fx = await makeFixture(page, { seed: pick.seed }), damage = (await damageAfterArmor(page, 6, fx.info.armor)) / 2;   // the engaged pinch: 4 + 2 × (1 − 0) half-hearts → hearts
   await openGame(page, { storage: { [fx.key]: fx.json }, query: `forcedSpawn=${pick.home.x},${pick.home.y},${pick.home.z}` }); await start(page);
   const first = await state(page);
   assert.ok(Math.abs(first.invulnerableUntil - first.time - 2) < .5 && first.invulnerableUntil - first.time <= 2, `the default start grace is 2 s (until ${first.invulnerableUntil}, now ${first.time})`);
@@ -665,7 +665,7 @@ check('13', 'Hazard integration and invulnerability', async () => {
   assert.ok(during.every(x => x.health === x.max && x.accepted === 0), 'health stays at maximum during the grace');
   const hit1 = after.findIndex(x => x.accepted >= 1); assert.ok(hit1 >= 0, 'a hit is accepted after the grace (within 10 s)');
   assert.equal(after[hit1].accepted, 1);
-  assert.equal(after[hit1].health, after[hit1].max - damage, `health drops by damageAfterArmor(3, ${fx.info.armor}) = ${damage}`);
+  assert.equal(after[hit1].health, after[hit1].max - damage, `health drops by damageAfterArmor(6, ${fx.info.armor}) / 2 = ${damage}`);
   const hit2 = after.findIndex(x => x.accepted >= 2); assert.ok(hit2 >= 0, 'a second hit is accepted within 10 s');
   assert.ok(after[hit2].time - after[hit1].time >= .8 - 1e-9, `the next accepted hit is no sooner than .8 s later (${(after[hit2].time - after[hit1].time).toFixed(3)} s)`);
   assert.deepEqual(errors, []);

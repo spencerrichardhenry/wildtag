@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { commitEvolution, dnaOf, freshRun, maxHealthOf, parseSave, parseSaveWithNotes, prepareEvolution, STAGES, validateRun } from '../../src/tiny-tide/state';
 import { adaptToPlan, starterGenome } from '../../src/tiny-tide/genome';
 import { plan } from '../../src/tiny-tide/plans';
+import { resolveRespawn } from '../../src/tiny-tide/lifecycle';
+import { newRuntime } from '../../src/tiny-tide/combat-types';
 
 const build = { coast: false };
 const legacyParts = (parts = starterGenome().parts) => parts.map(({ uid: _u, ...p }) => p);
@@ -31,6 +33,20 @@ describe('v4 saves', () => {
     const r = freshRun(1), max = maxHealthOf(r);
     const run = parseSave(JSON.stringify({ ...r, health: max + 5 }), build)!;
     expect(run.health).toBe(max); expect(validateRun(run, build)).toEqual([]);
+  });
+  it('half-heart health loads', () => {
+    const r = freshRun(1), max = maxHealthOf(r);
+    expect(parseSave(JSON.stringify({ ...r, health: 2.5 }), build)!.health).toBe(2.5);
+    expect(parseSave(JSON.stringify({ ...r, health: .4 }), build)!.health).toBe(.5);   // between the steps: the nearest half heart, at least .5
+    expect(parseSave(JSON.stringify({ ...r, health: 2.3 }), build)!.health).toBe(2.5);
+    expect(validateRun({ ...r, health: 2.25 }, build)).toContain('health'); expect(validateRun({ ...r, health: max - .5 }, build)).toEqual([]);
+  });
+  it('pending respawn from the legacy rule takes no second loss', () => {
+    // An older build applied its faint (keep 70 %) and saved during the faint: the respawn resolves and nothing more is taken.
+    const r = freshRun(1); r.economy = { ...r.economy, wallet: { banked: 14, atRisk: 5 } }; r.pendingRespawn = true; r.deaths = 1;
+    const run = parseSave(JSON.stringify(r), build)!, rt = newRuntime();
+    expect(resolveRespawn(run, rt, 0, { ok: true, position: { x: 0, y: 1, z: 0 }, orientation: { yaw: 0, pitch: 0 } })).toBe(true);
+    expect(run.economy.wallet).toEqual({ banked: 14, atRisk: 5 }); expect(run.deaths).toBe(1); expect(run.pendingRespawn).toBe(false);
   });
   it('loads a v4 save with zero or negative health at the maximum', () => {
     const r = freshRun(1), max = maxHealthOf(r);

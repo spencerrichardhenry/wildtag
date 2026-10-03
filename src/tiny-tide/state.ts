@@ -1,4 +1,4 @@
-import { bankAll, commitDesign, earn, faintLegacy, legacyEconomy, validateLedger, walletTotal, type Economy } from './economy';
+import { bankAll, commitDesign, earn, faintCombat, legacyEconomy, validateLedger, walletTotal, type Economy } from './economy';
 import { adaptToPlan, cloneGenome, derive, dietOf, effectiveStats, partCost, problems, repairLegacyGenome, sanitizeGenome, starterFor, starterGenome, STARTER_NEXT_SERIAL, uidSerial, type DesignContext, type Genome } from './genome';
 import { PARTS, part, type Diet, type PartSpec } from './parts';
 import { closedLinesOf, commitmentsOf, eligibleChildren, plan, ROOT_PLAN, violates, type BodyPlan } from './plans';
@@ -20,7 +20,6 @@ export const STAGES: readonly Stage[] = [
   { title: 'Cosmic', biome: 'THE FINAL FRONTIER', size: '∞', description: 'Float through the stars and eat all 12 planets.', goal: PLANET_COUNT, speed: 8, radius: 3, color: '#bfc0ff', action: 'Rise' },
 ];
 export const START_DNA = 20;
-export const DEATH_KEEP = .7;
 export const OMNIVORE_RATE = .7;
 
 export interface ArchivedDesign { genome: Genome; name: string; savedAt: string; reason: string }
@@ -86,10 +85,27 @@ export function eat(run: Run, spec: Species, id: number): { dna: number; win: bo
 }
 /** Damage after armor. Every hit costs at least one point. */
 export const damageAfterArmor = (damage: number, armor: number) => Math.max(1, damage - Math.floor(armor / 2));
-/** Applies damage. Returns true when the creature faints. */
+/** Applies damage in half-hearts (spec §10.1, D19): health is in hearts with .5 steps. Returns true when the creature faints. */
 export function hurt(run: Run, damage: number, armor: number): boolean {
-  run.health = Math.max(0, run.health - damageAfterArmor(damage, armor));
+  run.health = Math.max(0, run.health - damageAfterArmor(damage, armor) / 2);
   return run.health <= 0;
+}
+/** DNA from a combat kill (spec §10.4, R8): a meat eater gets the meal DNA (omnivore × .7, foraging; one rounding) and a bite; a herbivore gets
+ *  nothing (the creature is driven off). It counts for the growth bar for a species of the player's tier or one that hunts its size. */
+export function killReward(run: Run, spec: Species): { dna: number; counts: boolean } {
+  if (run.diet === 'herbivore') return { dna: 0, counts: false };
+  const dna = mealDna(currentPlan(run), run.diet, spec), counts = spec.tier === run.stage || spec.hunts.includes(run.stage);
+  run.bites++; reward(run, dna, counts);
+  return { dna, counts };
+}
+/** The survivor bonus share of a hunter's DNA (D22), and its conditions: an engagement of at least SURVIVOR_SECONDS with at least one wind-up. */
+export const SURVIVOR_SHARE = .35, SURVIVOR_SECONDS = 4;
+export function survivorBonusDue(run: Run, behaviourType: string | undefined, engagement: { seconds: number; windups: number }): boolean {
+  return run.diet === 'herbivore' && !run.pendingRespawn && (behaviourType === 'hunter' || behaviourType === 'hunter-ambush') && engagement.seconds >= SURVIVOR_SECONDS - 1e-9 && engagement.windups >= 1;
+}
+/** A herbivore survived a hunter (spec §10.4): round(.35 × its DNA), counting for the growth bar. */
+export function survivorReward(run: Run, spec: Species): number {
+  const dna = Math.round(SURVIVOR_SHARE * spec.dna); reward(run, dna, true); return dna;
 }
 export function unlock(run: Run, id: string | undefined) {
   if (!id || !part(id) || run.unlocked.includes(id) || part(id)!.stage <= run.stage) return false;
@@ -147,10 +163,16 @@ function applyEvolution(c: Run, p: Prepared) {
 export function commitEvolution(run: Run, p: Prepared, catalog: readonly PartSpec[] = PARTS): number[] {
   const c = structuredClone(run); applyEvolution(c, p); const cleared = clearMissing(c, catalog); Object.assign(run, c); return cleared;
 }
-/** Applies the legacy faint once. A second call while a respawn is pending changes nothing. */
+/** THE FAINT RULE: the one place that decides what a faint takes (spec §10.3). Change it here only.
+ *  - R7 (owner's rule): a faint is a soft respawn, and all DNA collected at the current size is lost (the at-risk wallet).
+ *  - D20 (spec-writer decision, to be confirmed by the owner with the probe results): the growth bar also resets to 0, and the at-risk
+ *    credit of the parts bought at this size is lost (`faintCombat` zeroes it).
+ *  Basis, banked credit, the design and the parts stay. */
+export function applyFaintRule(run: Run): void { run.economy = faintCombat(run.economy); run.stageDna = 0; }
+/** The faint, once: THE FAINT RULE and a pending respawn. A second call while a respawn is pending changes nothing. */
 export function faint(run: Run): boolean {
   if (run.pendingRespawn) return false;
-  run.deaths++; run.economy = faintLegacy(run.economy); run.pendingRespawn = true; return true;
+  run.deaths++; applyFaintRule(run); run.pendingRespawn = true; return true;
 }
 
 const int = (v: unknown, min = 0) => Number.isInteger(v) && (v as number) >= min;
@@ -194,7 +216,7 @@ export function validateRun(run: Run, build: Build, catalog: readonly PartSpec[]
   if (pathOk) {
     if (run.diet !== dietOf(run.genome)) out.push('diet');
     for (const x of problems(run.genome, currentPlan(run), { unlocked: run.unlocked, diet: run.diet }, catalog).filter(x => x.code !== 'dna' && x.code !== 'anchor')) out.push(`design ${x.code}: ${x.message}`);
-    if (!finite(run.health) || run.health > maxHealthOf(run)) out.push('health');
+    if (!finite(run.health) || run.health > maxHealthOf(run) || !Number.isInteger(run.health * 2)) out.push('health');
   }
   const active = run.loadout?.active;
   if (!isObject(run.loadout) || !Array.isArray(active) || active.length !== 2) out.push('loadout');
@@ -267,7 +289,8 @@ function readV4(v: Record<string, unknown>): Run | null {
   const run = { version: 4, seed: v.seed, name: v.name, stage: v.stage, plans: v.plans, diet: v.diet, economy: v.economy, stageDna: v.stageDna, totalDna: v.totalDna,
     bites: v.bites, elapsed: v.elapsed, deaths: v.deaths, health: v.health, genome, nextPartSerial: v.nextPartSerial, unlocked: v.unlocked, eatenPlanets: v.eatenPlanets,
     completed: v.completed, loadout: v.loadout, pendingRespawn: v.pendingRespawn, mechanics: v.mechanics, archive, notices: v.notices } as unknown as Run;
-  if (run.plans.length && run.plans.every(id => plan(id)) && Number.isFinite(run.health)) { const max = maxHealthOf(run); run.health = run.health <= 0 ? max : Math.max(1, Math.min(run.health, max)); }
+  // Health has .5 steps (spec §10.1): a value between them rounds to the nearest half heart, at least .5.
+  if (run.plans.length && run.plans.every(id => plan(id)) && Number.isFinite(run.health)) { const max = maxHealthOf(run); run.health = run.health <= 0 ? max : Math.max(.5, Math.min(Math.round(run.health * 2) / 2, max)); }
   return run;
 }
 const count = (v: number) => Math.min(Number.MAX_SAFE_INTEGER, Math.max(0, Math.floor(v)));

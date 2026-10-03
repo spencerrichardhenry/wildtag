@@ -4,8 +4,10 @@
 // - `rescue` (seed 358833899, 10 s from a forced spawn): one held push into the pocket between rock:0:0 and arch:0:0, which the trap
 //   watch rescues twice (search in slices under the frame's admission budget, then the glide);
 // - `faint` (seed 3, 60 s, a slow circle): a hazard hit at 54.27 s, one rejected hit, a faint at 55.68 s and the respawn at 57.48 s;
-// - `regen` (seed 3, 80 s): the `faint` circle until 54.3 s, then +x: after the respawn one hit at 64.4 s, then no hit, and the hearts
-//   come back three times (regen every 2.5 s after 5 s without a hit).
+// - `regen` (seed 3, 80 s, from 3 of 6 hearts): the `faint` circle until 54.3 s, then +x. With no damage and no wind-up yet, the hearts
+//   come back half a heart every 2 s (spec §10.2) from 2 s to full at 12 s; the same hit and faint as `faint`; after the respawn every hunter gives up
+//   for 6 s (D27), so the crab comes back and the player faints twice more (T15 re-record: the run before T15 had one hit at 64.4 s
+//   and regen every 2.5 s after 5 s).
 // Not covered: the stuck retry, held frames, a win, and the modes other than playing and fainted.
 // A task that changes stage 0 on purpose re-records it from sim.ts with TIDE_SIM_RECORD=sim and says why in its commit.
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
@@ -21,8 +23,9 @@ const GOLDEN = 'tests/tiny-tide-core/sim-golden.json', DT = 1 / 60;
 /** `rescues`: trap rescues found so far (each starts a glide). */
 export interface Sample { t: number; x: number; y: number; z: number; health: number; stageDna: number; dna: number; bites: number; mode: string; rescues: number; deaths: number }
 export type Script = (t: number, previous: CombatInput) => { intent: CombatInput; wish: Vec3 };
-/** A scripted run: the world seed (also the run's), an optional forced spawn (stage-local units), its length and the sample interval. */
-export interface Scenario { seed: number; forced: Vec3 | null; frames: number; every: number; script: Script }
+/** A scripted run: the world seed (also the run's), an optional forced spawn (stage-local units), its length and the sample interval;
+ *  `health`: the starting hearts (default: full). */
+export interface Scenario { seed: number; forced: Vec3 | null; frames: number; every: number; script: Script; health?: number }
 const intentOf = (keys: Set<string>, previous: CombatInput): CombatInput => {
   const src: InputSources = { stickX: 0, stickZ: 0, keys, chompHeld: false, chompTapped: false, riseHeld: false, riseTapped: false, diveHeld: false };
   return readIntent(src, previous, { breachOnRiseTap: false });
@@ -42,7 +45,7 @@ export const SCENARIOS: Record<ScenarioName, Scenario> = {
   journey: { seed: 7, forced: null, frames: 20 * 60, every: 60, script },
   rescue: { seed: 358833899, forced: { x: 7.21, y: 2.99, z: 14.24 }, frames: 10 * 60, every: 10, script: (_t, previous) => ({ intent: intentOf(new Set(), previous), wish: pushWish }) },
   faint: { seed: 3, forced: null, frames: 60 * 60, every: 30, script: (t, previous) => ({ intent: intentOf(new Set(), previous), wish: circle(t) }) },
-  regen: { seed: 3, forced: null, frames: 80 * 60, every: 6, script: (t, previous) => ({ intent: intentOf(new Set(), previous), wish: t < 54.3 ? circle(t) : { x: 1, y: 0, z: 0 } }) },
+  regen: { seed: 3, forced: null, frames: 80 * 60, every: 6, health: 3, script: (t, previous) => ({ intent: intentOf(new Set(), previous), wish: t < 54.3 ? circle(t) : { x: 1, y: 0, z: 0 } }) },
 };
 export const round = (v: number) => Math.round(v * 1e6) / 1e6;
 export function world(seed: number): SimWorld {
@@ -51,7 +54,7 @@ export function world(seed: number): SimWorld {
 }
 function runSim(c: Scenario): Sample[] {
   const run = freshRun(c.seed), w = world(c.seed), s = newSimState(run), out: Sample[] = [];
-  w.eco.reset(run.eatenPlanets); simBegin(s, w, run, c.forced);
+  w.eco.reset(run.eatenPlanets); simBegin(s, w, run, c.forced); if (c.health !== undefined) run.health = c.health;
   let previous = RELEASED;
   for (let f = 1; f <= c.frames; f++) {
     const { intent, wish } = c.script(s.time, previous); previous = intent;
@@ -62,8 +65,8 @@ function runSim(c: Scenario): Sample[] {
 }
 type Golden = Record<ScenarioName, Sample[]>;
 const runAll = (runner: (c: Scenario) => Sample[]): Golden => ({ journey: runner(SCENARIOS.journey), rescue: runner(SCENARIOS.rescue), faint: runner(SCENARIOS.faint), regen: runner(SCENARIOS.regen) });
-/** Health rises between two samples of one life (no faint between them): a regen. */
-const regens = (samples: readonly Sample[]) => samples.filter((x, i) => i > 0 && x.deaths === samples[i - 1]!.deaths && x.health > samples[i - 1]!.health).length;
+/** Health rises between two playing samples of one life (no faint and no respawn between them): a regen. */
+const regens = (samples: readonly Sample[]) => samples.filter((x, i) => i > 0 && x.mode === 'playing' && samples[i - 1]!.mode === 'playing' && x.deaths === samples[i - 1]!.deaths && x.health > samples[i - 1]!.health).length;
 describe('sim', () => {
   it('sim.ts keeps the former main.ts tick order', () => {
     const record = process.env.TIDE_SIM_RECORD;
@@ -71,12 +74,22 @@ describe('sim', () => {
     expect(existsSync(GOLDEN), 'the golden is missing').toBe(true);
     const golden = JSON.parse(readFileSync(GOLDEN, 'utf8')) as Golden;
     // The scenarios still cover what they claim: three meals in the journey, at least one rescue in the push, a faint (0 hearts) and the
-    // respawn, and regen after a later hit.
+    // respawn, and regen in half hearts from a low start (T15).
     expect(golden.journey.at(-1)!.bites).toBe(3);
     expect(golden.rescue.at(-1)!.rescues).toBeGreaterThan(0);
     expect(golden.faint.some(x => x.mode === 'fainted' && x.health === 0), 'a faint').toBe(true);
     expect({ deaths: golden.faint.at(-1)!.deaths, mode: golden.faint.at(-1)!.mode }).toEqual({ deaths: 1, mode: 'playing' });
-    expect(regens(golden.regen), 'regen after a hit').toBeGreaterThanOrEqual(2);
+    expect(regens(golden.regen), 'regen from 3 hearts').toBeGreaterThanOrEqual(6);
     expect(runAll(runSim)).toEqual(golden);
   }, 60_000);
+});
+describe('regeneration', () => {
+  it('gives half a heart every 2 s once 6 s have passed since the last damage and the last wind-up at the player', () => {
+    const run = freshRun(7), w = world(7), s = newSimState(run);
+    w.eco.reset(run.eatenPlanets); simBegin(s, w, run, null);
+    s.run.health = 4; s.rt.lastDamageAt = s.time; s.rt.lastThreatAt = s.time + 1;   // a wind-up 1 s later: regen waits for 7 s
+    const samples: number[] = [];
+    for (let f = 1; f <= 12 * 60; f++) { simFrame(s, w, { dt: DT, intent: RELEASED, wish: { x: 0, y: 0, z: 0 }, held: false }); if (f % 60 === 0) samples.push(s.run.health); }
+    expect(samples).toEqual([4, 4, 4, 4, 4, 4, 4, 4, 4.5, 4.5, 5, 5]);   // 7 s quiet, then +.5 at 9 s and 11 s
+  });
 });

@@ -6,17 +6,19 @@ import { SIZES } from '../../src/tiny-tide/biomes';
 import { CombatWorld } from '../../src/tiny-tide/combat-world';
 import type { Ecosystem, Entity } from '../../src/tiny-tide/ecosystem';
 import { RELEASED } from '../../src/tiny-tide/input';
-import { applyHitStop, bufferPress } from '../../src/tiny-tide/action-engine';
+import { applyHitStop, bufferPress, holdingAction } from '../../src/tiny-tide/action-engine';
 import { stageBounds } from '../../src/tiny-tide/world-queries';
 import type { CombatInput } from '../../src/tiny-tide/combat-types';
-import { playerActorCached, playerMotionBody, simBegin, simEvolve, simFrame, simSuspend, type SimEvent, type SimState, type SimWorld } from '../../src/tiny-tide/sim';
+import { FAINT_GIVE_UP, playerActorCached, playerMotionBody, REGEN_AFTER, simBegin, simEvolve, simFrame, simSuspend, type SimEvent, type SimState, type SimWorld } from '../../src/tiny-tide/sim';
+import { earn } from '../../src/tiny-tide/economy';
 import { FX_BEHAVIOURS, FX_FLEER, FX_HUNTER, POKE, WRAP } from './combat-fixture';
 import { AT_PLAYER, entity, FLAT, speck } from './combat-fixture-world';
 
 const DT = 1 / 60;
 /** A flat stage-0 world whose ecosystem only holds `entities` (it never moves them). */
 function flatWorld(entities: Entity[]): SimWorld {
-  const eco = { entities, consume: (e: Entity) => { e.eaten = true; }, planetIndex: () => 0, step: () => [] } as unknown as Ecosystem;
+  const giveUps: [number, number][] = [];
+  const eco = { entities, consume: (e: Entity) => { e.eaten = true; }, planetIndex: () => 0, step: () => [], giveUps, giveUpAll: (now: number, seconds: number) => { giveUps.push([now, seconds]); } } as unknown as Ecosystem;
   return { eco, startGrace: 0, legality: stage => ({ queries: FLAT, bounds: stageBounds(stage) }) };
 }
 function begun(entities: Entity[], mouth?: string): { s: SimState; w: SimWorld } {
@@ -52,6 +54,50 @@ describe('the combat tick in simFrame', () => {
     expect(s.mode).toBe('fainted'); expect(s.run.deaths).toBe(1); expect(s.faintLog).toHaveLength(1);
     // Spec §9.4, §13: the faint ends every attack at the player and returns its token.
     expect(s.combat.director.tokens).toEqual([]); expect(c.rt.actions.filter(a => a.phase !== 'interrupted')).toEqual([]);
+  });
+  it('the faint event reports the at-risk DNA it took; hunters give up for FAINT_GIVE_UP (D27)', () => {
+    const squid = entity(2, FX_HUNTER, { x: 0, y: 0, z: 0 }), { s, w } = begun([squid]);
+    Object.assign(squid, ahead(s, 1.2, 1)); s.run.health = .5; s.run.economy = earn(s.run.economy, 9); s.run.stageDna = 9;
+    const c = s.combat.stateOf(squid)!, centre = playerMotionBody(s, playerActorCached(s)).centre;
+    s.combat.startSpecies(c, 'wrap', WRAP, { x: 0, y: 0, z: -1 }, 'player', s.time, { ...AT_PLAYER, targetAt: centre });
+    const events: SimEvent[] = [];
+    for (let i = 0; i < 60 && s.mode === 'playing'; i++) events.push(...frame(s, w));
+    expect(events.filter(e => e.type === 'fainted')).toEqual([{ type: 'fainted', lost: 9 }]);
+    expect(s.run.economy.wallet.atRisk).toBe(0); expect(s.run.stageDna).toBe(0);
+    expect((w.eco as unknown as { giveUps: [number, number][] }).giveUps).toEqual([[s.time - DT, FAINT_GIVE_UP]]);
+  });
+  it('holds on the player end AT the faint, in the same frame (spec §13)', () => {
+    const squid = entity(2, FX_HUNTER, { x: 0, y: 0, z: 0 }), { s, w } = begun([squid]);
+    Object.assign(squid, ahead(s, 1.2, 1)); s.run.health = 3;
+    const c = s.combat.stateOf(squid)!, centre = playerMotionBody(s, playerActorCached(s)).centre;
+    s.combat.startSpecies(c, 'wrap', WRAP, { x: 0, y: 0, z: -1 }, 'player', s.time, { ...AT_PLAYER, targetAt: centre });
+    for (let i = 0; i < 60 && s.rt.heldBy === null; i++) frame(s, w);
+    expect(s.rt.heldBy).toBe('e2'); s.run.health = .5;   // the next squeeze empties the hearts
+    for (let i = 0; i < 60 && s.mode === 'playing'; i++) frame(s, w);
+    expect(s.mode).toBe('fainted'); expect(s.rt.heldBy).toBeNull(); expect(s.rt.breakProgress).toBe(0); expect(holdingAction(c.rt, 'player')).toBeUndefined();
+  });
+  it('holds on the player end AT an evolution (spec §13)', () => {
+    const squid = entity(2, FX_HUNTER, { x: 0, y: 0, z: 0 }), { s, w } = begun([squid]);
+    Object.assign(squid, ahead(s, 1.2, 1)); s.run.health = 3;
+    const c = s.combat.stateOf(squid)!, centre = playerMotionBody(s, playerActorCached(s)).centre;
+    s.combat.startSpecies(c, 'wrap', WRAP, { x: 0, y: 0, z: -1 }, 'player', s.time, { ...AT_PLAYER, targetAt: centre });
+    for (let i = 0; i < 60 && s.rt.heldBy === null; i++) frame(s, w);
+    expect(s.rt.heldBy).toBe('e2');
+    simEvolve(s, { position: s.physical, orientation: s.rt.orientation });
+    expect(s.rt.heldBy).toBeNull(); expect(s.rt.breakProgress).toBe(0); expect(holdingAction(c.rt, 'player')).toBeUndefined();
+  });
+  it('combat damage resets the regeneration wait (T8 carry, spec §10.2)', () => {
+    const crab = entity(2, FX_HUNTER, { x: 0, y: 0, z: 0 }), { s, w } = begun([crab]);
+    Object.assign(crab, ahead(s, 1.2, 1)); s.run.health = 2; expect(s.derived.maxHealth).toBeGreaterThan(2);
+    const c = s.combat.stateOf(crab)!, centre = playerMotionBody(s, playerActorCached(s)).centre;
+    s.combat.startSpecies(c, 'poke', POKE, { x: 0, y: 0, z: -1 }, 'player', s.time, { ...AT_PLAYER, targetAt: centre });
+    for (let i = 0; i < 120 && s.run.health === 2; i++) frame(s, w);
+    const hitAt = s.rt.lastDamageAt, health = s.run.health; expect(health).toBe(1);   // POKE: 2 half-hearts
+    expect(hitAt).toBeGreaterThan(0);
+    while (s.time < hitAt + REGEN_AFTER - .05) frame(s, w);
+    expect(s.run.health).toBe(health);   // no heart comes back inside the wait
+    while (s.time < hitAt + REGEN_AFTER + 2.1) frame(s, w);
+    expect(s.run.health).toBe(health + .5);
   });
   it('an attacker eaten on any path is forgotten after the frame: its token returns (fix round 1)', () => {
     const crab = entity(4, FX_HUNTER, { x: 0, y: 0, z: 0 }), { s, w } = begun([crab]);

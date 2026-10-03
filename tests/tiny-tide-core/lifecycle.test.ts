@@ -6,6 +6,7 @@ import { newRuntime, type CombatRuntime } from '../../src/tiny-tide/combat-types
 import { designDelta } from '../../src/tiny-tide/design-delta';
 import { Ecosystem, type EcoEvent } from '../../src/tiny-tide/ecosystem';
 import { freshRun, maxHealthOf, STAGES } from '../../src/tiny-tide/state';
+import { earn } from '../../src/tiny-tide/economy';
 import { PLANS, plan } from '../../src/tiny-tide/plans';
 import { PARTS, type PartSpec } from '../../src/tiny-tide/parts';
 import { starterFor, starterGenome, type Genome } from '../../src/tiny-tide/genome';
@@ -38,8 +39,8 @@ describe('lifecycle', () => {
     expect(rt).toMatchObject({ actionClock: 0, hitStopUntil: 0, buffered: null, heldBy: null, breakProgress: 0, status: null });
   });
   it('faints once, even when called twice, and resolves once with a legal anchor', () => {
-    const run = freshRun(1), rt = busy(), before = structuredClone(run.economy);
-    expect(beginRespawn(run, rt)).toBe(true); const after = structuredClone(run.economy);
+    const run = freshRun(1), rt = busy(); run.economy = earn(run.economy, 7); const before = structuredClone(run.economy);
+    expect(beginRespawn(run, rt)).toBe(true); const after = structuredClone(run.economy); expect(after.wallet.atRisk).toBe(0);
     expect(beginRespawn(run, rt)).toBe(false); expect(run.economy).toEqual(after); expect(run.deaths).toBe(1); expect(after).not.toEqual(before);
     const anchor = { ok: true as const, position: { x: 0, y: 1, z: 0 }, orientation: { yaw: 0, pitch: 0 } };
     expect(resolveRespawn(run, rt, 10, { ok: false, reason: 'none' })).toBe(false); expect(run.pendingRespawn).toBe(true);
@@ -78,6 +79,12 @@ describe('lifecycle', () => {
     expect(resolveHazards([hazardEvent(a, 5)], ctx(newRuntime(), 5, { mode: 'evolving' }))).toEqual([]);
     expect(resolveHazards([hazardEvent(a, 5)], ctx(newRuntime(), 5, { pendingRespawn: true }))).toEqual([]);
     const off = newRuntime(); off.damageable = false; expect(resolveHazards([hazardEvent(a, 5)], ctx(off, 5))).toEqual([]);
+  });
+  it('an accepted hazard marks the damage time (regeneration waits, spec §10.2); a rejected one does not', () => {
+    const crab = new Ecosystem(7).entities.find(e => e.spec.key === '1:crab')!, rt = newRuntime();
+    const ctx = (now: number) => ({ mode: 'playing', pendingRespawn: false, rt, now, mass: 4, resistance: .5 });
+    resolveHazards([hazardEvent(crab, 2)], ctx(2)); expect(rt.lastDamageAt).toBe(2);
+    expect(resolveHazards([hazardEvent(crab, 2.5)], ctx(2.5))).toEqual([]); expect(rt.lastDamageAt).toBe(2);   // still invulnerable
   });
   it('applies an impulse through mass and resistance', () => {
     const crab = new Ecosystem(7).entities.find(e => e.spec.key === '1:crab')!, rt = newRuntime(), e = { ...hazardEvent(crab, 0), hazard: { ...REGISTRY_HAZARDS['crab-pinch']!, impulse: 2 } };

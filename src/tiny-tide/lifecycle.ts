@@ -299,7 +299,7 @@ export function resolveHazards(events: readonly EcoEvent[], ctx: { mode: string;
   const sorted = [...events].sort((a, b) => a.time - b.time || (a.entity.id < b.entity.id ? -1 : a.entity.id > b.entity.id ? 1 : 0));
   for (const e of sorted) {
     if (ctx.mode !== 'playing' || ctx.pendingRespawn || !rt.damageable || ctx.now < rt.invulnerableUntil) continue;
-    rt.invulnerableUntil = ctx.now + e.hazard.invulnerabilitySeconds;
+    rt.invulnerableUntil = ctx.now + e.hazard.invulnerabilitySeconds; rt.lastDamageAt = ctx.now;   // regeneration waits (spec §10.2)
     const k = e.hazard.impulse / ctx.mass * (1 - ctx.resistance);
     rt.externalVelocity.x += e.normal.x * k; rt.externalVelocity.y += e.normal.y * k; rt.externalVelocity.z += e.normal.z * k;
     out.push(e);

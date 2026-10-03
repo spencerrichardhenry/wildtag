@@ -4,7 +4,7 @@
 import { SIZES } from './biomes';
 import { clearBuffer } from './action-engine';
 import { newRuntime, type Actor, type Capsule, type CombatInput, type CombatRuntime, type MutVec3, type Orientation, type RecoveryResult, type Vec3, type WorldQueries } from './combat-types';
-import type { Ecosystem, EcoEvent } from './ecosystem';
+import type { Ecosystem, EcoEvent, Entity } from './ecosystem';
 import { chomp, CHOMP_COOLDOWN, type ChompResult } from './feeding';
 import { derive, dietOf, effectiveStats, type Derived } from './genome';
 import { basicRequested } from './input';
@@ -18,7 +18,8 @@ import { createRigPose, type RigPose } from './rig';
 import { orientedHeave, orientedSway, rotateInto } from './orientation';
 import { newStepSnapshot, restoreStep, snapshotStep, stepPlayer, type PlayerStepResult, type StepSnapshot } from './player-motion';
 import { habitat, movement, movementCapabilities } from './profiles';
-import { currentPlan, evolveReady, growthOf, hurt, STAGES, unlock, type Run } from './state';
+import { currentPlan, evolveReady, growthOf, hurt, killReward, STAGES, unlock, type Run } from './state';
+import { walletTotal } from './economy';
 import { admissionClock, admissionCount, supportHeight } from './world-queries';
 
 export type GameMode = 'menu' | 'playing' | 'paused' | 'evolving' | 'editing' | 'fainted' | 'stuck' | 'won';
@@ -32,7 +33,7 @@ export interface Glide { path: { position: Vec3; orientation: Orientation }[]; i
 export interface RescueLog { searches: number; found: number; failed: number; last: null | { from: Vec3; to: Vec3; time: number; solids: string[] } }
 export interface SimState {
   run: Run; rt: CombatRuntime; physical: Vec3; time: number; mode: GameMode; derived: Derived; genomeRevision: number;
-  chompCooldown: number; sinceHit: number; regenClock: number; respawnClock: number; stuckRetry: number;
+  chompCooldown: number; regenClock: number; respawnClock: number; stuckRetry: number;
   /** A run that began stuck owes its start grace to the first successful install. */
   startGracePending: boolean;
   trap: TrapWatch; unstick: UnstickSearch | null; glide: Glide | null; beforeStep: StepSnapshot;
@@ -56,11 +57,13 @@ export type SimEvent =
   /** One combat tick's outcome (hits, kills, the moves the player started, a break-free). */
   | { type: 'combat'; tick: CombatTick }
   | { type: 'regen' }
-  /** An accepted hazard hit; `fainted` when it emptied the hearts (the run is already marked; save it at once). */
-  | { type: 'hurt'; event: EcoEvent; damage: number; fainted: boolean }
+  /** An accepted hazard hit; `fainted` when it emptied the hearts (the run is already marked; save it at once); `lost`: the DNA the faint took. */
+  | { type: 'hurt'; event: EcoEvent; damage: number; fainted: boolean; lost: number }
   | { type: 'respawned' } | { type: 'respawn-waiting' }
-  /** Combat damage emptied the hearts (the run is already marked; save it at once). */
-  | { type: 'fainted' }
+  /** Combat damage emptied the hearts (the run is already marked; save it at once). `lost`: the DNA the faint took from the wallet. */
+  | { type: 'fainted'; lost: number }
+  /** A combat kill (spec §10.4): the DNA it paid (0 for a herbivore) and a part it unlocked. */
+  | { type: 'killed'; entity: Entity; dna: number; drop: string | null }
   /** A loaded run that was saved during a faint found no anchor yet: it waits fainted (main shows the faint overlay). */
   | { type: 'resume-fainted' };
 export interface SimInput { dt: number; intent: CombatInput; wish: Vec3; held: boolean }
@@ -72,7 +75,7 @@ export const simOwnedState = (): SimOwned => ({ trap: newTrapWatch(), unstick: n
 /** A plain state (tests and the combat probe). */
 export function newSimState(run: Run): SimState {
   return { run, rt: newRuntime(), physical: { x: 0, y: 0, z: 0 }, time: 0, mode: 'menu', derived: derive(effectiveStats(run.genome, currentPlan(run))), genomeRevision: 0,
-    chompCooldown: 0, sinceHit: 99, regenClock: 0, respawnClock: 0, stuckRetry: 0, startGracePending: false, acceptedHits: 0, rejectedHits: 0, ...simOwnedState() };
+    chompCooldown: 0, regenClock: 0, respawnClock: 0, stuckRetry: 0, startGracePending: false, acceptedHits: 0, rejectedHits: 0, ...simOwnedState() };
 }
 export function refreshDerived(s: SimState): void { s.derived = derive(effectiveStats(s.run.genome, currentPlan(s.run))); }
 const capsOf = (s: SimState) => movementCapabilities(currentPlan(s.run));
@@ -178,13 +181,21 @@ export function playerBody(s: SimState, actor: Actor): PlayerBody {
   return { rt: s.rt, position: s.physical, centre, L: actor.bodyLength, mass: massFor(plan, s.run.genome, actor.bodyLength), knockbackResistance: plan.physics.knockbackResistance,
     armor: s.derived.armor, ground: caps.ground, mode: movement(plan.movement).mode, inBreachArc: s.rt.arc !== null, health: s.run.health, pose };
 }
-/** A faint at 0 hearts, once (the hazard path and the combat path share it). */
-function faintNow(s: SimState): boolean {
-  const hadPermit = s.rt.permit !== null, hadArc = s.rt.arc !== null;
-  if (!beginRespawn(s.run, s.rt)) return false;
-  s.combat.cancelAttacksOnPlayer(s.rt);   // spec §9.4, §13: every attack at the player ends and its token returns
+/** Regeneration (spec §10.2): half a heart every REGEN_EVERY seconds once REGEN_AFTER seconds have passed since the last damage and the
+ *  last wind-up at the player. */
+export const REGEN_AFTER = 6, REGEN_EVERY = 2;
+/** After a faint, every creature hunting the player gives up for this long (D27). */
+export const FAINT_GIVE_UP = 6;
+/** A faint at 0 hearts, once (the hazard path and the combat path share it). THE FAINT RULE itself is `applyFaintRule` (state.ts).
+ *  Holds and attacks on the player end here, in the faint's frame (spec §13). Returns the wallet DNA the faint took, or null when no
+ *  faint began. */
+function faintNow(s: SimState, w: SimWorld): number | null {
+  const hadPermit = s.rt.permit !== null, hadArc = s.rt.arc !== null, before = walletTotal(s.run.economy);
+  if (!beginRespawn(s.run, s.rt)) return null;
+  s.combat.cancelAttacksOnPlayer(s.rt);   // spec §9.4, §13: every attack at the player ends, its token returns, and holds end
+  w.eco.giveUpAll(s.time, FAINT_GIVE_UP);   // D27
   s.mode = 'fainted'; s.faintLog.push({ time: s.time, hadPermit, hadArc }); s.respawnClock = 1.8;
-  return true;
+  return before - walletTotal(s.run.economy);
 }
 /** One frame of the simulation (main.ts `frame` without presentation). */
 export function simFrame(s: SimState, w: SimWorld, input: SimInput): SimEvent[] {
@@ -200,9 +211,11 @@ export function simFrame(s: SimState, w: SimWorld, input: SimInput): SimEvent[] 
     if (s.mode === 'playing') { if (grew) checkGrownPose(s, w, actor, events); else checkPose(s, w, actor, events); } else settleOffset(s, w, actor);
   }
   if (s.mode === 'playing' && actor && !held) {
-    run.elapsed += dt; s.chompCooldown = Math.max(0, s.chompCooldown - dt); s.sinceHit += dt;
-    // Hearts come back slowly once the creature is out of danger.
-    if (s.sinceHit > 5 && run.health < s.derived.maxHealth) { s.regenClock += dt; if (s.regenClock > 2.5) { s.regenClock = 0; run.health = Math.min(s.derived.maxHealth, run.health + 1); events.push({ type: 'regen' }); } } else s.regenClock = 0;
+    run.elapsed += dt; s.chompCooldown = Math.max(0, s.chompCooldown - dt);
+    // Regeneration (spec §10.2): half a heart every REGEN_EVERY once REGEN_AFTER has passed since the last damage (combat or hazard: both
+    // set rt.lastDamageAt) and the last wind-up at the player (rt.lastThreatAt).
+    const calm = s.time - s.rt.lastDamageAt >= REGEN_AFTER - 1e-9 && s.time - s.rt.lastThreatAt >= REGEN_AFTER - 1e-9;
+    if (calm && run.health < s.derived.maxHealth) { s.regenClock += dt; if (s.regenClock >= REGEN_EVERY - 1e-9) { s.regenClock = 0; run.health = Math.min(s.derived.maxHealth, run.health + .5); events.push({ type: 'regen' }); } } else s.regenClock = 0;
     const intent = input.intent, wish = input.wish, legal = w.legality(stage), rt = s.rt;
     snapshotStep(rt, s.beforeStep);
     // A rescue glides the body along its admitted path, one pose a frame, re-admitted for the current body.
@@ -246,8 +259,12 @@ export function simFrame(s: SimState, w: SimWorld, input: SimInput): SimEvent[] 
         stage, diet: dietOf(run.genome), queries: legal.queries });
       run.health = body.health; s.previousMove = intent.move;
       if (tick.events.length || tick.killed.length || tick.started.length || tick.brokeFree) events.push({ type: 'combat', tick });
-      for (const e of tick.killed) { const drop = DROPS[e.spec.kind]; if (drop) unlock(run, drop); w.eco.consume(e); s.combat.forget(e); }
-      if (run.health <= 0 && faintNow(s)) events.push({ type: 'fainted' });
+      for (const e of tick.killed) {
+        const drop = DROPS[e.spec.kind]; if (drop) unlock(run, drop);
+        events.push({ type: 'killed', entity: e, dna: killReward(run, e.spec).dna, drop: drop && run.unlocked.includes(drop) ? drop : null });
+        w.eco.consume(e); s.combat.forget(e);
+      }
+      if (run.health <= 0) { const lost = faintNow(s, w); if (lost !== null) events.push({ type: 'fainted', lost }); }
       if (s.mode === 'playing' && tick.chomp && basicRequested(intent) && s.chompCooldown <= 0) {
         s.chompCooldown = CHOMP_COOLDOWN;
         events.push({ type: 'chomp', result: chomp(run, w.eco, s.physical, growthOf(run), s.derived, s.time, worldHull(s, playerActorCached(s))) });
@@ -266,7 +283,7 @@ export function simFrame(s: SimState, w: SimWorld, input: SimInput): SimEvent[] 
     const accepted = resolveHazards(hazards, { mode: s.mode, pendingRespawn: run.pendingRespawn, rt: s.rt, now: s.time, mass: massFor(plan, run.genome, actor.bodyLength), resistance: plan.physics.knockbackResistance });
     s.rejectedHits += hazards.length - accepted.length;
     // A hit counts as accepted only when it is applied (not when skipped after a same-frame faint).
-    for (const event of accepted) { if (s.mode !== 'playing') break; s.acceptedHits++; takeHit(s, event, events); }
+    for (const event of accepted) { if (s.mode !== 'playing') break; s.acceptedHits++; takeHit(s, w, event, events); }
   }
   if (s.mode === 'fainted') tickFaint(s, w, dt, events);
   s.combat.forgetEaten();   // T11 fix round 1: an entity eaten on any path (a kill, a chomp, a failed install) starts over in combat
@@ -274,15 +291,14 @@ export function simFrame(s: SimState, w: SimWorld, input: SimInput): SimEvent[] 
   return events;
 }
 /** One accepted hazard event: damage, and a faint at 0 hearts (once). */
-function takeHit(s: SimState, event: EcoEvent, events: SimEvent[]): void {
-  s.sinceHit = 0;
-  const fainted = hurt(s.run, event.damage, s.derived.armor) && faintNow(s);
-  events.push({ type: 'hurt', event, damage: event.damage, fainted });
+function takeHit(s: SimState, w: SimWorld, event: EcoEvent, events: SimEvent[]): void {
+  const lost = hurt(s.run, event.damage, s.derived.armor) ? faintNow(s, w) : null;
+  events.push({ type: 'hurt', event, damage: event.damage, fainted: lost !== null, lost: lost ?? 0 });
 }
 /** The faint timer: respawn at the start anchor, or wait and retry each second. */
 function tickFaint(s: SimState, w: SimWorld, dt: number, events: SimEvent[]): void {
   s.respawnClock -= dt; if (s.respawnClock > 0) return;
-  if (tryRespawn(s, w, events)) { s.mode = 'playing'; s.sinceHit = 99; events.push({ type: 'respawned' }); return; }
+  if (tryRespawn(s, w, events)) { s.mode = 'playing'; events.push({ type: 'respawned' }); return; }
   s.respawnClock = 1; events.push({ type: 'respawn-waiting' });
 }
 /** A new run or a load (main.ts `begin`, after the world is built): a fresh runtime, then the pending respawn, or the start anchor (or a
@@ -290,7 +306,7 @@ function tickFaint(s: SimState, w: SimWorld, dt: number, events: SimEvent[]): vo
 export function simBegin(s: SimState, w: SimWorld, run: Run, forced: Vec3 | null): SimEvent[] {
   const events: SimEvent[] = [];
   s.run = run; refreshDerived(s); run.health = Math.min(run.health, s.derived.maxHealth);
-  s.mode = 'playing'; s.chompCooldown = 0; s.sinceHit = 99;
+  s.mode = 'playing'; s.chompCooldown = 0;
   s.rt = newRuntime(); s.genomeRevision++; cancelRescue(s); s.startGracePending = false; s.combat.reset(); s.previousMove = { x: 0, y: 0, z: 0 };
   s.faintLog.length = 0; s.acceptedHits = 0; s.rejectedHits = 0;
   const actor = playerActorCached(s), t = w.legality(run.stage).queries.terrain;

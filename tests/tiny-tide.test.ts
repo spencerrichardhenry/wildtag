@@ -104,7 +104,7 @@ describe('Tiny Tide ecosystem', () => {
     eco.step(ctx(eco, 0, player)); expect(crab.mode).toBe('hunt');
     let events: ReturnType<Ecosystem['step']> = [];
     for (let i = 0; i < 40 && !events.length; i++) events = eco.step(ctx(eco, 0, player)).filter(e => e.entity === crab);
-    expect(events[0]?.type).toBe('hazard'); expect(events[0]!.damage).toBe(3);
+    expect(events[0]?.type).toBe('hazard'); expect(events[0]!.damage).toBe(6);   // half-hearts: 4 + 2 × (1 − 0)
     const quiet = new Ecosystem(7), crab2 = quiet.entities.find(e => e.spec.key === '1:crab')!;
     quiet.step(ctx(quiet, 0, { x: crab2.x + 6, y: crab2.y, z: crab2.z }, { stealthFactor: .35 })); expect(crab2.mode).toBe('calm');
   });

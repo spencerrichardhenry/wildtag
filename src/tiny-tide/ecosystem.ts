@@ -161,7 +161,7 @@ export class Ecosystem {
   }
   /** Restores a run: planets already eaten stay eaten, everything else is fresh. */
   reset(eatenPlanets: readonly number[]) {
-    const fresh = makeEntities(this.seed);
+    const fresh = makeEntities(this.seed); this.giveUpUntil = -Infinity;
     this.entities.forEach((e, i) => Object.assign(e, fresh[i]!));
     // Eaten planets stay eaten and are not installed; a failed install also stays eaten.
     let planet = 0;
@@ -175,6 +175,17 @@ export class Ecosystem {
     e.respawn = e.spec.kind === 'planet' ? -1 : RESPAWN_TIME[0] + this.rand() * (RESPAWN_TIME[1] - RESPAWN_TIME[0]);
   }
 
+  /** The end of the faint give-up window (D27); world time. */
+  giveUpUntil = -Infinity;
+  /** After a faint (spec §10.3, D27): every creature hunting the player gives up (`return`), and no creature acquires the player for
+   *  `seconds` (a calm hunter near the wake-up point waits too). */
+  giveUpAll(now: number, seconds: number): void {
+    this.giveUpUntil = now + seconds;
+    for (const e of this.entities) if (e.mode === 'hunt' || e.mode === 'angry') this.setMode(e, 'return');
+    for (const e of this.entities) e.returnUntil = Math.max(e.returnUntil, this.giveUpUntil);
+  }
+  /** True inside the faint give-up window (D27). The combat AI reads it as `hostile: false` for alphas (T16 wires it into aiTick). */
+  givingUp(now: number): boolean { return now < this.giveUpUntil; }
   /** The roaming bound of an entity's tier: tighter for hunters. */
   private boundsOf(e: Entity) { return (isHunter(e.spec) ? this.hunterBounds : this.bounds)[e.spec.tier]!; }
   /** Moves the entity (and its home) to the nearest legal pose within 4 body lengths, or removes it until a retry. */
@@ -347,7 +358,8 @@ export class Ecosystem {
     e.hazardReadyAt = ctx.now + hazard.cadenceSeconds;
     const nx = px - e.x, ny = py - e.y, nz = pz - e.z, nl = Math.hypot(nx, ny, nz);
     const normal = nl < 1e-6 ? { x: 0, y: 1, z: 0 } : { x: nx / nl, y: ny / nl, z: nz / nl };
-    events.push({ type: 'hazard', entity: e, hazard, damage: hazard.damage + (engaged ? Math.max(0, e.spec.tier - ctx.stage) : 0), point: { x: px, y: py, z: pz }, normal, time: ctx.now });
+    // The engaged bonus is in half-hearts too: 2 × max(0, tier − stage) (spec §4.2).
+    events.push({ type: 'hazard', entity: e, hazard, damage: hazard.damage + (engaged ? 2 * Math.max(0, e.spec.tier - ctx.stage) : 0), point: { x: px, y: py, z: pz }, normal, time: ctx.now });
   }
 
   private tickRespawn(e: Entity, ctx: EcoContext) {

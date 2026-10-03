@@ -1,6 +1,6 @@
 // tests/tiny-tide-core/economy.test.ts
 import { describe, expect, it } from 'vitest';
-import { bankAll, commitDesign, earn, faintCombat, faintLegacy, legacyEconomy, quoteDesign, validateLedger, walletTotal, type Economy } from '../../src/tiny-tide/economy';
+import { bankAll, commitDesign, earn, faintCombat, faintLoss, legacyEconomy, quoteDesign, validateLedger, walletTotal, type Economy } from '../../src/tiny-tide/economy';
 import { partCost, starterGenome, type Genome } from '../../src/tiny-tide/genome';
 import { PARTS } from '../../src/tiny-tide/parts';
 
@@ -63,11 +63,18 @@ describe('DNA ledger', () => {
     const r = commit(e, withParts(g, fin()), withParts(g, fin(.4)));   // 20 → 14: release floor(20 × 6/20) = 6, all at risk
     expect(r.parts.p9).toEqual({ basis: 14, credit: { banked: 5, atRisk: 9 } }); expect(r.wallet).toEqual({ banked: 15, atRisk: 6 });
   });
-  it('banks everything on evolution; legacy faint keeps 70% of each wallet part; combat faint zeroes at-risk credit', () => {
+  it('banks everything on evolution', () => {
     const g = starterGenome(), e = commit(earn(legacyEconomy(50, g), 30), g, withParts(g, fin()));   // wallet {50, 10}, p9 {0, 20}
     expect(bankAll(e).wallet).toEqual({ banked: 60, atRisk: 0 }); expect(bankAll(e).parts.p9!.credit).toEqual({ banked: 20, atRisk: 0 });
-    expect(faintLegacy(e).wallet).toEqual({ banked: 35, atRisk: 7 });
-    const c = faintCombat(e); expect(c.wallet).toEqual({ banked: 50, atRisk: 0 }); expect(c.parts.p9!.credit).toEqual({ banked: 0, atRisk: 0 });
+  });
+  it('faintCombat zeroes at-risk wallet and part credit, keeps basis and banked', () => {
+    const g = starterGenome(), e = commit(earn(legacyEconomy(50, g), 30), g, withParts(g, fin()));   // wallet {50, 10}, p9 {0, 20}
+    const c = faintCombat(e); expect(c.wallet).toEqual({ banked: 50, atRisk: 0 }); expect(c.parts.p9).toEqual({ basis: e.parts.p9!.basis, credit: { banked: 0, atRisk: 0 } });
+    expect(c.parts.p1).toEqual(e.parts.p1);   // a banked part keeps its credit
+  });
+  it('faintLoss reports what is lost', () => {
+    const g = starterGenome(), e = commit(earn(legacyEconomy(50, g), 30), g, withParts(g, fin()));
+    expect(faintLoss(e)).toEqual({ wallet: 10, parts: 20 }); expect(faintLoss(faintCombat(e))).toEqual({ wallet: 0, parts: 0 });
   });
   it('validates the ledger against the design', () => {
     const g = starterGenome(), e = legacyEconomy(0, g);

@@ -2,7 +2,7 @@ import { startAnalytics } from '../analytics';
 import * as T from 'three';
 import './style.css';
 import './hud.css';
-import { applyDesign, commitEvolution, currentPlan, damageAfterArmor, DEATH_KEEP, dietCanEat, dnaOf, evolveReady, freshRun, growthOf, parseSaveWithNotes, PLANET_COUNT, prepareEvolution, STAGES, type Build, type Run } from './state';
+import { applyDesign, commitEvolution, currentPlan, damageAfterArmor, dietCanEat, dnaOf, evolveReady, freshRun, growthOf, parseSaveWithNotes, PLANET_COUNT, prepareEvolution, STAGES, type Build, type Run } from './state';
 import { adaptToPlan, derive, dietOf, effectiveStats } from './genome';
 import { part } from './parts';
 import { tierSpecies } from './species';
@@ -24,7 +24,7 @@ import { canChooseNextPlan, evolutionDestination, reconcileAfterCommit } from '.
 import { admitted as simAdmitted, checkPose, playerActorCached as simActor, refreshDerived as simRefreshDerived, simBegin, simEvolve, simFrame, simOwnedState, simSuspend, type GameMode, type SimEvent, type SimState, type SimWorld } from './sim';
 import type { ChompResult } from './feeding';
 import { PLAYER_ID, type CombatTick, type TelegraphView } from './combat-world';
-import { FLASH_SECONDS, IMPACT_COLOURS, IMPACT_PARTICLES, shakeForPlayerHit, shakeForPlayerStrike } from './combat-profiles';
+import { damageText, FLASH_SECONDS, IMPACT_COLOURS, IMPACT_PARTICLES, shakeForPlayerHit, shakeForPlayerStrike } from './combat-profiles';
 import { movement, movementCapabilities } from './profiles';
 import { admissionClock, makeWorldQueries, resetAdmissionClock, stageBounds, stageWorldQueries, zoneLabel } from './world-queries';
 import { ROCK_FIT, stageSolids } from './reef';
@@ -212,7 +212,7 @@ let lastIntent: CombatInput = RELEASED;
 let target: T.Vector3 | null = null;
 let time = 0, last = performance.now(), cooldown = 0, chompPulse = 0;
 let toastTimer = 0, uiClock = 0, saveClock = 0, hintClock = 0, respawnClock = 0, stuckRetry = 0, respawnToasted = false;
-let sinceHit = 99, regenClock = 0, wrongDietClock = 0, readyToasted = false, lastBiome = '';
+let regenClock = 0, wrongDietClock = 0, readyToasted = false, lastBiome = '';
 /** The one combat runtime of the player. Never cache its fields across frames (resets replace them). */
 let rt = newRuntime();
 /** The player's authoritative physical position. The rendered root follows it every frame. sim.ts writes it through the `sim` binding;
@@ -236,7 +236,6 @@ const sim: SimState = {
   get derived() { return derived; }, set derived(v) { derived = v; },
   get genomeRevision() { return genomeRevision; }, set genomeRevision(v) { genomeRevision = v; },
   get chompCooldown() { return cooldown; }, set chompCooldown(v) { cooldown = v; },
-  get sinceHit() { return sinceHit; }, set sinceHit(v) { sinceHit = v; },
   get regenClock() { return regenClock; }, set regenClock(v) { regenClock = v; },
   get respawnClock() { return respawnClock; }, set respawnClock(v) { respawnClock = v; },
   get stuckRetry() { return stuckRetry; }, set stuckRetry(v) { stuckRetry = v; },
@@ -343,10 +342,18 @@ function toast(message: string) { el('toast').textContent = message; el('toast')
 function floater(text: string, x: number, y: number, kind = '') {
   const label = document.createElement('span'); label.className = `bite-floater ${kind}`; label.textContent = text; label.style.left = `${x}px`; label.style.top = `${y}px`; el('floaters').append(label); setTimeout(() => label.remove(), 950);
 }
+/** Hearts with half steps (spec §10.1). */
 function syncHearts() {
-  const max = derived.maxHealth, health = Math.ceil(run.health);
-  el('hearts').innerHTML = Array.from({ length: max }, (_, i) => `<i class="${i < health ? 'full' : ''}">${heart}</i>`).join('');
+  const max = derived.maxHealth, health = run.health;
+  el('hearts').innerHTML = Array.from({ length: max }, (_, i) => `<i class="${i + 1 <= health ? 'full' : i + .5 <= health ? 'half' : ''}">${heart}</i>`).join('');
   el('hearts').setAttribute('aria-label', `${health} of ${max} hearts`);
+}
+/** A combat kill: the DNA floater (none for a herbivore: it drove the creature off) and a found part. */
+function presentKill(e: Entity, dna: number, drop: string | null) {
+  const food = world.foods.find(f => f.entity === e);
+  if (food) { const pos = world.screenPoint(new T.Vector3(food.data.x, food.data.y + 1, food.data.z)); if (pos.visible) floater(dna > 0 ? `+${dna} DNA` : 'Driven off!', pos.x, pos.y); }
+  if (drop) { toast(`New part found: ${part(drop)!.name}! Open the editor to use it.`); audio.found(); }
+  if (evolveReady(run) && !readyToasted) { readyToasted = true; toast('Ready to evolve! Tap Evolve when you want to grow.'); audio.found(); }
 }
 function syncUI() {
   const stage = STAGES[run.stage]!, diet = dietOf(run.genome);
@@ -501,10 +508,11 @@ function presentSim(events: readonly SimEvent[], dt: number) {
       case 'step': presentStep(e.result, dt); break;
       case 'chomp': presentChomp(e.result); break;
       case 'regen': syncHearts(); break;
-      case 'hurt': presentHurt(e.event, e.fainted); break;
+      case 'hurt': presentHurt(e.event, e.fainted, e.lost); break;
       case 'combat': presentCombat(e.tick); break;
-      case 'fainted': presentFaint(); break;
-      case 'respawned': el('faint').hidden = true; save(); syncUI(); toast(`You kept ${Math.round(DEATH_KEEP * 100)}% of your DNA. Stay safe out there.`); break;
+      case 'fainted': presentFaint(e.lost); break;
+      case 'killed': presentKill(e.entity, e.dna, e.drop); break;
+      case 'respawned': el('faint').hidden = true; save(); syncUI(); toast('You woke up at the start. Eat to grow again.'); break;
       case 'respawn-waiting': if (!respawnToasted) { respawnToasted = true; toast('Looking for a safe place to wake up…'); } break;
       case 'resume-fainted': el('faint').hidden = false; break;
     }
@@ -545,16 +553,20 @@ function presentChomp(c: ChompResult) {
   if (evolveReady(run) && !readyToasted) { readyToasted = true; toast('Ready to evolve! Tap Evolve when you want to grow.'); audio.found(); }
 }
 /** One accepted hazard hit (the simulation already applied it and, at 0 hearts, began the respawn). */
-function presentHurt(event: EcoEvent, fainted: boolean) {
+function presentHurt(event: EcoEvent, fainted: boolean, lost: number) {
   world.hurt(); audio.hurt(); if (typeof navigator.vibrate === 'function') navigator.vibrate([30, 40, 30]);
   const pos = world.screenPoint(world.player.position.clone().add(new T.Vector3(0, 1.4, 0)));
-  floater(`-${damageAfterArmor(event.damage, derived.armor)} ♥`, pos.x, pos.y, 'hurt');
+  floater(damageText('hit', 'half-heart', damageAfterArmor(event.damage, derived.armor)), pos.x, pos.y, 'hurt');
   syncHearts(); el('hearts').classList.remove('hit'); void el('hearts').offsetWidth; el('hearts').classList.add('hit');
   if (!fainted) { if (run.health <= 2) toast(`${event.entity.spec.label} is winning! Get away to heal.`); return; }
-  presentFaint();
+  presentFaint(lost);
 }
-/** A faint (the simulation already began the respawn): save at once, clear the input (main.ts's takeHit did), then the overlay. */
-function presentFaint() {
+/** A faint (the simulation already began the respawn): save at once, clear the input (main.ts's takeHit did), then the overlay with the
+ *  DNA the faint took (spec §10.3). */
+function presentFaint(lost: number) {
+  const title = document.createElement('strong'), line = document.createElement('span');
+  title.textContent = 'Fainted!'; line.textContent = `${lost > 0 ? `The ${lost} DNA you found as a ${STAGES[run.stage]!.title.toLowerCase()} is gone.` : 'No DNA was lost.'} Your body and parts stay.`;
+  el('faint').replaceChildren(title, line);
   save(); respawnToasted = false;
   clearInput(); audio.faint(); el('faint').hidden = false; world.burst(world.player.position.x, world.player.position.y, world.player.position.z, '#ff8f7a', 40);
 }

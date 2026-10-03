@@ -50,9 +50,12 @@ export function commitDesign(e: Economy, from: Genome, to: Genome): { ok: true; 
   return { ok: true, economy: n };
 }
 export function bankAll(e: Economy): Economy { const n = clone(e), bank = (c: DnaCredit) => { c.banked += c.atRisk; c.atRisk = 0; }; bank(n.wallet); Object.values(n.parts).forEach(p => bank(p.credit)); return n; }
-export function faintLegacy(e: Economy): Economy { const n = clone(e); n.wallet = { banked: Math.floor(n.wallet.banked * .7), atRisk: Math.floor(n.wallet.atRisk * .7) }; return n; }
-/** Sub-project 3: every at-risk credit is lost. Basis, design and banked credit stay. */
+/** The faint economy (spec §10.3, R7, D20): every at-risk credit is lost. Basis, design and banked credit stay. */
 export function faintCombat(e: Economy): Economy { const n = clone(e); n.wallet.atRisk = 0; for (const p of Object.values(n.parts)) p.credit.atRisk = 0; return n; }
+/** What `faintCombat` takes: the at-risk wallet, and the at-risk credit of the parts. */
+export function faintLoss(e: Economy): { wallet: number; parts: number } {
+  return { wallet: e.wallet.atRisk, parts: Object.values(e.parts).reduce((n, p) => n + p.credit.atRisk, 0) };
+}
 const dna = (v: unknown) => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0;
 const nonNeg = (c: DnaCredit) => !!c && dna(c.banked) && dna(c.atRisk) && Number.isSafeInteger(c.banked + c.atRisk);
 export function validateLedger(e: Economy, g: Genome): string[] {

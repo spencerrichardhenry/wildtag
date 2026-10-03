@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyDesign, commitEvolution, currentPlan, dnaOf, eat, faint, freshRun, mealDna, PLANET_COUNT, prepareEvolution, STAGES, validateRun, type Run } from '../../src/tiny-tide/state';
+import { applyDesign, commitEvolution, currentPlan, dnaOf, eat, faint, freshRun, hurt, killReward, mealDna, PLANET_COUNT, prepareEvolution, STAGES, survivorBonusDue, survivorReward, validateRun, type Run } from '../../src/tiny-tide/state';
 import { adaptToPlan, nextUid, type Genome } from '../../src/tiny-tide/genome';
 import { plan } from '../../src/tiny-tide/plans';
 import { species } from '../../src/tiny-tide/species';
@@ -47,11 +47,32 @@ describe('run v4', () => {
     expect(applyDesign(r, spike, r.name, build, 7)).toEqual({ ok: false, reason: 'Too complex: 9 / 8 slots.' });   // structure is checked before money
     expect(dnaOf(r)).toBe(0); expect(r.genome).toEqual(fins);
   });
-  it('faints once with the legacy rule and marks a pending respawn', () => {
-    const r = freshRun(4); eat(r, species(0, 'plant'), 0); expect(faint(r)).toBe(true);
-    expect(r.economy.wallet).toEqual({ banked: 14, atRisk: 5 });   // floor(20 × .7), floor(8 × .7)
+  it('faint resets stageDna and is applied once', () => {
+    const r = freshRun(4); eat(r, species(0, 'plant'), 0); expect(r.stageDna).toBe(8); expect(faint(r)).toBe(true);
+    expect(r.economy.wallet).toEqual({ banked: 20, atRisk: 0 }); expect(r.stageDna).toBe(0);   // the 8 DNA found at this size is gone
     expect(r.pendingRespawn).toBe(true); expect(r.deaths).toBe(1);
-    expect(faint(r)).toBe(false); expect(r.economy.wallet).toEqual({ banked: 14, atRisk: 5 }); expect(r.deaths).toBe(1);
+    eat(r, species(0, 'plant'), 1); expect(faint(r)).toBe(false); expect(r.economy.wallet).toEqual({ banked: 20, atRisk: 8 }); expect(r.deaths).toBe(1);
+  });
+  it('killReward by diet and growth rule', () => {
+    const meat = freshRun(5); meat.diet = 'carnivore';
+    const crab = { ...species(1, 'crab'), hunts: [0] }, snail = species(1, 'snail');
+    expect(killReward(meat, crab)).toEqual({ dna: 24, counts: true }); expect(meat.stageDna).toBe(24); expect(meat.bites).toBe(1);   // hunts size 0: counts
+    expect(killReward(meat, snail)).toEqual({ dna: 13, counts: false }); expect(meat.stageDna).toBe(24);   // tier 1, does not hunt size 0
+    const omni = freshRun(5); omni.diet = 'omnivore'; expect(killReward(omni, crab).dna).toBe(17);   // round(24 × .7) = round(16.8)
+    const plants = freshRun(5); expect(killReward(plants, crab)).toEqual({ dna: 0, counts: false }); expect(plants.bites).toBe(0);
+  });
+  it('survivor bonus conditions', () => {
+    const r = freshRun(6), squid = species(2, 'squid');
+    expect(survivorBonusDue(r, 'hunter', { seconds: 4, windups: 1 })).toBe(true);
+    expect(survivorBonusDue(r, 'hunter', { seconds: 3.9, windups: 3 })).toBe(false); expect(survivorBonusDue(r, 'hunter', { seconds: 9, windups: 0 })).toBe(false);
+    expect(survivorBonusDue(r, 'prey-fighter', { seconds: 9, windups: 2 })).toBe(false); expect(survivorBonusDue(r, 'hunter-ambush', { seconds: 9, windups: 2 })).toBe(true);
+    r.pendingRespawn = true; expect(survivorBonusDue(r, 'hunter', { seconds: 9, windups: 2 })).toBe(false);
+    const m = freshRun(6); m.diet = 'carnivore'; expect(survivorBonusDue(m, 'hunter', { seconds: 9, windups: 2 })).toBe(false);
+    const h = freshRun(6); expect(survivorReward(h, squid)).toBe(11); expect(h.stageDna).toBe(11);   // round(.35 × 30) = round(10.5)
+  });
+  it('hurts in half-hearts after armor', () => {
+    const r = freshRun(7); r.health = 3; expect(hurt(r, 3, 2)).toBe(false); expect(r.health).toBe(2);   // 3 − floor(2 / 2) = 2 half-hearts
+    expect(hurt(r, 1, 0)).toBe(false); expect(r.health).toBe(1.5); expect(hurt(r, 9, 0)).toBe(true); expect(r.health).toBe(0);
   });
   it('computes meal DNA with one rounding', () => {
     expect(mealDna(plan('burrower')!, 'omnivore', species(2, 'plant'))).toBe(16);   // round(16 × .7 × 1.4) = round(15.68)

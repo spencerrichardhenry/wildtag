@@ -2,6 +2,7 @@
 #hearts i{width:15px;height:14px;display:block}
 #hearts svg{width:15px;height:14px;fill:#ffffff26;stroke:#fff6e360;stroke-width:1.2}
 #hearts i.full svg{fill:#ff8f7a;stroke:#ffd1c4}
+#hearts i.half svg{fill:#ff8f7a8c;stroke:#ffd1c4}
 #hearts.hit{animation:hearts-hit .45s}
 @keyframes hearts-hit{0%,100%{transform:none}25%{transform:translateX(-4px)}50%{transform:translateX(4px)}75%{transform:translateX(-2px)}}
 .growth-next #diet{padding:2px 9px;border-radius:99px;background:var(--stage-color);color:var(--ink);font-weight:800;letter-spacing:1px;font-size:9px}
