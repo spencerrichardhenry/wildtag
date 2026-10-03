@@ -20,6 +20,12 @@ export const STAGES: readonly Stage[] = [
   { title: 'Huge', biome: 'THE WHOLE WIDE WORLD', size: '120 m', description: 'Eat everything. Seaplanes will try to chase you off.', goal: 260, speed: 7, radius: 2.7, color: '#d4b1f5', action: 'Rise' },
   { title: 'Cosmic', biome: 'THE FINAL FRONTIER', size: '∞', description: 'Float through the stars and eat all 12 planets.', goal: PLANET_COUNT, speed: 8, radius: 3, color: '#bfc0ff', action: 'Rise' },
 ];
+/** The stage toast for what the creature can do (final review M6: "Hold Rise to swim up" showed to a crawler; Breach only with Breach). */
+export function stageDescription(stage: number, caps: { ground: boolean; rise: boolean; breach: boolean }): string {
+  if (stage === 1 && !caps.rise) return 'Walk the reef floor. Crabs are snacks now, but they pinch back. Squid hunt the middle water.';
+  if (stage === 2 && !caps.breach) return 'Squid fight back. Rays sting.';
+  return STAGES[stage]!.description;
+}
 export const START_DNA = 20;
 export const OMNIVORE_RATE = .7;
 

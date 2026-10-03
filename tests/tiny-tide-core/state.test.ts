@@ -175,3 +175,15 @@ it('the editor pins go through applyDesign; pins of kinds the design drops are c
   expect(applyDesign(s, g, s.name, build, s.nextPartSerial, undefined, { slots: ['dash', null, 'grab', null] })).toEqual({ ok: true, clearedPins: ['grab'] });
   expect(s.loadout).toEqual({ slots: ['dash', null, null, null] });
 });
+
+// Final review M6: the stage toast names only what the creature can do ("Hold Rise to swim up" showed to a crawler).
+import { stageDescription } from '../../src/tiny-tide/state';
+describe('stage text per movement (final review M6)', () => {
+  const swim = { ground: false, rise: true, breach: false }, crawl = { ground: true, rise: false, breach: false }, breach = { ground: false, rise: true, breach: true };
+  it('tells a swimmer to Rise and a crawler to walk; Breach only with Breach', () => {
+    expect(stageDescription(1, swim)).toContain('Hold Rise');
+    expect(stageDescription(1, crawl)).not.toContain('Rise'); expect(stageDescription(1, crawl)).toContain('Crabs are snacks now');
+    expect(stageDescription(2, breach)).toContain('Breach'); expect(stageDescription(2, crawl)).not.toContain('Breach');
+    for (const st of [0, 3, 4]) expect(stageDescription(st, swim)).toBe(STAGES[st]!.description);
+  });
+});

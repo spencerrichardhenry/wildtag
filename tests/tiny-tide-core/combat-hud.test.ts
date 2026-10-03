@@ -66,3 +66,21 @@ describe('the alpha bar (spec §9.3)', () => {
     const crab = eco.entities.find(e => e.spec.key === '1:crab')!; expect(alphaView([{ ...c, entity: crab, behaviour: BEHAVIOURS.crab! } as unknown as EntityCombat], { x: crab.x, z: crab.z })).toBeNull();
   });
 });
+
+// Final review M4 / item i: a threat marker never sits on the depth label or the growth card; it moves the shortest way off them, inside bounds.
+import { avoidKeepOut } from '../../src/tiny-tide/combat-hud';
+describe('threat marker keep-out (final review M4)', () => {
+  const depth = { left: 280, top: 200, right: 316, bottom: 214 }, bounds = { minX: 20, maxX: 300, minY: 100, maxY: 508 };
+  const overlaps = (x: number, y: number, half: number, h: number, b: typeof depth) => x - half < b.right && b.left < x + half && y - h < b.bottom && b.top < y;
+  it('moves a marker off the depth label by the shortest way and keeps it in bounds', () => {
+    const p = avoidKeepOut(290, 230, 20, 52, [depth], bounds);
+    expect(overlaps(p.x, p.y, 20, 52, depth)).toBe(false);
+    expect(p.x).toBeGreaterThanOrEqual(bounds.minX); expect(p.x).toBeLessThanOrEqual(bounds.maxX); expect(p.y).toBeGreaterThanOrEqual(bounds.minY); expect(p.y).toBeLessThanOrEqual(bounds.maxY);
+    expect(Math.hypot(p.x - 290, p.y - 230)).toBeLessThan(70);
+  });
+  it('leaves a clear marker where it is, and clears two boxes at once', () => {
+    expect(avoidKeepOut(100, 300, 20, 52, [depth], bounds)).toEqual({ x: 100, y: 300 });
+    const card = { left: 150, top: 100, right: 300, bottom: 160 }, p = avoidKeepOut(290, 210, 20, 52, [depth, card], bounds);
+    expect(overlaps(p.x, p.y, 20, 52, depth) || overlaps(p.x, p.y, 20, 52, card)).toBe(false);
+  });
+});

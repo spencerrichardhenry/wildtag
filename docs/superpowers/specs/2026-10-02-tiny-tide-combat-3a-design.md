@@ -260,12 +260,12 @@ catalog must report nothing).
 | V2 | Attack: `damageUnit` and `aimMode` are in their enums; the optional `origin` is `'target'` only with `aimMode: 'fixed-at-start'` (plan review R4); `moveSpeedFactor` is in `[0, 1]`; `poiseDamageMultiplier ≥ 0`. |
 | V3 | Attack: `lunge.distanceBodyLengths > 0`; `hold.seconds > 0`; `hold.sizeFactor > 0`; hold numbers non-negative; `squeezeEverySeconds > 0` when `squeezeHalfHearts > 0`. |
 | V4 | Attack: `statusEffectId` exists and has `kind: 'status'`. |
-| V5 | Attack: every `scaling` and `pair` key names a numeric field of the attack or of its `lunge`/`hold`; every value is finite; every pair multiplier is `≥ 1`. |
+| V5 | Attack: every `scaling` and `pair` key names a numeric field of the attack or of its `lunge`/`hold`; every value is finite; every pair multiplier is `≥ 1`, except a `cooldownSeconds` multiplier, which is in `(0, 1]` (a pair recovers faster: the Dash pair's × 0.85; final review M7). |
 | V6 | Attack: an attack with `blockable: false` uses a telegraph with `color: 'red'` and `pattern: 'stripes'`; a blockable species attack uses `color: 'amber'` and `pattern: 'solid'`; a player attack uses `color: 'none'`. |
 | V7 | Species attack: `aimLockAtSeconds ≤ windupSeconds − 0.2`, unless `aimMode` is `centre` or `fixed-at-start` (then `aimLockAtSeconds = 0`). |
 | V8 | Species attack: `windupSeconds ≥ MIN_WINDUP` for every size at which a species that uses it is hostile (§11.1). |
 | V9 | Ability: `kind` is a `MoveKind`; `input` is `'hold'` only for `brace`; `attackId` exists for `grab` and `sweep`; `guardProfileId` exists for `brace` and `counter` and its guard `kind` matches; `evasionProfileId` exists for `dash`; no other reference is set. |
-| V10 | Ability: scaling and pair keys name a numeric field of the ability or of its guard, evasion or attack; values finite; multipliers `≥ 1`. |
+| V10 | Ability: scaling and pair keys name a numeric field of the ability or of its guard, evasion or attack; values finite; multipliers `≥ 1`, except a `cooldownSeconds` multiplier in `(0, 1]` (final review M7). |
 | V11 | Guard: fractions in `[0, 1]`; angles in `(0, π]`; durations non-negative; `windowSeconds` set only for counter; `frontHalfAngle` and `breakHalfHearts` set only for brace. |
 | V12 | Evasion: all durations non-negative; `travelSeconds > 0`; `distanceBodyLengths > 0`; `endSpeedCarry` in `[0, 1]`. |
 | V13 | Telegraph: enums valid; `flashLeadSeconds` in `[0, 0.3]`. Effect: enums valid; a status effect has `status`, `seconds > 0`, `speedFactor` in `(0, 1]`. |
@@ -541,9 +541,12 @@ id, then by target id. It processes them one at a time. Then contact hazards
 6. **Stagger.** Not when blocked. Player: §5.8. Species: poise (§5.8).
 7. **Impulse.** `J = impulse × L_a × min(m_a, 2 m_t)` along the direction from
    the shape origin to the hit point, made horizontal for ground targets. The
-   contract formula then gives `Δv = J / m_t × (1 − kr)`. Blocked: × 0.3.
-   Guard broken: × 0.6. `kr` is the plan's knockback resistance (player) or
-   the behaviour's (species).
+   contract formula then gives `Δv = J / m_t × (1 − kr)`, capped at
+   `KNOCKBACK_CAP` (9) × `L_t` per second (plan review R8; with the external
+   decay of 6/s a knock carries the target at most 1.5 of its body lengths, so
+   a big alpha cannot throw a small player across the map; final review M8).
+   Blocked: × 0.3 of the capped knock. Guard broken: × 0.6. `kr` is the
+   plan's knockback resistance (player) or the behaviour's (species).
 8. **Ledger and events.** Record the hit. Emit a `CombatEvent` with the
    outcome, the point, the damage and the hit-stop.
 

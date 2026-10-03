@@ -16,7 +16,6 @@ export function advanceClock(rt: CombatRuntime, t: number, dt: number): number {
 }
 /** §5.9: overlapping hit-stops keep the later end. */
 export function applyHitStop(rt: CombatRuntime, now: number, seconds: number): void { if (seconds > 0) rt.hitStopUntil = Math.max(rt.hitStopUntil, now + seconds); }
-export const inHitStop = (rt: CombatRuntime, now: number) => now < rt.hitStopUntil;
 
 // ---- phase lengths (spec §5.2) ----
 export function windupLength(a: ActionState): number {
@@ -238,7 +237,6 @@ export function addPoise(m: PoiseMeter, amount: number, tau: number, max: number
   if (m.value + 1e-9 < max) return false;
   m.value = 0; return true;
 }
-export const poiseNow = (m: PoiseMeter, tau: number) => Math.max(0, m.value - POISE_DECAY * Math.max(0, tau - m.at));
 
 // ---- input buffer (spec §5.7) ----
 /** Keeps a press that failed only because the actor is busy: in the last BUFFER_SECONDS of a recovery, or during a hit-stop. One entry; a newer press replaces it. */

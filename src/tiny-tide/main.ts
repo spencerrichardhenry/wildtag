@@ -2,7 +2,7 @@ import { startAnalytics } from '../analytics';
 import * as T from 'three';
 import './style.css';
 import './hud.css';
-import { applyDesign, commitEvolution, currentPlan, damageAfterArmor, dietCanEat, dnaOf, evolveReady, freshRun, growthOf, parseSaveWithNotes, PLANET_COUNT, prepareEvolution, STAGES, type Build, type Run } from './state';
+import { applyDesign, commitEvolution, stageDescription, currentPlan, damageAfterArmor, dietCanEat, dnaOf, evolveReady, freshRun, growthOf, parseSaveWithNotes, PLANET_COUNT, prepareEvolution, STAGES, type Build, type Run } from './state';
 import { adaptToPlan, derive, dietOf, effectiveStats } from './genome';
 import { part } from './parts';
 import { tierSpecies } from './species';
@@ -18,7 +18,7 @@ import { quoteDesign } from './economy';
 import { newRuntime, type Actor, type CombatInput, type Constraint, type MoveKind, type Tuple4, type Vec3, type WorldQueries } from './combat-types';
 import { aimChevron, aimPitch, autoAim, BRACE_AUTO_AIM_HALF_ANGLE, dragAim, aimToward, mouseButtons, NO_MOUSE, pickAimTarget, pitched, pointerAim, POINTER_FRESH_SECONDS, type PickCandidate, readIntent, RELEASED, type AimCandidate, type AimSource, type MouseState } from './input';
 import { BURROW } from './bestiary';
-import { AlphaBar, alphaView, CombatHud, CombatOverlay, EdgeArrowMemory, edgeArrowAt, faintMessage, FLOATER_COLOURS, floaterClass, floaterText, HP_BAR_SECONDS, MOVE_ICONS, slotViews, type AlphaView, type EdgeArrow, type HpBar } from './combat-hud';
+import { AlphaBar, alphaView, avoidKeepOut, CombatHud, CombatOverlay, EdgeArrowMemory, edgeArrowAt, faintMessage, FLOATER_COLOURS, floaterClass, floaterText, HP_BAR_SECONDS, MOVE_ICONS, slotViews, type AlphaView, type EdgeArrow, type HpBar } from './combat-hud';
 import { forwardOf } from './orientation';
 import { blockHint, blockHintDue, newBlockHintGate, PITCH_LIMIT, type PlayerStepResult, newTapWatch, tapTargetStalled } from './player-motion';
 import { canChooseNextPlan, evolutionDestination, reconcileAfterCommit } from './lifecycle';
@@ -435,7 +435,7 @@ function begin(fresh = false) {
   world.build(next.stage, next); el('evolution-banner').hidden = true; el('faint').hidden = true; clearInput(); readyToasted = evolveReady(next); lastBiome = '';
   hintClock = 0; blockGate.blockedFor = 0; blockGate.shown = false; contactNow = false; lastContact = null; lastContactSolid = null; edgeNow = false; edgeHinted = false;
   el('home').hidden = true; el('game-ui').hidden = false; el('pause').hidden = false; el('edit').hidden = false; el('corner-note').hidden = true; el('mode-label').textContent = 'NIBBLE. GROW. REPEAT.';
-  document.body.classList.add('is-playing'); toast(STAGES[next.stage]!.description, 'stage');
+  document.body.classList.add('is-playing'); toast(stageDescription(next.stage, movementCapabilities(currentPlan(next))), 'stage');
   // A pending respawn ignores the forced spawn (it stays for the next start).
   const forced = next.pendingRespawn ? null : forcedSpawn; if (!next.pendingRespawn) forcedSpawn = null;
   respawnToasted = false;
@@ -930,9 +930,13 @@ function updateGuide() {
   // A marker (bottom-anchored) stays below the top HUD band with its whole box, and inside the viewport horizontally (its label included).
   const top = markers.length ? hudBand() + MARKER_HEIGHT + 4 : 90;
   markerBottoms.clear(); markerXs.clear();
+  // Final review M4 / item i: a marker never sits on the depth label or the growth card ("DNA FOR YOUR NEXT EVOLUTION").
+  const keepOut = markers.length ? (['depth-label', 'growth-card'] as const).map(id => (id === 'growth-card' ? document.querySelector('.growth-card') : el(id))?.getBoundingClientRect())
+    .filter((b): b is DOMRect => !!b && b.width > 0) : [];
   el('threats').innerHTML = markers.map(f => {
     const point = world.screenPoint(new T.Vector3(f.data.x, f.data.y + (f.tier > run.stage ? 4 : 1.6), f.data.z)), half = Math.max(16, f.entity.spec.label.length * 3.4 + 6);
-    const x = T.MathUtils.clamp(point.visible ? point.x : innerWidth - point.x, half + 4, innerWidth - half - 4), y = T.MathUtils.clamp(point.visible ? point.y : innerHeight - 60, Math.min(top, innerHeight - 60), innerHeight - 60);
+    const x0 = T.MathUtils.clamp(point.visible ? point.x : innerWidth - point.x, half + 4, innerWidth - half - 4), y0 = T.MathUtils.clamp(point.visible ? point.y : innerHeight - 60, Math.min(top, innerHeight - 60), innerHeight - 60);
+    const { x, y } = avoidKeepOut(x0, y0, half, MARKER_HEIGHT, keepOut, { minX: half + 4, maxX: innerWidth - half - 4, minY: Math.min(top, innerHeight - 60), maxY: innerHeight - 60 });
     markerBottoms.set(f.entity.id, y); markerXs.set(f.entity.id, x);
     return `<span class="threat ${point.visible ? '' : 'edge'}" style="left:${x}px;top:${y}px">!<small>${f.entity.spec.label.toUpperCase()}</small></span>`;
   }).join('');
@@ -1051,7 +1055,7 @@ function frame(now: number) {
     // The body ends at the simulation's destination; if the world changed, recover.
     mode = 'playing'; el('evolution-banner').hidden = true;
     const events: SimEvent[] = []; checkPose(sim, simWorld, playerActorCached(), events); presentSim(events, 0);
-    if (mode === 'playing') toast(STAGES[run.stage]!.description, 'stage');
+    if (mode === 'playing') toast(stageDescription(run.stage, capsOf()), 'stage');
     syncUI();
   }
   const depth = world.player.position.y / world.surface;

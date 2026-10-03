@@ -168,3 +168,23 @@ export class EdgeArrowMemory {
     return out;
   }
 }
+
+// ---- threat marker keep-out (final review M4 / item i) ----
+export interface ScreenBox { left: number; top: number; right: number; bottom: number }
+/** A threat marker (centre `x`, bottom `y`, half width `half`, height `h`; CSS px) moved off every keep-out box (the depth label, the growth
+ *  card) by the shortest move that stays inside `bounds` (`x` in [minX, maxX], the bottom `y` in [minY, maxY]) and clears every box; unchanged
+ *  when it clears them already (or when no such move exists). */
+export function avoidKeepOut(x: number, y: number, half: number, h: number, keepOut: readonly ScreenBox[], bounds: { minX: number; maxX: number; minY: number; maxY: number }): { x: number; y: number } {
+  const clear = (px: number, py: number) => keepOut.every(b => !(px - half < b.right && b.left < px + half && py - h < b.bottom && b.top < py));
+  if (clear(x, y)) return { x, y };
+  const candidates: { x: number; y: number }[] = [];
+  for (const b of keepOut) candidates.push({ x, y: b.top - 2 }, { x, y: b.bottom + h + 2 }, { x: b.left - half - 2, y }, { x: b.right + half + 2, y });
+  // Two boxes side by side or stacked: also the corners past both.
+  for (const a of keepOut) for (const b of keepOut) if (a !== b) candidates.push({ x: a.left - half - 2, y: b.bottom + h + 2 }, { x: a.right + half + 2, y: b.bottom + h + 2 }, { x: a.left - half - 2, y: b.top - 2 }, { x: a.right + half + 2, y: b.top - 2 });
+  let best: { x: number; y: number } | null = null, bestD = Infinity;
+  for (const c of candidates) {
+    if (c.x < bounds.minX || c.x > bounds.maxX || c.y < bounds.minY || c.y > bounds.maxY || !clear(c.x, c.y)) continue;
+    const d = Math.hypot(c.x - x, c.y - y); if (d < bestD) { bestD = d; best = c; }
+  }
+  return best ?? { x, y };
+}

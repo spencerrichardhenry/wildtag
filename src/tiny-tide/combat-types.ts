@@ -9,10 +9,8 @@ export type MutVec3 = { x: number; y: number; z: number };
 export type PartUid = string; export type ActorId = string; export type ActiveSlot = 0 | 1 | 2 | 3;
 export type Tuple4<T> = [T, T, T, T];
 export type MoveKind = 'grab' | 'counter' | 'brace' | 'dash' | 'sweep';
-export type SlotClass = 'defense' | 'movement' | 'attack';
 /** The fixed slot priority (R1): defense, then movement, then attack. */
 export const MOVE_PRIORITY: readonly MoveKind[] = ['brace', 'counter', 'dash', 'grab', 'sweep'];
-export const SLOT_CLASS: Readonly<Record<MoveKind, SlotClass>> = { brace: 'defense', counter: 'defense', dash: 'movement', grab: 'attack', sweep: 'attack' };
 export type SlotPin = MoveKind | null;
 export type CombatTrait = 'weapon' | 'protection' | 'locomotion' | 'concealment';
 export type MovementMode = 'ground' | 'swim' | 'surface' | 'glide' | 'fly' | 'burrow' | 'space';

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { advanceClock, newPoise, startAction, tickAction } from '../../src/tiny-tide/action-engine';
-import { addBreakProgress, armCounters, compareRequests, isFlick, ledgerKey, releaseHold, resolveAll, resolveHit, squeezesDue, targetsHit, type Fighter, type HitRequestIn } from '../../src/tiny-tide/hit-resolver';
+import { addBreakProgress, armCounters, compareRequests, isFlick, KNOCKBACK_CAP, ledgerKey, releaseHold, resolveAll, resolveHit, squeezesDue, targetsHit, type Fighter, type HitRequestIn } from '../../src/tiny-tide/hit-resolver';
 import { newRuntime, type ActionState, type AttackSpec, type CombatRuntime, type ResolvedMove } from '../../src/tiny-tide/combat-types';
 import { resolveMove, speciesMove } from '../../src/tiny-tide/moves';
 import { POKE, WRAP } from './combat-fixture';
@@ -332,6 +332,16 @@ describe('hit resolver', () => {
     const d = player(); activeNow(act(d.rt, resolveMove({ abilityId: 'dash-side-fin' }, 1)));
     const f = resolveHit(req(crab(), d, WRAP), 1)!;
     expect(f.outcome).toBe('evaded'); expect(d.rt.heldBy).toBeNull(); expect(d.health).toBe(6);
+  });
+  // Final review M8 (spec §6.2): the knock is capped at KNOCKBACK_CAP × L_t per second. A Clawmother (L 10.08, mass 10.08) with impulse 8 on a
+  // Speck (L 1.4, mass 1): J = 8 × 10.08 × min(10.08, 2) = 161.3, Δv 161.3 uncapped; capped at 9 × 1.4 = 12.6 (1.5 L of travel at decay 6/s).
+  it('caps a big knock at KNOCKBACK_CAP × the target body length', () => {
+    const speck = player({ L: 1.4, mass: 1 }), mother = crab({ L: 10.08, mass: 10.08, knockbackResistance: .6 });
+    resolveHit(req(mother, speck, { ...POKE, impulse: 8 }), 1);
+    const v = speck.rt.externalVelocity;
+    expect(KNOCKBACK_CAP).toBe(9); expect(Math.hypot(v.x, v.y, v.z)).toBeCloseTo(KNOCKBACK_CAP * 1.4, 6);
+    // A small knock is not changed: a crab poke on a big player stays at its formula value (see the impulse test).
+    const big = player({ L: 6 }); resolveHit(req(crab(), big, POKE), 1); expect(big.rt.externalVelocity.z).toBeCloseTo(-44.8);
   });
   it('grace never shortens', () => {
     const p = player(); expect(resolveHit(req(crab(), p, POKE), 1)!.outcome).toBe('hit'); expect(p.rt.invulnerableUntil).toBeCloseTo(1.4);
