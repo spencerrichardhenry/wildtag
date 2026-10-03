@@ -17,7 +17,7 @@ describe('combat probe (smoke)', () => {
     const ids = hostileAttacks().map(a => `${a.size}:${a.attackId}`);
     expect(ids).toContain('0:crab-lunge'); expect(ids).toContain('1:squid-grab'); expect(ids).toContain('0:mother-pinch');
     expect(attackSetup('1:clawmother', 'mother-pinch-2')).toMatchObject({ startId: 'mother-pinch', bandSource: 'parent' });
-    expect(attackSetup('1:clawmother', 'mother-pinch-rage')).toMatchObject({ startId: 'mother-sweep', phase: 2 });
+    expect(attackSetup('1:clawmother', 'mother-pinch-rage')).toMatchObject({ startId: 'mother-sweep', phase: 2, band: [0, .4] });   // the sweep band, cut at the rage pinch's reach
   });
   it('merges part files, reading a stored Infinity (null in JSON) back as Infinity', () => {
     const part = JSON.parse(JSON.stringify({ p8: { maxTokens: 2, minActiveGap: Infinity, minOffScreenWindup: Infinity, windups: 3, offScreen: 0, gapPair: '', pass: true } })) as Partial<ProbeReport>;

@@ -16,7 +16,7 @@ import { BEHAVIOURS, hostileSizes, SPECIES_ATTACKS, type AttackChoice } from './
 import { SPECIES } from './species';
 import { PLAYER_ID } from './combat-world';
 import { activeStartedAt, liveActions, phaseRemaining, recoveryLength, windupLength, activeLength, holdLength } from './action-engine';
-import { closestOnSegment, shapeCentroid } from './combat-shapes';
+import { bandReach, closestOnSegment, shapeCentroid } from './combat-shapes';
 import { aiStarted } from './combat-ai';
 import { movementCapabilities } from './profiles';
 
@@ -153,7 +153,9 @@ export function attackSetup(speciesKey: string, attackId: string): AttackSetup {
   const spec = SPECIES.find(x => x.key === speciesKey)!, b = BEHAVIOURS[spec.behaviourId!]!;
   const lists: { phase: number | null; attacks: readonly AttackChoice[]; pattern?: string }[] = [{ phase: null, attacks: b.attacks }, ...(b.phases ?? []).map((ph, i) => ({ phase: i, attacks: ph.attacks, pattern: ph.patternAttackId }))];
   for (const l of lists) { const c = l.attacks.find(x => x.attackId === attackId); if (c) return { attackId, startId: attackId, band: c.band, phase: l.phase, choice: c, bandSource: 'choice' }; }
-  for (const l of lists) { const c = l.attacks.find(x => x.chainNextId === attackId); if (c) return { attackId, startId: c.attackId, band: c.band, phase: l.phase, choice: c, bandSource: 'parent' }; }
+  // A chain child: the parent's band, cut at the child's own reach (the AI asks for the child only there; T23 fix round 1: from the far end of
+  // the sweep band the rage chain was dropped and P0 had one trial).
+  for (const l of lists) { const c = l.attacks.find(x => x.chainNextId === attackId); if (c) return { attackId, startId: c.attackId, band: [c.band[0], Math.min(c.band[1], bandReach(SPECIES_ATTACKS[attackId]!))], phase: l.phase, choice: c, bandSource: 'parent' }; }
   const phase = lists.find(l => l.pattern === attackId)?.phase ?? null;
   return { attackId, startId: attackId, band: PROBE_BANDS[attackId] ?? [.5, 1], phase, choice: null, bandSource: 'probe' };
 }
@@ -502,7 +504,10 @@ export interface AttackRow { attackId: string; species: string; size: number; ki
   /** Trials that found no subject, no legal place or no start (not counted). */
   skipped: number; bandSource?: AttackSetup['bandSource'] }
 export interface P0Row { attackId: string; species: string; size: number; band: readonly [number, number]; bandSource: AttackSetup['bandSource']; near: number; mid: number; far: number;
-  trials: { near: number; mid: number; far: number };  pass: boolean }
+  trials: { near: number; mid: number; far: number };
+  /** A band point with fewer than P0_MIN_TRIALS trials: the row does not pass. */
+  insufficient: boolean; pass: boolean }
+export const P0_MIN_TRIALS = 20;
 export interface TtkRow { species: string; build: 'meat' | 'plant'; median: number; bar: number | null; pass: boolean; trials: number; faints: number; times: number[] }
 export interface ProbeReport { p0: P0Row[]; p1: AttackRow[]; p2: AttackRow[]; p3: AttackRow[]; p4: AttackRow[]; p5: TtkRow[]; p6: TtkRow[]; p7: JourneyReport[];
   p8: { maxTokens: number; minActiveGap: number; minOffScreenWindup: number; windups: number; offScreen: number; gapPair: string; pass: boolean; mix?: Record<string, number> };
@@ -573,7 +578,7 @@ function p0Rows(trials: number, watch: DirectorWatch, flush: (rows: P0Row[]) => 
     const a = acc[k]!, setup = attackSetup(x.species, x.attackId), sh = (q: { n: number; hit: number }) => q.n ? q.hit / q.n : NaN;
     const near = sh(a.near), mid = sh(a.mid), far = sh(a.far);
     return { attackId: x.attackId, species: x.species, size: x.size, band: setup.band, bandSource: setup.bandSource, near, mid, far, trials: { near: a.near.n, mid: a.mid.n, far: a.far.n },
-      pass: [near, mid, far].every(v => v >= .9 - 1e-9) };
+      insufficient: Math.min(a.near.n, a.mid.n, a.far.n) < P0_MIN_TRIALS, pass: Math.min(a.near.n, a.mid.n, a.far.n) >= P0_MIN_TRIALS && [near, mid, far].every(v => v >= .9 - 1e-9) };
   });
   for (let i = 0; i < trials; i++) {
     list.forEach((x, k) => {
@@ -734,7 +739,7 @@ export function probeMarkdown(r: ProbeReport): string {
   const rows = (title: string, list: AttackRow[]) => [`## ${title}`, '', '| Attack | Species | Size | Kind | Band | Trials | Skipped | Share | Bar | Pass |', '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
     ...list.map(x => `| ${x.attackId} | ${x.species} | ${x.size} | ${x.kind} | ${x.bandSource ?? ''} | ${x.trials} | ${x.skipped} | ${pct(x.share)} | ${x.bar === null ? '—' : pct(x.bar)} | ${x.pass ? 'yes' : '**no**'} |`), ''];
   const p0 = ['## P0 Still player hit at the band points (bar 90 %)', '', '| Attack | Species | Size | Band (L_e) | Band source | Near | Mid | Far | Trials n/m/f | Pass |', '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
-    ...r.p0.map(x => `| ${x.attackId} | ${x.species} | ${x.size} | ${x.band[0]}–${x.band[1]} | ${x.bandSource} | ${pct(x.near)} | ${pct(x.mid)} | ${pct(x.far)} | ${x.trials.near}/${x.trials.mid}/${x.trials.far} | ${x.pass ? 'yes' : '**no**'} |`), ''];
+    ...r.p0.map(x => `| ${x.attackId} | ${x.species} | ${x.size} | ${x.band[0]}–${x.band[1]} | ${x.bandSource} | ${pct(x.near)} | ${pct(x.mid)} | ${pct(x.far)} | ${x.trials.near}/${x.trials.mid}/${x.trials.far} | ${x.pass ? 'yes' : x.insufficient ? '**insufficient**' : '**no**'} |`), ''];
   const ttk = (title: string, list: TtkRow[]) => [`## ${title}`, '', '| Species | Median | Bar | Trials | Faints | Pass |', '| --- | --- | --- | --- | --- | --- |', ...list.map(x => `| ${x.species} | ${sec(x.median)} | ${x.bar === null ? '—' : sec(x.bar)} | ${x.trials} | ${x.faints} | ${x.pass ? 'yes' : '**no**'} |`), ''];
   const per = (o: Record<string, number>) => Object.entries(o).map(([k, n]) => `${k} ${n}`).join(', ') || '—';
   const perMin = (s: SizeReport) => { const m = Math.max(1e-9, s.activeSeconds / 60); return `${(s.dna.meals / m).toFixed(1)} / ${(s.dna.kills / m).toFixed(1)} / ${(s.dna.survivor / m).toFixed(1)} / ${(s.dna.alpha / m).toFixed(1)}`; };
