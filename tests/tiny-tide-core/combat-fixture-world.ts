@@ -32,3 +32,5 @@ export function tick(s: SimState, entities: Entity[], now: number, intent: Parti
   const r = s.combat.tick(ctx); s.run.health = body.health;
   return { r, body };
 }
+/** The context a species start at the player must give (spec §9.4): on screen, the player not held, a 60 Hz tick. */
+export const AT_PLAYER = { onScreen: true, playerHeld: false, tick: 1 / 60 } as const;

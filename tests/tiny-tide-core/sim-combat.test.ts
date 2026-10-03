@@ -11,7 +11,7 @@ import { stageBounds } from '../../src/tiny-tide/world-queries';
 import type { CombatInput } from '../../src/tiny-tide/combat-types';
 import { playerActorCached, playerMotionBody, simBegin, simEvolve, simFrame, simSuspend, type SimEvent, type SimState, type SimWorld } from '../../src/tiny-tide/sim';
 import { FX_BEHAVIOURS, FX_FLEER, FX_HUNTER, POKE, WRAP } from './combat-fixture';
-import { entity, FLAT, speck } from './combat-fixture-world';
+import { AT_PLAYER, entity, FLAT, speck } from './combat-fixture-world';
 
 const DT = 1 / 60;
 /** A flat stage-0 world whose ecosystem only holds `entities` (it never moves them). */
@@ -45,7 +45,7 @@ describe('the combat tick in simFrame', () => {
     const squid = entity(2, FX_HUNTER, { x: 0, y: 0, z: 0 }), { s, w } = begun([squid]);
     Object.assign(squid, ahead(s, 1.2, 1)); s.run.health = .5;
     const c = s.combat.stateOf(squid)!, centre = playerMotionBody(s, playerActorCached(s)).centre;
-    expect(typeof s.combat.startSpecies(c, 'wrap', WRAP, { x: 0, y: 0, z: -1 }, 'player', s.time, { targetAt: centre })).toBe('object');
+    expect(typeof s.combat.startSpecies(c, 'wrap', WRAP, { x: 0, y: 0, z: -1 }, 'player', s.time, { ...AT_PLAYER, targetAt: centre })).toBe('object');
     const events: SimEvent[] = [];
     for (let i = 0; i < 60 && s.mode === 'playing'; i++) events.push(...frame(s, w));
     expect(events.filter(e => e.type === 'fainted')).toHaveLength(1);
@@ -53,11 +53,22 @@ describe('the combat tick in simFrame', () => {
     // Spec §9.4, §13: the faint ends every attack at the player and returns its token.
     expect(s.combat.director.tokens).toEqual([]); expect(c.rt.actions.filter(a => a.phase !== 'interrupted')).toEqual([]);
   });
+  it('an attacker eaten on any path is forgotten after the frame: its token returns (fix round 1)', () => {
+    const crab = entity(4, FX_HUNTER, { x: 0, y: 0, z: 0 }), { s, w } = begun([crab]);
+    Object.assign(crab, ahead(s, 4, 1));
+    const c = s.combat.stateOf(crab)!, centre = playerMotionBody(s, playerActorCached(s)).centre;
+    expect(typeof s.combat.startSpecies(c, 'poke', POKE, { x: 0, y: 0, z: -1 }, 'player', s.time, { ...AT_PLAYER, targetAt: centre })).toBe('object');
+    frame(s, w); expect(s.combat.director.tokens).toHaveLength(1);
+    w.eco.consume(crab); frame(s, w);
+    expect(s.combat.entities.has(4)).toBe(false); expect(s.combat.director.tokens).toEqual([]);
+    crab.eaten = false; frame(s, w);
+    expect(s.combat.stateOf(crab)!.rt.actions).toEqual([]);
+  });
   it('an evolution ends every attack at the player and returns its token (spec §9.4, §13)', () => {
     const crab = entity(3, FX_HUNTER, { x: 0, y: 0, z: 0 }), { s, w } = begun([crab]);
     Object.assign(crab, ahead(s, 4, 1));
     const c = s.combat.stateOf(crab)!, centre = playerMotionBody(s, playerActorCached(s)).centre;
-    expect(typeof s.combat.startSpecies(c, 'poke', POKE, { x: 0, y: 0, z: -1 }, 'player', s.time, { targetAt: centre })).toBe('object');
+    expect(typeof s.combat.startSpecies(c, 'poke', POKE, { x: 0, y: 0, z: -1 }, 'player', s.time, { ...AT_PLAYER, targetAt: centre })).toBe('object');
     frame(s, w); expect(s.combat.director.tokens).toHaveLength(1);
     simEvolve(s, { position: s.physical, orientation: s.rt.orientation });
     expect(s.combat.director.tokens).toEqual([]); expect(c.rt.actions.filter(a => a.phase !== 'interrupted')).toEqual([]);

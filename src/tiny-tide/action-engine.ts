@@ -52,6 +52,11 @@ export function phaseRemaining(a: ActionState, tau: number): number {
     default: return 0;
   }
 }
+/** The game time at which an action in its active phase became active (spec §9.4, T11 fix round 1: the director's spacing rule is
+ *  defined in game time). `clockTime`: the game time up to which `rt.actionClock` has run (the end of the last tick). Exact while no
+ *  hit-stop froze the clock since the active start; null outside the active phase. */
+export const activeStartedAt = (rt: CombatRuntime, a: ActionState, clockTime: number): number | null =>
+  a.phase === 'active' ? clockTime - (rt.actionClock - a.phaseStartedAt) : null;
 /** The action-clock time at which the action becomes active, from now (for the director and telegraph fill). */
 export const activeStartsIn = (a: ActionState, tau: number): number => a.phase === 'windup' ? Math.max(0, windupLength(a) - (tau - a.phaseStartedAt)) : 0;
 

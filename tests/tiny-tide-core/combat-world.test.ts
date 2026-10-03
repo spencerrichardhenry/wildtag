@@ -3,14 +3,14 @@
 // R17 (herbivore dispatch), R18 (one pose per entity per tick) and the T5 carry (reconcileHolds frees the other side).
 import { describe, expect, it } from 'vitest';
 import { SIZES } from '../../src/tiny-tide/biomes';
-import { stagger } from '../../src/tiny-tide/action-engine';
+import { activeStartedAt, stagger } from '../../src/tiny-tide/action-engine';
 import { resetRuntime } from '../../src/tiny-tide/lifecycle';
 import { AIM_PITCH_LIMIT, clampAimPitch } from '../../src/tiny-tide/combat-world';
 import type { AttackSpec, Vec3, WorldShape } from '../../src/tiny-tide/combat-types';
 import { RELEASED } from '../../src/tiny-tide/input';
 import { playerActorCached, playerBody, playerMoves } from '../../src/tiny-tide/sim';
 import { POKE, WRAP, FX_HUNTER, FX_FLEER } from './combat-fixture';
-import { entity, speck, tick } from './combat-fixture-world';
+import { AT_PLAYER, entity, speck, tick } from './combat-fixture-world';
 
 const ahead = (d: number) => ({ x: 0, y: 1 - .35 * SIZES[1]!, z: d });   // a tier-1 entity's origin so that its hull centre is level with the Speck
 const R1 = .35 * SIZES[1]!;   // a tier-1 hull radius
@@ -36,7 +36,7 @@ describe('combat world', () => {
   });
   it('a species grab holds the player, squeezes on its clock, and a break-free releases it', () => {
     const s = speck(), squid = entity(3, FX_HUNTER, ahead(1.2)), c = s.combat.stateOf(squid)!;
-    const a = s.combat.startSpecies(c, 'wrap', WRAP, { x: 0, y: 0, z: -1 }, 'player', 0, { targetAt: AT });
+    const a = s.combat.startSpecies(c, 'wrap', WRAP, { x: 0, y: 0, z: -1 }, 'player', 0, { ...AT_PLAYER, targetAt: AT });
     expect(typeof a).not.toBe('string');
     let now = 0; const before = s.run.health;
     for (let i = 0; i < 50 && s.rt.heldBy === null; i++) { now += 1 / 60; tick(s, [squid], now); }
@@ -50,7 +50,7 @@ describe('combat world', () => {
   });
   it('blocked grab motion ends the hold', () => {
     const s = speck(), squid = entity(4, FX_HUNTER, ahead(1.2)), c = s.combat.stateOf(squid)!;
-    s.combat.startSpecies(c, 'wrap', WRAP, { x: 0, y: 0, z: -1 }, 'player', 0, { targetAt: AT });
+    s.combat.startSpecies(c, 'wrap', WRAP, { x: 0, y: 0, z: -1 }, 'player', 0, { ...AT_PLAYER, targetAt: AT });
     let now = 0; for (let i = 0; i < 50 && s.rt.heldBy === null; i++) { now += 1 / 60; tick(s, [squid], now); }
     expect(s.combat.onPlayerStep(s.rt, { status: 'blocked', progress: .6 }, now)).toBe(false); expect(s.rt.heldBy).toBe('e4');
     expect(s.combat.onPlayerStep(s.rt, { status: 'blocked', progress: .4 }, now)).toBe(true); expect(s.rt.heldBy).toBeNull();
@@ -58,7 +58,7 @@ describe('combat world', () => {
   });
   it('a dash replaces the controlled velocity, keeps .3 of it at the end, and evades a strike', () => {
     const s = speck(), crab = entity(5, FX_HUNTER, ahead(2.2)), c = s.combat.stateOf(crab)!;
-    s.combat.startSpecies(c, 'poke', POKE, { x: 0, y: 0, z: -1 }, 'player', 0, { targetAt: AT });
+    s.combat.startSpecies(c, 'poke', POKE, { x: 0, y: 0, z: -1 }, 'player', 0, { ...AT_PLAYER, targetAt: AT });
     let now = 0, outcome = '';
     for (let i = 0; i < 60 && !outcome; i++) {
       now += 1 / 60;
@@ -79,16 +79,16 @@ describe('combat world', () => {
 describe('species shape origin and aim (review R2, R3, R4)', () => {
   it('R2: an input or fixed-at-start shape starts at the hull front; a centre shape at the hull centre; the claw point uses the same origin', () => {
     const s = speck(), crab = entity(10, FX_HUNTER, ahead(6)), c = s.combat.stateOf(crab)!;
-    const a = s.combat.startSpecies(c, 'poke', POKE, { x: 0, y: 0, z: -1 }, 'player', 0, { targetAt: AT });
+    const a = s.combat.startSpecies(c, 'poke', POKE, { x: 0, y: 0, z: -1 }, 'player', 0, { ...AT_PLAYER, targetAt: AT });
     if (typeof a === 'string') throw new Error(a);
     const [cone] = s.combat.speciesShapes(c, a, 0);
     expect(cone).toMatchObject({ kind: 'cone', apex: { x: 0, y: expect.closeTo(1, 9), z: expect.closeTo(6 - R1, 9) } });
-    const fixed = { ...POKE, id: 'poke-fixed', aimMode: 'fixed-at-start' as const, aimLockAtSeconds: 0 }, f = s.combat.startSpecies(s.combat.stateOf(entity(11, FX_HUNTER, ahead(6)))!, 'poke-fixed', fixed, { x: 0, y: 0, z: -1 }, 'player', 0, { targetAt: AT });
+    const fixed = { ...POKE, id: 'poke-fixed', aimMode: 'fixed-at-start' as const, aimLockAtSeconds: 0 }, f = s.combat.startSpecies(s.combat.stateOf(entity(11, FX_HUNTER, ahead(6)))!, 'poke-fixed', fixed, { x: 0, y: 0, z: -1 }, 'player', 0, { ...AT_PLAYER, targetAt: AT });
     if (typeof f === 'string') throw new Error(f);
     expect(f.lockedShapes![0]).toMatchObject({ kind: 'cone', apex: { z: expect.closeTo(6 - R1, 9) } });
     s.combat.director.releaseAll();   // two wind-ups at the player hold both tokens (spec §9.4): free them for a third
     const burst: AttackSpec = { ...POKE, id: 'burst', aimMode: 'centre', aimLockAtSeconds: 0, shape: { kind: 'capsule', start: { x: 0, y: 0, z: 0 }, end: { x: 0, y: 0, z: 0 }, radius: 1.6 } };
-    const b = s.combat.startSpecies(s.combat.stateOf(entity(12, FX_HUNTER, ahead(6)))!, 'burst', burst, { x: 0, y: 0, z: -1 }, 'player', 0, { targetAt: AT });
+    const b = s.combat.startSpecies(s.combat.stateOf(entity(12, FX_HUNTER, ahead(6)))!, 'burst', burst, { x: 0, y: 0, z: -1 }, 'player', 0, { ...AT_PLAYER, targetAt: AT });
     if (typeof b === 'string') throw new Error(b);
     expect(b.lockedShapes![0]).toMatchObject({ kind: 'capsule', start: { z: expect.closeTo(6, 9) } });
     expect(s.combat.clawPoint(c, a, 2, 0).z).toBeCloseTo(6 - R1 - .5 * 2, 9);   // front − CLAW_REACH × L_t
@@ -97,10 +97,10 @@ describe('species shape origin and aim (review R2, R3, R4)', () => {
     const s = speck(), crab = entity(13, FX_HUNTER, ahead(6)), c = s.combat.stateOf(crab)!;   // FX_HUNTER moves on the ground
     expect(c.entity.spec.movementProfileId).toBe('sp-ground');
     const centre = { x: 0, y: 1, z: 6 };
-    const low = s.combat.startSpecies(c, 'poke', POKE, { x: 0, y: 0, z: -1 }, 'player', 0, { targetAt: { x: 0, y: 1 - 2, z: 6 - 4 } });
+    const low = s.combat.startSpecies(c, 'poke', POKE, { x: 0, y: 0, z: -1 }, 'player', 0, { ...AT_PLAYER, targetAt: { x: 0, y: 1 - 2, z: 6 - 4 } });
     if (typeof low === 'string') throw new Error(low);
     expect(pitchOf(low.aim)).toBeCloseTo(-Math.atan2(2, 4), 6);
-    const steep = s.combat.startSpecies(s.combat.stateOf(entity(14, FX_HUNTER, ahead(6)))!, 'poke', POKE, { x: 0, y: 0, z: -1 }, 'player', 0, { targetAt: { x: 0, y: centre.y - 10, z: 5 } });
+    const steep = s.combat.startSpecies(s.combat.stateOf(entity(14, FX_HUNTER, ahead(6)))!, 'poke', POKE, { x: 0, y: 0, z: -1 }, 'player', 0, { ...AT_PLAYER, targetAt: { x: 0, y: centre.y - 10, z: 5 } });
     if (typeof steep === 'string') throw new Error(steep);
     expect(pitchOf(steep.aim)).toBeCloseTo(-AIM_PITCH_LIMIT, 9);
     expect(pitchOf(clampAimPitch({ x: 0, y: 1, z: 0 }, { x: 0, y: 0, z: 1 }))).toBeCloseTo(AIM_PITCH_LIMIT, 9);
@@ -110,7 +110,7 @@ describe('species shape origin and aim (review R2, R3, R4)', () => {
     const narrow: AttackSpec = { ...POKE, id: 'narrow', shape: { kind: 'cone', range: 1.2, halfAngle: 8 * Math.PI / 180 }, maxTrackingRadiansPerSecond: 2.5 };
     const run = (track: boolean) => {
       const s = speck(), crab = entity(15, FX_HUNTER, { x: 0, y: 1 + 2.5 - R1, z: 4.5 + 1 }), c = s.combat.stateOf(crab)!;
-      s.combat.startSpecies(c, 'narrow', narrow, { x: 0, y: 0, z: -1 }, track ? 'player' : null, 0, { targetAt: { x: 0, y: 1 + 2.5, z: 0 } });   // a level target point: the start aim is level, the tracking turns it down
+      s.combat.startSpecies(c, 'narrow', narrow, { x: 0, y: 0, z: -1 }, track ? 'player' : null, 0, { ...AT_PLAYER, targetAt: { x: 0, y: 1 + 2.5, z: 0 } });   // a level target point: the start aim is level, the tracking turns it down
       let now = 0, outcome = '';
       for (let i = 0; i < 50 && !outcome; i++) { now += 1 / 60; outcome = tick(s, [crab], now).r.events[0]?.outcome ?? ''; }
       return outcome;
@@ -122,7 +122,7 @@ describe('species shape origin and aim (review R2, R3, R4)', () => {
     const s = speck(), mother = entity(16, FX_HUNTER, ahead(9)), c = s.combat.stateOf(mother)!;
     const emerge: AttackSpec = { ...POKE, id: 'emerge', aimMode: 'fixed-at-start', aimLockAtSeconds: 0, origin: 'target', blockable: false, telegraphProfileId: 'red-coil',
       shape: { kind: 'capsule', start: { x: 0, y: 0, z: 0 }, end: { x: 0, y: 0, z: 0 }, radius: .35 } };
-    const at = { x: .4, y: 1, z: .3 }, a = s.combat.startSpecies(c, 'emerge', emerge, { x: 0, y: 0, z: -1 }, 'player', 0, { targetAt: at });
+    const at = { x: .4, y: 1, z: .3 }, a = s.combat.startSpecies(c, 'emerge', emerge, { x: 0, y: 0, z: -1 }, 'player', 0, { ...AT_PLAYER, targetAt: at });
     if (typeof a === 'string') throw new Error(a);
     expect(a.lockedShapes![0]).toMatchObject({ kind: 'capsule', start: at, end: at });
     mother.z = 20;   // the attacker moves away: the shape stays at the target point
@@ -138,7 +138,7 @@ describe('armed Counters (review R5)', () => {
     const lunge: AttackSpec = { ...POKE, id: 'lunge', shape: { kind: 'capsule', start: { x: 0, y: 0, z: 0 }, end: { x: 0, y: 0, z: 1.4 }, radius: .22 }, lunge: { distanceBodyLengths: 1.2 },
       windupSeconds: .6, aimLockAtSeconds: .35, activeSeconds: .3, interruptible: false };
     const s = speck([{ id: 'spike', t: .5, angle: 0, scale: 1, mirror: false }]), crab = entity(20, FX_HUNTER, ahead(8)), c = s.combat.stateOf(crab)!;
-    const a = s.combat.startSpecies(c, 'lunge', lunge, { x: 0, y: 0, z: -1 }, 'player', 0, { targetAt: AT });
+    const a = s.combat.startSpecies(c, 'lunge', lunge, { x: 0, y: 0, z: -1 }, 'player', 0, { ...AT_PLAYER, targetAt: AT });
     if (typeof a === 'string') throw new Error(a);
     let now = 0; const events: string[] = [];
     for (let i = 1; i <= 60; i++) {
@@ -164,7 +164,7 @@ describe('holds end on both sides (T5 carry: reconcileHolds)', () => {
   }
   function speciesHolds(hp = 20) {
     const s = speck(), squid = entity(31, { ...FX_HUNTER, hp }, ahead(1.2)), c = s.combat.stateOf(squid)!;
-    s.combat.startSpecies(c, 'wrap', WRAP, { x: 0, y: 0, z: -1 }, 'player', 0, { targetAt: AT });
+    s.combat.startSpecies(c, 'wrap', WRAP, { x: 0, y: 0, z: -1 }, 'player', 0, { ...AT_PLAYER, targetAt: AT });
     let now = 0; for (let i = 0; i < 50 && s.rt.heldBy === null; i++) { now += 1 / 60; tick(s, [squid], now); }
     expect(s.rt.heldBy).toBe('e31');
     s.rt.breakProgress = .5;
@@ -236,7 +236,7 @@ describe('the basic dispatch by diet (review R17)', () => {
     const hunting = { ...inCone(42), mode: 'hunt' as const };
     expect(tick(speck([], 'mouth_nibbler'), [hunting], 0, { basicPressed: true, basicHeld: true }).r).toMatchObject({ started: ['bite'], chomp: false });
     const s = speck([], 'mouth_nibbler'), winding = inCone(43);
-    s.combat.startSpecies(s.combat.stateOf(winding)!, 'poke', POKE, { x: 0, y: 0, z: -1 }, 'player', 0, { targetAt: AT });   // an action that targets the player
+    s.combat.startSpecies(s.combat.stateOf(winding)!, 'poke', POKE, { x: 0, y: 0, z: -1 }, 'player', 0, { ...AT_PLAYER, targetAt: AT });   // an action that targets the player
     expect(tick(s, [winding], 0, { basicPressed: true, basicHeld: true }).r).toMatchObject({ started: ['bite'], chomp: false });
   });
   it('a herbivore Bites a species that hit it in the last few seconds, and chomps again after', () => {
@@ -248,7 +248,7 @@ describe('the basic dispatch by diet (review R17)', () => {
   });
   it('a species that hits the player is marked as engaged', () => {
     const s = speck([], 'mouth_nibbler'), crab = entity(46, FX_HUNTER, ahead(2.2)), c = s.combat.stateOf(crab)!;
-    s.combat.startSpecies(c, 'poke', POKE, { x: 0, y: 0, z: -1 }, 'player', 0, { targetAt: AT });
+    s.combat.startSpecies(c, 'poke', POKE, { x: 0, y: 0, z: -1 }, 'player', 0, { ...AT_PLAYER, targetAt: AT });
     let now = 0; for (let i = 0; i < 40 && c.lastAttackedPlayerAt < 0; i++) { now += 1 / 60; tick(s, [crab], now); }
     expect(c.lastAttackedPlayerAt).toBeCloseTo(now, 9);
   });
@@ -257,7 +257,7 @@ describe('the basic dispatch by diet (review R17)', () => {
 describe('engagement counts every contact (review R17, T8a review Minor 1)', () => {
   it('a blocked contact marks the species as engaged', () => {
     const s = speck([{ id: 'shell_plate', t: .55, angle: 0, scale: 1, mirror: false }], 'mouth_nibbler'), crab = entity(47, FX_HUNTER, ahead(2.2)), c = s.combat.stateOf(crab)!;
-    s.combat.startSpecies(c, 'poke', POKE, { x: 0, y: 0, z: -1 }, 'player', 0, { targetAt: AT });
+    s.combat.startSpecies(c, 'poke', POKE, { x: 0, y: 0, z: -1 }, 'player', 0, { ...AT_PLAYER, targetAt: AT });
     const brace = { activeHeld: [true, false, false, false] as [boolean, boolean, boolean, boolean] };   // slot 1 is Brace (the Shell plate)
     let now = 0, outcome = '';
     for (let i = 0; i < 40 && !outcome; i++) { now += 1 / 60; outcome = tick(s, [crab], now, i === 0 ? { ...brace, activePressed: [true, false, false, false] } : brace).r.events[0]?.outcome ?? ''; }
@@ -281,7 +281,7 @@ describe('species starts need a target point (T8a review Minors 3 and 4)', () =>
 describe('poses per tick (review R18)', () => {
   it('a pose read outside a tick is fresh after the entity moved', () => {
     const s = speck(), crab = entity(52, FX_HUNTER, ahead(6)), c = s.combat.stateOf(crab)!;
-    const a = s.combat.startSpecies(c, 'poke', POKE, { x: 0, y: 0, z: -1 }, 'player', 0, { targetAt: AT });
+    const a = s.combat.startSpecies(c, 'poke', POKE, { x: 0, y: 0, z: -1 }, 'player', 0, { ...AT_PLAYER, targetAt: AT });
     if (typeof a === 'string') throw new Error(a);
     tick(s, [crab], 1 / 60);
     const z0 = (s.combat.speciesShapes(c, a, 0)[0] as Extract<WorldShape, { kind: 'cone' }>).apex.z;
@@ -290,7 +290,7 @@ describe('poses per tick (review R18)', () => {
   });
   it('samples each live combat entity\'s pose once per tick, however many users ask', () => {
     const s = speck(), a = entity(50, FX_HUNTER, ahead(2.5)), b = entity(51, FX_HUNTER, { ...ahead(3), x: 1 }), c = s.combat.stateOf(b)!;
-    s.combat.startSpecies(c, 'poke', POKE, { x: 0, y: 0, z: -1 }, 'player', 0, { targetAt: AT });
+    s.combat.startSpecies(c, 'poke', POKE, { x: 0, y: 0, z: -1 }, 'player', 0, { ...AT_PLAYER, targetAt: AT });
     let now = 0;
     for (let i = 0; i < 30; i++) {
       now += 1 / 60;
@@ -342,32 +342,71 @@ describe('a bracing phone player turns toward the move stick (review R16, T10)',
 
 describe('director tokens (spec §9.4, plan review R6)', () => {
   const at = (i: number) => ({ ...ahead(5), x: 1.5 * i });   // out of reach of the Speck: no contact
-  /** Ticks to `until` and returns each action's first active tick (world time of the tick). */
-  function run(s: ReturnType<typeof speck>, ents: ReturnType<typeof entity>[], from: number, until: number, each?: (now: number, i: number) => void) {
+  /** Ticks (length `dt`) to `until` and returns each action's active start in game time (fix round 1: the spacing rule is defined in
+   *  game time, read from the action clock; a frame-based observer may see up to one tick less). */
+  function run(s: ReturnType<typeof speck>, ents: ReturnType<typeof entity>[], from: number, until: number, each?: (now: number, i: number) => void, dt = 1 / 60) {
     const entered = new Map<string, number>(); let now = from, i = 0;
     while (now < until - 1e-9) {
-      now += 1 / 60; i++; tick(s, ents, now);
-      for (const e of ents) for (const a of s.combat.stateOf(e)!.rt.actions) if (a.phase === 'active' && !entered.has(a.instanceId)) entered.set(a.instanceId, now);
+      now += dt; i++; tick(s, ents, now, {}, dt);
+      for (const e of ents) { const rt = s.combat.stateOf(e)!.rt; for (const a of rt.actions) if (a.phase === 'active' && !entered.has(a.instanceId)) entered.set(a.instanceId, activeStartedAt(rt, a, now)!); }
       each?.(now, i);
     }
     return entered;
   }
   it('wind-ups at the player take director tokens: two at most, active starts .25 s apart, returned at the end of active', () => {
     const s = speck(), ents = [1, 2, 3].map(i => entity(10 + i, FX_HUNTER, ahead(4 + i))), cs = ents.map(e => s.combat.stateOf(e)!);
-    const a = s.combat.startSpecies(cs[0]!, 'poke', POKE, { x: 0, y: 0, z: -1 }, 'player', 0, { targetAt: AT }), b = s.combat.startSpecies(cs[1]!, 'poke', POKE, { x: 0, y: 0, z: -1 }, 'player', 0, { targetAt: AT });
+    const a = s.combat.startSpecies(cs[0]!, 'poke', POKE, { x: 0, y: 0, z: -1 }, 'player', 0, { ...AT_PLAYER, targetAt: AT }), b = s.combat.startSpecies(cs[1]!, 'poke', POKE, { x: 0, y: 0, z: -1 }, 'player', 0, { ...AT_PLAYER, targetAt: AT });
     expect(typeof a).not.toBe('string'); expect(typeof b).not.toBe('string');
     if (typeof b === 'string') return;
     expect(b.windupExtension).toBeCloseTo(.25);   // both would be active at .5
-    expect(s.combat.startSpecies(cs[2]!, 'poke', POKE, { x: 0, y: 0, z: -1 }, 'player', 0, { targetAt: AT })).toBe('token');
+    expect(s.combat.startSpecies(cs[2]!, 'poke', POKE, { x: 0, y: 0, z: -1 }, 'player', 0, { ...AT_PLAYER, targetAt: AT })).toBe('token');
     expect(cs[2]!.rt.actions).toEqual([]); expect(cs[2]!.tokenRetryAt).toBeCloseTo(.2, 9);
     let now = 0; for (let i = 0; i < 45; i++) { now += 1 / 60; tick(s, ents, now); }   // .75 s: the first is past its active (.5–.62)
     expect(s.combat.director.tokens).toHaveLength(1); expect(s.rt.lastThreatAt).toBeGreaterThan(0);
     s.combat.cancelAttacksOnPlayer(s.rt); expect(s.combat.director.tokens).toEqual([]);
     expect(cs[1]!.rt.actions.every(x => x.phase === 'interrupted')).toBe(true);
+    expect(cs[1]!.rt.cooldowns.get('e12:root:poke')!).toBeLessThanOrEqual(cs[1]!.rt.actionClock + 1e-9);   // a faint or evolve spends no cooldown
+  });
+  it('active starts are .25 s apart in game time at a 30 Hz and a 20 Hz tick (fix round 1)', () => {
+    for (const dt of [1 / 30, .05]) {
+      const s = speck(), ents = [entity(80, FX_HUNTER, at(0)), entity(81, FX_HUNTER, at(1))], [ca, cb] = ents.map(e => s.combat.stateOf(e)!);
+      const a = s.combat.startSpecies(ca!, 'poke', POKE, { x: 0, y: 0, z: -1 }, 'player', 0, { ...AT_PLAYER, targetAt: AT, tick: dt });
+      const b = s.combat.startSpecies(cb!, 'poke', { ...POKE, windupSeconds: .53 }, { x: 0, y: 0, z: -1 }, 'player', 0, { ...AT_PLAYER, targetAt: AT, tick: dt });
+      if (typeof a === 'string' || typeof b === 'string') throw new Error('refused');
+      const entered = run(s, ents, 0, 1.5, undefined, dt);
+      expect(entered.get(b.instanceId)! - entered.get(a.instanceId)!, `dt ${dt}`).toBeGreaterThanOrEqual(.25 - 1e-9);
+    }
+  });
+  it('a start at the player without its context (onScreen, playerHeld, tick) is refused', () => {
+    const s = speck(), c = s.combat.stateOf(entity(82, FX_HUNTER, at(0)))!;
+    expect(s.combat.startSpecies(c, 'poke', POKE, { x: 0, y: 0, z: -1 }, 'player', 0, { targetAt: AT })).toBe('no-context');
+    expect(s.combat.startSpecies(c, 'poke', POKE, { x: 0, y: 0, z: -1 }, 'player', 0, { targetAt: AT, onScreen: true, playerHeld: false })).toBe('no-context');
+    expect(c.rt.actions).toEqual([]); expect(s.combat.director.tokens).toEqual([]);
+    expect(typeof s.combat.startSpecies(c, 'poke', POKE, { x: 0, y: 0, z: -1 }, null, 0)).toBe('object');   // not at the player: no context needed
+  });
+  it('reset returns every token', () => {
+    const s = speck(), c = s.combat.stateOf(entity(83, FX_HUNTER, at(0)))!;
+    s.combat.startSpecies(c, 'poke', POKE, { x: 0, y: 0, z: -1 }, 'player', 0, { ...AT_PLAYER, targetAt: AT });
+    expect(s.combat.director.tokens).toHaveLength(1);
+    s.combat.reset(); expect(s.combat.director.tokens).toEqual([]);
+  });
+  it('an attacker eaten in its wind-up: the action ends and its token returns; after the respawn it has no running action (fix round 1)', () => {
+    const s = speck(), crab = entity(84, FX_HUNTER, at(0)), c = s.combat.stateOf(crab)!;
+    const a = s.combat.startSpecies(c, 'poke', POKE, { x: 0, y: 0, z: -1 }, 'player', 0, { ...AT_PLAYER, targetAt: AT });
+    if (typeof a === 'string') throw new Error(a);
+    tick(s, [crab], 1 / 60);
+    crab.eaten = true;   // eco.consume on some path that does not forget the combat state
+    tick(s, [crab], 2 / 60);
+    expect(a.phase).toBe('interrupted'); expect(s.combat.director.tokens).toEqual([]);
+    expect(c.rt.cooldowns.get('e84:root:poke')!).toBeLessThanOrEqual(c.rt.actionClock + 1e-9);
+    crab.eaten = false;   // the respawn reuses the same Entity object
+    let now = 2 / 60; for (let i = 0; i < 40; i++) tick(s, [crab], now += 1 / 60);
+    expect(s.combat.stateOf(crab)!.rt.actions.filter(x => x.phase !== 'interrupted')).toEqual([]);
+    expect(s.combat.director.tokens).toEqual([]);
   });
   it('R6: the grant estimate adds one tick (the action starts on the next combat tick); an attacker\'s hit-stop moves its estimate', () => {
     const s = speck(), ents = [entity(70, FX_HUNTER, at(0)), entity(71, FX_HUNTER, at(1))], [ca, cb] = ents.map(e => s.combat.stateOf(e)!);
-    const a = s.combat.startSpecies(ca!, 'poke', POKE, { x: 0, y: 0, z: -1 }, 'player', 0, { targetAt: AT }), b = s.combat.startSpecies(cb!, 'poke', POKE, { x: 0, y: 0, z: -1 }, 'player', 0, { targetAt: AT });
+    const a = s.combat.startSpecies(ca!, 'poke', POKE, { x: 0, y: 0, z: -1 }, 'player', 0, { ...AT_PLAYER, targetAt: AT }), b = s.combat.startSpecies(cb!, 'poke', POKE, { x: 0, y: 0, z: -1 }, 'player', 0, { ...AT_PLAYER, targetAt: AT });
     if (typeof a === 'string' || typeof b === 'string') throw new Error('refused');
     expect(s.combat.director.tokens.map(t => t.activeStart)).toEqual([expect.closeTo(.5 + 1 / 60, 9), expect.closeTo(.75 + 1 / 60, 9)]);
     // A hit on the first attacker after the tick at .2 s freezes its clock for .1 s: its active start moves to .6, the second wind-up grows
@@ -378,13 +417,14 @@ describe('director tokens (spec §9.4, plan review R6)', () => {
     });
     expect(b.windupExtension).toBeCloseTo(.35, 9);
     expect(entered.get(b.instanceId)! - entered.get(a.instanceId)!).toBeGreaterThanOrEqual(.25 - 1e-9);
+    expect(entered.get(b.instanceId)! - entered.get(a.instanceId)!).toBeCloseTo(.25, 9);   // in game time, exactly the gap
   });
   it('R6 (probe P8): when the spacing needs more than the .5 s extension, the later wind-up ends; its token returns and its cooldown is not spent', () => {
     const QUICK: AttackSpec = { ...POKE, id: 'quick', windupSeconds: .25, aimLockAtSeconds: .1 };
     const s = speck(), ents = [entity(72, FX_HUNTER, at(0)), entity(73, FX_HUNTER, at(1))], [ca, cb] = ents.map(e => s.combat.stateOf(e)!);
-    const a = s.combat.startSpecies(ca!, 'poke', POKE, { x: 0, y: 0, z: -1 }, 'player', 0, { targetAt: AT });
+    const a = s.combat.startSpecies(ca!, 'poke', POKE, { x: 0, y: 0, z: -1 }, 'player', 0, { ...AT_PLAYER, targetAt: AT });
     // Off-screen: .6 s at least (ext .35); then .25 s after the first (ext .5): the whole extension budget is spent.
-    const b = s.combat.startSpecies(cb!, 'quick', QUICK, { x: 0, y: 0, z: -1 }, 'player', 0, { targetAt: AT, onScreen: false });
+    const b = s.combat.startSpecies(cb!, 'quick', QUICK, { x: 0, y: 0, z: -1 }, 'player', 0, { ...AT_PLAYER, targetAt: AT, onScreen: false });
     if (typeof a === 'string' || typeof b === 'string') throw new Error('refused');
     expect(b.windupExtension).toBeCloseTo(.5, 9);
     let cancelledAt = -1;
@@ -400,9 +440,9 @@ describe('director tokens (spec §9.4, plan review R6)', () => {
   });
   it('a retry waits .2 s; off-screen wind-ups last .6 s at least; no token while the player is held', () => {
     const s = speck(), ents = [entity(74, FX_HUNTER, at(0)), entity(75, FX_HUNTER, at(1))], [ca, cb] = ents.map(e => s.combat.stateOf(e)!);
-    expect(s.combat.startSpecies(ca!, 'poke', POKE, { x: 0, y: 0, z: -1 }, 'player', 0, { targetAt: AT, playerHeld: true })).toBe('token');
-    expect(s.combat.startSpecies(ca!, 'poke', POKE, { x: 0, y: 0, z: -1 }, 'player', .1, { targetAt: AT })).toBe('token');   // before .2
-    const off = s.combat.startSpecies(ca!, 'poke', POKE, { x: 0, y: 0, z: -1 }, 'player', .2, { targetAt: AT, onScreen: false });
+    expect(s.combat.startSpecies(ca!, 'poke', POKE, { x: 0, y: 0, z: -1 }, 'player', 0, { ...AT_PLAYER, targetAt: AT, playerHeld: true })).toBe('token');
+    expect(s.combat.startSpecies(ca!, 'poke', POKE, { x: 0, y: 0, z: -1 }, 'player', .1, { ...AT_PLAYER, targetAt: AT })).toBe('token');   // before .2
+    const off = s.combat.startSpecies(ca!, 'poke', POKE, { x: 0, y: 0, z: -1 }, 'player', .2, { ...AT_PLAYER, targetAt: AT, onScreen: false });
     if (typeof off === 'string') throw new Error(off);
     expect(off.windupExtension).toBeCloseTo(.1, 9);
     expect(typeof s.combat.startSpecies(cb!, 'poke', POKE, { x: 0, y: 0, z: -1 }, null, .2)).toBe('object');   // no player target: no token
@@ -410,7 +450,7 @@ describe('director tokens (spec §9.4, plan review R6)', () => {
   });
   it('a grab holds its token through the hold and returns it at recovery', () => {
     const s = speck(), squid = entity(76, FX_HUNTER, ahead(1.2)), c = s.combat.stateOf(squid)!;
-    const a = s.combat.startSpecies(c, 'wrap', WRAP, { x: 0, y: 0, z: -1 }, 'player', 0, { targetAt: AT });
+    const a = s.combat.startSpecies(c, 'wrap', WRAP, { x: 0, y: 0, z: -1 }, 'player', 0, { ...AT_PLAYER, targetAt: AT });
     if (typeof a === 'string') throw new Error(a);
     const phases: string[] = []; let now = 0;
     for (let i = 0; i < 150 && a.phase !== 'interrupted'; i++) {

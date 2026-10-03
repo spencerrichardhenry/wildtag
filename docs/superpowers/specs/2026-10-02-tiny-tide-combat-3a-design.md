@@ -987,6 +987,18 @@ Before the lock they follow the live aim; after the lock they are fixed.
   extension would then be more than 0.5 s, the wind-up **ends**: its token
   returns, its cooldown is not spent, and its attacker asks again after
   0.2 s. Two active starts at the player are never less than 0.25 s apart.
+- **Game time** (T11 fix round 1): active starts are ≥ 0.25 s apart in game
+  time (read from the action clock: `activeStartedAt`); a frame-based
+  observer may see up to one tick less.
+- `rt.lastThreatAt` of the player is set at the end of each combat tick
+  while a wind-up at the player runs.
+- A faint or an evolution ends every attack at the player and returns every
+  token; it does not spend the attackers' cooldowns.
+- A token whose attacker is no longer live (eaten, inactive, gone) returns,
+  and its action ends without a cooldown. The sim forgets the combat state
+  of every eaten entity at the end of the frame.
+- A start at the player must give `onScreen`, `playerHeld` and the tick
+  length; without them it is refused (`no-context`).
 - **Off-screen:** when the shape centroid is off-screen at the request,
   `windup + extension ≥ 0.6 s`. `sim.ts` gets an `isOnScreen(p)` function
   from `main.ts`; the probe uses a fixed camera model (§14.3).

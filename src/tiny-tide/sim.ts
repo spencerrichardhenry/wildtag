@@ -269,6 +269,7 @@ export function simFrame(s: SimState, w: SimWorld, input: SimInput): SimEvent[] 
     for (const event of accepted) { if (s.mode !== 'playing') break; s.acceptedHits++; takeHit(s, event, events); }
   }
   if (s.mode === 'fainted') tickFaint(s, w, dt, events);
+  s.combat.forgetEaten();   // T11 fix round 1: an entity eaten on any path (a kill, a chomp, a failed install) starts over in combat
   if (active) s.time += dt;
   return events;
 }

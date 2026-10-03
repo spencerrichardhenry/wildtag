@@ -29,8 +29,6 @@ export const EVENT_LOG = 20;
 export const AIM_PITCH_LIMIT = .6;
 /** Review R17: a species that made contact with the player (any outcome) in the last ENGAGED_SECONDS (world time) is engaged with it. */
 export const ENGAGED_SECONDS = 3;
-/** The combat tick length that a species start assumes when the caller gives none (the action's clock starts on the next tick). */
-export const DEFAULT_TICK = 1 / 60;
 
 /** `lastAttackedPlayerAt`: world time of the last event in which this species made contact with the player, any outcome (hit, blocked,
  *  evaded, countered…; review R17 engagement). `tokenRetryAt`: world time before which a new wind-up at the player is refused (a refused
@@ -38,7 +36,8 @@ export const DEFAULT_TICK = 1 / 60;
 export interface EntityCombat { id: ActorId; entity: Entity; rt: CombatRuntime; poise: PoiseMeter; behaviour: SpeciesBehaviour; maxHp: number; lastDamagedAt: number; lastAttackedPlayerAt: number; tokenRetryAt: number }
 /** A species start's options. `targetAt`: the target's hurtbox centre (see startSpecies). `onScreen`: the shape's centroid is on screen;
  *  `playerHeld`: the player is in a hold (spec §9.4). `playing`: start rule 1. `tick`: the combat tick length (plan review R6: the action's
- *  clock starts on the next tick, so the director's estimate adds one). */
+ *  clock starts on the next tick, so the director's estimate adds one). `onScreen`, `playerHeld` and `tick` are required for an attack on
+ *  the player (else 'no-context'). */
 export interface SpeciesStartOptions { targetAt?: Vec3 | null; onScreen?: boolean; playerHeld?: boolean; playing?: boolean; tick?: number }
 /** The player's body this tick (physical units). `health` is in hearts; the combat world writes it back to the run. */
 export interface PlayerBody {
@@ -90,8 +89,9 @@ export function clampAimPitch(v: Vec3, forward: Vec3): Vec3 {
   const heading = h > 1e-9 ? { x: v.x / h, z: v.z / h } : horizontal(forward), p = Math.sign(pitch) * AIM_PITCH_LIMIT, c = Math.cos(p);
   return { x: heading.x * c, y: Math.sin(p), z: heading.z * c };
 }
-/** A species start refusal: the engine's, or 'no-target' (an attack on the player or a target-origin attack without the target point). */
-export type SpeciesRefusal = StartRefusal | 'no-target';
+/** A species start refusal: the engine's, 'no-target' (an attack on the player or a target-origin attack without the target point), or
+ *  'no-context' (an attack on the player without `onScreen`, `playerHeld` and `tick`; T11 fix round 1: the caller must give real values). */
+export type SpeciesRefusal = StartRefusal | 'no-target' | 'no-context';
 const statusOf = (id: string) => { const s = EFFECTS[id]?.status; return s ? { seconds: s.seconds, speedFactor: s.speedFactor } : null; };
 
 export class CombatWorld {
@@ -111,7 +111,7 @@ export class CombatWorld {
   reset(): void { this.entities.clear(); this.log.length = 0; this.poses.clear(); this.director.releaseAll(); }
   /** Faint and evolve (spec §10.3, §13): every species action at the player ends, its token returns, and holds on the player end. */
   cancelAttacksOnPlayer(playerRt: CombatRuntime): void {
-    for (const c of this.entities.values()) for (const a of c.rt.actions) if (a.targetId === PLAYER_ID && a.phase !== 'interrupted') { if (a.heldTarget === PLAYER_ID) endHold(c.rt, a); endNow(c.rt, a); }
+    for (const c of this.entities.values()) for (const a of c.rt.actions) if (a.targetId === PLAYER_ID && a.phase !== 'interrupted') { if (a.heldTarget === PLAYER_ID) endHold(c.rt, a); endNow(c.rt, a, 0); }
     this.director.releaseAll(); playerRt.heldBy = null; playerRt.breakProgress = 0;
   }
   /** The combat state of a combat species (created on first use), or null for a legacy species. */
@@ -123,7 +123,13 @@ export class CombatWorld {
     this.entities.set(e.id, c); return c;
   }
   /** A combat entity that respawned or was consumed starts over (its actions, clock and holds). */
-  forget(e: Entity): void { this.entities.delete(e.id); }
+  forget(e: Entity): void {
+    const c = this.entities.get(e.id);
+    if (c) for (const a of c.rt.actions) if (this.director.holds(a.instanceId)) { endNow(c.rt, a, 0); this.director.release(a.instanceId); }
+    this.entities.delete(e.id);
+  }
+  /** Forgets every combat entity that was eaten on any path (T11 fix round 1); the sim calls it at the end of each frame. */
+  forgetEaten(): void { for (const c of [...this.entities.values()]) if (c.entity.eaten) this.forget(c.entity); }
   private nextId(actor: ActorId) { return `${actor}#${++this.serial}`; }
   /** A species pose: sampled once per entity per tick inside a tick (review R18), fresh outside one. */
   private poseOf(e: Entity, now: number): CombatPose {
@@ -385,15 +391,16 @@ export class CombatWorld {
   startSpecies(c: EntityCombat, attackId: string, attack: AttackSpec, aim: Vec3, targetId: ActorId | null, now: number, opts: SpeciesStartOptions = {}): ActionState | SpeciesRefusal {
     const targetAt = opts.targetAt ?? null, atPlayer = targetId === PLAYER_ID;
     if (!targetAt && (atPlayer || attack.origin === 'target')) return 'no-target';
+    if (atPlayer && (opts.onScreen === undefined || opts.playerHeld === undefined || opts.tick === undefined)) return 'no-context';
     const key = `${c.id}:root:${attackId}`, d = canStart(c.rt, { playing: opts.playing ?? true, isPlayer: false, kind: 'species', cooldownKey: key, mode: 'swim', allowedModes: ['swim'], inBreachArc: false,
       token: !atPlayer || now >= c.tokenRetryAt - 1e-9, worldNow: now });
     if (!d.ok) return d.reason;
     const id = `${c.id}#${this.serial + 1}`;
     let extension = 0;
     if (atPlayer) {
-      const tick = opts.tick ?? DEFAULT_TICK, delay = tick + Math.max(0, c.rt.hitStopUntil - now - tick);   // review R6: one tick and the remaining hit-stop
-      const t = this.director.request({ actionInstanceId: id, attackerId: c.id, windupSeconds: attack.windupSeconds, now, grab: !!attack.hold, onScreen: opts.onScreen ?? true,
-        playerHeld: opts.playerHeld ?? false, delay });
+      const tick = opts.tick!, delay = tick + Math.max(0, c.rt.hitStopUntil - now - tick);   // review R6: one tick and the remaining hit-stop
+      const t = this.director.request({ actionInstanceId: id, attackerId: c.id, windupSeconds: attack.windupSeconds, now, grab: !!attack.hold, onScreen: opts.onScreen!,
+        playerHeld: opts.playerHeld!, delay });
       if (!t.ok) { c.tokenRetryAt = t.retryAt; return 'token'; }
       extension = t.extension;
     }
@@ -409,11 +416,13 @@ export class CombatWorld {
     return a;
   }
   /** Tokens follow their actions (spec §9.4, plan review R6), at the end of each tick (`now`, length `dt`; the clocks cover the tick):
-   *  - a token is held to the end of active (to the end of hold for a grab), and returns when the action ends or its attacker is gone;
+   *  - a token is held to the end of active (to the end of hold for a grab), and returns when the action ends or its attacker is gone
+   *    (then the action ends too, without a cooldown);
    *  - each wind-up's active start is estimated again: the remaining wind-up plus the attacker's hit-stop after this tick;
    *  - in order of start, a wind-up less than ACTIVE_GAP after an earlier token grows (within MAX_EXTENSION in all); when more would be
    *    needed, it ends: its token returns, its cooldown is not spent, and its attacker asks again after RETRY_SECONDS.
-   *  Each wind-up at the player marks the player as threatened (`lastThreatAt`). */
+   *  Each wind-up at the player marks the player as threatened (`lastThreatAt`, set at the end of each tick while the wind-up runs).
+   *  The spacing holds in game time (activeStartedAt); a frame-based observer may see up to one tick less. */
   private followTokens(live: readonly EntityCombat[], playerRt: CombatRuntime, now: number, dt: number) {
     const windups: { a: ActionState; c: EntityCombat; start: number }[] = [];
     for (const c of live) for (const a of c.rt.actions) {
@@ -424,7 +433,13 @@ export class CombatWorld {
       windups.push({ a, c, start: now + dt + remaining + Math.max(0, c.rt.hitStopUntil - now - dt) });
       playerRt.lastThreatAt = now;
     }
-    for (const t of [...this.director.tokens]) if (!live.some(c => c.rt.actions.some(a => a.instanceId === t.actionInstanceId && a.phase !== 'interrupted'))) this.director.release(t.actionInstanceId);
+    // A token whose attacker is not live (eaten, inactive, gone) returns, and its action ends without a cooldown: the attacker must not
+    // resume a tokenless wind-up when it comes back as the same entity (T11 fix round 1).
+    for (const t of [...this.director.tokens]) {
+      if (live.some(c => c.rt.actions.some(a => a.instanceId === t.actionInstanceId && a.phase !== 'interrupted'))) continue;
+      for (const c of this.entities.values()) for (const a of c.rt.actions) if (a.instanceId === t.actionInstanceId) endNow(c.rt, a, 0);
+      this.director.release(t.actionInstanceId);
+    }
     const placed = this.director.tokens.filter(t => !windups.some(w => w.a.instanceId === t.actionInstanceId)).map(t => t.activeStart);
     windups.sort((x, y) => x.start - y.start);
     for (const w of windups) {
