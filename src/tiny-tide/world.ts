@@ -15,7 +15,8 @@ import type { TelegraphView } from './combat-world';
 export { seabedHeight };
 /** Gameplay view of an entity, in the current stage's local units. */
 export interface Food { id: number; kind: FoodKind; tier: number; x: number; y: number; z: number; eaten: boolean; phase: number }
-export interface FoodObject { data: Food; entity: Entity; model: T.Group; tier: number }
+/** `tint`: the instance colour of a tinted species (spec §11.7: one tint per species; white for the others). */
+export interface FoodObject { data: Food; entity: Entity; model: T.Group; tier: number; tint: T.Color }
 interface Particle { mesh: T.Mesh; life: number; velocity: T.Vector3 }
 const particleGeometry = new T.SphereGeometry(.09, 6, 4);
 const circleGeometry = new T.CircleGeometry(1, 40);
@@ -26,8 +27,16 @@ const chevronGeometry = new T.ShapeGeometry(new T.Shape([new T.Vector2(0, .5), n
 const chevronMaterial = new T.MeshBasicMaterial({ color: '#fff1c4', transparent: true, opacity: .85, side: T.DoubleSide, depthWrite: false, depthTest: false });
 const ringMaterial = new T.MeshBasicMaterial({ color: '#e0f6ad', transparent: true, opacity: .75, side: T.DoubleSide, depthWrite: false });
 const UP = new T.Vector3(0, 1, 0);
-/** Instance colours multiply the material: white keeps it; FLASH_COLOR (above 1) is the hurt flash. */
-const WHITE = new T.Color(1, 1, 1), FLASH_COLOR = new T.Color(3, 3, 3);
+/** Instance colours multiply the material: a species tint (white keeps it); FLASH_COLOR (above 1) is the hurt flash. */
+const FLASH_COLOR = new T.Color(3, 3, 3);
+/** The Spiny snail's three spikes on its shell (art debt: its own model; spec §11.7), in the snail model's units. */
+const SNAIL_SPIKES: readonly [number, number, number][] = [[0, .62, -.05], [-.22, .5, .12], [.22, .5, .12]];
+/** One prefab per species (spec §11.7): its model GLB (default its kind), and the Spiny snail's spikes. */
+function speciesPrefab(model: FoodKind, key: string): T.Group {
+  const group = foodModel(model);
+  if (key === '0:spiny_snail') for (const [x, y, z] of SNAIL_SPIKES) { const spike = sceneryAsset('part_spike'); spike.position.set(x, y, z); spike.scale.setScalar(.45); group.add(spike); }
+  return group;
+}
 /** The impact particle pool (spec §9.2): created once; a burst reuses the oldest particles when all are in use. */
 const IMPACT_POOL = 64;
 /** Pose cues (spec §9.1 item 4) at full wind-up: rear back 15°, crouch to .8 height, inflate × 1.35, coil to .75 length, sink half a size into
@@ -254,9 +263,9 @@ export class TideWorld {
   private createUniverse() {
     const prefabs = new Map<string, T.Group>(), islands = new T.Group();
     for (const entity of this.eco.entities) {
-      const spec = entity.spec, size = SIZES[spec.tier]!, kind = spec.kind, home = kind === 'planet' && this.eco.planetIndex(entity) === 0;
-      if (kind !== 'planet' && !prefabs.has(kind)) prefabs.set(kind, foodModel(spec.model ?? kind));   // a species draws its model GLB (default its kind; T16b: one prefab per species, tints)
-      const model = kind === 'planet' ? foodModel(kind, this.eco.planetIndex(entity)) : prefabs.get(kind)!.clone(true);
+      const spec = entity.spec, size = SIZES[spec.tier]! * (spec.bodyScale ?? 1), kind = spec.kind, home = kind === 'planet' && this.eco.planetIndex(entity) === 0;
+      if (kind !== 'planet' && !prefabs.has(spec.key)) prefabs.set(spec.key, speciesPrefab(spec.model ?? kind, spec.key));
+      const model = kind === 'planet' ? foodModel(kind, this.eco.planetIndex(entity)) : prefabs.get(spec.key)!.clone(true);
       model.scale.multiplyScalar(size * (home ? 1.35 : 1)); model.position.set(entity.x, entity.y, entity.z); model.rotation.y = entity.phase;
       if (home) {
         const materials = new Map<T.Material, T.Material>();
@@ -268,20 +277,20 @@ export class TideWorld {
         this.homePlanetMaterials = [...materials.values()];
       }
       if (kind === 'planet') this.actors.add(model);
-      const food: FoodObject = { entity, model, tier: spec.tier, data: { id: entity.id, kind, tier: spec.tier, x: 0, y: 0, z: 0, eaten: false, phase: entity.phase } };
+      const food: FoodObject = { entity, model, tier: spec.tier, tint: new T.Color(spec.tint ?? '#ffffff'), data: { id: entity.id, kind, tier: spec.tier, x: 0, y: 0, z: 0, eaten: false, phase: entity.phase } };
       this.foods.push(food); if (home) this.homePlanet = food;
       if (kind === 'tree' || kind === 'lighthouse') {
         const island = sceneryAsset('island'); island.position.set(entity.hx, WATER_LEVEL - 1, entity.hz); island.scale.setScalar(64); islands.add(island);
       }
     }
     const merged = batch(islands); merged.traverse(obj => this.fadeable(obj)); this.islands.add(merged);
-    for (const [kind, prefab] of prefabs) {
-      const foods = this.foods.filter(f => f.data.kind === kind);
+    for (const [key, prefab] of prefabs) {
+      const foods = this.foods.filter(f => f.entity.spec.key === key);
       prefab.updateMatrixWorld(true);
       prefab.traverse(child => {
         if (!(child instanceof T.Mesh) || Array.isArray(child.material)) return;
         const mesh = new T.InstancedMesh(child.geometry, child.material, foods.length);
-        mesh.instanceMatrix.setUsage(T.DynamicDrawUsage); for (let i = 0; i < foods.length; i++) mesh.setColorAt(i, WHITE); mesh.castShadow = true; mesh.receiveShadow = true; mesh.frustumCulled = false;
+        mesh.instanceMatrix.setUsage(T.DynamicDrawUsage); for (let i = 0; i < foods.length; i++) mesh.setColorAt(i, foods[i]!.tint); mesh.castShadow = true; mesh.receiveShadow = true; mesh.frustumCulled = false;
         this.actors.add(mesh); this.instances.push({ mesh, foods, local: child.matrixWorld.clone() });
       });
     }
@@ -465,7 +474,7 @@ export class TideWorld {
     for (const f of this.foods) {
       const e = f.entity;
       if (e.eaten) { f.model.visible = false; continue; }
-      const size = SIZES[f.tier]!, kind = f.data.kind;
+      const size = SIZES[f.tier]! * (e.spec.bodyScale ?? 1), kind = f.data.kind;
       f.model.position.set(e.x, e.y, e.z);
       if (kind !== 'planet' && e.spec.behavior !== 'still') f.model.rotation.y = T.MathUtils.lerp(f.model.rotation.y, f.model.rotation.y + Math.atan2(Math.sin(e.heading - f.model.rotation.y), Math.cos(e.heading - f.model.rotation.y)), 1 - Math.exp(-dt * 6));
       // Angry creatures puff up a little so the player can see the danger.
@@ -500,7 +509,7 @@ export class TideWorld {
         if (!model.visible) continue;
         model.updateMatrix(); this.instanceMatrix.multiplyMatrices(model.matrix, set.local);
         const id = food.entity.id, lit = (this.flashUntil.get(id) ?? -Infinity) > time || this.cues.get(id)?.flash === true;
-        set.mesh.setColorAt(count, lit ? FLASH_COLOR : WHITE);
+        set.mesh.setColorAt(count, lit ? FLASH_COLOR : food.tint);
         set.mesh.setMatrixAt(count++, this.instanceMatrix);
       }
       set.mesh.count = count; set.mesh.visible = count > 0; set.mesh.instanceMatrix.needsUpdate = true; if (set.mesh.instanceColor) set.mesh.instanceColor.needsUpdate = true;

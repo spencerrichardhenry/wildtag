@@ -615,6 +615,11 @@ function presentCombat(t: CombatTick) {
   for (const k of t.killed) { const food = world.foods.find(f => f.entity === k); if (food) world.removeFood(food); }
   if (t.killed.length) { syncUI(); save(); }
 }
+/** The bottom of the top HUD band (the stage card, the growth card and the objective), in CSS pixels: world-anchored labels (threat
+ *  markers, HP bars) stay below it (T16b live look: over a close crab they sat on the DNA bar and the objective). */
+function hudBand(): number {
+  return Math.max(90, ...['.stage-card', '.growth-card', '#objective'].map(q => document.querySelector(q)?.getBoundingClientRect().bottom ?? 0));
+}
 /** A physical point is on screen (the telegraph's edge arrow). */
 function onScreen(p: Vec3): boolean {
   const s = world.screenPoint(new T.Vector3(p.x, p.y, p.z).divideScalar(world.scale));
@@ -632,10 +637,11 @@ function presentCombatView() {
   arrowed = arrowMemory.update(telegraphViews);
   audio.windupTones(new Map(telegraphViews.filter(v => v.phase === 'windup' && v.targetsPlayer).map(v => [v.actionId, v.fill])));
   const bars: HpBar[] = [], arrows: EdgeArrow[] = [];
+  let band: number | undefined;
   if (playing) for (const c of sim.combat.entities.values()) {
     if (c.entity.eaten || !c.entity.active || time - c.lastDamagedAt > HP_BAR_SECONDS) continue;
     const top = world.screenPoint(new T.Vector3(c.entity.x, c.entity.y + .9 * SIZES[c.entity.spec.tier]!, c.entity.z).divideScalar(world.scale));
-    if (top.visible) bars.push({ x: top.x, y: top.y, fraction: c.entity.hp / c.maxHp });
+    if (top.visible) bars.push({ x: top.x, y: Math.max(top.y, (band ??= hudBand()) + 12), fraction: c.entity.hp / c.maxHp });
   }
   for (const v of telegraphViews) if (arrowed.has(v.actionId) && !v.onScreen) {
     const at = edgeArrowAt(world.screenPoint(new T.Vector3(v.centroid.x, v.centroid.y, v.centroid.z).divideScalar(world.scale)), innerWidth, innerHeight);
@@ -784,9 +790,10 @@ function updateGuide() {
   } else { el('food-pointer').hidden = true; el('snack-label').hidden = true; }
   // Sense parts let the creature notice hunters from farther away.
   const markers = world.threats.filter(f => Math.hypot(f.data.x - p.x, f.data.y - p.y, f.data.z - p.z) < derived.senseRange).slice(0, 4);
+  const top = markers.length ? hudBand() + 24 : 90;
   el('threats').innerHTML = markers.map(f => {
     const point = world.screenPoint(new T.Vector3(f.data.x, f.data.y + (f.tier > run.stage ? 4 : 1.6), f.data.z));
-    const x = T.MathUtils.clamp(point.visible ? point.x : innerWidth - point.x, 30, innerWidth - 30), y = T.MathUtils.clamp(point.visible ? point.y : innerHeight - 60, 90, innerHeight - 60);
+    const x = T.MathUtils.clamp(point.visible ? point.x : innerWidth - point.x, 30, innerWidth - 30), y = T.MathUtils.clamp(point.visible ? point.y : innerHeight - 60, Math.min(top, innerHeight - 60), innerHeight - 60);
     return `<span class="threat ${point.visible ? '' : 'edge'}" style="left:${x}px;top:${y}px">!<small>${f.entity.spec.label.toUpperCase()}</small></span>`;
   }).join('');
 }
