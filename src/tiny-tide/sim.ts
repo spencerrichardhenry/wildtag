@@ -47,6 +47,8 @@ export interface SimState {
   /** Admissions of this frame's player step and rescue slice (fix round 4: the slice gets what the step left of FRAME_ADMISSIONS).
    *  main.ts reads them for its QA admission stats. */
   stepCalls: number; rescueCalls: number;
+  /** Admissions spent by the body separation in the last frame that ran it (the rescue budget reserves them). */
+  separationCalls: number;
   actorCache: ActorCache | null; hullRescaled: boolean; hullGrew: boolean;
   acceptedHits: number; rejectedHits: number; faintLog: { time: number; hadPermit: boolean; hadArc: boolean }[];
   /** The combat world (spec §3.1) and the player's moves, cached per genome revision. */
@@ -78,10 +80,10 @@ export type SimEvent =
   | { type: 'resume-fainted' };
 export interface SimInput { dt: number; intent: CombatInput; wish: Vec3; held: boolean }
 
-type SimOwned = Pick<SimState, 'trap' | 'unstick' | 'glide' | 'beforeStep' | 'rescueLog' | 'trapRescues' | 'lastSolids' | 'stepCalls' | 'rescueCalls' | 'actorCache' | 'hullRescaled' | 'hullGrew' | 'faintLog' | 'combat' | 'moves' | 'previousMove' | 'hitBy'>;
+type SimOwned = Pick<SimState, 'trap' | 'unstick' | 'glide' | 'beforeStep' | 'rescueLog' | 'trapRescues' | 'lastSolids' | 'stepCalls' | 'rescueCalls' | 'separationCalls' | 'actorCache' | 'hullRescaled' | 'hullGrew' | 'faintLog' | 'combat' | 'moves' | 'previousMove' | 'hitBy'>;
 /** The fields only the simulation owns (main.ts spreads them into its bound state). */
 export const simOwnedState = (): SimOwned => ({ trap: newTrapWatch(), unstick: null, glide: null, beforeStep: newStepSnapshot(), rescueLog: { searches: 0, found: 0, failed: 0, last: null },
-  trapRescues: 0, lastSolids: [], stepCalls: 0, rescueCalls: 0, actorCache: null, hullRescaled: false, hullGrew: false, faintLog: [], combat: new CombatWorld(), moves: null, previousMove: { x: 0, y: 0, z: 0 }, hitBy: new Set() });
+  trapRescues: 0, lastSolids: [], stepCalls: 0, rescueCalls: 0, separationCalls: 0, actorCache: null, hullRescaled: false, hullGrew: false, faintLog: [], combat: new CombatWorld(), moves: null, previousMove: { x: 0, y: 0, z: 0 }, hitBy: new Set() });
 /** A plain state (tests and the combat probe). */
 export function newSimState(run: Run): SimState {
   return { run, rt: newRuntime(), physical: { x: 0, y: 0, z: 0 }, time: 0, mode: 'menu', derived: derive(effectiveStats(run.genome, currentPlan(run))), genomeRevision: 0,
@@ -262,7 +264,7 @@ export function simFrame(s: SimState, w: SimWorld, input: SimInput): SimEvent[] 
     if (!s.glide && !r.needsRecovery && !s.unstick && trapDue(s.trap, s.physical, wish, actor.bodyLength, wedged(r.contacts, wish, r.turnRefused, rt.orientation.yaw), dt))
       { s.unstick = new UnstickSearch(actor, { ...s.physical }, Math.atan2(wish.x, wish.z), { ...rt.orientation }, { ...legal, time: s.time + dt, ground: caps.ground && !legal.queries.terrain.space }, rescueFreeRun(s.trap, s.physical, s.time, actor.bodyLength)); s.rescueLog.searches++; }
     if (s.unstick) {
-      const spent = s.unstick.spent, u = Math.hypot(s.physical.x - s.unstick.at.x, s.physical.z - s.unstick.at.z) > TRAP_MOVE * actor.bodyLength ? { ok: false as const, reason: 'moved' } : s.unstick.step(rescueBudget(s.stepCalls));
+      const spent = s.unstick.spent, u = Math.hypot(s.physical.x - s.unstick.at.x, s.physical.z - s.unstick.at.z) > TRAP_MOVE * actor.bodyLength ? { ok: false as const, reason: 'moved' } : s.unstick.step(rescueBudget(s.stepCalls + s.separationCalls));
       s.rescueCalls = s.unstick.spent - spent;
       if (u) {
         if (u.ok) { s.rescueLog.found++; s.rescueLog.last = { from: { ...s.unstick.at }, to: { ...u.position }, time: s.time, solids: [...s.lastSolids] }; s.glide = { path: u.path, index: 0 }; s.trapRescues++; trapRescued(s.trap, s.unstick.at, s.time); }
@@ -311,8 +313,14 @@ export function simFrame(s: SimState, w: SimWorld, input: SimInput): SimEvent[] 
     s.hitBy.clear();
     for (const g of ai.engagements) if (s.mode === 'playing' && survivorBonusDue(run, behaviourType(g.entity), g)) events.push({ type: 'survived', entity: g.entity, dna: survivorReward(run, g.entity.spec) });
     if (ai.roars.length) events.push({ type: 'roar', entities: ai.roars });
-    // Soft body separation: the player's push is installed here (part of the player's own motion, like its step; never while a rescue glides).
-    if (s.mode === 'playing' && !run.pendingRespawn) { const moved = separate(s, w, actor, dt); if (moved && !s.glide) s.physical = moved; }
+    // Soft body separation: the player's push is installed here (part of the player's own motion, like its step). Never while a rescue
+    // glides (neither body is pushed then). Its admissions are counted (separationCalls): the next frame's rescue budget leaves room for
+    // them, so a frame stays within FRAME_ADMISSIONS (re-review minor c).
+    s.separationCalls = 0;
+    if (s.mode === 'playing' && !run.pendingRespawn && !s.glide) {
+      const n0 = admissionCount.n, moved = separate(s, w, actor, dt); s.separationCalls = admissionCount.n - n0;
+      if (moved) s.physical = moved;
+    }
     admissionClock.caller = 'ecosystem';
     const hazards = w.eco.step({ stage, dt, now: s.time, player: s.physical, playerHull: worldHull(s, actor), perceivable: s.rt.perceivable && s.mode !== 'fainted', stealthFactor: s.derived.stealthFactor, unlocked: run.unlocked });
     admissionClock.caller = 'player';
@@ -327,7 +335,6 @@ export function simFrame(s: SimState, w: SimWorld, input: SimInput): SimEvent[] 
   if (active) s.time += dt;
   return events;
 }
-/** The behaviour type of a combat species (the survivor bonus applies to hunters). */
 /** Under the sand (the burrow pattern): no body to bump into. The emerge wind-up counts too: the body is still rising at the target point. */
 const buried = (c: EntityCombat): boolean => {
   const n = c.ai?.name;
@@ -355,6 +362,7 @@ function separate(s: SimState, w: SimWorld, actor: Actor, dt: number): Vec3 | nu
   }
   return at;
 }
+/** The behaviour type of a combat species (the survivor bonus applies to hunters). */
 const behaviourType = (e: Entity) => e.spec.behaviourId ? BEHAVIOURS[e.spec.behaviourId]?.type : undefined;
 /** One accepted hazard event: damage, and a faint at 0 hearts (once). */
 function takeHit(s: SimState, w: SimWorld, event: EcoEvent, events: SimEvent[]): void {

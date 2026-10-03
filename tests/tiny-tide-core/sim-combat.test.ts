@@ -248,5 +248,29 @@ describe('soft body separation (T17 fix round 1)', () => {
     };
     expect(moved('burrowed')).toBeLessThan(1e-6); expect(moved('approach')).toBeGreaterThan(.01);
   });
+  it('a grab pair does not separate: a real hold (the fixture squid wrap) keeps the held body where the hold puts it', () => {
+    const squid = entity(2, FX_HUNTER, { x: 0, y: 0, z: 0 }), { s, w } = begun([squid]);
+    Object.assign(squid, ahead(s, 1.2, 1)); s.run.health = 50;
+    const c = s.combat.stateOf(squid)!, centre = playerMotionBody(s, playerActorCached(s)).centre;
+    s.combat.startSpecies(c, 'wrap', WRAP, { x: 0, y: 0, z: -1 }, 'player', s.time, { ...AT_PLAYER, targetAt: centre });
+    for (let i = 0; i < 60 && s.rt.heldBy === null; i++) frame(s, w);
+    expect(s.rt.heldBy).toBe('e2');
+    const actor = playerActorCached(s), pose = () => speciesCombatPose(squid, s.time).hull;
+    // Put the grabber on top of the held body (deep overlap): the hold places the body, separation stays off for the pair.
+    const pc = worldHull(s, actor)[0]!.start, sc = pose()[0]!.start; Object.assign(squid, { x: squid.x + pc.x - sc.x, y: squid.y + pc.y - sc.y, z: squid.z + pc.z - sc.z });
+    expect(hullOverlap(worldHull(s, actor), pose())).toBeGreaterThan(actor.bodyLength * .5);
+    frame(s, w); expect(s.rt.heldBy).toBe('e2'); expect(squid.combat?.separation).toBeUndefined(); expect(s.separationCalls).toBe(0);
+    // Control: the same overlap without the hold separates (the species' share is set, admissions are counted).
+    const free = entity(3, FX_HUNTER, { x: 0, y: 0, z: 0 }), b = begun([free]); Object.assign(free, { x: squid.x - s.physical.x + b.s.physical.x, y: squid.y - s.physical.y + b.s.physical.y, z: squid.z - s.physical.z + b.s.physical.z });
+    frame(b.s, b.w); expect(free.combat?.separation).toBeDefined(); expect(b.s.separationCalls).toBeGreaterThan(0);
+  });
+  it('no separation while a rescue glides: neither body is pushed', () => {
+    const { e, s, w } = setup(MOTHER, { x: .15, y: .5, z: .1 }), here = { ...s.physical };
+    s.glide = { path: Array.from({ length: 5 }, () => ({ position: { ...here }, orientation: { ...s.rt.orientation } })), index: 0 };
+    s.hullRescaled = false;   // no pose check this frame (it cancels a rescue)
+    frame(s, w); expect(s.glide).not.toBeNull();
+    expect(e.combat?.separation).toBeUndefined(); expect(s.separationCalls).toBe(0);
+    expect(Math.hypot(s.physical.x - here.x, s.physical.z - here.z)).toBeLessThan(1e-6);
+  });
 });
 const actor0 = () => playerActorCached(speck());
