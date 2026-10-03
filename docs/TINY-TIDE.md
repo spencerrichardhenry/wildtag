@@ -914,7 +914,7 @@ hazard encounters (`pickHazard(spec)`). The tests write a fixture into
 `node e2e/tiny-tide-combat.mjs` runs 10 checks with real mouse, keyboard and
 touch events. Each check has a time cap and prints its seed (`TIDE_SEED`,
 default 1501) and the numbers it measured. A full run takes 3 to 5 minutes. It
-prints `PASSED: all 10 combat checks`. Pass check ids to run some.
+prints `PASSED: all 11 combat checks`. Pass check ids to run some.
 
 | Check | What it proves |
 | --- | --- |
@@ -958,27 +958,32 @@ them in parallel, one process each. Each part writes
 | P2 | A Brace build avoids or halves each blockable attack: at least 95 %. |
 | P3 | A Counter build counters each parryable attack: at least 85 %. |
 | P4 | Movement only. Reported, no bar. |
-| P5 | The median time to kill with a meat build: drifter 6 s, snail 8, crab 20, sardine 6, puffer 10, squid 30, eel 30, Clawmother 90, Reef Tyrant 120. |
+| P5 | The median time to kill with a meat build: drifter 6 s, snail 8, crab 20, sardine 6, puffer 10, squid 30, eel 30, Clawmother 90, Reef Tyrant 120. A lower bar for the hunters (crab, squid, eel; final review I1): the median is at least 8 s, and the hunter starts at least one attack after its first stagger (median of the fights). |
 | P6 | The same with a plant build: crab 45 s, squid 75. Others are reported. |
-| P7 | A journey bot becomes ready to evolve at size 0 and at size 1 within 600 s of play with at most 3 faints for each size. Swimmer and crawler lines, three diets, seeds 11 to 15 (30 runs). |
+| P7 | A journey bot becomes ready to evolve at size 0 and at size 1 within 600 s of play with at most 3 faints for each size. Swimmer and crawler lines, three diets, seeds 11 to 15 (30 runs). The bot drops a prey species for the rest of a size after it skipped one as unreachable (a ground mover), and with nothing near it travels toward the nearest prey. |
 | P8 | At most 2 wind-ups at you at once, active starts at least .25 s apart, and off-screen wind-ups at least .6 s. |
+| P9 | Measurement only (final review I6): for each build (starter body, Dash, Brace, Counter, Sweep, Grab, all four) and each hunter, the damage taken and the median time to kill with the fight bot at a .35 s reaction, and the spread between the best and the worst build. |
 
 The probe also reports the largest bot reaction time at which each attack still
 meets the P1, P2 and P3 bar, P1 with a reaction of .25 to .45 s, and DNA by
 source.
 
-Result at the last probe run (after commit `ce1bb1b`): P0 to P6 and P8
-pass. P7 passes 29 of 30 runs. The one failure is the crawler omnivore, seed 14,
-size 1: 600 s, no faints, 142 of 150 DNA. That bot spends 465 s on chases of
-sardines that it then skips. A crawler that hunts meat at size 1 has little
-prey in reach. This is open for the owner; no other number was changed for it.
-Tuned numbers from the probe: the eel bite wind-up is .45 s (a .35 s reaction
-must have one move that avoids every attack), the Clawmother chain gap is
-.55 s, the puffer burst band is 0 to 1.35 L and the Tyrant whirl band is 0
-to .3 L (an attack that starts at the body centre reaches .25 L less than its
-shape). Median time to kill (meat build): Clawmother 28.4 s, Reef Tyrant 42.7 s,
-crab 5.5 s, eel 5.8 s. With ideal dodging the alphas fall with no faints. A bot
-that never dodges faints in every alpha fight.
+Result at the last probe run (final fix wave, after commit `71c2863`): P0 to P4, P6, P7
+(30 of 30 runs) and P8 pass. P5 fails only its new hunter floor: the median time
+to kill is crab 7.2 s, squid 5.3 s and eel 7.5 s (floor 8 s). No hunter is
+staggered in any P5 fight now (before the Bite poise change, every fight), and
+the hunters start a median of 3 (crab), 1 (squid) and 4 (eel) attacks per
+fight. The time to kill is set by HP per Bite, not by the stagger. A measured
+option for the owner: hunter HP × 1.5 gives crab 10.1 s and eel 11.6 s, squid
+6.9 s (P6 still passes). P9: every build takes 0 to .11 half-hearts per hunter
+fight, so the spread is not meaningful (the body design does not change the
+outcome against a single hunter yet; an owner decision). Tuned numbers from the
+probe: Bite poise damage × .5; eel bite and squid ink wind-ups .48 s (Brace
+threshold .36 s); the eel's leash 3 L and give-up 4 L, its ambush impulse 3;
+the Clawmother chain gap is .55 s, the puffer burst band is 0 to 1.35 L and the
+Tyrant whirl band is 0 to .3 L. Median time to kill (meat build): Clawmother
+28.3 s, Reef Tyrant 42.5 s. The probe files are in
+`.codex-drafts/tiny-tide-qa/final-fix/`.
 
 QA-only URL parameters work in development or with `?qa`. The game reads each
 one once, at load. None of them changes a running game from outside.
