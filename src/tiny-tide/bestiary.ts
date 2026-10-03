@@ -99,7 +99,8 @@ export const BEHAVIOURS: Record<string, SpeciesBehaviour> = Object.fromEntries([
       { aboveHpFraction: 0, attacks: [choice('mother-sweep', [0, .6], 2, { chainNextId: 'mother-pinch-rage', chainGapSeconds: .1 }), { ...PINCH_COMBO, weight: 1 }], speedFactor: 1.3, gapSeconds: .7, pattern: 'normal' },
     ] }),
   behaviour({ id: 'reef-tyrant', type: 'alpha', reactionSeconds: .35, poise: 16, staggerResist: .5, knockbackResistance: .6, grabbable: false, gapSeconds: 1.0, repositionSeconds: [.6, 1.0],
-    lair: { radiusBodyLengths: 2.2, resetOutsideFactor: 1.5, resetDelaySeconds: 3, healPerSecond: .04 },
+    // Plan review R15 (T19): lair radius ≤ .25 × PLAYER_HALF × SIZES[1] = 50 units; L_e = 35.84, so 1.4 L_e (50.18) is just over and 1.39 L_e = 49.8 units.
+    lair: { radiusBodyLengths: 1.39, resetOutsideFactor: 1.5, resetDelaySeconds: 3, healPerSecond: .04 },
     phases: [
       { aboveHpFraction: .66, attacks: [choice('tyrant-bite', [0, .4], 3), choice('tyrant-den-lunge', [.4, 1.2], 2)], speedFactor: 1.0, gapSeconds: 1.0, pattern: 'normal', lairFraction: .6 },
       { aboveHpFraction: .33, attacks: [], speedFactor: 1.4, gapSeconds: .6, pattern: 'laps', patternAttackId: 'tyrant-charge' },

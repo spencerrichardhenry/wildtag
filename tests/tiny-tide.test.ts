@@ -11,9 +11,10 @@ import { hostileSizes } from '../src/tiny-tide/bestiary';
 const withMouth = (g: Genome, id: string): Genome => ({ ...g, parts: g.parts.map(p => part(p.id)!.kind === 'mouth' ? { ...p, id } : p) });
 
 describe('Tiny Tide genome and parts', () => {
-  it('has 34 unique common parts and one rare part (T17), each mouth has a diet, and every stage offers both a herbivore and a carnivore mouth', () => {
-    expect(PARTS).toHaveLength(35); expect(new Set(PARTS.map(p => p.id)).size).toBe(35);
-    expect(PARTS.filter(p => p.rare).map(p => [p.id, p.model, p.modelTint])).toEqual([['claw_mother', 'claw_pincer', '#b5523b']]);
+  it('has 34 unique common parts and two rare parts (T17, T19), each mouth has a diet, and every stage offers both a herbivore and a carnivore mouth', () => {
+    expect(PARTS).toHaveLength(36); expect(new Set(PARTS.map(p => p.id)).size).toBe(36);
+    expect(PARTS.filter(p => p.rare).map(p => [p.id, p.model, p.modelTint])).toEqual([['claw_mother', 'claw_pincer', '#b5523b'], ['mouth_tyrant', 'mouth_fangs', '#6b3f7a']]);
+    expect(part('mouth_tyrant')).toMatchObject({ name: 'Tyrant jaw', kind: 'mouth', stage: 1, cost: 30, stats: { bite: 2 }, mirror: false, diet: 'carnivore', basicAttacks: [{ id: 'bite', attackId: 'bite-tyrant', socketIds: ['bite'] }], activeGrants: [] });
     for (const mouth of PARTS.filter(p => p.kind === 'mouth')) expect(mouth.diet).toBeTruthy();
     expect(PARTS.filter(p => p.kind === 'mouth' && p.stage === 0).map(p => p.diet).sort()).toEqual(['carnivore', 'herbivore']);
   });

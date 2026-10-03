@@ -2,7 +2,8 @@
 // the entity busy for its windup + active + recovery once the AI's request is started.
 import { describe, expect, it } from 'vitest';
 import { aiLandedHit, aiRefused, BAND_MARGIN, aiStarted, aiStep, alphaPhase, chooseAttack, clampToDisc, newAiState, schoolFlee, ROAR_SECONDS, type AiInput, type AiOutput, type AiState } from '../../src/tiny-tide/combat-ai';
-import { BEHAVIOURS, LAPS, SPECIES_ATTACKS, type SpeciesBehaviour } from '../../src/tiny-tide/bestiary';
+import { BEHAVIOURS, hostileSizes, LAPS, SPECIES_ATTACKS, type SpeciesBehaviour } from '../../src/tiny-tide/bestiary';
+import { SPECIES } from '../../src/tiny-tide/species';
 import type { Vec3 } from '../../src/tiny-tide/combat-types';
 import { Ecosystem, lairOf, speciesActor } from '../../src/tiny-tide/ecosystem';
 import { PLAYER_HALF, SIZES } from '../../src/tiny-tide/biomes';
@@ -346,14 +347,14 @@ describe('combat AI: alphas', () => {
   it('the Tyrant phase 1 keeps within lairFraction of its lair', () => {
     const s = newAiState(1, 37); s.home = at(0, 0);
     const log = drive(tyrant, s, 2.5, () => tyrantInput(80, { player: { position: at(0, 40), d: 4, visible: true, targetable: true } }));
-    const r = .6 * 2.2 * TL, pts = log.flatMap(l => l.out.intent.kind === 'toward' ? [Math.hypot(l.out.intent.point.x, l.out.intent.point.z)] : []);
+    const r = .6 * tyrant.lair!.radiusBodyLengths * TL, pts = log.flatMap(l => l.out.intent.kind === 'toward' ? [Math.hypot(l.out.intent.point.x, l.out.intent.point.z)] : []);
     expect(pts.length).toBeGreaterThan(0); for (const h of pts) expect(h).toBeLessThanOrEqual(r + 1e-6);
     expect(Math.max(...pts)).toBeCloseTo(r, 3);
   });
   it('the Tyrant laps: a charge every half lap, two charges, then a 1.5 s rest', () => {
     const s = newAiState(1, 38); s.home = at(0, 0);
     const log = drive(tyrant, s, 12, () => tyrantInput(40));
-    const r = .8 * 2.2 * TL, half = Math.PI * r / (30 * 1.4), a = SPECIES_ATTACKS['tyrant-charge']!, busy = a.windupSeconds + a.activeSeconds + a.recoverySeconds;
+    const r = .8 * tyrant.lair!.radiusBodyLengths * TL, half = Math.PI * r / (30 * 1.4), a = SPECIES_ATTACKS['tyrant-charge']!, busy = a.windupSeconds + a.activeSeconds + a.recoverySeconds;
     const asks = log.filter(l => l.out.attack); expect(asks.every(l => l.out.attack!.attackId === 'tyrant-charge')).toBe(true);
     expect(asks[0]!.t - ROAR_SECONDS).toBeCloseTo(half, 1);
     expect(asks[1]!.t - (asks[0]!.t + busy)).toBeCloseTo(half, 1);
@@ -361,5 +362,70 @@ describe('combat AI: alphas', () => {
     expect(log.filter(l => l.t >= restAt && l.t < restAt + LAPS.restSeconds - DT).every(l => l.state === 'lap-rest' && !l.out.attack)).toBe(true);
     expect(asks[2]!.t - restAt).toBeCloseTo(LAPS.restSeconds + half, 1);
     for (const l of log) if (l.state === 'lap') expect(l.out.intent).toMatchObject({ kind: 'toward', speedFactor: 1.4 });
+  });
+
+  // T19: the Reef Tyrant species row (spec §11.3, §11.6), with its real body length and speed.
+  const TYRANT = SPECIES.find(x => x.key === '2:reef_tyrant');
+  const tyrantL = () => speciesActor({ id: 0, spec: TYRANT! }).bodyLength;
+  it('the Reef Tyrant row: tier 2, hunts [1], the size-1 alpha with the Tyrant jaw and 60 DNA; hostile to size 1 only, in every phase (plan defect 14)', () => {
+    expect(TYRANT).toMatchObject({ tier: 2, hp: 110, speed: 1.5, model: 'worm', bodyScale: 1.6, behaviourId: 'reef-tyrant', hunts: [1], fights: true, pursuitId: 'hunter',
+      alpha: { size: 1, rewardPartId: 'mouth_tyrant', rewardDna: 60 } });
+    expect(TYRANT!.attackIds).toEqual(['tyrant-bite', 'tyrant-den-lunge', 'tyrant-charge', 'tyrant-whirl']);
+    expect(tyrantL()).toBeCloseTo(35.84, 2);
+    expect(hostileSizes(TYRANT!)).toEqual([1]);   // the phase does not change the hostile set: phase 2 (laps) keeps the phase-1 targets
+  });
+  it('reef tyrant laps: a charge every half lap, two charges, then a 1.5 s rest', () => {
+    const L = tyrantL(), speed = TYRANT!.speed * SIZES[TYRANT!.tier]!, s = newAiState(1, 13); s.home = at(0, 0);
+    const input = () => ({ self: { ...base().self, L, hp: 50, maxHp: TYRANT!.hp, speed }, inLair: true, pursuit: 'hunt' as const, player: { position: at(0, 10), d: 1, visible: true, targetable: true } });
+    drive(tyrant, s, 1, input);   // phase 2 (50 / 110 = .45: above .33): the roar, then laps
+    expect(s.phase).toBe(1);
+    const log = drive(tyrant, s, 30, input, () => false, 1);
+    const charges = log.filter(l => l.out.attack).map(l => l.t), a = SPECIES_ATTACKS['tyrant-charge']!, busy = a.windupSeconds + a.activeSeconds + a.recoverySeconds;
+    const half = Math.PI * LAPS.radiusFraction * tyrant.lair!.radiusBodyLengths * L / (speed * 1.4);   // π × lap radius / (speed × 1.4)
+    expect(charges.length).toBeGreaterThanOrEqual(3);
+    expect(log.filter(l => l.out.attack).every(l => l.out.attack!.attackId === 'tyrant-charge')).toBe(true);
+    expect(charges[1]! - charges[0]!).toBeGreaterThanOrEqual(half - 1e-6);
+    expect(charges[2]! - charges[1]!).toBeGreaterThanOrEqual(LAPS.restSeconds + busy + half - .1);   // the rest after two charges (and the charge itself)
+    expect(log.some(l => l.state === 'lap-rest')).toBe(true);
+    const off = log.filter(l => l.state === 'lap' && l.out.intent.kind === 'toward').map(l => l.out.intent.kind === 'toward' ? Math.hypot(l.out.intent.point.x, l.out.intent.point.z) : 0);
+    expect(Math.max(...off)).toBeLessThanOrEqual(tyrant.lair!.radiusBodyLengths * L + 1e-6);   // the lap stays inside the lair
+  });
+  it('the laps keep the lair height: the lap point is at the lair centre\'s height, not the body\'s (T19 live look: a swimming Tyrant climbed out of a crawler\'s reach)', () => {
+    const s = newAiState(1, 14); s.home = at(0, 0, 5);
+    const input = (y: number) => () => tyrantInput(40, { self: { ...tyrantInput(40).self, position: at(0, 17.6, y) } });
+    drive(tyrant, s, 1, input(5));   // the roar, then laps
+    for (const [k, y] of [5, 30, -20].entries()) {
+      const laps = drive(tyrant, s, .5, input(y), () => false, 1 + .5 * k).filter(l => l.state === 'lap' && l.out.intent.kind === 'toward');
+      expect(laps.length).toBeGreaterThan(0);
+      for (const l of laps) expect(l.out.intent.kind === 'toward' && l.out.intent.point.y).toBe(5);
+    }
+  });
+  it('the Tyrant lair (review R15): radius at most .25 x the play half-size at size 1, the size-1 start anchor outside 1.5 x the lair radius + 5 player body lengths', () => {
+    const size = SIZES[1], plans = PLANS.filter(p => p.size === 1 && !p.needs);   // coast plans have no start anchor in open sea (anchors.test.ts)
+    expect(plans.length).toBeGreaterThan(0);
+    for (let seed = 1; seed <= 20; seed++) {
+      const eco = new Ecosystem(seed), e = eco.entities.find(x => x.spec.key === '2:reef_tyrant')!, lair = lairOf(seed, e);
+      const radius = tyrant.lair!.radiusBodyLengths * speciesActor(e).bodyLength;
+      expect(radius).toBeLessThanOrEqual(.25 * PLAYER_HALF * size);
+      expect(Math.max(Math.abs(lair.x), Math.abs(lair.z)) + radius).toBeLessThanOrEqual(.8 * PLAYER_HALF * size);   // the lair is inside the spawn square
+      for (const p of plans) for (const growth of [1, 1.38]) {
+        const actor = playerActor(p, starterFor(p), 1, growth), anchor = startAnchor(actor, 1, { queries: stageWorldQueries(1, seed), bounds: stageBounds(1) });
+        if (!anchor.ok) throw new Error(`seed ${seed} ${p.id}: no start anchor`);
+        expect(Math.hypot(anchor.position.x - lair.x, anchor.position.z - lair.z), `seed ${seed} ${p.id} growth ${growth}`).toBeGreaterThan(1.5 * radius + 5 * actor.bodyLength);
+      }
+      expect(Math.hypot(e.x - lair.x, e.z - lair.z)).toBeLessThanOrEqual(4 * speciesActor(e).bodyLength);   // installed near its lair
+    }
+  });
+  it('the Tyrant is present only at size 1 and only while the Tyrant jaw is locked; it never respawns', () => {
+    const eco = new Ecosystem(3), t = eco.entities.find(e => e.spec.key === '2:reef_tyrant')!, far = { x: 0, y: 9000, z: 0 };
+    const step = (stage: number, now: number, unlocked: string[] = []) => eco.step({ stage, dt: DT, now, player: far, playerHull: [], perceivable: false, stealthFactor: 1, unlocked });
+    step(1, 0); expect(t.eaten).toBe(false); expect(t.hp).toBe(110);
+    step(0, .1); expect(t.eaten).toBe(true);   // not at size 0
+    step(2, .2); expect(t.eaten).toBe(true);   // not at size 2
+    step(1, .3); expect(t.eaten).toBe(false);
+    step(1, .4, ['claw_mother']); expect(t.eaten).toBe(false);   // the other alpha's part does not matter
+    step(1, .5, ['mouth_tyrant']); expect(t.eaten).toBe(true);
+    step(1, 90, ['mouth_tyrant']); expect(t.eaten).toBe(true);
+    eco.consume(t); expect(t.respawn).toBe(-1);
   });
 });

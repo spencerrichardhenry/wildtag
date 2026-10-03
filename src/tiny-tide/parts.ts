@@ -103,6 +103,7 @@ const PARTS_BASE: readonly PartSpec[] = [
 export const PARTS: readonly PartSpec[] = [
   ...PARTS_BASE,
   rare('claw_mother', 'Clawmother pincer', 'claw_pincer', 'arm', 0, 18, { bite: 2 }, true, '#b5523b', 'The old queen’s pincer. Holds bigger prey.'),
+  rare('mouth_tyrant', 'Tyrant jaw', 'mouth_fangs', 'mouth', 1, 30, { bite: 2 }, false, '#6b3f7a', 'The reef’s worst bite. Now yours.', 'carnivore'),
 ];
 export type PartId = typeof PARTS[number]['id'];
 const byId = new Map(PARTS.map(part => [part.id, part]));

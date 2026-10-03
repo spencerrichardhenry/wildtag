@@ -358,7 +358,8 @@ function burrow(b: SpeciesBehaviour, s: AiState, i: AiInput, p: BehaviourPhase, 
   }
 }
 /** Laps (spec §11.6): circle at .8 × the lair radius at the phase speed; a charge every half lap, aimed through the player's position (fixed at
- *  start); two charges, then a 1.5 s rest. A half lap takes π r / (speed × speedFactor). */
+ *  start); two charges, then a 1.5 s rest. A half lap takes π r / (speed × speedFactor). The lap is at the lair centre's height: the body's
+ *  own height (its hull centre, above the root that moves) made a swimmer climb a hull offset each tick (T19 live look). */
 function laps(s: AiState, i: AiInput, p: BehaviourPhase, centre: Vec3, radius: number): AiOutput {
   const now = i.now, r = LAPS.radiusFraction * radius, v = Math.max(1e-6, i.self.speed * p.speedFactor), half = Math.PI * r / v;
   if (s.name === 'lap-rest') { if (now - s.since < LAPS.restSeconds - 1e-9) return out(HOLD); set(s, 'lap', now); s.charges = 0; s.until = now + half; }
@@ -369,7 +370,7 @@ function laps(s: AiState, i: AiInput, p: BehaviourPhase, centre: Vec3, radius: n
     if (rest) return out(HOLD);
   }
   if (s.name !== 'lap') { set(s, 'lap', now); s.until = now + half; }
-  const a = Math.atan2(i.self.position.x - centre.x, i.self.position.z - centre.z) + .5, point = { x: centre.x + Math.sin(a) * r, y: i.self.position.y, z: centre.z + Math.cos(a) * r };
+  const a = Math.atan2(i.self.position.x - centre.x, i.self.position.z - centre.z) + .5, point = { x: centre.x + Math.sin(a) * r, y: centre.y, z: centre.z + Math.cos(a) * r };
   const move: MoveIntent = { kind: 'toward', point, speedFactor: p.speedFactor };
   if (now >= s.until && now >= waitUntil(s, i) && i.ready(p.patternAttackId!) && i.player.targetable) return out(move, { attack: request(s, i, null, p.patternAttackId!) });
   return out(move);

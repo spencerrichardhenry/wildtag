@@ -107,7 +107,7 @@ describe('bestiary data pinned to spec §11', () => {
     expect(BEHAVIOURS['spiny-snail']!.trigger).toEqual({ radiusBodyLengths: 1.2, seconds: 1.0 });
     expect(BEHAVIOURS.puffer!.trigger).toEqual({ radiusBodyLengths: 1.1, seconds: .8 });
     expect(BEHAVIOURS.clawmother!.lair).toEqual({ radiusBodyLengths: 1.2, resetOutsideFactor: 1.5, resetDelaySeconds: 3, healPerSecond: .04 });
-    expect(BEHAVIOURS['reef-tyrant']!.lair).toEqual({ radiusBodyLengths: 2.2, resetOutsideFactor: 1.5, resetDelaySeconds: 3, healPerSecond: .04 });
+    expect(BEHAVIOURS['reef-tyrant']!.lair).toEqual({ radiusBodyLengths: 1.39, resetOutsideFactor: 1.5, resetDelaySeconds: 3, healPerSecond: .04 });
   });
   it('attack lists: bands, weights, flank weights, chains', () => {
     const U = undefined;

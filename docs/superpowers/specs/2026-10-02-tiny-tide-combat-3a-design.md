@@ -1275,7 +1275,7 @@ Speeds are in tier-local units per second (× `SIZES[tier]`). HP is in HP.
 | `squid` | 0.35 | 0.8 | 0.6–1.2 | — |
 | `eel` | 0 (ambush), 0.35 (out) | 0.8 | 0.5–1.0 | den trigger 0.9 L, out 4 s |
 | `clawmother` | 0.35 | phase | 0.6–1.0 | lair 1.2 L (R15) |
-| `reef-tyrant` | 0.35 | phase | 0.6–1.0 | lair 2.2 L |
+| `reef-tyrant` | 0.35 | phase | 0.6–1.0 | lair 1.39 L (R15) |
 
 ### 11.5 Species attacks
 
@@ -1333,7 +1333,7 @@ toward the player for 1.2 s at × 1.6 (untargetable, inside the lair), then
 starts `mother-emerge` at the player's position. While burrowed, a dust trail
 shows on the seabed.
 
-**Reef Tyrant** (lair radius 2.2 L_e; L_e = 35.84):
+**Reef Tyrant** (lair radius 1.39 L_e = 49.8 units, plan review R15: at most 0.25 × `PLAYER_HALF` × SIZES[1] = 50; the review's 1.4 L_e is 50.18, just over; L_e = 35.84):
 
 | Phase | HP above | Pattern | Attacks (weight) | Speed | Gap |
 | --- | --- | --- | --- | --- | --- |
@@ -1341,7 +1341,7 @@ shows on the seabed.
 | 2 Charge laps | 33 % | laps | `tyrant-charge` every half lap, 2 charges, then a 1.5 s rest | × 1.4 on the lap (radius 0.8 × lair) | 0.6 s |
 | 3 Whirl | 0 | normal | `tyrant-whirl` (2), `tyrant-bite` (2) | × 1.2 | 0.8 s |
 
-`lairFraction` (the BehaviourPhase field): phase 1 keeps the Tyrant within `lairFraction` (.6) × the lair radius; other phases leave it unset.
+`lairFraction` (the BehaviourPhase field): phase 1 keeps the Tyrant within `lairFraction` (.6) × the lair radius; other phases leave it unset. Every phase keeps the same hostile set (size 1 only, `hostileSizes`); the laps circle the lair centre at 0.8 × the lair radius (T19).
 
 The charge aims through the player's position at windup start, so its
 telegraph is fixed for the whole wind-up.

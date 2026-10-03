@@ -2,7 +2,7 @@ import type { SpeciesCombatFields } from './combat-types';
 // Everything that lives (or floats, or sails) in the Tiny Tide universe.
 export type FoodKind = 'plant' | 'kelp_snack' | 'seagrape' | 'lettuce' | 'copepod' | 'worm' | 'shrimp' | 'crab' | 'jellyfish' | 'snail' | 'fish' | 'squid' | 'ray' | 'bird' | 'tree' | 'boat' | 'plane' | 'balloon' | 'lighthouse' | 'planet'
   /** Combat species of sizes 0, 1 and 2 (spec §11.3); each draws an existing GLB through `model`. */
-  | 'drifter' | 'spiny_snail' | 'clawmother' | 'sardine' | 'puffer' | 'eel';
+  | 'drifter' | 'spiny_snail' | 'clawmother' | 'sardine' | 'puffer' | 'eel' | 'reef_tyrant';
 export type FoodTag = 'plant' | 'meat' | 'any';
 export type Behavior = 'still' | 'drift' | 'graze' | 'school' | 'skittish' | 'flyer';
 export interface Species extends SpeciesCombatFields {
@@ -65,6 +65,10 @@ export const SPECIES: readonly Species[] = [
   s(1, 'sardine', 'meat', 'Sunny sardine', 'school', 12, 15, { hp: 4, speed: 3.2, model: 'fish', tint: '#ffd36e', bodyScale: .55, behaviourId: 'sardine' }),
   s(1, 'puffer', 'meat', 'Puffer', 'drift', 6, 20, { hp: 10, speed: .9, model: 'fish', tint: '#f2c94c', bodyScale: .75, behaviourId: 'puffer', attackIds: ['puffer-burst'], fights: true, pursuitId: 'retaliate' }),
   s(2, 'eel', 'meat', 'Moray eel', 'skittish', 4, 28, { hp: 22, speed: 1.4, model: 'worm', tint: '#3d6b4f', behaviourId: 'eel', attackIds: ['eel-ambush', 'eel-bite', 'eel-wrap'], hunts: [1], fights: true, pursuitId: 'ambusher' }),
+  // The size-1 alpha (T19, spec §11.3, §11.6), last in tier 2: no spawn of tiers 0–2 changes; tier 3 and 4 ids move up by one, and their
+  // places stay (each tier has its own random stream, and a reef fallback is seeded by the legacy key).
+  s(2, 'reef_tyrant', 'meat', 'Reef Tyrant', 'skittish', 1, 0, { hp: 110, speed: 1.5, model: 'worm', tint: '#4b2f5e', bodyScale: 1.6, behaviourId: 'reef-tyrant', hunts: [1], fights: true, pursuitId: 'hunter',
+    attackIds: ['tyrant-bite', 'tyrant-den-lunge', 'tyrant-charge', 'tyrant-whirl'], alpha: { size: 1, rewardPartId: 'mouth_tyrant', rewardDna: 60 } }),
 ];
 /** The index of the first row appended by combat sub-project 3a: earlier rows keep the reef-fallback RNG of their spawns (populate). */
 export const APPENDED_FROM = SPECIES.findIndex(spec => spec.key === '0:drifter');

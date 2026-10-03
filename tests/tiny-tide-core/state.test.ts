@@ -96,6 +96,14 @@ describe('run v4', () => {
     const loaded = parseSave(JSON.stringify(r), build)!; expect(loaded).not.toBeNull(); expect(loaded.unlocked).toEqual(['claw_mother']);
     expect(alphaReward(loaded, mother)).toEqual({ dna: 0, part: null }); expect(loaded.stageDna).toBe(40); expect(loaded.totalDna).toBe(total);
   });
+  it('the Reef Tyrant pays 60 DNA and the Tyrant jaw once, also across a save and load (D23, T19)', () => {
+    const r = freshRun(12), tyrant = SPECIES.find(x => x.key === '2:reef_tyrant')!;
+    expect(availableParts(1, []).some(p => p.id === 'mouth_tyrant')).toBe(false);   // the editor shows it only when unlocked
+    expect(alphaReward(r, tyrant)).toEqual({ dna: 60, part: 'mouth_tyrant' }); expect(r.unlocked).toEqual(['mouth_tyrant']); expect(r.stageDna).toBe(60);
+    expect(availableParts(1, r.unlocked).some(p => p.id === 'mouth_tyrant')).toBe(true);
+    const total = r.totalDna, loaded = parseSave(JSON.stringify(r), build)!; expect(loaded).not.toBeNull(); expect(loaded.unlocked).toEqual(['mouth_tyrant']);
+    expect(alphaReward(loaded, tyrant)).toEqual({ dna: 0, part: null }); expect(loaded.stageDna).toBe(60); expect(loaded.totalDna).toBe(total);
+  });
   it('hurts in half-hearts after armor', () => {
     const r = freshRun(7); r.health = 3; expect(hurt(r, 3, 2)).toBe(false); expect(r.health).toBe(2);   // 3 − floor(2 / 2) = 2 half-hearts
     expect(hurt(r, 1, 0)).toBe(false); expect(r.health).toBe(1.5); expect(hurt(r, 9, 0)).toBe(true); expect(r.health).toBe(0);
