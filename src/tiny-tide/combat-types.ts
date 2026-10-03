@@ -182,7 +182,11 @@ export interface CombatRuntime { targetable: boolean; perceivable: boolean; dama
   status: { id: 'inked'; until: number; speedFactor: number } | null;
   lastDamageAt: number; lastThreatAt: number }
 export interface HitRequest { source: ActorId; target: ActorId; actionInstanceId: string; attackId: string; emitter: EmitterSource; hitGroupId: string; point: Vec3; normal: Vec3; damage: number; impulse: Vec3 }
-export interface CombatInput { move: Vec3; aim: Vec3 | null; basicHeld: boolean; basicPressed: boolean; activePressed: [boolean, boolean]; activeHeld: [boolean, boolean]; activeReleased: [boolean, boolean]; activeCanceled: [boolean, boolean]; traversal: 'none' | 'rise' | 'dive' | 'breach' }
+/** One tick's intent. The four active tuples are indexed by ActiveSlot (keys 1–4 / slot buttons). `aimSource` is 'none' when `aim` is null. */
+export interface CombatInput { move: Vec3; aim: Vec3 | null; aimSource: 'pointer' | 'drag' | 'auto' | 'camera' | 'none';
+  basicHeld: boolean; basicPressed: boolean;
+  activePressed: Tuple4<boolean>; activeHeld: Tuple4<boolean>; activeReleased: Tuple4<boolean>; activeCanceled: Tuple4<boolean>;
+  traversal: 'none' | 'rise' | 'dive' | 'breach' }
 export type { DnaCredit } from './economy';
 /** A fresh runtime: every flag true, every clock 0, zero velocities, empty maps. Never saved. */
 export function newRuntime(orientation: Orientation = { yaw: 0, pitch: 0 }): CombatRuntime {

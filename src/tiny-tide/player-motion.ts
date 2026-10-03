@@ -31,11 +31,29 @@ export function breachEndY(actor: Actor, surface: number, size: number): number 
   return surface - Math.max(BREACH_END_DEPTH * size, top + lip * step / 2 + BREACH_CLEARANCE * actor.bodyLength);
 }
 
+/** Motion during actions (spec §5.12), from the combat world. Every field moves the body only through resolveMotion (admission). */
+export interface CombatMotion {
+  /** Multiplies the top speed: the attack's moveSpeedFactor in windup and active, the guard's while bracing, .6 holding a grab,
+   *  the status speed while inked, .5 while staggered (the factors multiply). */
+  speedFactor: number;
+  /** Face this direction at yawRateFactor × maxYawRate (Bite and Grab in windup and active: the action aim; Brace: the input aim).
+   *  This is an object with a rate, not the bare `Vec3 | null` that the plan's T7 interface line names (plan review R20). */
+  face: { dir: Vec3; yawRateFactor: number } | null;
+  /** Dash active: the controlled velocity is replaced by this (physical units per second); cause 'dash'. */
+  dashVelocity: Vec3 | null;
+  /** Held by a grabber: this tick's displacement (claw point − attach point); the controlled velocity is zero; cause 'grab'. */
+  forcedDisplacement: Vec3 | null;
+  /** Hit-stop: no controlled or external displacement this tick; the velocities are kept (the Breach arc keeps world time). */
+  frozen: boolean;
+}
+export const NO_COMBAT_MOTION: CombatMotion = Object.freeze({ speedFactor: 1, face: null, dashVelocity: null, forcedDisplacement: null, frozen: false });
 export interface PlayerStepContext {
   plan: BodyPlan; profile: MovementProfile; caps: MovementCapabilities; actor: Actor; queries: WorldQueries; bounds: { half: number; maxY?: number };
   size: number; topSpeedLocal: number; now: number; dt: number;
   /** The camera-mapped move wish in world space, |wish| ≤ 1; y is the camera pitch part, used only when caps.pitch. */
   wish: Vec3; aim: Vec3 | null; actionLock: boolean;
+  /** Motion during actions; default NO_COMBAT_MOTION. */
+  combat?: CombatMotion;
 }
 /** `progress`: the applied displacement over the asked one (1 when nothing was asked). */
 export interface PlayerStepResult { position: Vec3; status: MotionResult['status']; contacts: readonly Contact[]; progress: number; needsRecovery: boolean; breachStarted: boolean; arcEnded: boolean; permitEnded: boolean;
@@ -52,7 +70,7 @@ function shortestArc(a: number, b: number): number {
 const clampAbs = (v: number, max: number) => Math.max(-max, Math.min(max, v));
 
 export function stepPlayer(position: Vec3, rt: CombatRuntime, intent: CombatInput, ctx: PlayerStepContext): PlayerStepResult {
-  const { caps, profile, actor, queries, size, now, dt } = ctx, t = queries.terrain, L = actor.bodyLength, end = now + dt;
+  const { caps, profile, actor, queries, size, now, dt } = ctx, t = queries.terrain, L = actor.bodyLength, end = now + dt, cm = ctx.combat ?? NO_COMBAT_MOTION;
 
   // 1. Breach, near the surface only. A Breach tap that starts no arc is a Rise.
   let breachStarted = false;
@@ -71,23 +89,29 @@ export function stepPlayer(position: Vec3, rt: CombatRuntime, intent: CombatInpu
   const wLen = Math.hypot(w.x, w.y, w.z);
   if (wLen > 1) { w.x /= wLen; w.y /= wLen; w.z /= wLen; }
 
-  // 3. Controlled velocity (physical).
-  const k = ctx.topSpeedLocal * profile.speedMultiplier * size;
+  // 3. Controlled velocity (physical). A dash replaces it; a hold zeroes it; a hit-stop leaves it as it is.
+  const k = ctx.topSpeedLocal * profile.speedMultiplier * size * cm.speedFactor;
   const target = { x: w.x * k, y: w.y * k, z: w.z * k }, cv = rt.controlledVelocity;
   const v: MutVec3 = { x: cv.x, y: cv.y, z: cv.z };
-  const rate = (Math.hypot(target.x, target.y, target.z) > Math.hypot(v.x, v.y, v.z) ? profile.acceleration : profile.braking) * size;
-  const gx = target.x - v.x, gy = target.y - v.y, gz = target.z - v.z, gap = Math.hypot(gx, gy, gz), maxStep = rate * dt;
-  if (gap > 0) {
-    if (gap <= maxStep) { v.x = target.x; v.y = target.y; v.z = target.z; }
-    else { const f = maxStep / gap; v.x += gx * f; v.y += gy * f; v.z += gz * f; }
+  if (cm.forcedDisplacement) { v.x = 0; v.y = 0; v.z = 0; }
+  else if (cm.dashVelocity) { v.x = cm.dashVelocity.x; v.y = cm.dashVelocity.y; v.z = cm.dashVelocity.z; }
+  else if (!cm.frozen) {
+    const rate = (Math.hypot(target.x, target.y, target.z) > Math.hypot(v.x, v.y, v.z) ? profile.acceleration : profile.braking) * size;
+    const gx = target.x - v.x, gy = target.y - v.y, gz = target.z - v.z, gap = Math.hypot(gx, gy, gz), maxStep = rate * dt;
+    if (gap > 0) {
+      if (gap <= maxStep) { v.x = target.x; v.y = target.y; v.z = target.z; }
+      else { const f = maxStep / gap; v.x += gx * f; v.y += gy * f; v.z += gz * f; }
+    }
   }
   if (caps.ground || arc !== null) v.y = 0;
 
   // 4. Desired orientation (submitted as a turn; not committed here).
   const o = rt.orientation;
-  let f: Vec3 | null = w;
+  let f: Vec3 | null = w, yawRate = profile.maxYawRate;
   if (profile.facing === 'aim') f = ctx.aim ?? w;
   else if (profile.facing === 'lock-during-action' && ctx.actionLock) f = null;
+  if (cm.face) { f = cm.face.dir; yawRate = profile.maxYawRate * cm.face.yawRateFactor; }
+  if (cm.frozen || cm.forcedDisplacement) f = null;
   let yawTarget = o.yaw, pitchTarget = caps.pitch ? o.pitch : 0;
   if (f) {
     const fLen = Math.hypot(f.x, f.y, f.z);
@@ -95,14 +119,15 @@ export function stepPlayer(position: Vec3, rt: CombatRuntime, intent: CombatInpu
     if (caps.pitch && fLen > 0) pitchTarget = clampAbs(Math.asin(clampAbs(f.y / fLen, 1)), PITCH_LIMIT);
   }
   const desired: Orientation = {
-    yaw: o.yaw + clampAbs(shortestArc(o.yaw, yawTarget), profile.maxYawRate * dt),
+    yaw: o.yaw + clampAbs(shortestArc(o.yaw, yawTarget), yawRate * dt),
     pitch: o.pitch + clampAbs(pitchTarget - o.pitch, profile.maxPitchRate * dt),
   };
 
   // 5. Displacement. The vertical part has one owner; external motion accumulates. The edge current (edge.ts) is a
   //    pure function of the position: it is added here and stored in neither velocity owner.
-  const ev = rt.externalVelocity, edge = edgeCurrent(position, ctx.bounds.half, size);
-  const d: MutVec3 = { x: (v.x + ev.x + edge.x) * dt, y: (v.y + ev.y) * dt, z: (v.z + ev.z + edge.z) * dt };
+  //    A hit-stop (frozen) drops the controlled and external parts; a grab's forced displacement replaces the whole move.
+  const ev = rt.externalVelocity, edge = edgeCurrent(position, ctx.bounds.half, size), still = cm.frozen ? 0 : 1, fd = cm.forcedDisplacement;
+  const d: MutVec3 = fd ? { x: fd.x, y: fd.y, z: fd.z } : { x: ((v.x + ev.x) * still + edge.x) * dt, y: (v.y + ev.y) * still * dt, z: ((v.z + ev.z) * still + edge.z) * dt };
   let arcDone = false;
   const grounded = caps.ground && arc === null && !t.space;
   if (arc !== null) {
@@ -110,12 +135,12 @@ export function stepPlayer(position: Vec3, rt: CombatRuntime, intent: CombatInpu
     const u = (time: number) => Math.min(1, (time - arc.startedAt) / arc.duration);
     const arcY = (s: number) => arc.fromY + (endY - arc.fromY) * s + Math.sin(s * Math.PI) * lift;
     const uEnd = u(end);
-    d.y = arcY(uEnd) - arcY(u(now)) + ev.y * dt;
+    d.y = arcY(uEnd) - arcY(u(now)) + ev.y * dt * still;
     arcDone = uEnd >= 1;
-  } else if (grounded) {
+  } else if (grounded && !fd) {
     // The height over the seabed support (groundOffset) settles down, and is lifted onto a low rock (stepLift, owner decision fix
     // round 2). The lift rises at most STEP_CLIMB L/s: a steeper step holds the horizontal move back to what that rise allows.
-    const offset = Math.max(0, rt.groundOffset * Math.exp(-GROUND_SETTLE * dt) + ev.y * dt), actx = { time: now, permit: rt.permit, bounds: ctx.bounds };
+    const offset = Math.max(0, rt.groundOffset * Math.exp(-GROUND_SETTLE * dt) + ev.y * dt * still), actx = { time: now, permit: rt.permit, bounds: ctx.bounds };
     const liftAt = (s: number) => stepLift(actor, position.x + d.x * s, position.z + d.z * s, o, queries, supportHeight(actor, position.x + d.x * s, position.z + d.z * s, o, t), actx);
     let lift = liftAt(1);
     const room = rt.groundOffset + STEP_CLIMB * L * dt;
@@ -132,12 +157,12 @@ export function stepPlayer(position: Vec3, rt: CombatRuntime, intent: CombatInpu
 
   // 6. Motion.
   const result = resolveMotion({ actorId: 'player', from: position, displacement: d, orientation: o, turn: desired, hull: actor.hull, habitatProfileId: actor.habitat.id,
-    cause: 'locomotion', traversalPermit: rt.permit, ...(grounded ? { riseCap: Math.max(0, d.y) } : {}) }, { queries, actor, bounds: ctx.bounds, interval: { start: now, end } });
+    cause: fd ? 'grab' : cm.dashVelocity ? 'dash' : 'locomotion', traversalPermit: rt.permit, ...(grounded ? { riseCap: Math.max(0, d.y) } : {}) }, { queries, actor, bounds: ctx.bounds, interval: { start: now, end } });
   if (grounded) rt.groundOffset = Math.max(0, result.position.y - (supportHeight(actor, result.position.x, result.position.z, result.orientation, t) + .01 * L));
 
   // 7. Commit. The two velocity owners are projected separately; their sum is never stored.
   rt.orientation = { yaw: result.orientation.yaw, pitch: result.orientation.pitch };
-  const pc = projectVelocity(v, result.contacts), pe = projectVelocity(ev, result.contacts), decay = Math.exp(-EXTERNAL_DECAY * dt);
+  const pc = projectVelocity(v, result.contacts), pe = projectVelocity(ev, result.contacts), decay = cm.frozen ? 1 : Math.exp(-EXTERNAL_DECAY * dt);
   cv.x = pc.x; cv.y = pc.y; cv.z = pc.z;
   ev.x = pe.x * decay; ev.y = pe.y * decay; ev.z = pe.z * decay;
 
