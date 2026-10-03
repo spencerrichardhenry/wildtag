@@ -637,6 +637,11 @@ The admission clock counts only calls made inside a played frame: it resets
 when a frame starts, so the editor's anchor checks and a start's admissions
 are not counted (final review M8).
 
+QA note (combat, T16b): the telegraph edge arrow is in practice a phone feature
+in crab fights. On a desktop view the close camera keeps a nearby crab and its
+telegraph on screen, so no arrow appears. The live look caught one only at
+390 × 844 with the camera turned (`.codex-drafts/tiny-tide-qa/combat-live-edge-arrow.png`).
+
 The unit tests cover parts, genomes, stats, diets, DNA, evolution, health,
 seeded worlds, creature behavior (hunting, fleeing, provoking, stealth,
 regrowth) and v1/v2 saves. The full browser test uses real controls. It edits

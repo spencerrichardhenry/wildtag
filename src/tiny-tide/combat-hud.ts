@@ -70,6 +70,11 @@ export function floaterText(outcome: HitOutcome, unit: 'hp' | 'half-heart', amou
   if (outcome === 'immune') return 'IMMUNE';
   return amount > 0 ? damageText(outcome, unit, amount) : null;
 }
+/** Damage numbers (T16b fix round 1, readability): the damage the player deals and the damage it takes have clearly different colours.
+ *  `dealt`: a pale yellow; `taken`: a strong red. Any other event (species on species) is `dealt`'s neutral twin. */
+export const FLOATER_COLOURS = { dealt: '#fff3a8', taken: '#ff4b4b' } as const;
+export type FloaterClass = keyof typeof FLOATER_COLOURS;
+export const floaterClass = (attackerId: string, targetId: string): FloaterClass => targetId === 'player' && attackerId !== 'player' ? 'taken' : 'dealt';
 /** A combat species shows its HP bar for this long after its last damage (spec §9.3). */
 export const HP_BAR_SECONDS = 4;
 /** Screen pixels; `fraction` is HP left. */

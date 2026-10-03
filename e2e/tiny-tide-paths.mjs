@@ -1,4 +1,4 @@
-// Tiny Tide C11: paths, editor, gestures, limits, soft world edge, solid reef rocks, block hints, hazards, pose agreement, lifecycle and saves (18 checks, with 5b, 5c, 5d, 7b, 7c, 10b and 12b).
+// Tiny Tide C11: paths, editor, gestures, limits, soft world edge, solid reef rocks, block hints, hazards, pose agreement, lifecycle and saves (18 checks, with 5b, 5c, 5d, 7b, 7c, 10b, 12b and 13b).
 // Fixtures come from the dev-only fixture page (the game's own modules). Run one or more checks: node e2e/tiny-tide-paths.mjs 3 7b
 import assert from 'node:assert/strict';
 import { mkdirSync } from 'node:fs';
@@ -643,7 +643,7 @@ check('12b', 'Lost abilities (QA grant catalog)', async () => {
 
 check('13', 'Hazard integration and invulnerability', async () => {
   const { page, errors } = await newPage();
-  // T16: the crab lost its contact hazard; the Moon jelly (stings stages 0 and 1) is the hazard now. A Speck lives within 1.1 L of the
+  // T16: the crab lost its contact hazard; the Moon jelly (stings stage 1) is the hazard now. A Speck lives within 1.1 L of the
   // seabed and never reaches a jelly (12+ units up), so the player is a stage-1 swimmer at the jelly's home: the jelly's loop around its
   // home (± 3 units, bob ± .5) keeps it in contact.
   const pick = await pickHazard(page, { stage: 1, key: '1:jellyfish' }); assert.ok(pick, 'pickHazard found a Moon jelly');
@@ -671,6 +671,33 @@ check('13', 'Hazard integration and invulnerability', async () => {
   assert.equal(after[hit1].health, after[hit1].max - damage, `health drops by damageAfterArmor(2, ${fx.info.armor}) / 2 = ${damage}`);
   const hit2 = after.findIndex(x => x.accepted >= 2); assert.ok(hit2 >= 0, 'a second hit is accepted within 10 s');
   assert.ok(after[hit2].time - after[hit1].time >= .8 - 1e-9, `the next accepted hit is no sooner than .8 s later (${(after[hit2].time - after[hit1].time).toFixed(3)} s)`);
+  assert.deepEqual(errors, []);
+});
+
+check('13b', 'Combat attacks and the start grace (a Speck next to a Peach crab)', async () => {
+  // T16b fix round 1: crab attacks go through the combat resolver: a hit inside the start grace is `immune`, the first `hit` lands after it.
+  const { page, errors } = await newPage();
+  const pick = await pickHazard(page, { stage: 0, key: '1:crab' }); assert.ok(pick, 'pickHazard found a crab');
+  const fx = await makeFixture(page, { seed: pick.seed });
+  await openGame(page, { storage: { [fx.key]: fx.json }, query: `forcedSpawn=${pick.home.x + 4},${pick.home.y + 1},${pick.home.z}` }); await start(page);
+  const r = await page.evaluate(() => new Promise(resolve => {
+    const seen = new Map(), t0 = window.__tinyTide.time, w0 = performance.now(), until = window.__tinyTide.invulnerableUntil;   // the start grace (a hit adds its own invulnerability later)
+    const tick = () => {
+      const s = window.__tinyTide;
+      for (const h of s.combat.hits) if (h.target === 'player') seen.set(`${h.time}:${h.attack}:${h.outcome}`, h);
+      const hits = [...seen.values()].sort((a, b) => a.time - b.time);
+      if (hits.some(h => h.outcome === 'hit') || s.time - t0 > 15) return resolve({ hits, until });
+      if (performance.now() - w0 > 60000) return resolve({ wall: true, s, hits });
+      requestAnimationFrame(tick);
+    };
+    tick();
+  }));
+  noWallTimeout(r, 'check 13b (crab)');
+  const immune = r.hits.filter(h => h.outcome === 'immune'), first = r.hits.find(h => h.outcome === 'hit');
+  console.log(`     crab hits: ${r.hits.map(h => `${h.attack} ${h.outcome} at ${h.time.toFixed(2)}`).join(', ')}; grace until ${r.until.toFixed(2)}`);
+  assert.ok(immune.length >= 1 && immune.every(h => h.time < r.until), `an attack inside the grace is immune (${JSON.stringify(r.hits)})`);
+  assert.ok(first && first.time >= r.until, 'the first hit lands after the grace');
+  assert.ok(r.hits.every(h => h.outcome !== 'hit' || h.time >= r.until), 'no hit inside the grace');
   assert.deepEqual(errors, []);
 });
 
@@ -794,4 +821,4 @@ try {
   }
 } finally { await browser.close(); }
 if (failures.length) { console.log(`FAILED: ${failures.join(', ')}`); process.exit(1); }
-console.log(`PASSED: ${only.length ? `checks ${only.join(', ')}` : 'all 18 checks (with 5b, 5c, 5d, 7b, 7c, 10b and 12b)'}: path screen, customize fallback, submit failure, evolve editor, swimmer and crawler limits, soft world edge, solid reef rocks, block hints, high spawn recovery, bite at the floor, transformation path, diet lock, size pricing, desktop and touch gestures, chorded mouse buttons, allocation, lost abilities, hazards and invulnerability, pose agreement, faint during a Breach, pause, kept coast save, legacy keys.`);
+console.log(`PASSED: ${only.length ? `checks ${only.join(', ')}` : 'all 18 checks (with 5b, 5c, 5d, 7b, 7c, 10b, 12b and 13b)'}: path screen, customize fallback, submit failure, evolve editor, swimmer and crawler limits, soft world edge, solid reef rocks, block hints, high spawn recovery, bite at the floor, transformation path, diet lock, size pricing, desktop and touch gestures, chorded mouse buttons, allocation, lost abilities, hazards and invulnerability, pose agreement, faint during a Breach, pause, kept coast save, legacy keys.`);

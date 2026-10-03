@@ -1,7 +1,7 @@
 // tests/tiny-tide-core/combat-hud.test.ts — T9: the slot views (label and cooldown fraction on the action clock) and the ring step that
 // decides when a slot button is redrawn (a cooldown that is almost over must still differ from a ready slot).
 import { describe, expect, it } from 'vitest';
-import { edgeArrowAt, faintMessage, floaterText, ringStep, slotViews } from '../../src/tiny-tide/combat-hud';
+import { edgeArrowAt, faintMessage, FLOATER_COLOURS, floaterClass, floaterText, ringStep, slotViews } from '../../src/tiny-tide/combat-hud';
 import { playerMoves } from '../../src/tiny-tide/sim';
 import { speck } from './combat-fixture-world';
 
@@ -25,6 +25,14 @@ describe('combat floaters and edge arrows (T12)', () => {
     expect(floaterText('blocked', 'half-heart', 0)).toBe('BLOCK'); expect(floaterText('countered', 'hp', 0)).toBe('COUNTER!');
     expect(floaterText('evaded', 'half-heart', 0)).toBe('DODGE'); expect(floaterText('immune', 'hp', 0)).toBe('IMMUNE');
     expect(floaterText('guard-broken', 'half-heart', 2)).toBe('−1 ♥'); expect(floaterText('guard-broken', 'half-heart', 0)).toBeNull();
+  });
+  it('damage the player deals and damage it takes have clearly different colours (T16b fix round 1)', () => {
+    expect(floaterClass('player', 'e93')).toBe('dealt'); expect(floaterClass('e93', 'player')).toBe('taken'); expect(floaterClass('e1', 'e2')).toBe('dealt');
+    const rgb = (h: string) => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16)) as [number, number, number];
+    const [tr, tg, tb] = rgb(FLOATER_COLOURS.taken), [dr, dg, db] = rgb(FLOATER_COLOURS.dealt);
+    expect(tr).toBeGreaterThan(200); expect(tg).toBeLessThan(100); expect(tb).toBeLessThan(100);   // taken: red
+    expect(Math.min(dr, dg)).toBeGreaterThan(200); expect(db).toBeLessThan(dg);                     // dealt: pale yellow
+    expect(dg - tg).toBeGreaterThan(120);                                                           // far apart in green, not two warm tints
   });
   it('an edge arrow sits inside the screen edge toward the point; a point behind the camera is mirrored', () => {
     const right = edgeArrowAt({ x: 2000, y: 300, visible: true }, 800, 600);

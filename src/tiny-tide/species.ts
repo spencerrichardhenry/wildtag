@@ -42,7 +42,7 @@ export const SPECIES: readonly Species[] = [
   s(1, 'lettuce', 'plant', 'Lettuce bed', 'still', 9, 12),
   s(1, 'shrimp', 'meat', 'Little shrimp', 'skittish', 10, 16, { speed: 3.4 }),
   s(1, 'crab', 'meat', 'Peach crab', 'graze', 8, 24, { hp: 20, speed: 1.3, hunts: [0], fights: true, pursuitId: 'hunter', behaviourId: 'crab', attackIds: ['crab-pinch', 'crab-lunge', 'crab-sweep'] }),
-  s(1, 'jellyfish', 'meat', 'Moon jelly', 'drift', 8, 14, { stingsStages: [0, 1], contactHazardId: 'jelly-sting' }),
+  s(1, 'jellyfish', 'meat', 'Moon jelly', 'drift', 8, 14, { stingsStages: [1], contactHazardId: 'jelly-sting' }),
   s(1, 'snail', 'meat', 'Sea snail', 'graze', 8, 13, { speed: .5 }),
   s(2, 'kelp_snack', 'plant', 'Kelp frond', 'still', 10, 16),
   s(2, 'plant', 'plant', 'Sprout grove', 'still', 9, 16),

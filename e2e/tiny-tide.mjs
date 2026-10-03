@@ -129,7 +129,11 @@ try {
       if (s.evolveReady) {
         await control([]);
         // The path screen, then the evolve editor for this line's next plan.
-        await page.locator('#evolve').waitFor({ state: 'visible' }); await page.locator('#evolve').click();
+        // Crabs attack the Speck since T16: a faint can start between the read above and the click, and its overlay blocks the button.
+        // Re-read just before the click, and treat a blocked click as a retry of the loop.
+        await page.locator('#evolve').waitFor({ state: 'visible' });
+        const now = await state(); if (now.mode !== 'playing' || await page.locator('#faint').isVisible()) continue;
+        if (!(await page.locator('#evolve').click({ timeout: 2000 }).then(() => true, () => false))) continue;
         await page.locator('#path-screen').waitFor(); await shot(`paths-${s.stage + 1}`);
         await page.locator(`#path-screen [data-plan=${LINE[s.stage]}] .path-choose`).click();
         await page.locator('#editor').waitFor(); await page.waitForTimeout(300);

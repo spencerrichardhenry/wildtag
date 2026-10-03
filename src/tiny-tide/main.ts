@@ -17,7 +17,7 @@ import { cardSummary, COAST_READY, eligibleChildren, leadsTo, type BodyPlan } fr
 import { quoteDesign } from './economy';
 import { newRuntime, type Actor, type CombatInput, type Constraint, type Tuple4, type Vec3, type WorldQueries } from './combat-types';
 import { aimChevron, aimPitch, autoAim, BRACE_AUTO_AIM_HALF_ANGLE, dragAim, mouseButtons, NO_MOUSE, pitched, pointerAim, POINTER_FRESH_SECONDS, readIntent, RELEASED, type AimCandidate, type AimSource, type MouseState } from './input';
-import { CombatHud, CombatOverlay, EdgeArrowMemory, edgeArrowAt, faintMessage, floaterText, HP_BAR_SECONDS, slotViews, type EdgeArrow, type HpBar } from './combat-hud';
+import { CombatHud, CombatOverlay, EdgeArrowMemory, edgeArrowAt, faintMessage, FLOATER_COLOURS, floaterClass, floaterText, HP_BAR_SECONDS, slotViews, type EdgeArrow, type HpBar } from './combat-hud';
 import { forwardOf } from './orientation';
 import { blockHint, blockHintDue, newBlockHintGate, PITCH_LIMIT, type PlayerStepResult, newTapWatch, tapTargetStalled } from './player-motion';
 import { canChooseNextPlan, evolutionDestination, reconcileAfterCommit } from './lifecycle';
@@ -339,8 +339,10 @@ function viewOriginal() {
 function escapeHtml(text: string) { return text.replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`); }
 syncHome();
 function toast(message: string) { el('toast').textContent = message; el('toast').classList.add('show'); toastTimer = 4.5; }
-function floater(text: string, x: number, y: number, kind = '') {
-  const label = document.createElement('span'); label.className = `bite-floater ${kind}`; label.textContent = text; label.style.left = `${x}px`; label.style.top = `${y}px`; el('floaters').append(label); setTimeout(() => label.remove(), 950);
+function floater(text: string, x: number, y: number, kind = '', colour?: string) {
+  const label = document.createElement('span'); label.className = `bite-floater ${kind}`; label.textContent = text; label.style.left = `${x}px`; label.style.top = `${y}px`;
+  if (colour) label.style.color = colour;
+  el('floaters').append(label); setTimeout(() => label.remove(), 950);
 }
 /** Hearts with half steps (spec §10.1). */
 function syncHearts() {
@@ -552,7 +554,7 @@ function presentChomp(c: ChompResult) {
   chompPulse = 1;
   if (c.kind === 'miss') {
     audio.tone(170, 0, .065);
-    if (c.wrongDiet && wrongDietClock <= 0) { toast(`A ${dietOf(run.genome)} can’t eat ${c.wrongDiet.toLowerCase()}. Try another mouth in the editor.`); wrongDietClock = 6; }
+    if (c.wrongDiet && wrongDietClock <= 0 && !inCombat()) { toast(`A ${dietOf(run.genome)} can’t eat ${c.wrongDiet.toLowerCase()}. Try another mouth in the editor.`); wrongDietClock = 6; }
     return;
   }
   const food = world.foods.find(f => f.entity === c.entity)!, pos = world.screenPoint(new T.Vector3(food.data.x, food.data.y + 1, food.data.z));
@@ -594,7 +596,7 @@ function presentCombat(t: CombatTick) {
   for (const e of t.events) {
     const local = new T.Vector3(e.point.x, e.point.y, e.point.z).divideScalar(world.scale), pos = world.screenPoint(local);
     const toPlayer = e.targetId === PLAYER_ID, fromPlayer = e.attackerId === PLAYER_ID, text = floaterText(e.outcome, e.unit, e.amount);
-    if (text && pos.visible) floater(text, pos.x, pos.y, toPlayer ? 'hurt' : 'hit');
+    if (text && pos.visible) { const cls = floaterClass(e.attackerId, e.targetId); floater(text, pos.x, pos.y, `${toPlayer ? 'hurt' : 'hit'} ${cls}`, FLOATER_COLOURS[cls]); }
     const colour = e.outcome === 'countered' ? IMPACT_COLOURS.counter : e.outcome === 'blocked' || e.outcome === 'guard-broken' ? IMPACT_COLOURS.block : toPlayer ? IMPACT_COLOURS.hurt : IMPACT_COLOURS.hit;
     if (e.outcome !== 'evaded' && e.outcome !== 'immune' ) world.impact(local.x, local.y, local.z, colour, IMPACT_PARTICLES);
     if (e.outcome === 'hit') { if (toPlayer) audio.hurt(); else audio.hit(); }
@@ -617,8 +619,23 @@ function presentCombat(t: CombatTick) {
 }
 /** The bottom of the top HUD band (the stage card, the growth card and the objective), in CSS pixels: world-anchored labels (threat
  *  markers, HP bars) stay below it (T16b live look: over a close crab they sat on the DNA bar and the objective). */
+let bandCache = { frame: -1, bottom: 90 };
 function hudBand(): number {
-  return Math.max(90, ...['.stage-card', '.growth-card', '#objective'].map(q => document.querySelector(q)?.getBoundingClientRect().bottom ?? 0));
+  if (bandCache.frame !== frameNo) bandCache = { frame: frameNo, bottom: Math.max(90, ...['.stage-card', '.growth-card', '#objective'].map(q => document.querySelector(q)?.getBoundingClientRect().bottom ?? 0)) };
+  return bandCache.bottom;
+}
+/** The threat marker box (CSS: a 26 px "!" over an 8 px label, translate(-50%, -100%), a 6 px bob): its height in pixels. */
+const MARKER_HEIGHT = 52;
+/** The bottom of each entity's threat marker this frame (screen pixels): its HP bar goes at least 4 px below it. */
+const markerBottoms = new Map<number, number>(), markerXs = new Map<number, number>();
+/** Engaged in combat (readability): a combat species has an action at the player, made contact with it, or was damaged by it in the last
+ *  3 s. Hints that are not about the fight wait. */
+function inCombat(): boolean {
+  for (const c of sim.combat.entities.values()) {
+    if (c.entity.eaten) continue;
+    if (time - c.lastAttackedPlayerAt <= 3 || time - c.lastDamagedAt <= 3 || c.rt.actions.some(a => a.phase !== 'interrupted' && a.targetId === PLAYER_ID)) return true;
+  }
+  return false;
 }
 /** A physical point is on screen (the telegraph's edge arrow). */
 function onScreen(p: Vec3): boolean {
@@ -641,7 +658,10 @@ function presentCombatView() {
   if (playing) for (const c of sim.combat.entities.values()) {
     if (c.entity.eaten || !c.entity.active || time - c.lastDamagedAt > HP_BAR_SECONDS) continue;
     const top = world.screenPoint(new T.Vector3(c.entity.x, c.entity.y + .9 * SIZES[c.entity.spec.tier]!, c.entity.z).divideScalar(world.scale));
-    if (top.visible) bars.push({ x: top.x, y: Math.max(top.y, (band ??= hudBand()) + 12), fraction: c.entity.hp / c.maxHp });
+    if (!top.visible) continue;
+    const below = markerBottoms.get(c.entity.id), bar = { x: top.x, y: Math.max(top.y, (band ??= hudBand()) + 12), fraction: c.entity.hp / c.maxHp };
+    if (below !== undefined) { bar.x = markerXs.get(c.entity.id) ?? bar.x; bar.y = Math.max(bar.y, below + 4 + 5); }   // the bar (5 px, bottom-anchored) under its marker
+    bars.push(bar);
   }
   for (const v of telegraphViews) if (arrowed.has(v.actionId) && !v.onScreen) {
     const at = edgeArrowAt(world.screenPoint(new T.Vector3(v.centroid.x, v.centroid.y, v.centroid.z).divideScalar(world.scale)), innerWidth, innerHeight);
@@ -779,7 +799,9 @@ function updateGuide() {
     const heightHint = f.y - p.y > 2.1 ? caps.breach ? 'BREACH TO REACH!' : caps.rise ? 'HOLD RISE TO REACH' : out : p.y - f.y > 2.1 ? caps.dive ? 'HOLD DIVE TO REACH' : out : 'HOLD CHOMP';
     const label = near ? heightHint : nearest.entity.spec.label.toUpperCase();
     const onscreen = point.visible && point.x > 65 && point.x < innerWidth - 65 && point.y > 200 && point.y < innerHeight - 200;
-    el('snack-label').hidden = !onscreen; el('food-pointer').hidden = onscreen;
+    // Readability: no "HOLD CHOMP" over the Speck while a fight is on (the marker and the HP bar sit there).
+    const fight = inCombat();
+    el('snack-label').hidden = !onscreen || fight; el('food-pointer').hidden = onscreen;
     if (onscreen) { el('snack-label').style.left = `${point.x}px`; el('snack-label').style.top = `${point.y}px`; el('snack-label').textContent = label; }
     else {
       const pp = world.screenPoint(p); const dx = (point.x - pp.x) * (point.visible ? 1 : -1), dy = (point.y - pp.y) * (point.visible ? 1 : -1);
@@ -790,10 +812,13 @@ function updateGuide() {
   } else { el('food-pointer').hidden = true; el('snack-label').hidden = true; }
   // Sense parts let the creature notice hunters from farther away.
   const markers = world.threats.filter(f => Math.hypot(f.data.x - p.x, f.data.y - p.y, f.data.z - p.z) < derived.senseRange).slice(0, 4);
-  const top = markers.length ? hudBand() + 24 : 90;
+  // A marker (bottom-anchored) stays below the top HUD band with its whole box, and inside the viewport horizontally (its label included).
+  const top = markers.length ? hudBand() + MARKER_HEIGHT + 4 : 90;
+  markerBottoms.clear(); markerXs.clear();
   el('threats').innerHTML = markers.map(f => {
-    const point = world.screenPoint(new T.Vector3(f.data.x, f.data.y + (f.tier > run.stage ? 4 : 1.6), f.data.z));
-    const x = T.MathUtils.clamp(point.visible ? point.x : innerWidth - point.x, 30, innerWidth - 30), y = T.MathUtils.clamp(point.visible ? point.y : innerHeight - 60, Math.min(top, innerHeight - 60), innerHeight - 60);
+    const point = world.screenPoint(new T.Vector3(f.data.x, f.data.y + (f.tier > run.stage ? 4 : 1.6), f.data.z)), half = Math.max(16, f.entity.spec.label.length * 3.4 + 6);
+    const x = T.MathUtils.clamp(point.visible ? point.x : innerWidth - point.x, half + 4, innerWidth - half - 4), y = T.MathUtils.clamp(point.visible ? point.y : innerHeight - 60, Math.min(top, innerHeight - 60), innerHeight - 60);
+    markerBottoms.set(f.entity.id, y); markerXs.set(f.entity.id, x);
     return `<span class="threat ${point.visible ? '' : 'edge'}" style="left:${x}px;top:${y}px">!<small>${f.entity.spec.label.toUpperCase()}</small></span>`;
   }).join('');
 }
@@ -841,8 +866,9 @@ function syncAimChevron(intent: CombatInput) {
   const at = aimChevron(physical, aim, L, combatFoods().map(f => f.entity));
   world.showAimChevron(at && { x: at.x / world.scale, y: at.y / world.scale, z: at.z / world.scale }, aim, L / world.scale);
 }
+let frameNo = 0;
 function frame(now: number) {
-  requestAnimationFrame(frame);
+  requestAnimationFrame(frame); frameNo++;
   const dt = Math.min((now - last) / 1000, .05); last = now;
   if (admissionClock.on) { resetAdmissionClock(); admissionClock.caller = 'player'; frameContacts = 0; }
   // The game clock runs in these modes only (not while paused, editing, stuck or won); sim.ts decides it the same way.
