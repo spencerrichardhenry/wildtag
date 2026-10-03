@@ -277,8 +277,10 @@ export function botInput(p: ProbeWorld, bot: Bot, o: BotOptions): { intent: Comb
 // ---- director invariants (P8, in game time: activeStartedAt, T11 ruling) ----
 export interface DirectorWatch { maxTokens: number; minActiveGap: number; minOffScreenWindup: number; lastActiveAt: number; world: ProbeWorld | null; seen: Map<string, { windup: number; onScreen: boolean; active: boolean }>;
   /** The two actions of the smallest gap (diagnostics). */
-  gapPair: string; windups: number; offScreen: number }
-export const newWatch = (): DirectorWatch => ({ maxTokens: 0, minActiveGap: Infinity, minOffScreenWindup: Infinity, lastActiveAt: -Infinity, world: null, seen: new Map(), gapPair: '', windups: 0, offScreen: 0 });
+  gapPair: string; windups: number; offScreen: number;
+  /** Wind-ups at the player by attack id (the attack mix; balance note: squid ink is rare). */
+  mix: Record<string, number> }
+export const newWatch = (): DirectorWatch => ({ maxTokens: 0, minActiveGap: Infinity, minOffScreenWindup: Infinity, lastActiveAt: -Infinity, world: null, seen: new Map(), gapPair: '', windups: 0, offScreen: 0, mix: {} });
 let lastActiveId = '';
 function watchDirector(p: ProbeWorld, d: DirectorWatch): void {
   // Each world has its own clock and director: spacing is measured inside one world.
@@ -291,7 +293,7 @@ function watchDirector(p: ProbeWorld, d: DirectorWatch): void {
     if (!w) {
       // The director's on-screen test is on the shape's centroid at the start (combat-world startCentroid).
       const shapes = a.lockedShapes ?? s.combat.speciesShapes(c, a, s.time), at = shapes[0] ? shapeCentroid(shapes[0]) : entityCentre(c.entity);
-      w = { windup: windupLength(a), onScreen: p.w.isOnScreen(at), active: false }; d.seen.set(a.instanceId, w); d.windups++;
+      w = { windup: windupLength(a), onScreen: p.w.isOnScreen(at), active: false }; d.seen.set(a.instanceId, w); d.windups++; d.mix[a.definitionId] = (d.mix[a.definitionId] ?? 0) + 1;
       if (!w.onScreen) { d.offScreen++; d.minOffScreenWindup = Math.min(d.minOffScreenWindup, w.windup); }
     }
     if (!w.active && a.phase !== 'windup') { w.active = true; const at = activeStartedAt(c.rt, a, s.time); if (at !== null) starts.push({ at, id: a.instanceId }); }
@@ -384,15 +386,15 @@ export function behindTrial(seed: number, build: ProbeBuild, speciesKey: string,
 // ---- P5/P6: time to kill ----
 /** Seconds until the fight bot kills one creature of `speciesKey` placed 1 of its body lengths away, or Infinity (a faint or `cap`). */
 export function timeToKill(seed: number, build: ProbeBuild, speciesKey: string, cap: number, watch?: DirectorWatch, stats?: { faints: number; damage: number },
-  trace?: (p: ProbeWorld, subject: Entity, events: SimEvent[], bot: Bot) => void): number {
+  trace?: (p: ProbeWorld, subject: Entity, events: SimEvent[], bot: Bot) => void, how: { reaction: number; useMoves: boolean; gapL: number } = { reaction: .25, useMoves: true, gapL: 1 }): number {
   const run = makeRun(seed, build), p = startWorld(seed, run), subject = p.w.eco.entities.find(e => e.spec.key === speciesKey && (!e.eaten || !!e.spec.alpha));
   if (!subject || (subject.spec.alpha && subject.spec.alpha.size !== run.stage)) return NaN;
   isolate(p, subject); stillFrame(p);
-  if (subject.eaten || !placeAtBand(p, subject, 1)) return NaN;
+  if (subject.eaten || !placeAtBand(p, subject, how.gapL)) return NaN;
   const c = p.s.combat.stateOf(subject); if (c) c.tokenRetryAt = -Infinity;
   const bot = newBot(), t0 = p.s.time;
   while (p.s.time - t0 < cap) {
-    const { intent, wish } = botInput(p, bot, { reaction: .25, useMoves: true, fight: subject, goal: null, flee: null });
+    const { intent, wish } = botInput(p, bot, { reaction: how.reaction, useMoves: how.useMoves, fight: subject, goal: null, flee: null });
     const events = simFrame(p.s, p.w, { dt: PROBE_DT, intent, wish, held: false });
     if (watch) watchDirector(p, watch);
     trace?.(p, subject, events, bot);
@@ -501,11 +503,14 @@ export interface P0Row { attackId: string; species: string; size: number; band: 
   trials: { near: number; mid: number; far: number }; pass: boolean }
 export interface TtkRow { species: string; build: 'meat' | 'plant'; median: number; bar: number | null; pass: boolean; trials: number; faints: number; times: number[] }
 export interface ProbeReport { p0: P0Row[]; p1: AttackRow[]; p2: AttackRow[]; p3: AttackRow[]; p4: AttackRow[]; p5: TtkRow[]; p6: TtkRow[]; p7: JourneyReport[];
-  p8: { maxTokens: number; minActiveGap: number; minOffScreenWindup: number; windups: number; offScreen: number; gapPair: string; pass: boolean }; pass: boolean }
+  p8: { maxTokens: number; minActiveGap: number; minOffScreenWindup: number; windups: number; offScreen: number; gapPair: string; pass: boolean; mix?: Record<string, number> };
+  /** The balance notes of earlier reviews, measured (controller list; no bar). */
+  notes: NoteRow[]; pass: boolean }
+export interface NoteRow { note: string; build: string; species: string; median: number; faints: number; trials: number; damage: number; times: number[] }
 export interface ProbeOptions { trials: number; p0Trials: number; ttkSeeds: readonly number[]; ttkTrials: number; journeySeeds: readonly number[]; journeyLimit: number }
 export const FULL_PROBE: ProbeOptions = { trials: 200, p0Trials: 100, ttkSeeds: [11, 12, 13], ttkTrials: 30, journeySeeds: [11, 12, 13], journeyLimit: 600 };
-export type ProbePart = 'p0' | 'p1' | 'p2' | 'p3' | 'p4' | 'p5' | 'p6' | 'p7-swimmer' | 'p7-crawler' | 'p8';
-export const PROBE_PARTS: readonly ProbePart[] = ['p0', 'p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7-swimmer', 'p7-crawler', 'p8'];
+export type ProbePart = 'p0' | 'p1' | 'p2' | 'p3' | 'p4' | 'p5' | 'p6' | 'p7-swimmer' | 'p7-crawler' | 'p8' | 'notes';
+export const PROBE_PARTS: readonly ProbePart[] = ['p0', 'p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7-swimmer', 'p7-crawler', 'p8', 'notes'];
 
 /** Every hostile attack at sizes 0 and 1: its species, the size it targets and its kind. */
 export function hostileAttacks(): { attackId: string; species: string; size: 0 | 1; kind: AttackRow['kind'] }[] {
@@ -579,10 +584,10 @@ function ttkRows(o: ProbeOptions, build: (size: 0 | 1) => ProbeBuild, bars: Read
   }
   return rows;
 }
-const p8Of = (watch: DirectorWatch) => ({ maxTokens: watch.maxTokens, minActiveGap: watch.minActiveGap, minOffScreenWindup: watch.minOffScreenWindup, windups: watch.windups, offScreen: watch.offScreen, gapPair: watch.gapPair,
+const p8Of = (watch: DirectorWatch) => ({ maxTokens: watch.maxTokens, minActiveGap: watch.minActiveGap, minOffScreenWindup: watch.minOffScreenWindup, windups: watch.windups, offScreen: watch.offScreen, gapPair: watch.gapPair, mix: { ...watch.mix },
   pass: watch.maxTokens <= 2 && watch.minActiveGap >= .25 - 1e-6 && watch.minOffScreenWindup >= .6 - 1e-6 });
 export function emptyReport(): ProbeReport {
-  return { p0: [], p1: [], p2: [], p3: [], p4: [], p5: [], p6: [], p7: [], p8: { maxTokens: 0, minActiveGap: Infinity, minOffScreenWindup: Infinity, windups: 0, offScreen: 0, gapPair: '', pass: true }, pass: false };
+  return { p0: [], p1: [], p2: [], p3: [], p4: [], p5: [], p6: [], p7: [], p8: { maxTokens: 0, minActiveGap: Infinity, minOffScreenWindup: Infinity, windups: 0, offScreen: 0, gapPair: '', pass: true, mix: {} }, notes: [], pass: false };
 }
 /** The pass flag of a whole report. */
 export function judge(r: ProbeReport): ProbeReport {
@@ -612,20 +617,50 @@ export function runProbe(o: ProbeOptions = FULL_PROBE, parts: readonly ProbePart
       for (const species of Object.keys(SPECIES_SIZE)) for (const turn of [Math.PI, Math.PI / 2, -Math.PI / 2]) behindTrial(1000 + i, dashBuild(SPECIES_SIZE[species]!), species, watch, turn);
       flush({});
     }
+    if (part === 'notes') r.notes = noteRows(o, watch, rows => flush({ notes: rows }));
     r.p8 = mergeP8(r.p8, p8Of(watch));
   }
   return judge(r);
 }
+/** The balance notes of earlier reviews (controller list), each measured over the time-to-kill seeds: an aimed mash bot (it aims and bites, and
+ *  never dodges or uses a move) against both alphas, crawler fights with the puffer and the eel, and a sardine placed 3 of its body lengths away. */
+function noteRows(o: ProbeOptions, watch: DirectorWatch, flush: (rows: NoteRow[]) => void): NoteRow[] {
+  const crawlerMeat: ProbeBuild = { label: 'crawler meat 1', stage: 1, line: 'crawler', mouths: ['mouth_snapper', 'mouth_snapper'], add: [] };
+  const mash = { reaction: 1e9, useMoves: false, gapL: 1 }, fight = { reaction: .25, useMoves: true, gapL: 1 };
+  const list: { note: string; build: ProbeBuild; species: string; how: typeof mash; cap: number }[] = [
+    { note: 'Clawmother aimed mash (no dodge)', build: meatBuild(0), species: '1:clawmother', how: mash, cap: 270 },
+    { note: 'Clawmother aimed mash (no dodge), plant build', build: plantBuild(0), species: '1:clawmother', how: mash, cap: 270 },
+    { note: 'Reef Tyrant aimed mash (no dodge), swimmer', build: meatBuild(1), species: '2:reef_tyrant', how: mash, cap: 360 },
+    { note: 'Reef Tyrant aimed mash (no dodge), crawler', build: crawlerMeat, species: '2:reef_tyrant', how: mash, cap: 360 },
+    { note: 'Reef Tyrant fight bot, crawler', build: crawlerMeat, species: '2:reef_tyrant', how: fight, cap: 360 },
+    { note: 'Crawler vs puffer (fight bot)', build: crawlerMeat, species: '1:puffer', how: fight, cap: 60 },
+    { note: 'Crawler vs eel (fight bot)', build: crawlerMeat, species: '2:eel', how: fight, cap: 120 },
+    { note: 'Crawler vs squid (fight bot)', build: crawlerMeat, species: '2:squid', how: fight, cap: 120 },
+    { note: 'Sardine placed 3 L_e away (fight bot, swimmer)', build: meatBuild(1), species: '1:sardine', how: { ...fight, gapL: 3 }, cap: 60 },
+    { note: 'Sardine placed 3 L_e away (fight bot, crawler)', build: crawlerMeat, species: '1:sardine', how: { ...fight, gapL: 3 }, cap: 60 },
+  ];
+  const rows: NoteRow[] = [];
+  for (const x of list) {
+    const times: number[] = [], stats = { faints: 0, damage: 0 };
+    for (const seed of o.ttkSeeds) for (let i = 0; i < Math.max(1, Math.round(o.ttkTrials / 3)); i++) {
+      const t = timeToKill(seed * 1000 + i, x.build, x.species, x.cap, watch, stats, undefined, x.how); if (!Number.isNaN(t)) times.push(t);
+    }
+    rows.push({ note: x.note, build: x.build.label, species: x.species, median: median(times), faints: stats.faints, trials: times.length, damage: stats.damage, times: times.map(t => Number.isFinite(t) ? Math.round(t * 10) / 10 : -1) });
+    flush(rows);
+  }
+  return rows;
+}
 function mergeP8(a: ProbeReport['p8'], b: ProbeReport['p8']): ProbeReport['p8'] {
   const m = { maxTokens: Math.max(a.maxTokens, b.maxTokens), minActiveGap: Math.min(a.minActiveGap, b.minActiveGap), minOffScreenWindup: Math.min(a.minOffScreenWindup, b.minOffScreenWindup),
-    windups: a.windups + b.windups, offScreen: (a.offScreen ?? 0) + (b.offScreen ?? 0), gapPair: b.minActiveGap < a.minActiveGap ? b.gapPair : a.gapPair };
+    windups: a.windups + b.windups, offScreen: (a.offScreen ?? 0) + (b.offScreen ?? 0), gapPair: b.minActiveGap < a.minActiveGap ? b.gapPair : a.gapPair, mix: { ...(a.mix ?? {}) } };
+  for (const [k, n] of Object.entries(b.mix ?? {})) m.mix[k] = (m.mix[k] ?? 0) + n;
   return { ...m, pass: m.maxTokens <= 2 && m.minActiveGap >= .25 - 1e-6 && m.minOffScreenWindup >= .6 - 1e-6 };
 }
 /** Merges part reports (each from `runProbe` with some parts) into one report. */
 export function mergeReports(list: readonly Partial<ProbeReport>[]): ProbeReport {
   const r = emptyReport();
   for (const x of list) {
-    for (const k of ['p0', 'p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7'] as const) if (x[k]?.length) (r[k] as unknown[]).push(...x[k]!);
+    for (const k of ['p0', 'p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'notes'] as const) if (x[k]?.length) (r[k] as unknown[]).push(...x[k]!);
     if (x.p8) r.p8 = mergeP8(r.p8, x.p8);
   }
   return judge(r);
@@ -656,5 +691,8 @@ export function probeMarkdown(r: ProbeReport): string {
     'Probe decisions: P0 band points are 5 % inside each edge; pattern and den attacks (no AI band) use probe bands (eel-ambush 0–.9, mother-emerge 0–.6, tyrant-charge .4–1.2); chain-only attacks (mother-pinch-2, mother-pinch-rage) start their parent and score the child (R12(2)); a move is used only when ready (R12(1)); P8 measures active starts in game time.', '',
     ...p0, ...rows('P1 Dash-only avoidance', r.p1), ...rows('P2 Brace', r.p2), ...rows('P3 Counter', r.p3), ...rows('P4 Movement only (reported)', r.p4),
     ...ttk('P5 Time to kill, meat build', r.p5), ...ttk('P6 Time to kill, plant build', r.p6), ...journeys, ...faints,
+    '## Balance notes (measured, no bar)', '', '| Note | Build | Species | Median | Trials | Faints | Damage ½♥ | Not killed |', '| --- | --- | --- | --- | --- | --- | --- | --- |',
+    ...(r.notes ?? []).map(x => `| ${x.note} | ${x.build} | ${x.species} | ${sec(x.median)} | ${x.trials} | ${x.faints} | ${x.damage} | ${x.times.filter(t => t < 0).length} |`), '',
+    `Attack mix (wind-ups at the player, every part): ${Object.entries(r.p8.mix ?? {}).sort().map(([k, n]) => `${k} ${n}`).join(', ') || '—'}`, '',
     '## P8 Director', '', `Most tokens at once: ${r.p8.maxTokens}; smallest gap between active starts: ${Number.isFinite(r.p8.minActiveGap) ? r.p8.minActiveGap.toFixed(3) + ' s' : '∞'} (${r.p8.gapPair || '—'}); shortest off-screen wind-up: ${sec(r.p8.minOffScreenWindup)} (${r.p8.offScreen} off-screen); wind-ups watched: ${r.p8.windups}; pass: ${r.p8.pass ? 'yes' : '**no**'}`, ''].join('\n');
 }
