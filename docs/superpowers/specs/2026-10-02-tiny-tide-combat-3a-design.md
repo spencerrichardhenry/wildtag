@@ -1341,6 +1341,15 @@ shows on the seabed.
 | 2 Charge laps | 33 % | laps | `tyrant-charge` every half lap, 2 charges, then a 1.5 s rest | × 1.4 on the lap (radius 0.8 × lair) | 0.6 s |
 | 3 Whirl | 0 | normal | `tyrant-whirl` (2), `tyrant-bite` (2) | × 1.2 | 0.8 s |
 
+**Lair place (both alphas, T19 review M2).** The lair rule of §11.2 picks one of four
+corners: the angle is `π/4 + k × π/2 ± 0.05` with `k = floor(4 × rand)`, and the
+distance from the start anchor changes only by `(1 + rand) × SIZES[alpha.size]`.
+So each alpha is always near one of four diagonal points, and many seeds share
+one (seeds 11, 12 and 13 all put the Reef Tyrant near (−104, −105)). This is
+on purpose: the lair must stay inside the spawn square and away from the
+anchor (R15). The root of a lair (and of an eel's den) is `HOME_LIFT` (0.05) ×
+the hull radius above the seabed (T19 fix round 1, M1).
+
 `lairFraction` (the BehaviourPhase field): phase 1 keeps the Tyrant within `lairFraction` (.6) × the lair radius; other phases leave it unset. Every phase keeps the same hostile set (size 1 only, `hostileSizes`); the laps circle the lair centre at 0.8 × the lair radius (T19).
 
 The charge aims through the player's position at windup start, so its

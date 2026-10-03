@@ -99,6 +99,9 @@ function longestPlayerAt(size: number): number {
   if (L === undefined) { L = Math.max(...PLANS.filter(p => p.size === size).map(p => playerActor(p, starterFor(p), size, 1.38).bodyLength)); longestPlayer.set(size, L); }
   return L;
 }
+/** The root of a lair or a den is this share of the hull radius above the seabed (T19 fix round 1, M1): with a full hull radius the hull
+ *  bottom of the Reef Tyrant sat 9 units above the seabed, out of a crawler's Bite reach at rest. */
+export const HOME_LIFT = .05;
 /** An alpha's lair centre (spec §11.2, plan review R15; physical units, on the seabed). The spec's point (radius (22 + 8 × rand) × S around the
  *  world centre) could put the start anchor inside the lair, so the lair is pushed away from the anchor (found next to the world centre): its
  *  centre is resetOutsideFactor × the lair radius + 5 longest player body lengths + (1 + rand) × S from the centre, near a diagonal
@@ -107,7 +110,7 @@ export function lairOf(seed: number, e: { id: number; spec: Species }): Vec3 {
   const a = e.spec.alpha!, S = SIZES[a.size]!, lair = BEHAVIOURS[e.spec.behaviourId!]!.lair!, radius = lair.radiusBodyLengths * speciesActor(e).bodyLength;
   const rand = random(seed * 131 + e.id * 7 + 3), angle = Math.PI / 4 + Math.floor(4 * rand()) * Math.PI / 2 + (rand() - .5) * .1;
   const d = lair.resetOutsideFactor * radius + 5 * longestPlayerAt(a.size) + (1 + rand()) * S, x = Math.sin(angle) * d, z = Math.cos(angle) * d;
-  return { x, y: seabedHeight(x, z) + .35 * SIZES[e.spec.tier]! * (e.spec.bodyScale ?? 1), z };
+  return { x, y: seabedHeight(x, z) + HOME_LIFT * .35 * SIZES[e.spec.tier]! * (e.spec.bodyScale ?? 1), z };
 }
 /** A school member's place (spec §11.3): a school spawns as a group of `school.groupSize` within 2 L of the group's first member (its
  *  leader). The members of a species are grouped in spawn order. */
@@ -130,7 +133,7 @@ export function denOf(seed: number, spawn: { id: number; spec: Species; x: numbe
   const solids = index.solids.filter(s => Math.max(Math.abs(s.minX), Math.abs(s.maxX), Math.abs(s.minZ), Math.abs(s.maxZ)) < half);
   if (!solids.length) return { x: spawn.x, y: spawn.y, z: spawn.z };
   const rand = random(seed * 53 + spawn.id * 7 + 2), s = solids[Math.floor(rand() * solids.length)]!, a = rand() * 2 * Math.PI, L = speciesActor(spawn).bodyLength;
-  const lift = .35 * S * (spawn.spec.bodyScale ?? 1), R = speciesActor(spawn).hull[0]!.radius, cx = (s.minX + s.maxX) / 2, cz = (s.minZ + s.maxZ) / 2;
+  const lift = HOME_LIFT * .35 * S * (spawn.spec.bodyScale ?? 1), R = speciesActor(spawn).hull[0]!.radius, cx = (s.minX + s.maxX) / 2, cz = (s.minZ + s.maxZ) / 2;
   const reach = Math.hypot(s.maxX - s.minX, s.maxZ - s.minZ) / 2 + 2 * L;
   let x = cx, z = cz;
   for (let r = 0; r <= reach; r += .1 * L) {
@@ -413,12 +416,17 @@ export class Ecosystem {
   }
 
   /** A combat species moves by its AI intent, its lunge and its knockback through resolveMotion (spec §5.12); a held one goes to the claw
-   *  point; a snap (an emerge) stands it on an admitted pose near the point. A refused motion keeps the last pose. */
+   *  point; a snap (an emerge) stands it on an admitted pose near the point. A refused motion keeps the last pose.
+   *  Frames (T19 fix round 1, I1): the AI and the combat world give points (intent points, the snap point) in the hull-centre frame; the
+   *  entity's x/y/z is its root. Every point is converted here, in one place, by the hull centre's offset from the root. Held, lunge,
+   *  external and separation are displacements and need no conversion; `return` walks to the home root (hx/hy/hz). */
   private combatMove(e: Entity, ctx: EcoContext, m: EntityMotion) {
     const spec = e.spec, size = SIZES[spec.tier]!, mode = movement(spec.movementProfileId).mode, d = this.disp, dt = ctx.dt, actor = this.actors.get(e)!, q = this.queries[spec.tier]!;
+    const o = actor.hull[0]!.start;   // the hull centre relative to the root
     d.x = 0; d.y = 0; d.z = 0; m.moved = 0;
     if (m.snap) {
-      const ground = mode === 'ground' && !q.terrain.space, at = { x: m.snap.x, y: ground ? supportHeight(actor, m.snap.x, m.snap.z, O0, q.terrain) + .01 * actor.bodyLength : m.snap.y, z: m.snap.z };
+      const ground = mode === 'ground' && !q.terrain.space, sx = m.snap.x - o.x, sz = m.snap.z - o.z;
+      const at = { x: sx, y: ground ? supportHeight(actor, sx, sz, O0, q.terrain) + .01 * actor.bodyLength : m.snap.y - o.y, z: sz };
       const found = findRecoveryPose(actor, at, { queries: q, bounds: this.boundsOf(e), orientation: O0, time: ctx.now }, { maxDistance: actor.bodyLength });
       if (found.ok) { m.moved = Math.hypot(found.position.x - e.x, found.position.y - e.y, found.position.z - e.z); e.x = found.position.x; e.y = found.position.y; e.z = found.position.z; }
       return;
@@ -429,8 +437,8 @@ export class Ecosystem {
       // A hunter that gave up (`return`) walks home at .7 × its speed, as the legacy return does (T16a review I1); else today's ambient motion.
       if (it.kind === 'ambient' && e.mode === 'return') this.toward(e, e.hx, e.hy, e.hz, speed * .7, dt, mode, d);
       else if (it.kind === 'ambient') { this.ambient(e, ctx, d); d.x *= it.speedFactor; d.y *= it.speedFactor; d.z *= it.speedFactor; }
-      else if (it.kind === 'toward') this.toward(e, it.point.x, it.point.y, it.point.z, speed * it.speedFactor, dt, mode, d);
-      else if (it.kind === 'away') this.toward(e, 2 * e.x - it.point.x, 2 * e.y - it.point.y, 2 * e.z - it.point.z, speed * it.speedFactor, dt, mode, d);
+      else if (it.kind === 'toward') this.toward(e, it.point.x - o.x, it.point.y - o.y, it.point.z - o.z, speed * it.speedFactor, dt, mode, d);
+      else if (it.kind === 'away') this.toward(e, 2 * e.x - (it.point.x - o.x), 2 * e.y - (it.point.y - o.y), 2 * e.z - (it.point.z - o.z), speed * it.speedFactor, dt, mode, d);
       else if (m.face) { const fx = m.face.x - e.x, fz = m.face.z - e.z; if (Math.hypot(fx, fz) > 1e-4) e.heading = Math.atan2(fx, fz); }
       if (m.lunge) { d.x += m.lunge.x * dt; d.y += (mode === 'ground' ? 0 : m.lunge.y) * dt; d.z += m.lunge.z * dt; }
       d.x += m.external.x * dt; d.y += m.external.y * dt; d.z += m.external.z * dt;

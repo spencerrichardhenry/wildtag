@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { denOf, Ecosystem, engage, HUNTER_MARGIN, provoke, speciesActor, type Entity, type EntityMotion } from '../../src/tiny-tide/ecosystem';
 import { biteReacher } from './bite-reach';
+import { aiStep, newAiState, schoolFlee, type AiInput, type AiState } from '../../src/tiny-tide/combat-ai';
+import { BEHAVIOURS } from '../../src/tiny-tide/bestiary';
+import { speciesCombatPose } from '../../src/tiny-tide/mount';
 import { stageSolids } from '../../src/tiny-tide/reef';
 import { PLANS } from '../../src/tiny-tide/plans';
 import { PURSUITS } from '../../src/tiny-tide/profiles';
@@ -353,5 +356,76 @@ describe('size-1 combat species (T18)', () => {
     // Undamaged for 8 s at the return: full HP at once (D37 as before).
     Object.assign(crab, { mode: 'return', modeTime: 0, hp: 5, damagedAt: 0, x: crab.hx, z: crab.hz });
     eco.step(ctx(far, 9.2, { perceivable: false, playerHull: [] })); expect(crab.mode).toBe('calm'); expect(crab.hp).toBe(crab.spec.hp);
+  });
+});
+
+// T19 fix round 1: the AI works in the hull-centre frame; combatMove converts every point to the root frame (I1). Flee from a ground player is
+// level (I2). An alpha's lair and an eel's den sit near the seabed (M1).
+describe('combat frames (T19 fix round 1)', () => {
+  const DT1 = 1 / 30, FAR = { x: 0, y: 9000, z: 0 };
+  const step1 = (eco: Ecosystem, stage: number, now: number) => eco.step({ stage, dt: DT1, now, player: FAR, playerHull: [], perceivable: false, stealthFactor: 1, unlocked: [] });
+  /** Drives one entity by its own behaviour's AI for `seconds` with a scripted player (hull-centre frame), as aiTick does. */
+  function driveAi(eco: Ecosystem, stage: number, e: Entity, s: AiState, seconds: number, player: (t: number) => Vec3, over: Partial<AiInput> = {}, t0 = 0, ground = false) {
+    const b = BEHAVIOURS[e.spec.behaviourId!]!, ys: number[] = [];
+    for (let k = 0; k < Math.round(seconds / DT1); k++) {
+      const now = t0 + k * DT1, pose = speciesCombatPose(e, now), c = pose.hull[0]!.start, p = player(now), r = pose.hull[0]!.radius;
+      const d = Math.max(0, Math.hypot(p.x - c.x, p.y - c.y, p.z - c.z) - r) / pose.bodyLength;
+      const o = aiStep(b, s, { now, self: { position: c, L: pose.bodyLength, forward: pose.forward, hp: e.hp, maxHp: e.spec.hp, staggered: false, held: false, busy: false, speed: e.spec.speed * SIZES[e.spec.tier]! },
+        player: { position: p, d, visible: true, targetable: true, ground }, hostile: true, pursuit: 'hunt', hit: false, fleeDistance: 7 * SIZES[e.spec.tier]!, ready: () => false, ...over });
+      e.combat = { intent: o.intent, face: null, lunge: null, external: { x: 0, y: 0, z: 0 }, frozen: false, held: null, moved: 0 };
+      step1(eco, stage, now + DT1); ys.push(e.y);
+    }
+    e.combat = null; return ys;
+  }
+  const ro = (e: Entity) => speciesActor(e).hull[0]!.start.y;
+  it('I1: a swimming combat entity sent to its AI home (hull-centre frame) ends at its root home', () => {
+    const eco = new Ecosystem(3), e = eco.entities.find(x => x.spec.key === '2:reef_tyrant')!; step1(eco, 1, 0);
+    const home = { x: e.hx, y: e.hy, z: e.hz }; e.x += 6; e.y += 4; e.z -= 6;
+    e.combat = { intent: { kind: 'toward', point: { x: home.x, y: home.y + ro(e), z: home.z }, speedFactor: 1 }, face: null, lunge: null, external: { x: 0, y: 0, z: 0 }, frozen: false, held: null, moved: 0 };
+    for (let k = 0; k < 60; k++) step1(eco, 1, (k + 1) * DT1);
+    expect(Math.abs(e.y - home.y)).toBeLessThan(1e-3); expect(Math.hypot(e.x - home.x, e.z - home.z)).toBeLessThan(1e-3);
+  });
+  it('I1: a hunter that strafes and approaches a player level with its hull centre keeps its root level for 2 s', () => {
+    const eco = new Ecosystem(3), e = eco.entities.find(x => x.spec.key === '2:reef_tyrant')!; step1(eco, 1, 0);
+    const squid = eco.entities.find(x => x.spec.key === '2:squid' && !x.eaten)!;
+    squid.x = squid.hx = e.x; squid.y = squid.hy = e.y + 30; squid.z = squid.hz = e.z; e.eaten = true;   // open water above the lair
+    const s = newAiState(1, squid.id); s.name = 'reposition'; s.since = 0; s.until = 2;
+    const c0 = speciesCombatPose(squid, 0).hull[0]!.start, player = { x: c0.x + 12, y: c0.y, z: c0.z }, y0 = squid.y;
+    const ys = driveAi(eco, 1, squid, s, 2, () => player);
+    expect(Math.max(...ys.map(y => Math.abs(y - y0)))).toBeLessThan(1e-3);
+  });
+  it('I1: the Tyrant reset walks back to its installed root', () => {
+    const eco = new Ecosystem(3), e = eco.entities.find(x => x.spec.key === '2:reef_tyrant')!; step1(eco, 1, 0);
+    const home = { x: e.x, y: e.y, z: e.z }, s = newAiState(1, e.id); s.home = speciesCombatPose(e, 0).hull[0]!.start; s.name = 'approach'; s.phase = 0;
+    e.x += 10; e.y += 5; e.hp = 80;
+    driveAi(eco, 1, e, s, 9, () => ({ x: home.x + 400, y: home.y, z: home.z }), { inLair: false });
+    expect(s.name).toBe('reset');
+    expect(Math.abs(e.y - home.y)).toBeLessThan(1e-3); expect(Math.hypot(e.x - home.x, e.z - home.z)).toBeLessThan(1e-3);
+  });
+  it('I2: a drifter fleeing a ground player below it flees level (it stays in Bite height)', () => {
+    const eco = new Ecosystem(4), e = eco.entities.find(x => x.spec.key === '0:drifter' && !x.eaten)!; step1(eco, 0, 0);
+    const s = newAiState(1, e.id), y0 = e.y, c0 = speciesCombatPose(e, 0).hull[0]!.start;
+    const ys = driveAi(eco, 0, e, s, 1.5, () => ({ x: c0.x + 2, y: c0.y - 1.2, z: c0.z }), { hit: true }, 0, true);
+    expect(s.name === 'flee' || s.name === 'rest').toBe(true);
+    expect(Math.max(...ys.map(y => Math.abs(y - y0)))).toBeLessThan(.05);
+  });
+  it('I2: the flee direction from a ground player is level; from a swimmer it is not', () => {
+    const b = BEHAVIOURS.drifter!, mk = (ground: boolean) => { const s = newAiState(1, 7); aiStep(b, s, { now: 0, self: { position: { x: 0, y: 2, z: 0 }, L: 1.4, forward: { x: 0, y: 0, z: 1 }, hp: 3, maxHp: 3, staggered: false, held: false, busy: false, speed: 3 },
+      player: { position: { x: 1, y: 0, z: 0 }, d: .5, visible: true, targetable: true, ground }, hostile: false, pursuit: 'calm', hit: true, fleeDistance: 7, ready: () => true }); return s.fleeDir!; };
+    expect(mk(true).y).toBe(0); expect(mk(true).x).toBeCloseTo(-1, 9); expect(mk(false).y).toBeGreaterThan(.5);
+    const school = [0, 1, 2].map(k => ({ state: newAiState(1, 20 + k), position: { x: k, y: 3, z: 0 }, L: 1 }));
+    set0(school[0]!.state); schoolFlee(school, { x: 1, y: 0, z: -2 }, 6, 0, true);
+    for (const m of school) expect(m.state.fleeDir!.y).toBe(0);
+    const swim = [0, 1].map(k => ({ state: newAiState(1, 30 + k), position: { x: k, y: 3, z: 0 }, L: 1 }));
+    set0(swim[0]!.state); schoolFlee(swim, { x: 1, y: 0, z: -2 }, 6, 0, false); expect(swim[1]!.state.fleeDir!.y).toBeGreaterThan(0);
+  });
+  const set0 = (s: AiState) => { s.name = 'flee'; s.since = 0; };
+  it('M1: the Tyrant at its lair sits near the seabed, in Bite reach of a fresh crawler and swimmer (seeds 1–20)', () => {
+    for (let seed = 1; seed <= 20; seed++) {
+      const eco = new Ecosystem(seed), e = eco.entities.find(x => x.spec.key === '2:reef_tyrant')!; step1(eco, 1, 0);
+      const bottom = speciesCombatPose(e, 0).hull[0]!, gap = bottom.start.y - bottom.radius - seabedHeight(e.x, e.z);
+      expect(gap, `seed ${seed}: hull bottom above the seabed`).toBeLessThan(.5 * ro(e));   // was a full hull radius (9 units); installation may lift it a little
+      for (const p of PLANS.filter(q => q.size === 1 && !q.needs)) expect(biteReacher(p, seed).canBite(e), `${p.id} seed ${seed}`).toBe(true);
+    }
   });
 });

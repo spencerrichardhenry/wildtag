@@ -144,7 +144,7 @@ function preyFlee(b: SpeciesBehaviour, s: AiState, i: AiInput): AiOutput {
   }
   if (s.name === 'flee') {
     if (now - s.since >= f.seconds - 1e-9) { set(s, 'rest', now); s.fleeDir = null; }
-    else { const dir = s.fleeDir ?? unit(sub(i.self.position, i.player.position)); return out({ kind: 'away', point: { x: i.self.position.x - dir.x, y: i.self.position.y - dir.y, z: i.self.position.z - dir.z }, speedFactor: f.speedFactor }); }
+    else { const dir = s.fleeDir ?? fleeAway(i.self.position, i.player.position, !!i.player.ground); return out({ kind: 'away', point: { x: i.self.position.x - dir.x, y: i.self.position.y - dir.y, z: i.self.position.z - dir.z }, speedFactor: f.speedFactor }); }
   }
   if (s.name === 'rest') {
     if (now - s.since >= f.restSeconds - 1e-9) { set(s, 'idle', now); s.nearSince = null; return out(AMBIENT); }
@@ -152,15 +152,18 @@ function preyFlee(b: SpeciesBehaviour, s: AiState, i: AiInput): AiOutput {
   }
   set(s, 'idle', now); return out(AMBIENT);
 }
-function startFlee(s: AiState, i: AiInput, now: number, dir?: Vec3) { set(s, 'flee', now); s.fleeDir = dir ?? unit(sub(i.self.position, i.player.position)); }
+/** The flee direction away from `from`; level from a ground player (T19 fix round 1, I2: a prey that fled upward from a crawler or a Speck
+ *  left its Bite height). */
+const fleeAway = (self: Vec3, from: Vec3, ground: boolean): Vec3 => { const v = sub(self, from); return unit(ground ? { x: v.x, y: 0, z: v.z } : v); };
+function startFlee(s: AiState, i: AiInput, now: number, dir?: Vec3) { set(s, 'flee', now); s.fleeDir = dir ?? fleeAway(i.self.position, i.player.position, !!i.player.ground); }
 /** prey-school (spec §11.2): when one member enters flee, every member within the school radius that is not resting flees on the same tick, in
- *  one shared direction: away from the player, from the members' centroid. */
-export function schoolFlee(members: readonly { state: AiState; position: Vec3; L: number }[], player: Vec3, radiusBodyLengths: number, now: number): void {
+ *  one shared direction: away from the player, from the members' centroid (level from a ground player). */
+export function schoolFlee(members: readonly { state: AiState; position: Vec3; L: number }[], player: Vec3, radiusBodyLengths: number, now: number, ground = false): void {
   const starters = members.filter(m => m.state.name === 'flee' && m.state.since === now);
   for (const st of starters) {
     const group = members.filter(m => len(sub(m.position, st.position)) <= radiusBodyLengths * m.L && (m.state.name === 'idle' || m === st || (m.state.name === 'flee' && m.state.since === now)));
     const c = group.reduce((a, m) => ({ x: a.x + m.position.x / group.length, y: a.y + m.position.y / group.length, z: a.z + m.position.z / group.length }), { x: 0, y: 0, z: 0 });
-    const dir = unit(sub(c, player));
+    const dir = fleeAway(c, player, ground);
     for (const m of group) { set(m.state, 'flee', now); m.state.fleeDir = dir; }
   }
 }

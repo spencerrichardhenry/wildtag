@@ -545,7 +545,7 @@ export class CombatWorld {
     // the school radius around each starter, so it runs per school; every member that flees from this tick moves along the shared direction now.
     for (const members of schools.values()) {
       const f = this.behaviours[members[0]!.entity.spec.behaviourId!]!, school = f.school!, speedFactor = f.flee?.speedFactor ?? 1;
-      schoolFlee(members, p.centre, school.radiusBodyLengths, now);
+      schoolFlee(members, p.centre, school.radiusBodyLengths, now, !!p.ground);
       for (const m of members) {
         const d = m.state.fleeDir, motion = m.entity.combat;
         if (!d || !motion || m.state.name !== 'flee' || m.state.since !== now) continue;   // the starter too: the school's shared direction

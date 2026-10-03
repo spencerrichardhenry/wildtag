@@ -14,6 +14,10 @@
 //   fainted the player again at 64.1 s and 72.4 s; fix round 1 counts it from the respawn. T16 re-records `faint` and `regen`: the crab
 //   lost its contact hazard and attacks with telegraphs, so a circling Speck takes one hit, not a faint; `faint` now stands still after
 //   54.3 s so that the faint path is still covered.)
+//   (T19 fix round 1 re-records `faint` and `regen`: swimming species now move their root to the AI's hull-centre points, so from 29.4 s
+//   the circling Speck's route differs by .02–.05 units at first. In `faint` the circling Speck is no longer hit at 49.5 s: the hits come
+//   after it stops (54.5–64.5 s), the faint at 64.5 s and the respawn at 66 s. In `regen` the crab no longer lands a hit, so the hearts are
+//   full from 19.7 s to the end, with no survivor bonus; ai-tick.test covers the bonus through simFrame.)
 // Not covered: the stuck retry, held frames, a win, and the modes other than playing and fainted.
 // A task that changes stage 0 on purpose re-records it from sim.ts with TIDE_SIM_RECORD=sim and says why in its commit.
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
