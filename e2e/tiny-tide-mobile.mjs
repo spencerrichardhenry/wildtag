@@ -145,5 +145,28 @@ try {
   await pg.screenshot({path:`${out}/mobile-toast-evolve-${w}x${h}.png`});await pc.close();
   assert.ok(r.frames>60&&r.evolveFrames>60,`${w}x${h}: toasts with the Evolve button were sampled (${r.frames} frames, ${r.evolveFrames} with Evolve)`);
   assert.deepEqual(r.bad,[],`${w}x${h}: the toast covers no creature, control or Evolve button (${JSON.stringify(r.texts)})`);}
- assert.deepEqual(errors,[]);console.log('PASSED: v1 migration (-v1 unchanged), genuine multitouch move + rise, swipe camera, stable hover, Dive, touch cancellation, the basic-button drag aim and touch mode, 390/320 portrait and landscape control layout (slots visible, at least 48 px, no overlap), phone Evolve → Swimmer → Undo all problem line, the phone editor creature band at 320x568 and 844x390 (framing, alerts above it, 44 px sheet slots, tap swap, 44 px tool sliders and a touch size drag, the 375x667 top bar fit), phone triangle budget at stages 0–3, the toast above Evolve at 320x568 and 844x390 (clear of the creature and every control).');
+ // Final review I9: the Evolve button (up until tapped) never covers the creature: landscape puts it in the top band under the growth card,
+ // portrait above the creature box. 2 s of frames at four phone sizes with a ready size-1 Swimmer: Evolve is on screen, at least 4 px clear
+ // of the creature's screen box, and overlaps no control, card or the hearts.
+ const evolveFacts={};
+ for(const [w,h] of [[320,568],[390,844],[844,390],[667,375]]){const pc=await browser.newContext({viewport:{width:w,height:h},deviceScaleFactor:2,isMobile:true,hasTouch:true});const pg=await pc.newPage();
+  pg.on('pageerror',e=>errors.push(e.message));pg.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
+  const fx=await makeFixture(pg,{stage:1,line:'swimmer',ready:true,mouth:{1:'mouth_snapper'}});
+  await openGame(pg,{storage:{[fx.key]:fx.json},query:'qaStartGrace=0'});await start(pg);await frames(pg,20);
+  const r=await pg.evaluate(()=>new Promise(resolve=>{
+   const t0=performance.now(),acc={frames:0,bad:[],worstGap:Infinity};
+   const box=e=>{const b=e.getBoundingClientRect();return{left:b.left,top:b.top,right:b.right,bottom:b.bottom};};
+   const hit=(a,b,m=0)=>a.left<b.right+m&&b.left<a.right+m&&a.top<b.bottom+m&&b.top<a.bottom+m;
+   const tick=()=>{const s=window.__tinyTide,ev=document.getElementById('evolve');
+    if(s.mode==='playing'&&!ev.hidden){acc.frames++;const eb=box(ev);
+     if(eb.left<0||eb.top<0||eb.right>innerWidth||eb.bottom>innerHeight)acc.bad.push(['offscreen',eb]);
+     const cb=s.creatureBox();if(cb){acc.worstGap=Math.min(acc.worstGap,Math.max(cb.top-eb.bottom,eb.top-cb.bottom,cb.left-eb.right,eb.left-cb.right));if(hit(eb,cb,4))acc.bad.push(['creature',eb,cb]);}
+     for(const c of document.querySelectorAll('#joystick,#chomp,#special,#dive,.slot-button,.icon-button,.growth-card,.stage-card,#hearts'))if(c.offsetParent!==null&&c.getBoundingClientRect().width>0&&hit(eb,box(c)))acc.bad.push([c.id||c.className,eb,box(c)]);}
+    if(performance.now()-t0>2000)return resolve({...acc,bad:acc.bad.slice(0,4)});requestAnimationFrame(tick);};tick();}));
+  await pg.screenshot({path:`${out}/mobile-evolve-${w}x${h}.png`});await pc.close();
+  evolveFacts[`${w}x${h}`]={frames:r.frames,worstGapPx:Math.round(r.worstGap)};
+  assert.ok(r.frames>30,`${w}x${h}: the Evolve button was sampled (${r.frames} frames)`);
+  assert.deepEqual(r.bad,[],`${w}x${h}: the Evolve button covers no creature, control, card or the hearts`);}
+ console.log('Evolve button vs creature (worst gap, px):',JSON.stringify(evolveFacts));
+ assert.deepEqual(errors,[]);console.log('PASSED: the Evolve button clear of the creature at four phone sizes (final review I9), v1 migration (-v1 unchanged), genuine multitouch move + rise, swipe camera, stable hover, Dive, touch cancellation, the basic-button drag aim and touch mode, 390/320 portrait and landscape control layout (slots visible, at least 48 px, no overlap), phone Evolve → Swimmer → Undo all problem line, the phone editor creature band at 320x568 and 844x390 (framing, alerts above it, 44 px sheet slots, tap swap, 44 px tool sliders and a touch size drag, the 375x667 top bar fit), phone triangle budget at stages 0–3, the toast above Evolve at 320x568 and 844x390 (clear of the creature and every control).');
 } finally {await browser.close();}

@@ -705,6 +705,17 @@ const phoneLayout = matchMedia('(max-width: 650px), (max-height: 560px)');
  *  the creature and no telegraph near it; elsewhere it keeps its low place. With the Evolve button on screen (the objective is then hidden):
  *  on a phone the toast stays in the objective's slot ABOVE the button, raised so that its bottom is 6 px over the button (fix round 1: below
  *  the button it covered the creature at 320x568 and Dash at 844x390); on a desktop in a fight it goes 8 px below the button (room there). */
+/** Final review I9: on a portrait phone the Evolve button stays at least 8 px above the creature's screen box (it is up until tapped), raised
+ *  as needed but never onto the stage and growth cards. Landscape places it by CSS (the top band). Every played frame, before placeToast. */
+const portraitPhone = matchMedia('(max-width: 650px)');
+function placeEvolve() {
+  const evolve = el('evolve');
+  if (evolve.hidden || !portraitPhone.matches) { evolve.style.removeProperty('top'); return; }
+  evolve.style.removeProperty('top');
+  const css = evolve.getBoundingClientRect(), creature = creatureBox(); if (!creature || css.bottom + 8 <= creature.top) return;
+  const cards = Math.max(document.querySelector('.stage-card')?.getBoundingClientRect().bottom ?? 0, document.querySelector('.growth-card')?.getBoundingClientRect().bottom ?? 0) + 4;
+  evolve.style.top = `${Math.round(Math.max(cards, creature.top - 8 - css.height))}px`;
+}
 function placeToast() {
   const ui = el('game-ui'), t = el('toast'), up = t.classList.contains('show') && (phoneLayout.matches || inCombat());
   ui.classList.toggle('toast-top', up); if (!up) return;
@@ -717,7 +728,9 @@ function placeToast() {
     // cards; when it does not fit there (a landscape phone: the cards stand side by side), it narrows to the gap between the cards and may
     // rise to just under the top bar.
     const box = (q: string) => document.querySelector(q)?.getBoundingClientRect();
-    const creature = creatureBox(), limit = Math.min(evolve.hidden ? Infinity : evolve.getBoundingClientRect().top - 6, creature ? creature.top - 4 : Infinity);
+    // The Evolve button limits the toast only when it sits below the toast's slot (a landscape phone puts it in the top band, beside the toast).
+    const eb = evolve.hidden ? null : evolve.getBoundingClientRect(), creature = creatureBox();
+    const limit = Math.min(eb && eb.top >= slot ? eb.top - 6 : Infinity, creature ? creature.top - 4 : Infinity);
     const stageCard = box('.stage-card'), growthCard = box('.growth-card');
     const floor = Math.max(stageCard?.bottom ?? 0, growthCard?.bottom ?? 0) + 4;
     top = Math.max(floor, Math.min(slot, limit - t.offsetHeight));
@@ -726,6 +739,10 @@ function placeToast() {
       ui.style.setProperty('--toast-max', `${Math.round(growthCard.left - stageCard.right - 16)}px`);
       const topBar = box('.topbar')?.bottom ?? 0;
       top = Math.max(topBar + 4, Math.min(slot, limit - t.offsetHeight));
+    } else if (top + t.offsetHeight > limit) {
+      // Final review I9: a portrait phone with the Evolve button raised over the creature has no room under the cards for a two-line toast;
+      // the toast (a few seconds) then goes over the cards, never over the top bar, the button or the creature.
+      top = Math.max((box('.topbar')?.bottom ?? 0) + 4, limit - t.offsetHeight);
     }
   }
   if (Number.isFinite(top)) ui.style.setProperty('--toast-top', `${Math.round(top)}px`);
@@ -1041,7 +1058,7 @@ function frame(now: number) {
   presentCombatView();
   syncAimChevron(intent);
   if (playing) offerHints();
-  if (mode === 'playing') placeToast();
+  if (mode === 'playing') { placeEvolve(); placeToast(); }
   if (playing) {
     const v = rt.controlledVelocity; moving = Math.hypot(v.x, v.y, v.z) > .5 * SIZES[stage]!;
     saveClock += dt; if (saveClock >= 5) { save(); saveClock = 0; }
