@@ -1582,7 +1582,7 @@ it.
 | D24 | Rare parts reuse GLBs through a `model` field, with a tint; they show only when unlocked. | Art pass. |
 | D25 | The roster species, tiers, HP, speeds, counts and all attack numbers of §11. Prey are at the player's tier; hunters and alphas are one tier up. New species: drifter shrimp, spiny snail, Old Clawmother, Sunny sardine, Puffer, Moray eel, Reef Tyrant. | Data; the probe retunes. |
 | D26 | The crab and the squid lose their contact hazards (their attacks replace them). The jelly, ray and seaplane keep hazards until 3b. | Data. |
-| D27 | After a faint, hunters that targeted the player give up at once, and no creature acquires the player until 6 s after the respawn grace (the 3 s grace + 6 s, counted from the respawn). | Constant. |
+| D27 | After a faint, hunters that targeted the player give up at once, and no creature attacks or acquires the player during the window: until 6 s after the respawn grace (the 3 s grace + 6 s, counted from the respawn). | Constant. |
 | D28 | Hunters respawn 30–40 s after a kill (other combat species 14–22 s, as today). | Constant. |
 | D29 | The game tick moves out of `main.ts` into a pure `sim.ts`, so the probe runs the real frame order. | Refactor size. |
 | D30 | First-time hints are kept in `localStorage` `tiny-tide-hints-v1`, not in the run save. One extra hint for the first unblockable telegraph. | Storage key. |

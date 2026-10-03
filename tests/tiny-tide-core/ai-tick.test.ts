@@ -97,6 +97,13 @@ describe('the AI tick (spec §11.2)', () => {
     run(s, [mother, crab], now, 1, {}, r => markers.push(...r.markers));
     expect(markers).toContain(mother); expect(markers).toContain(crab);
   });
+  it('D27 (review ruling): inside the give-up window no species is hostile, a prey fighter included', () => {
+    const s = fighter(), snail = entity(1, species(0, 'spiny_snail'), { x: 0, y: .65, z: 2 }), calls = recordStarts(s);
+    const now = run(s, [snail], 0, 2.5, { givingUp: true });
+    expect(calls).toEqual([]);
+    run(s, [snail], now, 2.5);
+    expect(calls.some(c => typeof c.result !== 'string')).toBe(true);   // the cornered snail pokes once the window is over
+  });
   it('heals an alpha per second while it resets (carry 6)', () => {
     const s = fighter(), mother = entity(1, MOTHER, ahead(3.5)), c = s.combat.stateOf(mother)!;
     c.ai = newAiState(1, mother.id, 0); c.ai.name = 'reset'; c.ai.home = { x: 100, y: 1, z: 100 }; mother.hp = .5 * c.maxHp;
@@ -133,8 +140,13 @@ describe('the AI tick (spec §11.2)', () => {
   it('a target-origin emerge snaps the body to the emerge point at the wind-up start (review R4)', () => {
     const s = fighter(), mother = entity(1, MOTHER, ahead(3.5)), c = s.combat.stateOf(mother)!, centre = speciesCombatPose(mother, 0).hull[0]!.start;
     c.ai = newAiState(1, mother.id, 0); c.ai.name = 'burrowed'; c.ai.since = -1.3; c.ai.phase = 1; c.ai.home = { ...centre }; mother.hp = .5 * c.maxHp;
-    s.combat.aiTick(ctx(s, [mother], 0));
+    const seen = vi.fn((_p: { x: number; y: number; z: number }) => true);
+    s.combat.aiTick(ctx(s, [mother], 0, { isOnScreen: seen }));
     const a = c.rt.actions.find(x => x.definitionId === 'mother-emerge');
+    // The director's on-screen test looks at the shape's centroid: for a target-origin ball, the target (the player's hurtbox centre).
+    const target = playerBody(s, playerActorCached(s)).centre;
+    expect(seen).toHaveBeenCalledTimes(1); const at = seen.mock.calls[0]![0];
+    expect(Math.hypot(at.x - target.x, at.y - target.y, at.z - target.z)).toBeLessThan(1e-9);
     expect(a?.originPoint).toBeTruthy(); expect(mother.combat?.snap).toEqual(a!.originPoint);
     s.combat.aiTick(ctx(s, [mother], DT)); expect(mother.combat?.snap ?? null).toBeNull();   // once, at the wind-up start
   });
@@ -172,5 +184,15 @@ describe('the AI tick in simFrame', () => {
     };
     expect(outcome(5, 1)).toEqual([{ type: 'survived', entity: expect.objectContaining({ id: 1 }), dna: Math.round(.35 * CRAB.dna) }]);
     expect(outcome(3, 1)).toEqual([]); expect(outcome(5, 0)).toEqual([]);
+  });
+  it('a plant-eater that kills an engaged hunter gets the survivor bonus once, with the kill (sim.ts kill path)', () => {
+    const s = speck([], 'mouth_nibbler'), crab = entity(1, CRAB, ahead(3.2)), w = flatWorld([crab]);
+    simBegin(s, w, s.run, null); s.combat = new CombatWorld(); s.physical = { x: 0, y: 1, z: 0 }; s.rt.orientation = { yaw: 0, pitch: 0 };
+    crab.hp = 1; crab.mode = 'angry';   // engaged: a herbivore Bites it (review R17)
+    const c = s.combat.stateOf(crab)!; c.ai = newAiState(1, crab.id, s.time); c.ai.name = 'approach'; c.ai.engagedSince = s.time - 5; c.ai.windups = 1;
+    const events: SimEvent[] = [...simFrame(s, w, { dt: DT, intent: { ...RELEASED, basicPressed: true, basicHeld: true }, wish: { x: 0, y: 0, z: 0 }, held: false })];
+    for (let i = 0; i < 60; i++) events.push(...simFrame(s, w, { dt: DT, intent: RELEASED, wish: { x: 0, y: 0, z: 0 }, held: false }));
+    expect(events.filter(e => e.type === 'killed')).toHaveLength(1);
+    expect(events.filter(e => e.type === 'survived')).toEqual([{ type: 'survived', entity: crab, dna: Math.round(.35 * CRAB.dna) }]);
   });
 });

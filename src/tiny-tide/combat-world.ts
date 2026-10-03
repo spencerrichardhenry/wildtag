@@ -12,7 +12,7 @@ import { engage, provoke, type Entity, type EntityMotion } from './ecosystem';
 import { biteDispatch } from './feeding';
 import { addBreakProgress, armCounters, isFlick, releaseHold, resolveAll, squeezesDue, type CombatEvent, type Fighter, type HitRequestIn } from './hit-resolver';
 import { basicRequested } from './input';
-import { speciesCombatPose } from './mount';
+import { speciesActor, speciesCombatPose } from './mount';
 import { speciesMove, type GrantedMove, type MoveSet, type SlotAssignment } from './moves';
 import { forwardOf, orientationMatrix } from './orientation';
 import type { Diet } from './parts';
@@ -41,7 +41,7 @@ export interface EntityCombat { id: ActorId; entity: Entity; rt: CombatRuntime; 
 /** What the AI tick reads (spec §11.2). `hitBy`: entity ids the player damaged this tick (provocation, the AI's `hit`). `isOnScreen`: a physical
  *  point is on screen (the director's off-screen rule; main.ts tests it against the camera each frame, headless callers pass a fixed answer).
  *  `lineOfSight`: the ecosystem's perception test (review I9: visibility and a clear segment). `givingUp`: inside the faint give-up window
- *  (D27): alphas are not hostile and engaged hunters get the give-up pursuit. */
+ *  (D27): no species is hostile (prey fighters and alphas included) and engaged hunters get the give-up pursuit. */
 export interface AiTickContext {
   now: number; dt: number; stage: number; runSeed: number; entities: readonly Entity[]; player: PlayerBody; playing: boolean; stealthFactor: number;
   hitBy: ReadonlySet<number>; isOnScreen(p: Vec3): boolean; lineOfSight(e: Entity, p: Vec3): boolean; givingUp: boolean;
@@ -490,7 +490,7 @@ export class CombatWorld {
         self: { position: centre, L, forward: pose.forward, hp: e.hp, maxHp: c.maxHp, staggered: c.rt.actionClock < c.rt.staggerUntil, held: c.rt.heldBy !== null, busy: liveActions(c.rt).length > 0,
           speed: e.spec.speed * tierSize },
         player: { position: p.centre, d: Math.max(0, dHurt - r) / L, visible: ctx.lineOfSight(e, p.centre), targetable: ctx.playing && p.rt.targetable },
-        hostile: !(ctx.givingUp && e.spec.alpha) && hostileSizes(e.spec).includes(ctx.stage),
+        hostile: !ctx.givingUp && hostileSizes(e.spec).includes(ctx.stage),   // D27 (review ruling): no creature attacks the player in the window
         pursuit: ctx.givingUp && engaged ? 'return' : e.mode, hit,
         fleeDistance: 7 * Math.max(tierSize, stageSize) * ctx.stealthFactor,
         ready: id => (c.rt.cooldowns.get(`${c.id}:root:${id}`) ?? -Infinity) <= c.rt.actionClock + 1e-9,
@@ -538,7 +538,7 @@ export class CombatWorld {
     for (const e of entities) {
       const m = e.combat, c = m?.lunge ? this.entities.get(e.id) : undefined; if (!m || !c || c.entity !== e) continue;
       const a = liveActions(c.rt).find(x => x.phase === 'active' && !!x.resolved.attack?.lunge);
-      if (a) a.lungeDone += m.moved / speciesCombatPose(e, 0).bodyLength;
+      if (a) a.lungeDone += m.moved / speciesActor(e).bodyLength;
     }
   }
   /** Tokens follow their actions (spec §9.4, plan review R6), at the end of each tick (`now`, length `dt`; the clocks cover the tick):

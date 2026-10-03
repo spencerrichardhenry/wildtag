@@ -241,6 +241,18 @@ describe('combat species in the ecosystem (T16)', () => {
     engage(drifter, p, 0); expect(drifter.mode).toBe('hunt'); expect(drifter.lastKnown).toEqual(p);
     drifter.mode = 'angry'; engage(drifter, p, 0); expect(drifter.mode).toBe('angry');   // an angry one stays angry
   });
+  it('a combat hunter that gives up walks home and turns calm by distance, not by the timeout (T16a review I1)', () => {
+    const eco = new Ecosystem(7, { queries: tier => makeWorldQueries(tier === 4 ? makeTerrain(4) : flatSea) }), crab = crabOf(eco), still = { x: 0, y: 900, z: 0 };
+    eco.step(ctx(still, 0, { perceivable: false, playerHull: [] }));
+    crab.hx = crab.x + 15; crab.hz = crab.z; crab.mode = 'return' as Entity['mode']; crab.returnUntil = .1;
+    let calmAt = -1;
+    for (let t = .1; t < 6 && calmAt < 0; t = tick(t + .1)) {
+      crab.combat = { intent: { kind: 'ambient', speedFactor: 1 }, face: null, lunge: null, external: { x: 0, y: 0, z: 0 }, frozen: false, held: null, moved: 0 };   // the AI's return state
+      eco.step(ctx(still, t, { perceivable: false, playerHull: [] })); if ((crab.mode as Entity['mode']) === 'calm') calmAt = t;
+    }
+    expect(calmAt).toBeGreaterThan(0); expect(calmAt).toBeLessThan(.1 + 6);   // 15 − L at .7 × 5.2 per second: about 2.6 s
+    expect(Math.hypot(crab.x - crab.hx, crab.z - crab.hz)).toBeLessThanOrEqual(speciesActor(crab).bodyLength + 1e-9);
+  });
   it('moves a combat species by its motion through resolveMotion: toward, hold facing a point, knockback decay, the snap to an emerge point', () => {
     const eco = new Ecosystem(7), crab = crabOf(eco), still = { x: 0, y: 900, z: 0 };
     eco.step(ctx(still, 0, { perceivable: false, playerHull: [] }));

@@ -337,7 +337,9 @@ export class Ecosystem {
     if (m.held) { d.x = m.held.x; d.y = m.held.y; d.z = m.held.z; }
     else if (!m.frozen) {
       const it = m.intent, speed = spec.speed * size;
-      if (it.kind === 'ambient') { this.ambient(e, ctx, d); d.x *= it.speedFactor; d.y *= it.speedFactor; d.z *= it.speedFactor; }
+      // A hunter that gave up (`return`) walks home at .7 × its speed, as the legacy return does (T16a review I1); else today's ambient motion.
+      if (it.kind === 'ambient' && e.mode === 'return') this.toward(e, e.hx, e.hy, e.hz, speed * .7, dt, mode, d);
+      else if (it.kind === 'ambient') { this.ambient(e, ctx, d); d.x *= it.speedFactor; d.y *= it.speedFactor; d.z *= it.speedFactor; }
       else if (it.kind === 'toward') this.toward(e, it.point.x, it.point.y, it.point.z, speed * it.speedFactor, dt, mode, d);
       else if (it.kind === 'away') this.toward(e, 2 * e.x - it.point.x, 2 * e.y - it.point.y, 2 * e.z - it.point.z, speed * it.speedFactor, dt, mode, d);
       else if (m.face) { const fx = m.face.x - e.x, fz = m.face.z - e.z; if (Math.hypot(fx, fz) > 1e-4) e.heading = Math.atan2(fx, fz); }
