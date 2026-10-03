@@ -321,3 +321,20 @@ describe('a slot press next to a same-tick basic press (T7 carry)', () => {
     expect(s.rt.buffered).toBeNull();   // the Bite is not buffered behind the Dash either
   });
 });
+
+describe('a bracing phone player turns toward the move stick (review R16, T10)', () => {
+  it('with aim source none the Brace faces the move wish at the guard yaw rate; a real aim still wins; no wish keeps the aim', () => {
+    const s = speck([{ id: 'shell_plate', t: .55, angle: 0, scale: 1, mirror: false }]), held = [true, false, false, false] as [boolean, boolean, boolean, boolean];
+    tick(s, [], 0, { activeHeld: held, activePressed: held });
+    expect(s.rt.actions.some(a => a.resolved.guard?.kind === 'brace')).toBe(true);
+    const body = playerBody(s, playerActorCached(s)), facing = { x: 0, y: 0, z: 1 }, right = { x: 1, y: 0, z: 0 };
+    const none = s.combat.playerMotion(body, { ...RELEASED, aim: facing, aimSource: 'none', activeHeld: held }, 1 / 60, right).face!;
+    expect(none.dir).toEqual(right); expect(none.yawRateFactor).toBeLessThan(1);
+    const pointer = s.combat.playerMotion(body, { ...RELEASED, aim: facing, aimSource: 'pointer', activeHeld: held }, 1 / 60, right).face!;
+    expect(pointer.dir).toEqual(facing);
+    const auto = s.combat.playerMotion(body, { ...RELEASED, aim: { x: -1, y: 0, z: 0 }, aimSource: 'auto', activeHeld: held }, 1 / 60, right).face!;
+    expect(auto.dir).toEqual({ x: -1, y: 0, z: 0 });   // an auto-aim candidate (a wind-up attacker) wins over the stick
+    const still = s.combat.playerMotion(body, { ...RELEASED, aim: facing, aimSource: 'none', activeHeld: held }, 1 / 60, { x: 0, y: 0, z: 0 }).face!;
+    expect(still.dir).toEqual(facing);
+  });
+});

@@ -100,3 +100,36 @@ export function aimChevron(origin: Vec3, aim: Vec3, L: number, combatants: reado
   if (l < 1e-9 || !combatants.some(c => Math.hypot(c.x - origin.x, c.y - origin.y, c.z - origin.z) <= range)) return null;
   return { x: origin.x + aim.x / l * L, y: origin.y + aim.y / l * L, z: origin.z + aim.z / l * L };
 }
+
+// ---- phone aim (spec §8.4) ----
+/** A drag on the basic button counts beyond this many CSS px from the press point. */
+export const DRAG_DEAD_ZONE = 12;
+/** The phone drag aim: screen up is the camera's horizontal forward, screen right its right. Null inside the dead zone. */
+export function dragAim(dx: number, dy: number, cameraForward: Vec3): Vec3 | null {
+  if (Math.hypot(dx, dy) <= DRAG_DEAD_ZONE) return null;
+  const fl = Math.hypot(cameraForward.x, cameraForward.z); if (fl < 1e-9) return null;
+  const fx = cameraForward.x / fl, fz = cameraForward.z / fl;   // right = (−fz, fx): forward (0, 0, −1) gives right (1, 0, 0)
+  const x = fx * -dy - fz * dx, z = fz * -dy + fx * dx, l = Math.hypot(x, z);
+  return l > 1e-9 ? { x: x / l + 0, y: 0, z: z / l + 0 } : null;
+}
+/** An auto-aim candidate: `rank` 0 an enemy in wind-up that targets the player, 1 hunters and fighters, 2 prey. */
+export interface AimCandidate { position: Vec3; rank: 0 | 1 | 2 }
+/** Phone auto-aim searches this half angle around the facing. */
+export const AUTO_AIM_HALF_ANGLE = 60 * Math.PI / 180;
+/** A bracing phone player's auto-aim searches 180° (± 90°) for an attacker in wind-up (review R16). */
+export const BRACE_AUTO_AIM_HALF_ANGLE = Math.PI / 2;
+/** Phone auto-aim (spec §8.4): the best candidate within `halfAngle` of the horizontal facing and within `maxDistance`, lowest rank first,
+ *  then the nearest; a unit vector toward it, or null with none. */
+export function autoAim(origin: Vec3, facing: Vec3, candidates: readonly AimCandidate[], maxDistance: number, halfAngle = AUTO_AIM_HALF_ANGLE): Vec3 | null {
+  const fl = Math.hypot(facing.x, facing.z) || 1, fx = facing.x / fl, fz = facing.z / fl;
+  let best: { c: AimCandidate; d: number } | null = null;
+  for (const c of candidates) {
+    const dx = c.position.x - origin.x, dy = c.position.y - origin.y, dz = c.position.z - origin.z, d = Math.hypot(dx, dy, dz), h = Math.hypot(dx, dz);
+    if (d > maxDistance || h < 1e-9) continue;
+    if (Math.acos(Math.max(-1, Math.min(1, (dx * fx + dz * fz) / h))) > halfAngle + 1e-9) continue;
+    if (!best || c.rank < best.c.rank || (c.rank === best.c.rank && d < best.d)) best = { c, d };
+  }
+  if (!best) return null;
+  const p = best.c.position, d = best.d;
+  return { x: (p.x - origin.x) / d, y: (p.y - origin.y) / d, z: (p.z - origin.z) / d };
+}

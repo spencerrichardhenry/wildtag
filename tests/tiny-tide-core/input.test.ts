@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { aimChevron, aimPitch, basicRequested, mouseButtons, NO_MOUSE, pitched, pointerAim, readIntent, RELEASED, type InputSources } from '../../src/tiny-tide/input';
+import { aimChevron, aimPitch, AUTO_AIM_HALF_ANGLE, autoAim, basicRequested, BRACE_AUTO_AIM_HALF_ANGLE, DRAG_DEAD_ZONE, dragAim, mouseButtons, NO_MOUSE, pitched, pointerAim, readIntent, RELEASED, type InputSources } from '../../src/tiny-tide/input';
 
 const src = (over: Partial<InputSources> = {}): InputSources => ({ stickX: 0, stickZ: 0, keys: new Set(), chompHeld: false, chompTapped: false, riseHeld: false, riseTapped: false, diveHeld: false, ...over });
 const read = (s: InputSources, prev = RELEASED, breach = false) => readIntent(s, prev, { breachOnRiseTap: breach });
@@ -94,3 +94,29 @@ describe('mouse buttons (chorded presses come as pointermove; review fix round 1
 });
 const NO_MOUSE_EDGES = { basic: false, slot1: false, basicPressed: false, slot1Pressed: false };
 
+describe('phone aim (spec §8.4, T10)', () => {
+  it('drags the aim with screen up as the camera forward', () => {
+    const f = { x: 0, y: 0, z: -1 };
+    expect(DRAG_DEAD_ZONE).toBe(12);
+    expect(dragAim(0, -10, f)).toBeNull();   // inside 12 px
+    expect(dragAim(0, -40, f)).toEqual({ x: 0, y: 0, z: -1 }); expect(dragAim(40, 0, f)).toEqual({ x: 1, y: 0, z: 0 });   // up, right
+    const d = dragAim(0, 40, { x: 1, y: 0, z: 0 })!; expect(d.x).toBeCloseTo(-1); expect(d.z).toBeCloseTo(0);   // down: away from the camera forward
+  });
+  it('auto-aims by rank, then distance, inside 60° and 3 × the Bite range', () => {
+    const o = { x: 0, y: 0, z: 0 }, face = { x: 0, y: 0, z: 1 };
+    const prey = { position: { x: 0, y: 0, z: 1 }, rank: 2 as const }, hunter = { position: { x: 1, y: 0, z: 2 }, rank: 1 as const }, windup = { position: { x: -1, y: 0, z: 2.5 }, rank: 0 as const };
+    expect(AUTO_AIM_HALF_ANGLE).toBeCloseTo(Math.PI / 3);
+    expect(autoAim(o, face, [prey, hunter], 5)!.x).toBeCloseTo(1 / Math.hypot(1, 2));
+    expect(autoAim(o, face, [prey, hunter, windup], 5)!.x).toBeCloseTo(-1 / Math.hypot(1, 2.5));
+    expect(autoAim(o, face, [{ position: { x: 2, y: 0, z: 1 }, rank: 0 }], 5)).toBeNull();   // 63° off the facing
+    expect(autoAim(o, face, [prey], .9)).toBeNull();   // out of range
+    expect(autoAim(o, face, [prey, { position: { x: 0, y: 0, z: 3 }, rank: 2 }], 5)!.z).toBeCloseTo(1);   // same rank: the nearest
+  });
+  it('Brace auto-aim searches 180° (review R16): a wind-up attacker 80° off the facing is found, one behind is not', () => {
+    const o = { x: 0, y: 0, z: 0 }, face = { x: 0, y: 0, z: 1 }, side = { position: { x: 2, y: 0, z: Math.tan(10 * Math.PI / 180) * 2 }, rank: 0 as const };
+    expect(BRACE_AUTO_AIM_HALF_ANGLE).toBeCloseTo(Math.PI / 2);
+    expect(autoAim(o, face, [side], 5)).toBeNull();   // outside the 60° cone
+    expect(autoAim(o, face, [side], 5, BRACE_AUTO_AIM_HALF_ANGLE)!.x).toBeGreaterThan(.98);
+    expect(autoAim(o, face, [{ position: { x: .5, y: 0, z: -2 }, rank: 0 }], 5, BRACE_AUTO_AIM_HALF_ANGLE)).toBeNull();   // behind: the move stick turns the body
+  });
+});

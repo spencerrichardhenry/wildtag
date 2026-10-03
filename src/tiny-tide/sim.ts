@@ -213,7 +213,7 @@ export function simFrame(s: SimState, w: SimWorld, input: SimInput): SimEvent[] 
       if (s.glide && s.glide.index >= s.glide.path.length) s.glide = null;
       r = { position: s.physical, status: 'moved', contacts: [], progress: 1, needsRecovery: false, breachStarted: false, arcEnded: false, permitEnded: false, turnRefused: false };
     } else s.stepCalls = admissionCount.n, r = stepPlayer(s.physical, rt, intent, { plan, profile: movement(plan.movement), caps, actor, ...legal, size: SIZES[stage]!, topSpeedLocal: STAGES[stage]!.speed * s.derived.speedFactor,
-      now: s.time, dt, wish, aim: null, actionLock: false, combat: s.combat.playerMotion(playerMotionBody(s, actor), intent, s.time) });
+      now: s.time, dt, wish, aim: null, actionLock: false, combat: s.combat.playerMotion(playerMotionBody(s, actor), intent, s.time, wish) });
     // As main.ts at HEAD: after a glide step stepCalls is the running admissionCount (it was 0), so a search started in that frame
     // gets rescueBudget 0 and begins next frame.
     s.stepCalls = admissionCount.n - s.stepCalls;

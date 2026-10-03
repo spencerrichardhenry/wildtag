@@ -39,7 +39,28 @@ try {
  const diving=(await state()).velocity;await cdp.send('Input.dispatchTouchEvent',{type:'touchCancel',touchPoints:[]});const [atCancel,next]=await speedNextFrame();
  assert.ok(Math.hypot(diving.x,diving.y,diving.z)>.01,'Dive moves');assert.ok(next===0||next<Math.min(atCancel,Math.hypot(diving.x,diving.y,diving.z)),'Cancelled touch makes the next frame slower (or stops: braking can reach 0 in one frame)');
  const dived=await state();assert.ok(dived.player.y<looked.player.y-1,'Dive descends');await assertStops('Cancelled touch releases Dive');
- for(const viewport of [{width:320,height:568},{width:844,height:390}]) {await page.setViewportSize(viewport);await page.waitForTimeout(200);for(const sel of ['#joystick','#chomp','#special','#dive','#pause','#edit','#hearts']){const b=await page.locator(sel).boundingBox();assert.ok(b && b.x>=0 && b.y>=0 && b.x+b.width<=viewport.width+1 && b.y+b.height<=viewport.height+1,`${sel} fits ${viewport.width}x${viewport.height}`);}await page.screenshot({path:`${out}/mobile-${viewport.width}.png`});}
+ // T10 (spec §8.4): a touch makes touch mode; a drag on the basic button beyond 12 px steers the aim (screen up, then screen right: a right
+ // angle); a drag inside the dead zone does not; the release returns to auto-aim (or the facing, source none).
+ const chomp={...await center('#chomp'),id:5};await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[chomp]});
+ chomp.y-=8;await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[chomp]});await frames(page,3);
+ const dead=await state();assert.equal(dead.input.touchMode,true,'a touch sets touch mode');assert.ok(await page.evaluate(()=>document.body.classList.contains('touchMode')),'the body has the touchMode class');
+ assert.notEqual(dead.input.aimSource,'drag','8 px is inside the drag dead zone');
+ chomp.y-=32;await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[chomp]});await frames(page,3);const up=(await state()).input;
+ chomp.y+=40;chomp.x+=40;await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[chomp]});await frames(page,3);const right=(await state()).input;
+ assert.equal(up.aimSource,'drag','a 40 px drag up steers the aim');assert.equal(right.aimSource,'drag','a 40 px drag right steers the aim');
+ const flat=v=>{const l=Math.hypot(v.x,v.z);return {x:v.x/l,z:v.z/l};},u=flat(up.aim),r=flat(right.aim);
+ assert.ok(Math.abs(u.x*r.x+u.z*r.z)<.08,`screen up and screen right drag aims are at a right angle (dot ${(u.x*r.x+u.z*r.z).toFixed(3)})`);
+ await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await frames(page,3);
+ assert.ok(['auto','none'].includes((await state()).input.aimSource),'after the drag, a touch player aims with auto-aim or the facing');
+ for(const viewport of [{width:320,height:568},{width:844,height:390}]) {await page.setViewportSize(viewport);await page.waitForTimeout(200);
+  const boxes={};
+  for(const sel of ['#joystick','#chomp','#special','#dive','#pause','#edit','#hearts','#slot-1','#slot-2','#slot-3','#slot-4']){if(sel.startsWith('#slot')&&!await page.locator(sel).isVisible())continue;const b=await page.locator(sel).boundingBox();assert.ok(b && b.x>=0 && b.y>=0 && b.x+b.width<=viewport.width+1 && b.y+b.height<=viewport.height+1,`${sel} fits ${viewport.width}x${viewport.height}`);boxes[sel]=b;}
+  assert.ok(await page.locator('#slot-1').isVisible(),`slot 1 (the swimmer's Dash) shows at ${viewport.width}x${viewport.height}`);
+  for(const sel of Object.keys(boxes).filter(k=>k.startsWith('#slot')))assert.ok(boxes[sel].width>=48&&boxes[sel].height>=48,`${sel} is at least 48x48`);
+  assert.ok(boxes['#chomp'].width>=80&&boxes['#chomp'].height>=80,'the basic button is at least 80x80');
+  const ctl=['#joystick','#chomp','#special','#dive','#slot-1','#slot-2','#slot-3','#slot-4'].filter(k=>boxes[k]);
+  for(let i=0;i<ctl.length;i++)for(let k=i+1;k<ctl.length;k++){const a=boxes[ctl[i]],b=boxes[ctl[k]];assert.ok(!(a.x<b.x+b.width-.5&&b.x<a.x+a.width-.5&&a.y<b.y+b.height-.5&&b.y<a.y+a.height-.5),`${ctl[i]} and ${ctl[k]} do not overlap at ${viewport.width}x${viewport.height}`);}
+  await page.screenshot({path:`${out}/mobile-${viewport.width}.png`});}
  // A second phone context: Evolve -> Swimmer -> Undo all shows a visible problem line about legs that fits.
  const phone=await browser.newContext({viewport:{width:390,height:844},deviceScaleFactor:2,isMobile:true,hasTouch:true});const second=await phone.newPage();
  second.on('pageerror',e=>errors.push(e.message));second.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
@@ -60,5 +81,5 @@ try {
   tris[stage]=most;await pc.close();}
  console.log('Phone triangles per frame (most of 20 samples):',JSON.stringify(tris));
  for(const [stage,count] of Object.entries(tris)) assert.ok(count<=PHONE_TRIANGLE_BUDGET,`stage ${stage}: ${count} triangles within the phone budget ${PHONE_TRIANGLE_BUDGET}`);
- assert.deepEqual(errors,[]);console.log('PASSED: v1 migration (-v1 unchanged), genuine multitouch move + rise, swipe camera, stable hover, Dive, touch cancellation, 390/320 portrait and landscape control layout, phone Evolve → Swimmer → Undo all problem line, phone triangle budget at stages 0–3.');
+ assert.deepEqual(errors,[]);console.log('PASSED: v1 migration (-v1 unchanged), genuine multitouch move + rise, swipe camera, stable hover, Dive, touch cancellation, the basic-button drag aim and touch mode, 390/320 portrait and landscape control layout (slots visible, at least 48 px, no overlap), phone Evolve → Swimmer → Undo all problem line, phone triangle budget at stages 0–3.');
 } finally {await browser.close();}

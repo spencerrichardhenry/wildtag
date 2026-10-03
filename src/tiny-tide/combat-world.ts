@@ -67,6 +67,11 @@ export function playerMatrix(position: Vec3, o: { yaw: number; pitch: number }, 
   return orientationMatrix(o, new T.Matrix4()).scale(new T.Vector3(scale, scale, scale)).setPosition(position.x, position.y, position.z);
 }
 const horizontal = (v: Vec3): Vec3 => { const l = Math.hypot(v.x, v.z); return l > 1e-9 ? { x: v.x / l, y: 0, z: v.z / l } : { x: 0, y: 0, z: 1 }; };
+const NO_MOVE: Vec3 = Object.freeze({ x: 0, y: 0, z: 0 });
+/** Review R16: the Brace facing of a player with no aim (source `none`): the horizontal move wish, when the stick is pushed past .3 (the
+ *  dash's own threshold); else null (the aim or the body forward). */
+const braceFacing = (intent: CombatInput, wish: Vec3): Vec3 | null =>
+  intent.aimSource === 'none' && Math.hypot(wish.x, wish.z) > .3 ? horizontal(wish) : null;
 const unit = (v: Vec3): Vec3 => { const l = Math.hypot(v.x, v.y, v.z); return l > 1e-9 ? { x: v.x / l, y: v.y / l, z: v.z / l } : { x: 0, y: 0, z: 1 }; };
 /** Review R3: the unit direction of `v` with its pitch clamped to ±AIM_PITCH_LIMIT. A vertical or zero `v` keeps the heading of `forward`. */
 export function clampAimPitch(v: Vec3, forward: Vec3): Vec3 {
@@ -334,8 +339,9 @@ export class CombatWorld {
       : (this.playerShapes(grabber, a)[0] as Extract<WorldShape, { kind: 'cone' }> | undefined)?.apex ?? grabber.centre;
     return { x: origin.x + a.aim.x * CLAW_REACH * targetL, y: origin.y + a.aim.y * CLAW_REACH * targetL, z: origin.z + a.aim.z * CLAW_REACH * targetL };
   }
-  /** Motion during the player's actions for the next player step (spec §5.12). */
-  playerMotion(p: MotionBody, intent: CombatInput, now: number): CombatMotion {
+  /** Motion during the player's actions for the next player step (spec §5.12). `wish`: the move direction (world space) of this frame.
+   *  Review R16: while Brace is up and the aim source is `none` (a phone with no auto-aim candidate), the body turns toward the move wish. */
+  playerMotion(p: MotionBody, intent: CombatInput, now: number, wish: Vec3 = NO_MOVE): CombatMotion {
     const rt = p.rt; let speed = 1, face: CombatMotion['face'] = null, dash: Vec3 | null = null, forced: Vec3 | null = null;
     for (const a of liveActions(rt)) {
       const attack = a.resolved.attack, g = a.resolved.guard;
@@ -343,7 +349,7 @@ export class CombatWorld {
         speed *= attack.moveSpeedFactor;
         if (a.resolved.kind === 'bite' || a.resolved.kind === 'grab') face = { dir: a.aim, yawRateFactor: 1 };
       }
-      if (g?.kind === 'brace' && (a.phase === 'windup' || a.phase === 'active')) { speed *= g.moveSpeedFactor; face = { dir: intent.aim ?? forwardOf(rt.orientation), yawRateFactor: g.yawRateFactor }; }
+      if (g?.kind === 'brace' && (a.phase === 'windup' || a.phase === 'active')) { speed *= g.moveSpeedFactor; face = { dir: braceFacing(intent, wish) ?? intent.aim ?? forwardOf(rt.orientation), yawRateFactor: g.yawRateFactor }; }
       if (a.phase === 'hold') speed *= HOLDING_SPEED;
       if (a.resolved.evasion && a.phase === 'active') { const s = dashSpeed(a, p.L); dash = { x: a.aim.x * s, y: a.aim.y * s, z: a.aim.z * s }; }
     }

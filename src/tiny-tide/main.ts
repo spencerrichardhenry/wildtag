@@ -16,7 +16,7 @@ import { renderPreview } from './preview';
 import { cardSummary, COAST_READY, eligibleChildren, leadsTo, type BodyPlan } from './plans';
 import { quoteDesign } from './economy';
 import { newRuntime, type Actor, type CombatInput, type Constraint, type Tuple4, type Vec3, type WorldQueries } from './combat-types';
-import { aimChevron, aimPitch, mouseButtons, NO_MOUSE, pitched, pointerAim, POINTER_FRESH_SECONDS, readIntent, RELEASED, type AimSource, type MouseState } from './input';
+import { aimChevron, aimPitch, autoAim, BRACE_AUTO_AIM_HALF_ANGLE, dragAim, mouseButtons, NO_MOUSE, pitched, pointerAim, POINTER_FRESH_SECONDS, readIntent, RELEASED, type AimCandidate, type AimSource, type MouseState } from './input';
 import { CombatHud, slotViews } from './combat-hud';
 import { forwardOf } from './orientation';
 import { blockHint, blockHintDue, newBlockHintGate, PITCH_LIMIT, type PlayerStepResult, newTapWatch, tapTargetStalled } from './player-motion';
@@ -199,6 +199,10 @@ let pointerX = 0, pointerY = 0, pointerAt = -Infinity, pointerOver = false;
 /** The mouse buttons (spec §8.1): left holds the basic input, right holds slot 1. `mouseButtonsDown` is the last `buttons` bitmask read;
  *  `mouseLookBit` is the button that drives a mouse camera drag (4 middle, 1 Alt + left; 0 none). */
 let mouse: MouseState = NO_MOUSE, mouseButtonsDown = 0, mouseLookBit = 0;
+/** The phone (spec §8.4): a drag on the basic button steers the aim; without a drag, auto-aim. `touchMode`: the last game input was a touch
+ *  (a pen or touch pointer); the body carries the `touchMode` class while it is on. */
+let chompDrag: { id: number; x: number; y: number; aim: Vec3 | null } | null = null, touchMode = false;
+function setTouchMode(on: boolean) { if (on !== touchMode) { touchMode = on; document.body.classList.toggle('touchMode', on); } }
 let lastIntent: CombatInput = RELEASED;
 let target: T.Vector3 | null = null;
 let time = 0, last = performance.now(), cooldown = 0, chompPulse = 0;
@@ -287,7 +291,7 @@ function renderRoot() {
 const admittedNow = (actor: Actor) => simAdmitted(sim, simWorld, actor);
 /** Writes the run to the write key only. A kept, unreadable or legacy key is never written. */
 function save() { try { if (writeKey) localStorage.setItem(writeKey, JSON.stringify(run)); saved = structuredClone(run); } catch { /* Continue without saving in private contexts. */ } }
-function clearInput() { slotHeld = [false, false, false, false]; slotTapped = [false, false, false, false]; slotCanceled = [false, false, false, false]; mouse = NO_MOUSE; mouseButtonsDown = 0; mouseLookBit = 0; combatHud.buttons.forEach(b => b.classList.remove('pressed')); keys.clear(); holdingChomp = false; rising = false; diving = false; chompTapped = false; riseTapped = false; lastIntent = RELEASED; stickX = 0; stickZ = 0; stickPointer = null; target = null; el('stick').style.transform = ''; el('chomp').classList.remove('pressed'); el('special').classList.remove('pressed'); el('dive').classList.remove('pressed'); }
+function clearInput() { chompDrag = null; slotHeld = [false, false, false, false]; slotTapped = [false, false, false, false]; slotCanceled = [false, false, false, false]; mouse = NO_MOUSE; mouseButtonsDown = 0; mouseLookBit = 0; combatHud.buttons.forEach(b => b.classList.remove('pressed')); keys.clear(); holdingChomp = false; rising = false; diving = false; chompTapped = false; riseTapped = false; lastIntent = RELEASED; stickX = 0; stickZ = 0; stickPointer = null; target = null; el('stick').style.transform = ''; el('chomp').classList.remove('pressed'); el('special').classList.remove('pressed'); el('dive').classList.remove('pressed'); }
 function syncSound() { el('sound').innerHTML = audio.muted ? icons.mute : icons.sound; el('sound').setAttribute('aria-label', audio.muted ? 'Unmute sound' : 'Mute sound'); el('sound').setAttribute('aria-pressed', String(audio.muted)); }
 syncSound();
 function syncHome() {
@@ -583,6 +587,14 @@ holdButton('chomp', value => holdingChomp = value, () => chompTapped = true);
 holdButton('special', value => rising = value, () => riseTapped = true);
 holdButton('dive', value => diving = value);
 combatHud.buttons.forEach((b, i) => holdButton(b.id, value => slotHeld[i] = value, () => slotTapped[i] = true, () => slotCanceled[i] = true));
+// The basic-button drag (spec §8.4): the same press starts the basic move at once; the drag then steers it until the lock, and the next Bites.
+const chompButton = el('chomp');
+chompButton.addEventListener('pointerdown', event => { if (mode !== 'playing') return; chompDrag = { id: event.pointerId, x: event.clientX, y: event.clientY, aim: null }; });
+chompButton.addEventListener('pointermove', event => { if (chompDrag && event.pointerId === chompDrag.id) chompDrag.aim = dragAim(event.clientX - chompDrag.x, event.clientY - chompDrag.y, world.cameraForward()); });
+for (const type of ['pointerup', 'pointercancel', 'lostpointercapture'] as const) chompButton.addEventListener(type, event => { if (chompDrag?.id === event.pointerId) chompDrag = null; });
+// Every game control and the canvas record the device of the last press (touch mode: phone auto-aim; a mouse turns it off).
+for (const node of [chompButton, el('special'), el('dive'), el('joystick'), ...combatHud.buttons, world.renderer.domElement])
+  node.addEventListener('pointerdown', event => { if (mode === 'playing') setTouchMode(event.pointerType !== 'mouse'); });
 const joystick = el('joystick');
 function moveStick(event: PointerEvent) {
   const rect = joystick.getBoundingClientRect(), limit = rect.width * .3;
@@ -656,7 +668,7 @@ window.addEventListener('keydown', event => {
   if (event.code === 'Escape') { if (mode === 'playing') pause(); return; }
   if (mode !== 'playing') return;
   if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.code)) event.preventDefault();
-  keys.add(event.code);
+  keys.add(event.code); setTouchMode(false);
   if (event.code === 'KeyE' && !event.repeat) riseTapped = true;
   if (event.code === 'Space' && !event.repeat) chompTapped = true;
   const digit = ['Digit1', 'Digit2', 'Digit3', 'Digit4'].indexOf(event.code); if (digit >= 0 && !event.repeat) slotTapped[digit] = true;
@@ -701,12 +713,36 @@ function updateGuide() {
 const NO_WISH: Vec3 = Object.freeze({ x: 0, y: 0, z: 0 });
 /** The live combat species of the combat tiers (the stage and the stage + 1), as world objects. */
 const combatFoods = () => world.foods.filter(f => f.entity.active && !f.entity.eaten && f.tier >= run.stage && f.tier <= run.stage + 1 && sim.combat.stateOf(f.entity) !== null);
-/** The aim (spec §8.4): the desktop pointer while it is over the canvas and moved in the last 4 s, else the camera forward. Free movers pitch
- *  toward a soft-lock target (D9); ground movers aim level. Render units: only directions leave this function. */
+/** Phone auto-aim (spec §8.4): the combat species within 3 × the Bite range and 60° of the facing (180° for an attacker in wind-up while
+ *  Brace is up, review R16), by rank then distance; null with none, while inked, or with no Bite. Render units. */
+function phoneAutoAim(p: Vec3, facing: Vec3): Vec3 | null {
+  const bite = sim.moves?.set.basic?.resolved.attack, inked = rt.status !== null && time < rt.status.until;
+  if (!bite || bite.shape.kind !== 'cone' || inked) return null;
+  const reach = 3 * bite.shape.range * playerActorCached().bodyLength / world.scale;
+  const bracing = rt.actions.some(a => a.resolved.guard?.kind === 'brace' && (a.phase === 'windup' || a.phase === 'active'));
+  const candidates: AimCandidate[] = combatFoods().flatMap(f => {
+    const c = sim.combat.stateOf(f.entity); if (!c) return [];
+    const windup = c.rt.actions.some(a => a.phase === 'windup' && a.targetId === PLAYER_ID), type = c.behaviour.type;
+    if (bracing && !windup) return [];   // a bracing player turns only toward an attack (else toward the move stick)
+    return [{ position: f.data, rank: windup ? 0 : type === 'prey-flee' || type === 'prey-school' ? 2 : 1 }];
+  });
+  return autoAim(p, facing, candidates, reach, bracing ? BRACE_AUTO_AIM_HALF_ANGLE : undefined);
+}
+/** The aim (spec §8.4): a phone drag on the basic button; else the desktop pointer while it is over the canvas and moved in the last 4 s;
+ *  else on a phone auto-aim (or the facing, source none); else the camera forward. Free movers pitch toward a soft-lock target (D9); ground
+ *  movers aim level. Render units: only directions leave this function. */
 function currentAim(caps: { pitch: boolean }): { aim: Vec3; source: AimSource } {
   const p = world.player.position, fresh = pointerOver && performance.now() - pointerAt < POINTER_FRESH_SECONDS * 1000;
   let flat: Vec3 | null = null, source: AimSource = 'camera';
-  if (fresh) { const ray = world.pointerRay(pointerX, pointerY); flat = pointerAim(p, ray.origin, ray.dir); if (flat) source = 'pointer'; }
+  if (chompDrag?.aim) { flat = chompDrag.aim; source = 'drag'; }
+  else if (fresh) { const ray = world.pointerRay(pointerX, pointerY); flat = pointerAim(p, ray.origin, ray.dir); if (flat) source = 'pointer'; }
+  else if (touchMode) {
+    const facing = forwardOf({ yaw: rt.orientation.yaw, pitch: 0 }), auto = phoneAutoAim(p, facing);
+    if (!auto) return { aim: facing, source: 'none' };   // review R16: a bracing player then turns toward the move stick
+    const h = Math.hypot(auto.x, auto.z); if (h < 1e-9) return { aim: facing, source: 'none' };
+    const level = { x: auto.x / h, y: 0, z: auto.z / h };
+    return { aim: caps.pitch ? pitched(level, Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, Math.atan2(auto.y, h)))) : level, source: 'auto' };
+  }
   flat ??= world.cameraForward();
   if (!caps.pitch) return { aim: flat, source };
   return { aim: pitched(flat, aimPitch(p, flat, combatFoods().map(f => f.data), rt.orientation.pitch, PITCH_LIMIT)), source };
@@ -843,7 +879,7 @@ function poseAgreement() {
 // Read-only diagnostics allow browser verification to steer with real controls.
 if (QA) {
   const copy = (v: Vec3) => ({ x: v.x, y: v.y, z: v.z });
-  Object.defineProperty(window, '__tinyTide', { get: () => ({ mode, input: { basicHeld: lastIntent.basicHeld, activeHeld: [...lastIntent.activeHeld] },
+  Object.defineProperty(window, '__tinyTide', { get: () => ({ mode, input: { basicHeld: lastIntent.basicHeld, activeHeld: [...lastIntent.activeHeld], aim: lastIntent.aim && copy(lastIntent.aim), aimSource: lastIntent.aimSource, touchMode },
     plan: currentPlan(run).id, plans: [...run.plans], zone: zoneNow(), velocity: copy(rt.controlledVelocity), externalVelocity: copy(rt.externalVelocity),
     orientation: { ...rt.orientation }, permit: rt.permit ? { ...rt.permit } : null, arc: rt.arc ? { ...rt.arc } : null, breachReadyAt: rt.breachReadyAt, invulnerableUntil: rt.invulnerableUntil,
     pendingRespawn: run.pendingRespawn, caps: capsOf(), physical: copy(physical), legal: mode === 'menu' ? null : admittedNow(playerActor(currentPlan(run), run.genome, run.stage, growthOf(run))), contactNow, lastContact: lastContact === null ? null : `${lastContact}`, lastContactSolid, trapRescues: sim.trapRescues, rescueLog: JSON.parse(JSON.stringify(sim.rescueLog)), contactSolids: [...sim.lastSolids], groundOffset: rt.groundOffset, solidOverlap: mode === 'menu' ? null : solidOverlap(), solidsNear: mode === 'menu' ? [] : solidsNear(32), edge: { inZone: edgeNow, hinted: edgeHinted, half: PLAYER_HALF, softStart: EDGE_SOFT_START * PLAYER_HALF }, hazardSources: hazardSources(), growth: growthOf(run), acceptedHits, rejectedHits,
