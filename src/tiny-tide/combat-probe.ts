@@ -219,6 +219,8 @@ export function botInput(p: ProbeWorld, bot: Bot, o: BotOptions): { intent: Comb
   if (s.rt.heldBy !== null) {
     bot.flick = -bot.flick || 1; basic = bot.flick > 0;
     const dash = slotOf(s, 'dash'); if (dash >= 0 && o.useMoves && bot.flick > 0) tapped[dash] = true;
+    // Spec §11.8: the squid's hold takes a Dash or a Counter press (a Counter press adds nothing to a mash).
+    const counter = slotOf(s, 'counter'); if (dash < 0 && counter >= 0 && o.useMoves && bot.flick > 0) tapped[counter] = true;
     const src: InputSources = { stickX: bot.flick, stickZ: 0, keys, chompHeld: basic, chompTapped: basic, riseHeld: false, riseTapped: false, diveHeld: false, activeTapped: tapped, activeHeld: held };
     const intent = readIntent(src, bot.previous, { breachOnRiseTap: false }); bot.previous = intent; return { intent, wish: { x: bot.flick, y: 0, z: 0 } };
   }
@@ -240,7 +242,9 @@ export function botInput(p: ProbeWorld, bot: Bot, o: BotOptions): { intent: Comb
     const base = { actionId: next.a.instanceId, attacker, dir, pressed: false }, until = next.activeAt + next.attack.activeSeconds;
     const counterAt = counter ? next.activeAt - counter.startupSeconds - (counter.windowSeconds ?? 0) / 2 : 0, dashAt = dash ? next.activeAt - .15 - dash.startupSeconds : 0;
     // Order (spec §14.3): Brace, Counter, Dash, move; a move is used only when it is ready at its press time (plan review R12(1)).
-    if (brace && next.attack.blockable && next.attack.damage < (brace.breakHalfHearts ?? Infinity) && moveReadyAt(s, 'brace', now)) bot.response = { ...base, kind: 'brace', pressAt: now, until };
+    // Spec §11.8: a bounce attack that never breaks the guard (the Reef Tyrant's charge) is Braced like a light one.
+    const bounce = BEHAVIOURS[attacker.spec.behaviourId ?? '']?.traits?.braceBounce, safe = !!bounce && bounce.attackIds.includes(next.attack.id) && (!!bounce.noBreak || !!bounce.fullBlock);
+    if (brace && next.attack.blockable && (safe || next.attack.damage < (brace.breakHalfHearts ?? Infinity)) && moveReadyAt(s, 'brace', now)) bot.response = { ...base, kind: 'brace', pressAt: now, until };
     else if (counter && next.attack.parryable && moveReadyAt(s, 'counter', counterAt)) bot.response = { ...base, kind: 'counter', pressAt: counterAt, until };
     else if (dash && moveReadyAt(s, 'dash', dashAt)) bot.response = { ...base, kind: 'dash', pressAt: dashAt, until };
     else bot.response = { ...base, kind: 'move', pressAt: now, until: until + .2 };
@@ -264,7 +268,9 @@ export function botInput(p: ProbeWorld, bot: Bot, o: BotOptions): { intent: Comb
     const gap = d - .35 * SIZES[t.spec.tier]! * (t.spec.bodyScale ?? 1) - .3 * L, attacking = !!c?.rt.actions.some(a => a.phase === 'windup' || a.phase === 'active');
     aim = unit(to);
     if (gap > .8 * reach) wish = flat(to);
-    if (gap <= 1.1 * reach && !attacking && !liveActions(s.rt).length) {
+    // Spec §6.6: the grabber may Bite during its hold (the held creature cannot act), so the hold does not stop the bot's Bites.
+    const mine = liveActions(s.rt), holding = mine.length === 1 && mine[0]!.phase === 'hold' && mine[0]!.heldTarget !== null;
+    if (gap <= 1.1 * reach && (!attacking || holding) && (!mine.length || holding)) {
       const grabbable = !!(t.spec.behaviourId && BEHAVIOURS[t.spec.behaviourId]?.grabbable) && !t.spec.alpha;
       if (o.useMoves && grabbable && moveReadyAt(s, 'grab', now) && (now * 10 | 0) % 7 === 0) tapped[slotOf(s, 'grab')] = true;
       else if (o.useMoves && moveReadyAt(s, 'sweep', now) && (now * 10 | 0) % 5 === 0) tapped[slotOf(s, 'sweep')] = true;
@@ -568,9 +574,27 @@ function p9Rows(o: ProbeOptions, watch: DirectorWatch, flush: (rows: P9Row[]) =>
 function p9Md(rows: readonly P9Row[]): string[] {
   if (!rows.length) return [];
   const builds = P9_BUILDS.map(b => b.label), cell = (b: string, sp: string) => { const x = rows.find(r => r.build === b && r.species === sp); return x?.unbuildable ? `not buildable (${x.unbuildable})` : x ? `${x.damage.toFixed(1)} ½♥ / ${Number.isFinite(x.ttk) ? x.ttk.toFixed(1) + ' s' : '∞'}${x.faints ? ` (${x.faints} faints)` : ''}` : '—'; };
-  return ['## P9 Body-design tradeoffs (fight bot, .35 s reaction; measurement only)', '', `| Build | ${P9_SPECIES.join(' | ')} |`, `| --- | ${P9_SPECIES.map(() => '---').join(' | ')} |`,
+  return ['## P9 Body-design tradeoffs (fight bot, .35 s reaction; spec §11.8 bar)', '', `| Build | ${P9_SPECIES.join(' | ')} |`, `| --- | ${P9_SPECIES.map(() => '---').join(' | ')} |`,
     ...builds.map(b => `| ${b} | ${P9_SPECIES.map(sp => cell(b, sp)).join(' | ')} |`), '', '| Hunter | Least damage | Most damage | Spread (proposed bar ≥ 30 %) |', '| --- | --- | --- | --- |',
-    ...p9Spread(rows).map(x => `| ${x.species} | ${x.best} | ${x.worst} | ${Number.isFinite(x.spread) ? (x.spread * 100).toFixed(0) + ' %' : '∞'} |`), ''];
+    ...p9Spread(rows).map(x => `| ${x.species} | ${x.best} | ${x.worst} | ${Number.isFinite(x.spread) ? (x.spread * 100).toFixed(0) + ' %' : '∞'} |`), '',
+    '| Hunter | Matched build | Faster than the slowest | Less damage than the most hurt | Most losses (bar ≤ 10 %) | Bar (≥ 25 % time or damage) |', '| --- | --- | --- | --- | --- | --- |',
+    ...p9Bar(rows).map(x => `| ${x.species} | ${x.matched} | ${(x.ttkGain * 100).toFixed(0)} % (${x.worst}) | ${(x.damageGain * 100).toFixed(0)} % (${x.worstDamage}) | ${(x.maxLossShare * 100).toFixed(0)} % | ${x.pass ? 'pass' : 'FAIL'} |`), ''];
+}
+/** Spec §11.8 (owner 2026-10-03): the build that matches each P9 hunter's weakness. */
+export const P9_MATCHED: Readonly<Record<string, string>> = { '1:crab': 'grab (pincer)', '2:squid': 'grab (pincer)', '2:eel': 'counter (spike)' };
+/** The P9 bar per hunter (spec §11.8): the matched build beats the worst build by ≥ 25 % in median time to kill (worst by time) or in damage
+ *  taken (worst by damage), and every build loses (a faint or the 90 s cap) at most 1 fight in 10. */
+export const P9_BAR = { gain: .25, maxLossShare: .1 } as const;
+export function p9Bar(rows: readonly P9Row[]): { species: string; matched: string; worst: string; worstDamage: string; ttkGain: number; damageGain: number; maxLossShare: number; pass: boolean; why: string }[] {
+  return P9_SPECIES.flatMap(species => {
+    const r = rows.filter(x => x.species === species && !x.unbuildable && x.trials > 0), m = r.find(x => x.build === P9_MATCHED[species]);
+    if (!m) return [];
+    const byTtk = [...r].sort((a, b) => b.ttk - a.ttk)[0]!, byDamage = [...r].sort((a, b) => b.damage - a.damage)[0]!;
+    const ttkGain = Number.isFinite(byTtk.ttk) && byTtk.ttk > 0 ? 1 - m.ttk / byTtk.ttk : 0, damageGain = byDamage.damage > 0 ? 1 - m.damage / byDamage.damage : 0;
+    const maxLossShare = Math.max(...r.map(x => (x.trials - x.wins) / x.trials)), gainOk = ttkGain >= P9_BAR.gain - 1e-9 || damageGain >= P9_BAR.gain - 1e-9, lossOk = maxLossShare <= P9_BAR.maxLossShare + 1e-9;
+    const why = `${m.build} ${(ttkGain * 100).toFixed(0)} % faster than ${byTtk.build}, ${(damageGain * 100).toFixed(0)} % less damage than ${byDamage.build}; most losses ${(maxLossShare * 100).toFixed(0)} %`;
+    return [{ species, matched: m.build, worst: byTtk.build, worstDamage: byDamage.build, ttkGain, damageGain, maxLossShare, pass: gainOk && lossOk, why }];
+  });
 }
 /** P9 per hunter: the best and worst build by damage taken and their spread (worst / best − 1); the review's proposed bar is ≥ 30 %. */
 export function p9Spread(rows: readonly P9Row[]): { species: string; best: string; worst: string; spread: number }[] {
@@ -714,7 +738,8 @@ export function emptyReport(): ProbeReport {
 }
 /** The pass flag of a whole report. */
 export function judge(r: ProbeReport): ProbeReport {
-  r.pass = ![...r.p0, ...r.p1, ...r.p2, ...r.p3, ...r.p5, ...r.p6].some(failed) && !r.p7.some(failed) && r.p8.pass && (r.p8Views ?? []).every(v => v.pass) && r.p0.length > 0 && r.p7.length > 0;
+  r.pass = ![...r.p0, ...r.p1, ...r.p2, ...r.p3, ...r.p5, ...r.p6].some(failed) && !r.p7.some(failed) && r.p8.pass && (r.p8Views ?? []).every(v => v.pass) && r.p0.length > 0 && r.p7.length > 0
+    && p9Bar(r.p9 ?? []).every(x => x.pass);   // spec §11.8 (when P9 ran)
   return r;
 }
 /** The probe (spec §14.3), or some of its parts. Long: run it with TIDE_COMBAT_PROBE=1. `progress` receives each part's rows as they grow. */

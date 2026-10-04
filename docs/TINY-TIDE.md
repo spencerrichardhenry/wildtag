@@ -1002,7 +1002,7 @@ them in parallel, one process each. Each part writes
 | P6 | The same with a plant build: crab 45 s, squid 75. Others are reported. |
 | P7 | A journey bot becomes ready to evolve at size 0 and at size 1 within 600 s of play with at most 3 faints for each size. Swimmer and crawler lines, three diets, seeds 11 to 15 (30 runs). The bot drops a prey species for the rest of a size after it skipped one as unreachable (a ground mover), an omnivore eats the nearer of its food and its prey, and with nothing near it travels toward the nearest prey. |
 | P8 | At most 2 wind-ups at you at once, active starts at least .25 s apart, and off-screen wind-ups at least .6 s. |
-| P9 | Measurement only (final review I6): for each build (starter body, Dash, Brace, Counter, Sweep, Grab, all four) and each hunter, the damage taken and the median time to kill with the fight bot at a .35 s reaction, and the spread between the best and the worst build. |
+| P9 | For each build (starter body, Dash, Brace, Counter, Sweep, Grab, all four) and each hunter, the damage taken and the median time to kill with the fight bot at a .35 s reaction. Bar (owner, 2026-10-03): the matched build (crab: Grab, squid: Grab, eel: Counter) beats the worst build by at least 25 % in time to kill or in damage taken, and every build loses (a faint or the 90 s cap) at most 1 fight in 10. |
 
 The probe also reports the largest bot reaction time at which each attack still
 meets the P1, P2 and P3 bar, P1 with a reaction of .25 to .45 s, and DNA by
@@ -1015,10 +1015,13 @@ Moray eel 22 → 33, Berry squid 26 → 52 (× 2.0; × 1.75 = 46 gave 8.0 s, jus
 under the floor). Medians (meat build): crab 10.1 s, squid 8.5 s, eel 11.6 s;
 no hunter is staggered in any fight, and they start a median of 4 (crab), 1
 (squid) and 5 (eel) attacks per fight. Plant build: crab 13.4 s, squid 12.1 s.
-P9: every build takes 0 to .7 half-hearts per hunter fight; builds differ in
-time to kill (Counter 4.9 to 8.0 s, Dash 8.6 to 11.9 s), not in damage taken,
-so body design does not yet change the outcome against a single hunter (an
-owner decision). Tuned numbers from the probe: Bite poise damage × .5; eel bite
+P9 (follow-up F2, strengths and weaknesses): every build takes 0 to .7
+half-hearts per hunter fight and wins every fight. The matched build is
+clearly faster: crab Grab 7.6 s against Dash 12.8 s (41 %), squid Grab 6.8 s
+against Sweep 9.9 s (31 %), eel Counter 5.1 s against Dash 12.0 s (57 %).
+With the front shell the meat build needs 12.4 s for a crab (P5, was 10.1 s)
+and the plant build 17.4 s (P6, was 13.4 s). Probe files of this run:
+`.codex-drafts/tiny-tide-qa/followup-f2/`. Tuned numbers from the probe: Bite poise damage × .5; eel bite
 and squid ink wind-ups .48 s (Brace threshold .36 s); the eel's leash 3 L and
 give-up 4 L, its ambush impulse 3; the Clawmother chain gap is .55 s, the puffer
 burst band is 0 to 1.35 L and the Tyrant whirl band is 0 to .3 L. Median time to

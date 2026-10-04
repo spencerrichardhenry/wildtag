@@ -4,7 +4,7 @@
 // parallel); TIDE_PROBE_MERGE=1 merges every part file into the report and checks the bars.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { attackSetup, attackTrial, makeRun, hostileAttacks, isProbeHunter, P5_HUNTER_FLOOR, P9_BUILDS, p9Spread, ttkPass, journey, mergeReports, newWatch, onScreenFrom, probeMarkdown, PROBE_PARTS, runProbe, timeToKill, FULL_PROBE, type ProbePart, type ProbeReport } from '../../src/tiny-tide/combat-probe';
+import { attackSetup, attackTrial, makeRun, hostileAttacks, isProbeHunter, P5_HUNTER_FLOOR, P9_BUILDS, p9Spread, ttkPass, journey, mergeReports, newWatch, onScreenFrom, probeMarkdown, PROBE_PARTS, runProbe, timeToKill, FULL_PROBE, P9_MATCHED, p9Bar, type ProbePart, type ProbeReport } from '../../src/tiny-tide/combat-probe';
 
 const FULL = process.env.TIDE_COMBAT_PROBE === '1';
 const OUT = '.codex-drafts/tiny-tide-qa';
@@ -42,6 +42,18 @@ describe('combat probe (smoke)', () => {
     const row = (build: string, species: string, damage: number) => ({ build, species, size: 0, trials: 1, damage, ttk: 5, wins: 1, faints: 0 });
     expect(p9Spread([row('starter body', '1:crab', 4), row('brace (shell)', '1:crab', 2)]).find(x => x.species === '1:crab')).toEqual({ species: '1:crab', best: 'brace (shell)', worst: 'starter body', spread: 1 });
   });
+  // Owner 2026-10-03 (follow-up F2, spec §11.8): per hunter, the matched build beats the worst build by ≥ 25 % in median time to kill or in
+  // damage taken, and every build wins with at most 1 loss (a faint or the 90 s cap) per 10 fights.
+  it('P9 bar: the matched build beats the worst by 25 % (time or damage); every build loses at most 1 fight in 10', () => {
+    expect(P9_MATCHED).toEqual({ '1:crab': 'grab (pincer)', '2:squid': 'grab (pincer)', '2:eel': 'counter (spike)' });
+    const row = (build: string, ttk: number, damage: number, trials = 60, wins = 60) => ({ build, species: '1:crab', size: 0, trials, damage, ttk, wins, faints: trials - wins });
+    const base = [row('starter body', 10, 0), row('dash (side fins)', 10.6, 0), row('counter (spike)', 5, 0)];
+    expect(p9Bar([...base, row('grab (pincer)', 7.9, 0)]).find(x => x.species === '1:crab')).toMatchObject({ matched: 'grab (pincer)', worst: 'dash (side fins)', pass: true });   // 25.5 % faster
+    expect(p9Bar([...base, row('grab (pincer)', 8.1, 0)]).find(x => x.species === '1:crab')!.pass).toBe(false);                                           // 23.6 %
+    expect(p9Bar([row('starter body', 8, 2), row('grab (pincer)', 8, 1.5)]).find(x => x.species === '1:crab')!.pass).toBe(true);                          // 25 % less damage
+    expect(p9Bar([...base, row('grab (pincer)', 5, 0, 60, 53)]).find(x => x.species === '1:crab')!.pass).toBe(false);                                     // 7 losses in 60
+    expect(p9Bar([...base, row('grab (pincer)', 5, 0, 60, 54)]).find(x => x.species === '1:crab')!.pass).toBe(true);
+  });
   it('runs one trial of each measure', () => {
     const watch = newWatch();
     const dash = { label: 'dash', stage: 1 as const, line: 'swimmer' as const, mouths: ['mouth_nibbler', 'mouth_nibbler'] as [string, string], add: [{ id: 'fin_side', mirror: true }] };
@@ -75,5 +87,6 @@ describe.skipIf(!FULL)('combat probe (full, TIDE_COMBAT_PROBE=1)', () => {
     expect([...report.p1, ...report.p2, ...report.p3].filter(r => !r.pass).map(r => `${r.attackId}@${r.size}: ${r.share}`), 'P1–P3').toEqual([]);
     expect([...report.p5, ...report.p6].filter(r => !r.pass).map(r => `${r.build} ${r.species}: ${r.median}`), 'P5–P6').toEqual([]);
     expect(report.p7.filter(j => !j.pass).map(j => `${j.line} ${j.diet} ${j.seed}`), 'P7').toEqual([]);
+    if (report.p9?.length) expect(p9Bar(report.p9).filter(x => !x.pass).map(x => `${x.species}: ${x.why}`), 'P9').toEqual([]);
   }, 12 * 60 * 60_000);
 });
