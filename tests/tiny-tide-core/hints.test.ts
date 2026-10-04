@@ -1,6 +1,7 @@
 // tests/tiny-tide-core/hints.test.ts — spec §12.3: first-time hints show once per profile, at most one every 6 s, never over another toast.
 import { describe, expect, it } from 'vitest';
-import { HINTS_KEY, hintIcon, hintText, Hints, type HintStorage } from '../../src/tiny-tide/hints';
+import { fightHint, HINTS_KEY, hintIcon, hintText, Hints, traitHint, type HintId, type HintStorage } from '../../src/tiny-tide/hints';
+import { BEHAVIOURS } from '../../src/tiny-tide/bestiary';
 
 const memory = (init: Record<string, string> = {}): HintStorage & { data: Record<string, string> } => {
   const data = { ...init }; return { data, getItem: k => data[k] ?? null, setItem: (k, v) => { data[k] = v; } };
@@ -71,5 +72,18 @@ describe('help danger text (final review I5)', () => {
     }
     expect(helpDangerText(false)).toContain('click or Space to Bite'); expect(helpDangerText(false)).toContain('1–4');
     expect(helpDangerText(true)).toContain('Chomp to Bite');
+  });
+});
+
+// Owner 2026-10-03 (combat 3a follow-up F2, spec §11.8): each creature with a strength and a weakness explains them once, also in a fight.
+describe('trait hints', () => {
+  it('gives each trait species one hint id and its text; others have none', () => {
+    expect(traitHint('crab')).toEqual({ id: 'trait-crab', text: BEHAVIOURS.crab!.traits!.hint });
+    for (const b of ['squid', 'eel', 'puffer', 'clawmother', 'reef-tyrant']) expect(traitHint(b)?.id).toBe(`trait-${b}`);
+    expect(traitHint('spiny-snail')).toBeNull(); expect(traitHint(undefined)).toBeNull();
+  });
+  it('lets the telegraph and trait hints show in a fight, not the move hints', () => {
+    expect(['telegraph', 'telegraph-red', 'trait-crab'].every(id => fightHint(id as HintId))).toBe(true);
+    expect(fightHint('move-dash')).toBe(false);
   });
 });

@@ -77,7 +77,7 @@ const SHAPES: Record<string, ShapeRow & { lunge?: number; aim?: string }> = {
 // [id, poise, staggerResist, knockbackResistance, grabbable, reaction, gap, reposition] (spec §11.3 and §11.4)
 const BEH: [string, number, number, number, boolean, number, number, [number, number]][] = [
   ['drifter', 99, 0, 0, true, .2, 0, [0, 0]], ['sardine', 99, 0, 0, true, .2, 0, [0, 0]], ['spiny-snail', 4, 0, 0, true, .1, 2.5, [0, 0]], ['puffer', 6, 0, .2, true, .1, 3.0, [0, 0]],
-  ['crab', 6, 0, .2, true, .35, 1.0, [.6, 1.2]], ['squid', 7, 0, .3, true, .35, .8, [.6, 1.2]], ['eel', 6, 0, .3, true, .35, .8, [.5, 1.0]],
+  ['crab', 6, 0, .2, true, .35, 1.0, [.6, 1.2]], ['squid', 7, 0, .3, true, .35, .8, [.6, 1.2]], ['eel', 6, 0, .3, false, .35, .8, [.5, 1.0]],
   ['clawmother', 14, .5, .6, false, .35, 1.0, [.6, 1.0]], ['reef-tyrant', 16, .5, .6, false, .35, 1.0, [.6, 1.0]],
 ];
 const list = (l: readonly { attackId: string; band: readonly [number, number]; weight: number; flankWeight?: number; chainNextId?: string; chainGapSeconds?: number }[]) =>
@@ -137,6 +137,29 @@ describe('Brace room on the .45 s hunter attacks (final review I7)', () => {
       const a = SPECIES_ATTACKS[id]!;
       expect(a.windupSeconds, id).toBeCloseTo(.48, 9);
       expect(a.windupSeconds - a.aimLockAtSeconds, id).toBeGreaterThanOrEqual(.2 - 1e-9);
+    }
+  });
+});
+
+// Owner 2026-10-03 (combat 3a follow-up F2, spec §11.8): each size-0/1 hunter and alpha has one strength and one weakness, with a hint.
+describe('species traits (spec §11.8)', () => {
+  const DEG = Math.PI / 180;
+  it('gives the crab, squid, eel, puffer and both alphas their trait rows', () => {
+    expect(BEHAVIOURS.crab!.traits).toMatchObject({ frontShell: { halfAngle: 60 * DEG, factor: .5 } });
+    expect(BEHAVIOURS.squid!.traits).toMatchObject({ grabEscape: 'dash-or-counter', softBody: true }); expect(BEHAVIOURS.squid!.traits!.braceBounce).toBeUndefined();
+    expect(BEHAVIOURS.eel!.traits).toMatchObject({ slippery: true, counterStun: { attackIds: ['eel-ambush'], seconds: 2.5 } });
+    expect(BEHAVIOURS.eel!.grabbable).toBe(false);
+    expect(BEHAVIOURS.puffer!.traits).toMatchObject({ braceBounce: { attackIds: ['puffer-burst'], seconds: 1, fullBlock: true } });
+    expect(BEHAVIOURS.clawmother!.traits).toMatchObject({ counterStun: { attackIds: ['mother-emerge'], seconds: 2.5 } });
+    expect(BEHAVIOURS['reef-tyrant']!.traits).toMatchObject({ braceBounce: { attackIds: ['tyrant-charge'], seconds: 1.5, noBreak: true } });
+    for (const id of ['spiny-snail', 'drifter', 'sardine']) expect(BEHAVIOURS[id]!.traits, id).toBeUndefined();
+  });
+  it('names real attacks of the species, and a weakness is on a blockable (Brace) or parryable (Counter) attack', () => {
+    for (const [id, b] of Object.entries(BEHAVIOURS)) {
+      const t = b.traits; if (!t) continue;
+      for (const a of t.braceBounce?.attackIds ?? []) { expect(attacksOf(id), `${id} ${a}`).toContain(a); expect(SPECIES_ATTACKS[a]!.blockable, a).toBe(true); }
+      for (const a of t.counterStun?.attackIds ?? []) { expect(attacksOf(id), `${id} ${a}`).toContain(a); expect(SPECIES_ATTACKS[a]!.parryable, a).toBe(true); }
+      expect(t.hint.length, id).toBeGreaterThan(20); expect(t.hint.length, id).toBeLessThanOrEqual(110); expect(t.hint, id).toMatch(/^[\x20-\x7e]+$/);
     }
   });
 });

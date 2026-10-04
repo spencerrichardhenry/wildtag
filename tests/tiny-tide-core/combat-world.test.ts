@@ -91,7 +91,7 @@ describe('combat world', () => {
     for (let bite = 0; bite < 4 && crab.hp > 0; bite++) {
       let hit = null;
       for (let i = 0; i < 90 && !hit; i++) { hit = tick(s, [crab], now, i === 0 ? { basicPressed: true, basicHeld: true, aim } : { aim }).r.events.find(e => e.targetId === 'e9') ?? null; now += 1 / 60; }
-      expect(hit, `bite ${bite + 1} lands`).toMatchObject({ outcome: 'hit', amount: 6 });
+      expect(hit, `bite ${bite + 1} lands`).toMatchObject({ outcome: 'hit', amount: 3, trait: 'shell' });   // spec §11.8: the crab faces the player, so its front shell halves the Bite
       staggeredAfter.push(cc.rt.staggerUntil > cc.rt.actionClock);
       for (let i = 0; i < 30; i++) { tick(s, [crab], now, { aim }); now += 1 / 60; }   // recovery: the next Bite is about .44 s after the last
     }

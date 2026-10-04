@@ -780,6 +780,26 @@ is stagger-immune) and the toast "The <name> is getting angry!".
 The Clawmother pincer gives a strong Grab. The Tyrant jaw gives the strongest
 Bite (6 damage).
 
+### Strengths and weaknesses
+
+Each hunter and alpha has one strength and one weakness (owner, 2026-10-03;
+spec §11.8). A body that matches an enemy wins faster or takes less damage.
+Any body can still win. The first wind-up of each of these creatures at you
+shows its hint once, also in a fight.
+
+| Creature | Strength | Weakness | Good match |
+| --- | --- | --- | --- |
+| Peach crab | Front shell: a Bite from its front (60 degrees each side) does half damage, rounded up. The floater shows "SHELL". | A held or staggered crab takes full Bite damage. A Bite at its side, Sweep and Grab also do full damage. | Grab (Pincer), Counter |
+| Berry squid | Its grab is red, and you cannot wiggle out of it: Chomp and stick flicks do nothing. Only a Dash or Counter press frees you, at once. The prompt says "Dash or Counter to slip free!". | Soft body: your Grab holds it, big as it is (the size limit does not apply). | Grab (Pincer) |
+| Moray eel | Slippery: a Grab never holds it ("SLIPPED FREE"). The Grab still does its damage. | A countered ambush stuns it for 2.5 s ("STUNNED!"). | Counter (Spike) |
+| Puffer | Its burst hits all around it. A Dash avoids it, but takes you out of Bite range. | A Braced burst does no damage, and the puffer deflates for 1.0 s ("BOUNCED!"). | Brace |
+| Old Clawmother | Under the sand nothing can hit her, and her emerge is red. | A countered emerge stuns her for 2.5 s ("STUNNED!"). | Counter |
+| Reef Tyrant | Its whirl is red and hits twice. | A Braced charge never breaks your guard, and the Tyrant bounces off for 1.5 s ("BOUNCED!"). | Brace |
+
+A bounce or a stun is a stagger, also for an alpha. No wind-up, telegraph or
+attack number changed for these rules. The Clawmother is at size 0, where
+Sweep parts are still locked, so her weakness is the Counter.
+
 ### Combat checks
 
 - **Unit tests** are in `tests/tiny-tide-core` (the default unit suite).
