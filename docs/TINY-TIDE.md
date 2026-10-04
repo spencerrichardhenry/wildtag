@@ -74,6 +74,12 @@ character's physical location; small reef details are culled as they become
 insignificant. The camera remains near the player, and the visible world
 changes from seafloor to open water, surface, sky and space.
 
+The play camera follows at 9 render units (10.5 on a portrait screen). At
+sizes 0 and 1 (the combat sizes) this distance is 20 % larger (10.8 and
+12.6), so more of a fight is in view (owner, 2026-10-03). The pitch does not
+change. When the size changes, the distance eases to the new value in about
+3 s. The editor camera does not change.
+
 The creature body is generated at runtime from its genome as a skinned mesh
 with one bone for each spine segment. Parts and the body move with procedural
 animation. All parts, food, scenery and planets are original Blender GLBs,
@@ -1054,6 +1060,10 @@ QA note (combat, T16b): the telegraph edge arrow is in practice a phone feature
 in crab fights. On a desktop view the close camera keeps a nearby crab and its
 telegraph on screen, so no arrow appears. The live look caught one only at
 390 × 844 with the camera turned (`.codex-drafts/tiny-tide-qa/combat-live-edge-arrow.png`).
+Since the camera follows 20 % farther at sizes 0 and 1, the
+`telegraph-before-hit` check turns the camera so that the crab is 116 degrees
+from the view direction (it was 90 degrees). At 90 degrees, every crab attack
+stayed on screen.
 
 The unit tests cover parts, genomes, stats, diets, DNA, evolution, health,
 seeded worlds, creature behavior (hunting, fleeing, provoking, stealth,

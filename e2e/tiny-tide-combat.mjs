@@ -337,6 +337,9 @@ async function turnCamera(page, yaw, pitch) {
   }
 }
 
+/** Owner 2026-10-03 (F1): the size-0/1 play camera follows 20 % farther, so a crab exactly 90° to the side keeps its attacks on screen. The
+ *  camera-away part turns the camera this much further, so the crab sits behind the player's side (116° from the view direction). */
+const AWAY_TOWARD_CAMERA = .45;
 check('telegraph-before-hit', async () => {
   facts.leads = {};
   // Part 1 (spec §14.2): a still Speck and qaEncounter=1:crab; the telegraph is visible ≥ .45 s before the first damage and its shape is the
@@ -367,7 +370,7 @@ check('telegraph-before-hit', async () => {
       if (s.combat.telegraphs.some(t => t.targetsPlayer && t.phase === 'windup')) { await control(page, []); await page.waitForTimeout(100); continue; }
       const gap = (Math.hypot(s.physical.x - e.x, s.physical.z - e.z) - .35 * e.bodyLength) / e.bodyLength;
       await control(page, gap < .9 ? steer(s, { x: 2 * s.player.x - e.x / size, z: 2 * s.player.z - e.z / size }, .2) : gap > 1.3 ? steer(s, { x: e.x / size, z: e.z / size }, .2) : []);
-      await turnCamera(page, Math.atan2(e.x - s.physical.x, e.z - s.physical.z) + Math.PI / 2, -.8); await page.waitForTimeout(100);
+      await turnCamera(page, Math.atan2(e.x - s.physical.x, e.z - s.physical.z) + Math.PI / 2 - AWAY_TOWARD_CAMERA, -.8); await page.waitForTimeout(100);
     }
     await control(page, []);
     rows = telegraphLeads(await stopRecorder(page));

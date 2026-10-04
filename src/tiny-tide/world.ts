@@ -1,6 +1,6 @@
 import * as T from 'three';
 import { batch, foodModel, material, sceneryAsset } from './models';
-import { biomeAt, PLAYER_HALF, random, seabedHeight, SIZES, WATER_LEVEL, type Biome } from './biomes';
+import { biomeAt, followDistance, followScaleStep, followScaleTarget, PLAYER_HALF, random, seabedHeight, SIZES, WATER_LEVEL, type Biome } from './biomes';
 import { REEF_LAYERS, reefLayer, reefLayerVisible } from './reef';
 import { EDGE_FADE_END, EDGE_SOFT_START } from './edge';
 import { CreatureModel } from './creature';
@@ -129,6 +129,8 @@ export class TideWorld {
   private sun: T.DirectionalLight;
   private focus = new T.Vector3();
   private cameraPosition = new T.Vector3();
+  /** The play camera's follow-distance scale (eased toward `followScaleTarget(stage)`; snapped by `build`). */
+  private followScale = 1;
   private width = 1;
   private height = 1;
   private caustics: T.ShaderMaterial;
@@ -316,7 +318,7 @@ export class TideWorld {
       this.disposeUniverse(); this.eco = new Ecosystem(run.seed); this.createUniverse(); this.buildReef(run.seed);
     }
     this.eco.reset(run.eatenPlanets);
-    this.stage = stage; this.scale = SIZES[stage]!; this.toScale = this.scale; this.fromScale = this.scale; this.transitioning = false; this.transitionProgress = 0;
+    this.stage = stage; this.followScale = followScaleTarget(stage); this.scale = SIZES[stage]!; this.toScale = this.scale; this.fromScale = this.scale; this.transitioning = false; this.transitionProgress = 0;
     if (run.genome) this.setCreature(run.genome);
     this.spaceMix = stage === 4 ? 1 : 0;
     this.placePlayerAt(new T.Vector3());
@@ -419,7 +421,7 @@ export class TideWorld {
     } else {
       // The simulation owns the root: exact growth, no easing (the hull is admitted at this scale).
       this.player.scale.setScalar(growth);
-      const distance = this.width / this.height < .8 ? 10.5 : 9;
+      this.followScale = followScaleStep(this.followScale, this.stage, dt); const distance = followDistance(this.width / this.height, this.followScale);
       const targetFocus = p.clone().add(new T.Vector3(0, .8 * growth, 0));
       this.focus.lerp(targetFocus, 1 - Math.exp(-dt * 6));
       const targetCam = this.focus.clone().add(new T.Vector3(Math.sin(this.yaw) * Math.cos(this.pitch) * distance, Math.sin(this.pitch) * distance, Math.cos(this.yaw) * Math.cos(this.pitch) * distance));
@@ -533,5 +535,5 @@ export class TideWorld {
     for (let i = this.particles.length - 1; i >= 0; i--) { const particle = this.particles[i]!; particle.life -= dt; particle.mesh.position.addScaledVector(particle.velocity, dt); particle.velocity.y -= dt * 2; particle.mesh.scale.multiplyScalar(Math.exp(-dt * 1.8)); if (particle.life <= 0) { this.effects.remove(particle.mesh); this.particles.splice(i, 1); } }
     this.renderer.render(this.scene, this.camera);
   }
-  get diagnostics() { return { worldId: this.universe.uuid, seed: this.eco.seed, biome: this.biome.name, consumedByTier: SIZES.map((_, i) => this.foods.filter(f => f.tier === i && f.data.eaten).length), scale: this.scale, surface: this.surface, yaw: this.yaw, pitch: this.pitch, menu: this.isMenu, transitioning: this.transitioning, edgeFog: this.edgeFog, physicalPosition: { x: this.player.position.x * this.scale, y: this.player.position.y * this.scale, z: this.player.position.z * this.scale } }; }
+  get diagnostics() { return { worldId: this.universe.uuid, seed: this.eco.seed, biome: this.biome.name, consumedByTier: SIZES.map((_, i) => this.foods.filter(f => f.tier === i && f.data.eaten).length), scale: this.scale, surface: this.surface, yaw: this.yaw, pitch: this.pitch, followScale: this.followScale, cameraDistance: this.camera.position.distanceTo(this.focus), menu: this.isMenu, transitioning: this.transitioning, edgeFog: this.edgeFog, physicalPosition: { x: this.player.position.x * this.scale, y: this.player.position.y * this.scale, z: this.player.position.z * this.scale } }; }
 }

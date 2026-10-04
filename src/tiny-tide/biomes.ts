@@ -5,6 +5,15 @@ import { APPENDED_FROM, SPECIES, tierSpecies, type FoodKind, type Species } from
 // entire habitat shrinks continuously as the creature grows.
 export const SIZES = [1, 4, 16, 64, 256] as const;
 export const WATER_LEVEL = 85;
+/** The play camera follows this much farther at sizes 0 and 1 (owner 2026-10-03: more of the fight is in view). Sizes 2 to 4: 1. */
+export const EARLY_FOLLOW_SCALE = 1.2;
+export const followScaleTarget = (stage: number) => stage <= 1 ? EARLY_FOLLOW_SCALE : 1;
+/** The play camera's follow distance (render units): 9 (10.5 on a portrait screen, aspect < .8) times the size's scale. */
+export const followDistance = (aspect: number, scale: number) => (aspect < .8 ? 10.5 : 9) * scale;
+/** Eases the follow scale toward the size's target (a size change moves the camera smoothly, about 3 s). */
+export const followScaleStep = (current: number, stage: number, dt: number) => {
+  const target = followScaleTarget(stage); return target + (current - target) * Math.exp(-1.5 * dt);
+};
 /** The player's hard bound (admission), in tier-local units. A soft current pushes back before it (edge.ts). */
 export const PLAYER_HALF = 50;
 /** Food and creatures roam (and flee and hunt) inside this square, in tier-local units: the edge's reach bound (44). */
