@@ -1,5 +1,5 @@
 // Species attacks, species behaviours, the size rosters and the minimum wind-ups (spec §11). Pure data.
-import type { AttackShape, AttackSpec } from './combat-types';
+import type { AttackShape, AttackSpec, SpeciesTraits } from './combat-types';
 import type { Species } from './species';
 
 export interface AttackChoice { attackId: string; band: readonly [number, number]; weight: number; flankWeight?: number; chainNextId?: string; chainGapSeconds?: number }
@@ -21,6 +21,8 @@ export interface SpeciesBehaviour {
   lair?: { radiusBodyLengths: number; resetOutsideFactor: number; resetDelaySeconds: number; healPerSecond: number };
   /** alpha; ordered by aboveHpFraction, descending */
   phases?: readonly BehaviourPhase[];
+  /** Spec §11.8 (owner 2026-10-03): one strength and one weakness. */
+  traits?: SpeciesTraits;
 }
 export const BEHAVIOUR_TYPES: readonly BehaviourType[] = ['prey-flee', 'prey-school', 'prey-fighter', 'hunter', 'hunter-ambush', 'alpha'];
 

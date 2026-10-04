@@ -1,7 +1,7 @@
 // The combat HUD (spec §8, §9.2–§9.3): the four slot buttons with their move icons, key labels and cooldown rings; the combat overlay (HP bars,
 // edge arrows toward off-screen telegraphs, the break-free prompt) and the damage floater text. DOM only; elements are pooled.
 import './controls.css';
-import type { CombatRuntime, HitOutcome, MoveKind } from './combat-types';
+import type { CombatRuntime, HitOutcome, MoveKind, SpeciesTraits, TraitEffect } from './combat-types';
 import { damageText } from './combat-profiles';
 import { PLAYER_ID, type EntityCombat, type TelegraphView } from './combat-world';
 import { speciesActor } from './mount';
@@ -66,10 +66,19 @@ export function faintMessage(lost: number | null): { title: string; line: string
   const head = lost === null ? 'Waking up at the start.' : lost > 0 ? `You lost ${lost} DNA.` : 'No DNA was lost.';
   return { title: 'Fainted!', line: `${head} Your body and parts stay.` };
 }
-export function floaterText(outcome: HitOutcome, unit: 'hp' | 'half-heart', amount: number): string | null {
+export function floaterText(outcome: HitOutcome, unit: 'hp' | 'half-heart', amount: number, trait: TraitEffect | null = null): string | null {
+  // Spec §11.8: a trait names what happened.
+  if (trait === 'shell') return `SHELL ${damageText(outcome, unit, amount)}`;
+  if (trait === 'slip') return 'SLIPPED FREE';
+  if (trait === 'bounce') return 'BOUNCED!';
+  if (trait === 'stun') return 'STUNNED!';
   if (outcome === 'blocked' || outcome === 'countered' || outcome === 'evaded') return damageText(outcome, unit, amount);
   if (outcome === 'immune') return 'IMMUNE';
   return amount > 0 ? damageText(outcome, unit, amount) : null;
+}
+/** The break-free prompt (spec §6.6, §11.8): mash Chomp, or (the squid's hold) a Dash or Counter press. */
+export function breakPromptText(escape: SpeciesTraits['grabEscape'] | 'mash', touch: boolean): string {
+  return escape === 'dash-or-counter' ? `${touch ? 'Tap ' : ''}Dash or Counter to slip free!` : 'Wiggle free! Tap CHOMP';
 }
 /** Damage numbers (T16b fix round 1, readability): the damage the player deals and the damage it takes have clearly different colours.
  *  `dealt`: a pale yellow; `taken`: a strong red. Any other event (species on species) is `dealt`'s neutral twin. */
@@ -101,8 +110,10 @@ export class CombatOverlay {
     let e = list[i]; if (!e) { e = document.createElement('div'); e.className = cls; this.root.append(e); list[i] = e; }
     e.hidden = false; return e;
   }
-  /** `breakProgress`: null when the player is not held. */
-  sync(bars: readonly HpBar[], arrows: readonly EdgeArrow[], breakProgress: number | null): void {
+  private shownPrompt = 'Wiggle free! Tap CHOMP';
+  /** `breakProgress`: null when the player is not held. `prompt`: the break-free text (breakPromptText). */
+  sync(bars: readonly HpBar[], arrows: readonly EdgeArrow[], breakProgress: number | null, prompt = 'Wiggle free! Tap CHOMP'): void {
+    if (prompt !== this.shownPrompt) { this.shownPrompt = prompt; this.prompt.querySelector('span')!.textContent = prompt; }
     bars.forEach((b, i) => { const e = this.pooled(this.bars, i, 'hp-bar'); e.style.left = `${b.x}px`; e.style.top = `${b.y}px`; e.style.setProperty('--hp', `${Math.max(0, Math.min(1, b.fraction)) * 100}%`); });
     for (let i = bars.length; i < this.bars.length; i++) this.bars[i]!.hidden = true;
     arrows.forEach((a, i) => {

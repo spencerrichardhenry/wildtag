@@ -1,7 +1,7 @@
 // tests/tiny-tide-core/combat-hud.test.ts — T9: the slot views (label and cooldown fraction on the action clock) and the ring step that
 // decides when a slot button is redrawn (a cooldown that is almost over must still differ from a ready slot).
 import { describe, expect, it } from 'vitest';
-import { alphaView, edgeArrowAt, faintMessage, FLOATER_COLOURS, floaterClass, floaterText, ringStep, slotViews } from '../../src/tiny-tide/combat-hud';
+import { alphaView, breakPromptText, edgeArrowAt, faintMessage, FLOATER_COLOURS, floaterClass, floaterText, ringStep, slotViews } from '../../src/tiny-tide/combat-hud';
 import { playerMoves } from '../../src/tiny-tide/sim';
 import { speck } from './combat-fixture-world';
 import { BEHAVIOURS } from '../../src/tiny-tide/bestiary';
@@ -82,5 +82,22 @@ describe('threat marker keep-out (final review M4)', () => {
     expect(avoidKeepOut(100, 300, 20, 52, [depth], bounds)).toEqual({ x: 100, y: 300 });
     const card = { left: 150, top: 100, right: 300, bottom: 160 }, p = avoidKeepOut(290, 210, 20, 52, [depth, card], bounds);
     expect(overlaps(p.x, p.y, 20, 52, depth) || overlaps(p.x, p.y, 20, 52, card)).toBe(false);
+  });
+});
+
+// Owner 2026-10-03 (combat 3a follow-up F2, spec §11.8): a trait shows its word, and the squid hold names its escape.
+describe('trait floaters and the escape prompt (spec §11.8)', () => {
+  it('shows SHELL with the reduced number, SLIPPED FREE, BOUNCED! and STUNNED!', () => {
+    expect(floaterText('hit', 'hp', 2, 'shell')).toBe('SHELL −2');
+    expect(floaterText('hit', 'hp', 2, 'slip')).toBe('SLIPPED FREE');
+    expect(floaterText('blocked', 'half-heart', 0, 'bounce')).toBe('BOUNCED!');
+    expect(floaterText('countered', 'half-heart', 0, 'stun')).toBe('STUNNED!');
+    expect(floaterText('hit', 'hp', 4, null)).toBe('−4');
+    expect(floaterText('blocked', 'half-heart', 0)).toBe('BLOCK');
+  });
+  it('names the way out of a hold', () => {
+    expect(breakPromptText('mash', false)).toBe('Wiggle free! Tap CHOMP');
+    expect(breakPromptText('dash-or-counter', false)).toBe('Dash or Counter to slip free!');
+    expect(breakPromptText('dash-or-counter', true)).toBe('Tap Dash or Counter to slip free!');
   });
 });

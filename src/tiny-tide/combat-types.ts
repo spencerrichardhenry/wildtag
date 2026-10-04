@@ -145,6 +145,27 @@ export type RecoveryResult = { ok: true; position: Vec3; orientation: Orientatio
 export type ActionPhase = 'windup' | 'active' | 'hold' | 'recovery' | 'interrupted';
 export type WorldShape = { kind: 'cone'; apex: Vec3; axis: Vec3; range: number; halfAngle: number } | { kind: 'capsule'; start: Vec3; end: Vec3; radius: number };
 export type HitOutcome = 'countered' | 'blocked' | 'guard-broken' | 'evaded' | 'immune' | 'hit' | 'grabbed';
+/** Owner 2026-10-03 (spec §11.8): one strength and one weakness of a species. The resolver and the combat world apply them. */
+export interface SpeciesTraits {
+  /** The first-meeting hint (hints.ts `trait-<behaviour id>`), shown once per profile. */
+  hint: string;
+  /** Strength: a player Bite whose origin is within `halfAngle` of the body's front does `factor` of its damage (rounded up, at least 1),
+   *  while the creature is not staggered and not held. */
+  frontShell?: { halfAngle: number; factor: number };
+  /** Strength: a hold of this species on the player ends only by a Dash or Counter press (at once); Chomp and stick flicks do nothing. */
+  grabEscape?: 'dash-or-counter';
+  /** Weakness: a player Grab holds it whatever its size (the size rule of spec §6.6 does not apply). */
+  softBody?: boolean;
+  /** Strength: a Grab never holds it (it is not grabbable); it slips free with no stagger. */
+  slippery?: boolean;
+  /** Weakness: a Braced hit of one of these attacks staggers the attacker for `seconds` (forced, as a Counter's). `noBreak`: it never breaks
+   *  the guard. `fullBlock`: it does no damage and never breaks the guard. */
+  braceBounce?: { attackIds: readonly string[]; seconds: number; noBreak?: boolean; fullBlock?: boolean };
+  /** Weakness: a countered attack of one of these ids staggers the attacker for `seconds` (instead of the Counter's own stagger). */
+  counterStun?: { attackIds: readonly string[]; seconds: number };
+}
+/** What a trait did to a hit (the floater word): a shelled Bite, a slipped Grab, a bounce off a Brace, a stun by a Counter. */
+export type TraitEffect = 'shell' | 'slip' | 'bounce' | 'stun';
 /** `startedAt` is world time (the resolver's processing order); every other time is the actor's action clock.
  *  Ledger keys (hitCounts, lastHitAt) are `${instanceId}:${hitGroupId}:${targetId}`. */
 export interface ActionState { instanceId: string; definitionId: string; grantId: string; source: EmitterSource; phase: ActionPhase; startedAt: number; aim: MutVec3; committedPose: CombatPose | null;

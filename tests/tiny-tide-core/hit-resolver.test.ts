@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { advanceClock, newPoise, startAction, tickAction } from '../../src/tiny-tide/action-engine';
 import { addBreakProgress, armCounters, compareRequests, isFlick, KNOCKBACK_CAP, ledgerKey, releaseHold, resolveAll, resolveHit, squeezesDue, targetsHit, type Fighter, type HitRequestIn } from '../../src/tiny-tide/hit-resolver';
-import { newRuntime, type ActionState, type AttackSpec, type CombatRuntime, type ResolvedMove } from '../../src/tiny-tide/combat-types';
+import { newRuntime, type ActionState, type AttackSpec, type CombatRuntime, type ResolvedMove, type SpeciesTraits } from '../../src/tiny-tide/combat-types';
 import { resolveMove, speciesMove } from '../../src/tiny-tide/moves';
 import { POKE, WRAP } from './combat-fixture';
 
@@ -364,5 +364,78 @@ describe('hit resolver', () => {
     const h = player(), g = crab(), x = req(g, h, WRAP); resolveHit(x, 1); x.action.phase = 'hold';
     resolveHit(req(player({ id: 'p9' }), g, { ...POKE, damageUnit: 'hp', damage: 6, poiseDamageMultiplier: 1 }), 2);
     expect(x.action.phase).toBe('recovery'); expect(h.rt.heldBy).toBe('e7');
+  });
+});
+
+// Owner 2026-10-03 (combat 3a follow-up F2, spec §11.8): one strength and one weakness per hunter and alpha, as species traits.
+describe('species traits (spec §11.8)', () => {
+  const SHELL: SpeciesTraits = { hint: 'shell', frontShell: { halfAngle: 60 * DEG, factor: .5 } };
+  const bite = (p: Fighter, id = 'bite-snapper') => { const m = resolveMove({ attackId: id }, 1); return { attack: m.attack!, action: activeNow(act(p.rt, m)) }; };
+  it('crab front shell: a Bite from the front does half damage (rounded up); side, stagger, hold, Sweep and Grab do full', () => {
+    const shot = (c: Fighter, origin = { x: 0, y: 0, z: 2 }, id = 'bite-snapper') => { const p = player(), b = bite(p, id); return resolveHit(req(p, c, b.attack, { action: b.action, origin, point: { x: 0, y: 0, z: 2.4 } }), 1)!; };
+    const front = shot(crab({ traits: SHELL }));
+    expect(front).toMatchObject({ outcome: 'hit', amount: 2, trait: 'shell' });
+    expect(shot(crab({ traits: SHELL }), { x: 0, y: 0, z: 2 }, 'bite-beak').amount).toBe(2);     // ceil(1.5)
+    expect(shot(crab({ traits: SHELL }), { x: 0, y: 0, z: 2 }, 'bite-nibbler').amount).toBe(1);
+    // 59° off the crab's front is shelled; 61° is not.
+    for (const [deg, amount] of [[59, 2], [61, 4]] as const)
+      expect(shot(crab({ traits: SHELL }), { x: Math.sin(deg * DEG), y: 0, z: 3 - Math.cos(deg * DEG) }).amount, `${deg}°`).toBe(amount);
+    expect(shot(crab({ traits: SHELL }), { x: 3, y: 0, z: 3 })).toMatchObject({ amount: 4, trait: null });
+    const staggered = crab({ traits: SHELL }); staggered.rt.staggerUntil = staggered.rt.actionClock + 1;
+    expect(shot(staggered).amount).toBe(4);
+    const held = crab({ traits: SHELL }); held.rt.heldBy = 'player';
+    expect(shot(held).amount).toBe(4);
+    expect(shot(crab()).amount).toBe(4);   // no trait
+    const p = player(), sw = resolveMove({ abilityId: 'sweep-fan-tail' }, 1);
+    expect(resolveHit(req(p, crab({ traits: SHELL }), sw.attack!, { action: activeNow(act(p.rt, sw)) }), 1)!.amount).toBe(3);
+    const q = player(), gr = resolveMove({ abilityId: 'grab-pincer' }, 1), small = crab({ traits: SHELL, L: 1 });
+    expect(resolveHit(req(q, small, gr.attack!, { action: activeNow(act(q.rt, gr)) }), 1)!).toMatchObject({ outcome: 'grabbed', amount: 2 });
+  });
+  it('eel slippery: a Grab never holds it, with no stagger; the catch damage stays', () => {
+    const p = player(), gr = resolveMove({ abilityId: 'grab-pincer' }, 1), eel = crab({ L: 1, grabbable: false, traits: { hint: 'eel', slippery: true } });
+    const e = resolveHit(req(p, eel, gr.attack!, { action: activeNow(act(p.rt, gr)) }), 1)!;
+    expect(e).toMatchObject({ outcome: 'hit', held: false, amount: 2, trait: 'slip' }); expect(eel.rt.heldBy).toBeNull(); expect(eel.rt.staggerUntil).toBe(0);
+    const alpha = crab({ L: 1, grabbable: false }), q = player();
+    resolveHit(req(q, alpha, gr.attack!, { action: activeNow(act(q.rt, gr)) }), 1);
+    expect(alpha.rt.staggerUntil).toBeCloseTo(.3);   // not slippery: the size-rule break stagger stays
+  });
+  it('brace bounce: a Braced listed attack staggers the attacker (forced); noBreak keeps the guard; fullBlock takes no damage', () => {
+    const lunge: AttackSpec = { ...POKE, id: 'squid-lunge', damage: 3 }, BOUNCE: SpeciesTraits = { hint: 'squid', braceBounce: { attackIds: ['squid-lunge'], seconds: 1 } };
+    const p = player(), sq = crab({ traits: BOUNCE }); guard(p.rt, 'brace-shell');
+    const r = req(sq, p, { ...lunge, interruptible: false }), e = resolveHit(r, 1)!;
+    expect(e).toMatchObject({ outcome: 'blocked', trait: 'bounce' }); expect(sq.rt.staggerUntil).toBeCloseTo(1); expect(r.action.phase).toBe('interrupted');
+    const q = player(), other = crab({ traits: BOUNCE }); guard(q.rt, 'brace-shell');
+    expect(resolveHit(req(other, q, { ...POKE, id: 'squid-ink' }), 1)!).toMatchObject({ outcome: 'blocked', trait: null }); expect(other.rt.staggerUntil).toBe(0);
+    const open = player(), sq2 = crab({ traits: BOUNCE });
+    expect(resolveHit(req(sq2, open, lunge), 1)!).toMatchObject({ outcome: 'hit', trait: null }); expect(sq2.rt.staggerUntil).toBe(0);
+    // The Reef Tyrant's charge (4 half-hearts, the size-1 shell breaks at 4): noBreak blocks it.
+    const charge: AttackSpec = { ...POKE, id: 'tyrant-charge', damage: 4 }, t = player(), ty = crab({ traits: { hint: 'tyrant', braceBounce: { attackIds: ['tyrant-charge'], seconds: 1.5, noBreak: true } } }); guard(t.rt, 'brace-shell');
+    expect(resolveHit(req(ty, t, charge), 1)!).toMatchObject({ outcome: 'blocked', amount: 1, trait: 'bounce' }); expect(ty.rt.staggerUntil).toBeCloseTo(1.5);
+    // The puffer's burst: fullBlock takes no damage.
+    const burst: AttackSpec = { ...POKE, id: 'puffer-burst', damage: 3 }, f = player({ health: 6 }), pu = crab({ traits: { hint: 'puffer', braceBounce: { attackIds: ['puffer-burst'], seconds: 1, fullBlock: true } } }); guard(f.rt, 'brace-shell');
+    expect(resolveHit(req(pu, f, { ...burst, damage: 8 }), 1)!).toMatchObject({ outcome: 'blocked', amount: 0, trait: 'bounce' }); expect(f.health).toBe(6);
+  });
+  it('squid soft body: a player Grab holds it whatever its size; without the trait a big creature breaks free', () => {
+    const gr = resolveMove({ abilityId: 'grab-pincer' }, 1), grab = (target: Fighter) => { const p = player(); return resolveHit(req(p, target, gr.attack!, { action: activeNow(act(p.rt, gr)) }), 1)!; };
+    const squid = crab({ L: 5.6, traits: { hint: 'squid', softBody: true } });   // 2.8 times the player's length
+    expect(grab(squid)).toMatchObject({ outcome: 'grabbed', held: true }); expect(squid.rt.heldBy).toBe('player');
+    expect(grab(crab({ L: 5.6 }))).toMatchObject({ outcome: 'hit', held: false });
+    expect(grab(crab({ L: 5.6, grabbable: false, traits: { hint: 'x', softBody: true } }))).toMatchObject({ held: false });   // never an alpha
+  });
+  it('counter stun: a countered listed attack staggers the attacker longer; other attacks keep the Counter\'s stagger', () => {
+    const STUN: SpeciesTraits = { hint: 'eel', counterStun: { attackIds: ['eel-ambush'], seconds: 2.5 } };
+    const p = player(), eel = crab({ traits: STUN }); guard(p.rt, 'counter-spike');
+    expect(resolveHit(req(eel, p, { ...POKE, id: 'eel-ambush' }), 1)!).toMatchObject({ outcome: 'countered', trait: 'stun' }); expect(eel.rt.staggerUntil).toBeCloseTo(2.5);
+    const q = player(), eel2 = crab({ traits: STUN }); guard(q.rt, 'counter-spike');
+    expect(resolveHit(req(eel2, q, { ...POKE, id: 'eel-bite' }), 1)!).toMatchObject({ outcome: 'countered', trait: null }); expect(eel2.rt.staggerUntil).toBeCloseTo(1);
+  });
+  it('squid escape: only a Dash or Counter press breaks the hold, at once; Chomp and flicks do nothing', () => {
+    const rt = newRuntime(); rt.heldBy = 'e7';
+    expect(addBreakProgress(rt, { basicPressed: true, dashPressed: false, flick: true }, 'dash-or-counter')).toBe(false); expect(rt.breakProgress).toBe(0);
+    expect(addBreakProgress(rt, { basicPressed: false, dashPressed: true, flick: false }, 'dash-or-counter')).toBe(true);
+    const r2 = newRuntime();
+    expect(addBreakProgress(r2, { basicPressed: false, dashPressed: false, counterPressed: true, flick: false }, 'dash-or-counter')).toBe(true);
+    const r3 = newRuntime();
+    expect(addBreakProgress(r3, { basicPressed: false, dashPressed: false, counterPressed: true, flick: false })).toBe(false);   // the mash rule: Counter adds nothing
   });
 });

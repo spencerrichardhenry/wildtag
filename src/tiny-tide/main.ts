@@ -18,12 +18,12 @@ import { quoteDesign } from './economy';
 import { newRuntime, type Actor, type CombatInput, type Constraint, type MoveKind, type Tuple4, type Vec3, type WorldQueries } from './combat-types';
 import { aimChevron, aimPitch, autoAim, BRACE_AUTO_AIM_HALF_ANGLE, dragAim, aimToward, mouseButtons, NO_MOUSE, pickAimTarget, pitched, pointerAim, type PickCandidate, readIntent, RELEASED, type AimCandidate, type AimSource, type MouseState } from './input';
 import { BURROW } from './bestiary';
-import { AlphaBar, alphaView, avoidKeepOut, CombatHud, CombatOverlay, EdgeArrowMemory, edgeArrowAt, faintMessage, FLOATER_COLOURS, floaterClass, floaterText, HP_BAR_SECONDS, MOVE_ICONS, slotViews, type AlphaView, type EdgeArrow, type HpBar } from './combat-hud';
+import { AlphaBar, alphaView, avoidKeepOut, breakPromptText, CombatHud, CombatOverlay, EdgeArrowMemory, edgeArrowAt, faintMessage, FLOATER_COLOURS, floaterClass, floaterText, HP_BAR_SECONDS, MOVE_ICONS, slotViews, type AlphaView, type EdgeArrow, type HpBar } from './combat-hud';
 import { forwardOf } from './orientation';
 import { blockHint, blockHintDue, newBlockHintGate, PITCH_LIMIT, type PlayerStepResult, newTapWatch, tapTargetStalled } from './player-motion';
 import { canChooseNextPlan, evolutionDestination, reconcileAfterCommit } from './lifecycle';
 import { admitted as simAdmitted, checkPose, playerActorCached as simActor, qaAlphaHealth, qaCrowd, qaEncounter, refreshDerived as simRefreshDerived, simBegin, simEvolve, simFrame, simOwnedState, simSuspend, worldHull as simWorldHull, type GameMode, type SimEvent, type SimState, type SimWorld } from './sim';
-import { helpDangerText, hintIcon, Hints, hintText, type HintId, type HintStorage } from './hints';
+import { fightHint, helpDangerText, hintIcon, Hints, hintText, traitHint, type HintStorage } from './hints';
 import type { ChompResult } from './feeding';
 import { PLAYER_ID, type CombatTick, type TelegraphView } from './combat-world';
 import { damageText, EFFECTS, FLASH_SECONDS, IMPACT_COLOURS, IMPACT_PARTICLES, shakeForPlayerHit, shakeForPlayerStrike } from './combat-profiles';
@@ -629,7 +629,7 @@ function presentFaint(lost: number) {
 function presentCombat(t: CombatTick) {
   for (const e of t.events) {
     const local = new T.Vector3(e.point.x, e.point.y, e.point.z).divideScalar(world.scale), pos = world.screenPoint(local);
-    const toPlayer = e.targetId === PLAYER_ID, fromPlayer = e.attackerId === PLAYER_ID, text = floaterText(e.outcome, e.unit, e.amount);
+    const toPlayer = e.targetId === PLAYER_ID, fromPlayer = e.attackerId === PLAYER_ID, text = floaterText(e.outcome, e.unit, e.amount, e.trait);
     if (text && pos.visible) { const cls = floaterClass(e.attackerId, e.targetId); floater(text, pos.x, pos.y, `${toPlayer ? 'hurt' : 'hit'} ${cls}`, FLOATER_COLOURS[cls]); }
     const colour = e.outcome === 'countered' ? IMPACT_COLOURS.counter : e.outcome === 'blocked' || e.outcome === 'guard-broken' ? IMPACT_COLOURS.block : toPlayer ? IMPACT_COLOURS.hurt : IMPACT_COLOURS.hit;
     if (e.outcome !== 'evaded' && e.outcome !== 'immune' ) world.impact(local.x, local.y, local.z, colour, IMPACT_PARTICLES);
@@ -687,7 +687,6 @@ function onScreen(p: Vec3): boolean {
 /** First-time hints (spec §12.3, D30): the moves in the slots, the first wind-up at the player and the first unblockable one. A hint shows
  *  only when no toast is up and no other hint showed in the last 6 s. In a fight only the telegraph hints show (a move hint waits). */
 const hints = new Hints((() => { try { return localStorage as HintStorage; } catch { return null; } })());
-const TELEGRAPH_HINTS: ReadonlySet<HintId> = new Set<HintId>(['telegraph', 'telegraph-red']);
 function offerHints() {
   const touch = touchMode || coarsePointer();
   if (sim.moves) sim.moves.slots.slots.forEach((k, i) => { if (k) hints.request(`move-${k}`, hintText(`move-${k}`, { slot: i, touch })); });
@@ -695,9 +694,11 @@ function offerHints() {
     if (v.phase !== 'windup' || !v.targetsPlayer) continue;
     hints.request('telegraph', hintText('telegraph', { slot: 0, touch }));
     if (v.color === 'red') hints.request('telegraph-red', hintText('telegraph-red', { slot: 0, touch }));
+    // Spec §11.8: the first wind-up of a creature with a strength and a weakness explains them (once per profile).
+    const t = traitHint(world.eco.entities.find(e => e.id === v.entityId)?.spec.behaviourId); if (t) hints.request(t.id, t.text);
   }
   const fight = inCombat();
-  const h = hints.next(time, toastTimer <= 0 && hintClock <= 0, fight ? id => TELEGRAPH_HINTS.has(id) : undefined, toastTimer <= 0 || toastKind !== 'message');
+  const h = hints.next(time, toastTimer <= 0 && hintClock <= 0, fight ? fightHint : undefined, toastTimer <= 0 || toastKind !== 'message');
   const kind = h && hintIcon(h.id, touch);
   if (h) { toast(h.text, 'hint', kind ? { kind, after: `${kind[0]!.toUpperCase()}${kind.slice(1)}` } : null); hintClock = 6; }
 }
@@ -804,7 +805,8 @@ function presentCombatView() {
     const at = edgeArrowAt(world.screenPoint(new T.Vector3(v.centroid.x, v.centroid.y, v.centroid.z).divideScalar(world.scale)), innerWidth, innerHeight);
     arrows.push({ ...at, color: v.color, fill: v.fill });
   }
-  overlay.sync(bars, arrows, playing && rt.heldBy !== null ? rt.breakProgress : null);
+  const grabber = rt.heldBy === null ? undefined : [...sim.combat.entities.values()].find(c => c.id === rt.heldBy);
+  overlay.sync(bars, arrows, playing && rt.heldBy !== null ? rt.breakProgress : null, breakPromptText(grabber?.behaviour.traits?.grabEscape ?? 'mash', touchMode || coarsePointer()));
 }
 el('start').onclick = () => begin(); el('fresh').onclick = () => { dialogReturn = 'menu'; confirmRestart(); };
 el('evolve').onclick = () => void edit('evolve'); el('edit').onclick = () => void edit('edit');

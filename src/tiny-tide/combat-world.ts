@@ -283,7 +283,9 @@ export class CombatWorld {
       const dashSlot = ctx.slots.slots.indexOf('dash');
       if (rt.heldBy !== null) {
         const flick = isFlick(ctx.previousMove, intent.move), dashPressed = dashSlot >= 0 && intent.activePressed[dashSlot]!;
-        if (addBreakProgress(rt, { basicPressed: intent.basicPressed, dashPressed, flick })) {
+        const counterSlot = ctx.slots.slots.indexOf('counter'), counterPressed = counterSlot >= 0 && intent.activePressed[counterSlot]!;
+        const escape = live.find(c => c.id === rt.heldBy)?.behaviour.traits?.grabEscape;   // spec §11.8: the squid's hold
+        if (addBreakProgress(rt, { basicPressed: intent.basicPressed, dashPressed, counterPressed, flick }, escape)) {
           const grabber = live.find(c => c.id === rt.heldBy), g = grabber && holdingAction(grabber.rt, PLAYER_ID);
           if (grabber && g) releaseHold(grabber.rt, g, rt, now, true); else { rt.heldBy = null; rt.breakProgress = 0; }
           out.brokeFree = true;
@@ -384,7 +386,7 @@ export class CombatWorld {
       for (let i = 0; i < n && h; i++) {
         const hh = damageAfterArmor(h.squeezeHalfHearts, p.armor); p.health -= hh / 2; rt.lastDamageAt = now;
         out.events.push({ outcome: 'hit', attackerId: c.id, targetId: PLAYER_ID, attackId: a.resolved.attack!.id, actionInstanceId: a.instanceId, point: p.centre, amount: hh, unit: 'half-heart', reflect: 0,
-          hitStop: 0, impulse: { x: 0, y: 0, z: 0 }, status: null, caught: false, held: true, killed: null, time: now });
+          hitStop: 0, impulse: { x: 0, y: 0, z: 0 }, status: null, caught: false, held: true, killed: null, time: now, trait: null });
       }
     }
     for (const k of out.killed) { const c = live.find(x => x.entity === k); if (c) this.releaseAllOf(c, rt); }
@@ -398,7 +400,7 @@ export class CombatWorld {
     const pose = this.poseOf(c.entity, now), b = c.behaviour;
     return { id: c.id, isPlayer: false, rt: c.rt, centre: pose.hull[0]!.start, forward: pose.forward, L: pose.bodyLength, mass: pose.mass, knockbackResistance: b.knockbackResistance, armor: 0,
       ground: c.entity.spec.movementProfileId === 'sp-ground', grabbable: b.grabbable && !c.entity.spec.alpha, poise: c.poise, poiseMax: b.poise, staggerResist: now < c.immuneUntil ? 1 : b.staggerResist,
-      health: c.entity.hp };
+      health: c.entity.hp, traits: b.traits ?? null };
   }
   /** The shape origin of a species action (review R2, R4): a target-origin attack's fixed point; a `centre` attack's hull centre; else the
    *  hull front (hull centre + aim × hull radius). */

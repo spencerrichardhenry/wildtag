@@ -1,11 +1,12 @@
 // First-time hints (spec §12.3, D30): each hint shows once per browser profile. The shown ids live in localStorage `tiny-tide-hints-v1` (a JSON
 // string array), never in the run save. A read or write error means "not shown" and the game goes on. Hints use the toast, at most one every
 // HINT_GAP seconds, and never replace another toast: a hint that cannot show yet waits in order.
+import { BEHAVIOURS } from './bestiary';
 import type { MoveKind } from './combat-types';
 
 export const HINTS_KEY = 'tiny-tide-hints-v1';
 export const HINT_GAP = 6;
-export type HintId = `move-${MoveKind}` | 'telegraph' | 'telegraph-red';
+export type HintId = `move-${MoveKind}` | 'telegraph' | 'telegraph-red' | `trait-${string}`;
 /** The storage the hints use (localStorage in the game; a map in the tests). */
 export interface HintStorage { getItem(key: string): string | null; setItem(key: string, value: string): void }
 /** The move names in the hint text. On a phone the hint names the button ("Tap Dash") and the toast adds the move's slot icon after the name
@@ -32,6 +33,14 @@ export function hintText(id: HintId, o: { slot: number; touch: boolean }): strin
     case 'sweep': return `New move: Sweep. ${press} to knock away what is behind you.`;
   }
 }
+
+/** Spec §11.8: the first-meeting hint of a species with a strength and a weakness (by behaviour id), or null. */
+export function traitHint(behaviourId: string | undefined): { id: HintId; text: string } | null {
+  const t = behaviourId ? BEHAVIOURS[behaviourId]?.traits : undefined;
+  return t ? { id: `trait-${behaviourId}`, text: t.hint } : null;
+}
+/** The hints that may show in a fight: the telegraph hints and the trait hints (the move hints wait). */
+export const fightHint = (id: HintId): boolean => id === 'telegraph' || id === 'telegraph-red' || id.startsWith('trait-');
 
 export class Hints {
   /** Ids shown in this profile (read once; kept in memory when storage fails). */
