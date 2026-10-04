@@ -143,6 +143,8 @@ let qaCrowdKeys: string[] | null = qaParams.get('qaCrowd')?.split(',').filter(Bo
 /** The entities that `qaCrowd` installed (diagnostics). */
 let qaCrowdIds: number[] = [];
 /** `?qaAlphaHealth=<0..1>`: at the first start of this page load, every live alpha starts with that fraction of its HP (at least 1). */
+/** `?qaFollowScale=<n>` (.5 to 2): a fixed play-camera follow scale (the camera-away check keeps the old size-0 distance, scale 1). */
+world.followOverride = (() => { const v = Number(qaParams.get('qaFollowScale')); return qaParams.has('qaFollowScale') && Number.isFinite(v) ? Math.min(2, Math.max(.5, v)) : null; })();
 let qaAlpha: number | null = (() => { const v = Number(qaParams.get('qaAlphaHealth')); return qaParams.has('qaAlphaHealth') && Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : null; })();
 /** The part catalog (every shipped part has its real grants since sub-project 3a; `?qaGrantCatalog` is gone, D32). */
 const CATALOG = PARTS;

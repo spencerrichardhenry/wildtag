@@ -131,6 +131,8 @@ export class TideWorld {
   private cameraPosition = new T.Vector3();
   /** The play camera's follow-distance scale (eased toward `followScaleTarget(stage)`; snapped by `build`). */
   private followScale = 1;
+  /** QA: a fixed follow scale (`?qaFollowScale=<n>`), else null. main.ts sets it once at load. */
+  followOverride: number | null = null;
   private width = 1;
   private height = 1;
   private caustics: T.ShaderMaterial;
@@ -318,7 +320,7 @@ export class TideWorld {
       this.disposeUniverse(); this.eco = new Ecosystem(run.seed); this.createUniverse(); this.buildReef(run.seed);
     }
     this.eco.reset(run.eatenPlanets);
-    this.stage = stage; this.followScale = followScaleTarget(stage); this.scale = SIZES[stage]!; this.toScale = this.scale; this.fromScale = this.scale; this.transitioning = false; this.transitionProgress = 0;
+    this.stage = stage; this.followScale = followScaleTarget(stage, this.followOverride); this.scale = SIZES[stage]!; this.toScale = this.scale; this.fromScale = this.scale; this.transitioning = false; this.transitionProgress = 0;
     if (run.genome) this.setCreature(run.genome);
     this.spaceMix = stage === 4 ? 1 : 0;
     this.placePlayerAt(new T.Vector3());
@@ -421,7 +423,7 @@ export class TideWorld {
     } else {
       // The simulation owns the root: exact growth, no easing (the hull is admitted at this scale).
       this.player.scale.setScalar(growth);
-      this.followScale = followScaleStep(this.followScale, this.stage, dt); const distance = followDistance(this.width / this.height, this.followScale);
+      this.followScale = followScaleStep(this.followScale, followScaleTarget(this.stage, this.followOverride), dt); const distance = followDistance(this.width / this.height, this.followScale);
       const targetFocus = p.clone().add(new T.Vector3(0, .8 * growth, 0));
       this.focus.lerp(targetFocus, 1 - Math.exp(-dt * 6));
       const targetCam = this.focus.clone().add(new T.Vector3(Math.sin(this.yaw) * Math.cos(this.pitch) * distance, Math.sin(this.pitch) * distance, Math.cos(this.yaw) * Math.cos(this.pitch) * distance));

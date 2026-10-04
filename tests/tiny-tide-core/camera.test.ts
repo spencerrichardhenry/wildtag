@@ -14,12 +14,15 @@ describe('play camera follow distance', () => {
     expect(followDistance(16 / 9, 1.2)).toBeCloseTo(10.8, 10);
     expect(followDistance(320 / 568, 1.2)).toBeCloseTo(12.6, 10);
   });
+  it('a QA override (`?qaFollowScale=<n>`) replaces the size target', () => {
+    expect(followScaleTarget(0, 1)).toBe(1); expect(followScaleTarget(3, 1.5)).toBe(1.5); expect(followScaleTarget(0, null)).toBe(1.2);
+  });
   it('eases the scale when the size changes (no jump), and reaches the target', () => {
     let s = 1.2; const xs: number[] = [];
-    for (let i = 0; i < 240; i++) { s = followScaleStep(s, 2, 1 / 60); xs.push(s); }
+    for (let i = 0; i < 240; i++) { s = followScaleStep(s, followScaleTarget(2), 1 / 60); xs.push(s); }
     expect(xs[0]!).toBeGreaterThan(1.19);                      // one frame moves a little
     for (let i = 1; i < xs.length; i++) expect(xs[i - 1]! - xs[i]!).toBeLessThan(.01);
     expect(xs.at(-1)!).toBeCloseTo(1, 2);                     // within 4 s
-    expect(followScaleStep(1, 1, 0)).toBe(1);                  // no time, no change
+    expect(followScaleStep(1, 1.2, 0)).toBe(1);                // no time, no change
   });
 });
