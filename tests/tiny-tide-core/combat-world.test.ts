@@ -760,3 +760,35 @@ describe('the squid escape rule in the tick (spec §11.8)', () => {
     expect(s.rt.heldBy).toBeNull();
   });
 });
+
+// Fix round 1 (follow-up review Important 1, D11 extended): a Brace or Counter press cancels the player's own Bite or Sweep recovery, so a
+// Brace pressed .15 s into a puffer's burst wind-up during Bite recovery is up in time and the burst bounces.
+describe('a guard press cancels Bite recovery (D11)', () => {
+  const SHELL = { id: 'shell_plate', t: .55, angle: 0, scale: 1, mirror: false };
+  function scene() {
+    const s = speck([SHELL]); s.run.stage = 1; s.run.genome.parts.find(x => x.id === 'mouth_snapper')!.scale = 1.5; s.actorCache = null; s.moves = null; s.combat = new CombatWorld();
+    const actor = playerActorCached(s), body = playerBody(s, actor), pr = Math.max(...actor.hull.map(h => h.radius)), c = body.centre;
+    const spec = SPECIES.find(x => x.key === '1:puffer')!, r = speciesCombatPose(entity(9, spec, c), 0).hull[0]!.radius;
+    const puffer = entity(9, { ...spec, hp: 999 }, { x: c.x, y: c.y - r, z: c.z + pr + r + .05 * body.L });
+    return { s, puffer, c: s.combat.stateOf(puffer)!, aim: { x: 0, y: 0, z: 1 } };
+  }
+  /** Bites at t 0 (a size-1.5 Snapper), starts the burst as soon as the Bite has hit and its hit-stop ended and presses (and holds) Brace .15 s into the burst
+   *  wind-up. Returns the Bite recovery left at the press and the events. */
+  function play() {
+    const { s, puffer, c, aim } = scene(), dt = 1 / 120, burst = SPECIES_ATTACKS['puffer-burst']!, events: { outcome: string; trait: string | null; attackerId: string }[] = [];
+    let now = 0, startedAt = Infinity, recoveryLeft = -1;
+    for (let i = 0; i < 240; i++, now += dt) {
+      if (startedAt === Infinity && now >= s.rt.hitStopUntil && s.rt.actions.some(a => a.resolved.kind === 'bite' && a.connected) && typeof s.combat.startSpecies(c, 'puffer-burst', burst, { x: 0, y: 0, z: -1 }, 'player', now, { ...AT_PLAYER, targetAt: playerBody(s, playerActorCached(s)).centre, tick: dt }) !== 'string') startedAt = now;
+      const pressAt = startedAt + .15, bracePress = now >= pressAt - 1e-9 && now - dt < pressAt - 1e-9, braceHeld = now >= pressAt - 1e-9;
+      if (bracePress) { const b = s.rt.actions.find(a => a.resolved.kind === 'bite' && a.phase === 'recovery'); recoveryLeft = b ? b.resolved.attack!.recoverySeconds - (s.rt.actionClock - b.phaseStartedAt) : -1; }
+      const r = tick(s, [puffer], now, { basicPressed: i === 0, basicHeld: now < .5, aim, activePressed: [bracePress, false, false, false], activeHeld: [braceHeld, false, false, false] }, dt);
+      events.push(...r.r.events.map(e => ({ outcome: e.outcome, trait: e.trait, attackerId: e.attackerId })));
+    }
+    return { recoveryLeft, events };
+  }
+  it('Brace pressed in Bite recovery (.15 s into the burst wind-up, outside the input buffer) blocks the burst and bounces the puffer', () => {
+    const { recoveryLeft, events } = play();
+    expect(recoveryLeft).toBeGreaterThan(.12);   // in Bite recovery, before the .12 s buffer window
+    expect(events.find(e => e.attackerId === 'e9')).toMatchObject({ outcome: 'blocked', trait: 'bounce' });
+  });
+});

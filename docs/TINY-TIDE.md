@@ -598,10 +598,11 @@ The `bite` stat of your other parts adds its whole part to the Bite damage
 **How each move plays:**
 
 - **Dash.** You are safe from all hits while you travel. A hit that meets a
-  Dash is "evaded". Cancel the recovery of a Bite or Sweep with a Dash. You
-  keep 30 % of the speed at the end.
+  Dash is "evaded". Cancel the recovery of a Bite or Sweep with a Dash (or a
+  Brace or Counter). You keep 30 % of the speed at the end.
 - **Scuttle.** The same as a Dash, but only along the ground.
-- **Brace.** Hold the button. After .10 s, blockable hits from the front (70
+- **Brace.** Hold the button. A Brace or Counter press cancels the recovery
+  of your Bite or Sweep and drops a Bite you pressed early. After .10 s, blockable hits from the front (70
   degrees each side) lose the block share of their damage (after armor). A
   hit that does at least the "breaks at" number of half-hearts breaks the
   guard: you stagger and cannot Brace for 2.0 s. Grabs and red attacks

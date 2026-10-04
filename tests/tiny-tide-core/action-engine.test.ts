@@ -160,10 +160,11 @@ describe('action engine', () => {
     expect(k.phase).toBe('interrupted'); expect(c.cooldowns.get('player:p3:counter')).toBeCloseTo(.41);   // ended at .11, success cooldown .3
   });
 
-  it('D11: during a Bite recovery only Dash starts; grab, brace and bite are busy', () => {
+  // D11, extended in follow-up fix round 1: Dash, Brace and Counter cancel a Bite recovery; Grab, Sweep and Bite stay busy.
+  it('D11: during a Bite recovery Dash, Brace and Counter start (replacing it); grab, sweep and bite are busy', () => {
     const rt = newRuntime(), a = start(rt, bite); run(rt, a, .30); expect(a.phase).toBe('recovery');
-    for (const kind of ['grab', 'brace', 'bite', 'counter', 'sweep'] as const) expect(canStart(rt, check({ kind })), kind).toEqual({ ok: false, reason: 'busy' });
-    expect(canStart(rt, check({ kind: 'dash' })).ok).toBe(true);
+    for (const kind of ['grab', 'bite', 'sweep'] as const) expect(canStart(rt, check({ kind })), kind).toEqual({ ok: false, reason: 'busy' });
+    for (const kind of ['dash', 'brace', 'counter'] as const) expect(canStart(rt, check({ kind })), kind).toEqual({ ok: true, replaces: a });
   });
   it('§5.5: brace released at .20 (active since .10) recovers at .35 and ends at .50', () => {
     const rt = newRuntime(), a = start(rt, brace), now = { t: 0 };

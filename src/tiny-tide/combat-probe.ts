@@ -15,7 +15,7 @@ import { playerActor, speciesCombatPose } from './mount';
 import { BEHAVIOURS, hostileSizes, SPECIES_ATTACKS, type AttackChoice } from './bestiary';
 import { SPECIES } from './species';
 import { PLAYER_ID } from './combat-world';
-import { activeStartedAt, liveActions, phaseRemaining, recoveryLength, windupLength, activeLength, holdLength } from './action-engine';
+import { activeStartedAt, liveActions, RECOVERY_CANCELS, phaseRemaining, recoveryLength, windupLength, activeLength, holdLength } from './action-engine';
 import { bandReach, closestOnSegment, shapeCentroid } from './combat-shapes';
 import { aiStarted } from './combat-ai';
 import { movementCapabilities } from './profiles';
@@ -202,7 +202,7 @@ export function moveReadyAt(s: SimState, kind: MoveKind, at: number): boolean {
     if (a.resolved.guard?.kind === kind) continue;   // the bot's own brace, about to be let go
     const left = remainingOf(a, tau);
     if (left <= ahead + 1e-9) continue;
-    if (kind === 'dash' && (a.resolved.kind === 'bite' || a.resolved.kind === 'sweep') && left - recoveryLength(a) <= ahead + 1e-9) continue;
+    if (RECOVERY_CANCELS.has(kind) && (a.resolved.kind === 'bite' || a.resolved.kind === 'sweep') && left - recoveryLength(a) <= ahead + 1e-9) continue;   // D11
     return false;
   }
   return true;

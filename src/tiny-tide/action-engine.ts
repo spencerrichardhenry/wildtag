@@ -72,6 +72,8 @@ export interface StartCheck {
 export const liveActions = (rt: CombatRuntime): ActionState[] => rt.actions.filter(a => a.phase !== 'interrupted');
 /** `replaces`: an action to end first (a recovery the Dash cancels, or a grab hold that another move releases). */
 export type StartDecision = { ok: true; replaces: ActionState | null } | { ok: false; reason: StartRefusal };
+/** D11: the player's moves that cancel its own Bite or Sweep recovery. */
+export const RECOVERY_CANCELS: ReadonlySet<string> = new Set(['dash', 'brace', 'counter']);
 export function canStart(rt: CombatRuntime, c: StartCheck): StartDecision {
   if (!c.playing) return { ok: false, reason: 'not-playing' };
   if (rt.actionClock < rt.staggerUntil) return { ok: false, reason: 'staggered' };
@@ -82,7 +84,8 @@ export function canStart(rt: CombatRuntime, c: StartCheck): StartDecision {
   if (live.length) {
     const hold = live.find(a => a.phase === 'hold');
     if (hold && live.length === 1) { if (c.kind !== 'bite') replaces = hold; }   // the grabber may Bite during the hold; any other move ends it
-    else if (c.isPlayer && c.kind === 'dash' && live.length === 1 && live[0]!.phase === 'recovery' && (live[0]!.resolved.kind === 'bite' || live[0]!.resolved.kind === 'sweep')) replaces = live[0]!;
+    // D11 (extended, follow-up fix round 1): a Dash, Brace or Counter cancels the player's own Bite or Sweep recovery.
+    else if (c.isPlayer && RECOVERY_CANCELS.has(c.kind) && live.length === 1 && live[0]!.phase === 'recovery' && (live[0]!.resolved.kind === 'bite' || live[0]!.resolved.kind === 'sweep')) replaces = live[0]!;
     else return { ok: false, reason: 'busy' };
   }
   if ((rt.cooldowns.get(c.cooldownKey) ?? -Infinity) > rt.actionClock + 1e-9) return { ok: false, reason: 'cooldown' };

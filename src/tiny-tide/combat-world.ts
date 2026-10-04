@@ -300,6 +300,8 @@ export class CombatWorld {
         if ((r === 'busy' || r === 'hit-stop') && bufferPress(rt, input, now)) return 'buffered';
         return null;
       };
+      // D11 (follow-up fix round 1): a Brace or Counter press drops a buffered Bite, so the Bite cannot start in front of the guard.
+      if (rt.buffered?.input === 'basic' && ctx.slots.slots.some((k, i) => (k === 'brace' || k === 'counter') && intent.activePressed[i])) rt.buffered = null;
       const buffered = bufferedPress(rt);
       if (buffered !== null) { if (press(buffered) === 'started') rt.buffered = null; }   // a held player's buffered Bite starts too (canStart allows it)
       // T7 carry: only an accepted slot press (the move started, or it was buffered behind a busy action) suppresses this tick's basic input.

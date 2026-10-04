@@ -364,8 +364,11 @@ An actor can start an action only when all of these are true:
 - An actor runs one action at a time. One exception: during a grab's `hold`
   phase, the grabber can start Bite. Any other move ends the hold (the target
   is released) and then starts.
-- **Player cancel:** Dash can start during the `recovery` phase of the
-  player's Bite or Sweep. Nothing else cancels. Species never cancel.
+- **Player cancel:** Dash, Brace and Counter can start during the
+  `recovery` phase of the player's Bite or Sweep (Brace and Counter since the
+  follow-up fix round 1, so a guard answers an attack that starts during a
+  Bite). A Brace or Counter press also drops a buffered Bite. Nothing else
+  cancels. Species never cancel.
 - **Interrupt:** a stagger interrupts an action in `windup` or `active` when
   that action is `interruptible`. Brace, Counter and Dash are not
   interruptible. A lunge is interruptible in windup only.
@@ -1533,7 +1536,7 @@ every time the player is held, with a ring for `breakProgress`.
 | File | Named tests |
 | --- | --- |
 | `moves.test.ts` | `resolveMove matches the tables at .4, 1, 1.8`; `pair bonus only on mirrored dash and grab parts, one rounding`; `bite adds floor of non-mouth bite`; `representative part per kind`; `assignSlots priority order`; `pins win, then priority fills`; `fifth kind is inactive`; `pins for missing kinds are cleared at commit`. |
-| `action-engine.test.ts` | `windup → active → recovery → done at exact times`; `cooldown starts at end of recovery`; `interrupted cooldown starts at the interrupt`; `aim turns at most maxTracking × Δτ`; `aim locks at aimLockAt and the shape is frozen`; `brace holds while held, min active, then recovery`; `release in windup still gives min active`; `held basic repeats bite`; `buffer keeps a press in the last .12 s of recovery and in hit-stop only`; `buffer expires after .12 s`; `dash cancels bite and sweep recovery only`; `stagger interrupts interruptible windup/active only`; `poise meter, decay 4/s, stagger at poise`; `hit-stop pauses the two actors' clocks only`; `overlapping hit-stops use the max`; `start rules: staggered, held, cooldown, breach arc`. |
+| `action-engine.test.ts` | `windup → active → recovery → done at exact times`; `cooldown starts at end of recovery`; `interrupted cooldown starts at the interrupt`; `aim turns at most maxTracking × Δτ`; `aim locks at aimLockAt and the shape is frozen`; `brace holds while held, min active, then recovery`; `release in windup still gives min active`; `held basic repeats bite`; `buffer keeps a press in the last .12 s of recovery and in hit-stop only`; `buffer expires after .12 s`; `dash, brace and counter cancel bite and sweep recovery only`; `stagger interrupts interruptible windup/active only`; `poise meter, decay 4/s, stagger at poise`; `hit-stop pauses the two actors' clocks only`; `overlapping hit-stops use the max`; `start rules: staggered, held, cooldown, breach arc`. |
 | `combat-shapes.test.ts` | `sphere-cone hits at the edges`; `sphere-capsule hits`; `telegraph shape equals hit shape for every registered attack`; `hit volume stays inside the locked telegraph (lunge truncated by a wall)`; `units are attacker body lengths`; `obstruction by terrain and by a reef solid`; `crossing same-medium`; `maxTargets nearest first`; `mirrored pair shape is the union with one hit group`. |
 | `hit-resolver.test.ts` | `counter beats block and staggers the attacker`; `counter fails against unparryable`; `brace blocks in front only`; `heavy hit breaks the guard`; `brace damage uses floor after armor`; `grab ignores brace`; `dash invulnerability evades and records the ledger`; `grace invulnerability is immune`; `post-hit invulnerability .4 s`; `damage in half-hearts with armor`; `impulse formula, resistance, blocked × .3`; `one hit per target per action, repeat for whirl`; `processing order is deterministic`; `grab size rule holds or breaks free`; `held player breaks free by presses and flicks`; `squeeze ticks on the grabber clock`; `hold ends when the grabber is staggered`. |
 | `combat-ai.test.ts` | Seeded fixtures: `drifter flees, tires, rests`; `sardine school flees together in one direction`; `snail retaliates when hit and when cornered`; `puffer bursts then backs off`; `crab notice delay, approach, band choice, flank weight, gap, reposition`; `crab gives up by pursuit rules and heals`; `eel waits in den, ambushes, retreats`; `alpha phases switch at thresholds with a roar`; `alpha stays in the lair disc`; `alpha resets slowly outside 1.5 × lair`; `alpha absent when its part is unlocked or at another size`. |
@@ -1683,7 +1686,7 @@ it.
 | D8 | The exact phone and desktop layouts of §8.2; empty slots are hidden; the toast moves to keep controls clear. | CSS. |
 | D9 | Swimmer aim pitch comes from a soft-lock target in a 30° cone, else from the creature's pitch. | One function. |
 | D10 | A 0.12 s input buffer for presses in the last 0.12 s of recovery or in hit-stop. | Engine constant. |
-| D11 | Only Dash can cancel the player's own recovery, and only after Bite and Sweep. | Engine rule. |
+| D11 | Only Dash, Brace and Counter can cancel the player's own recovery, and only after Bite and Sweep. A Brace or Counter press drops a buffered Bite. (Brace and Counter added in the follow-up fix round 1: a puffer's burst answers a Bite, and Brace could not start in time.) | Engine rule. |
 | D12 | A dodged hit is recorded in the ledger: one dodge spends that attack on that target. | Resolver rule. |
 | D13 | Species have poise (no stun-lock); a counter always staggers. Player hit stagger = the attack's stagger. | Data and engine rule. |
 | D14 | Grabs are unblockable; Counter and Dash beat grabs; Brace beats strikes. | Data flags. |
