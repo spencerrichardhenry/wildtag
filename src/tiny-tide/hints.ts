@@ -45,24 +45,27 @@ export const fightHint = (id: HintId): boolean => id === 'telegraph' || id === '
 export class Hints {
   /** Ids shown in this profile (read once; kept in memory when storage fails). */
   readonly shown: Set<string>;
-  private readonly queue: { id: HintId; text: string }[] = [];
+  private readonly queue: { id: HintId; text: string; priority: boolean }[] = [];
   private lastShownAt = -Infinity;
   constructor(private readonly storage: HintStorage | null) {
     let ids: unknown = [];
     try { ids = JSON.parse(storage?.getItem(HINTS_KEY) ?? '[]'); } catch { ids = []; }
     this.shown = new Set(Array.isArray(ids) ? ids.filter((x): x is string => typeof x === 'string') : []);
   }
-  /** Asks for a hint: ignored when it was shown or is already waiting. The text is fixed at the first request. */
-  request(id: HintId, text: string): void {
-    if (this.shown.has(id) || this.queue.some(q => q.id === id)) return;
-    this.queue.push({ id, text });
+  /** Asks for a hint: ignored when it was shown. The text is fixed at the first request. `priority` (a trait hint at the first trait event,
+   *  follow-up fix round 1): it shows like the PRIORITY_HINT (no HINT_GAP, over a non-critical toast); a waiting hint can become one. */
+  request(id: HintId, text: string, priority = false): void {
+    if (this.shown.has(id)) return;
+    const waiting = this.queue.find(q => q.id === id);
+    if (waiting) { waiting.priority ||= priority; return; }
+    this.queue.push({ id, text, priority: priority || id === PRIORITY_HINT });
   }
   /** The next hint to show now, or null: the toast is free and HINT_GAP has passed since the last hint (game time). It is marked shown.
    *  `allow` (optional): only a waiting hint that it accepts can show now (the first in order); the others keep waiting.
    *  `replaceable`: the toast on screen (if any) is not critical. The PRIORITY_HINT then shows at once, with no gap. */
   next(now: number, toastFree: boolean, allow?: (id: HintId) => boolean, replaceable = false): { id: HintId; text: string } | null {
-    const p = this.queue.findIndex(q => q.id === PRIORITY_HINT);
-    if (p >= 0 && (toastFree || replaceable) && (!allow || allow(PRIORITY_HINT))) return this.mark(this.queue.splice(p, 1)[0]!, now);
+    const p = this.queue.findIndex(q => q.priority && (!allow || allow(q.id)));
+    if (p >= 0 && (toastFree || replaceable)) return this.mark(this.queue.splice(p, 1)[0]!, now);
     if (!toastFree || now - this.lastShownAt < HINT_GAP - 1e-9) return null;
     const i = allow ? this.queue.findIndex(q => allow(q.id)) : 0; if (i < 0) return null;
     const h = this.queue.splice(i, 1)[0]; if (!h) return null;
@@ -71,7 +74,7 @@ export class Hints {
   private mark(h: { id: HintId; text: string }, now: number): { id: HintId; text: string } {
     this.shown.add(h.id); this.lastShownAt = now;
     try { this.storage?.setItem(HINTS_KEY, JSON.stringify([...this.shown])); } catch { /* not saved: it may show again in a later session */ }
-    return h;
+    return { id: h.id, text: h.text };
   }
 }
 

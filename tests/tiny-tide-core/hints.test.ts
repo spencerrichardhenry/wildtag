@@ -87,3 +87,16 @@ describe('trait hints', () => {
     expect(fightHint('move-dash')).toBe(false);
   });
 });
+// Follow-up fix round 1 (minor): a trait hint asked for at the first trait event (a SHELL Bite, a bounce…) skips the 6 s gap, like the first
+// telegraph hint; asked for at a wind-up it keeps the gap.
+describe('priority trait hints', () => {
+  it('a hint requested with priority skips the gap and may replace a non-critical toast', () => {
+    const h = new Hints(memory());
+    h.request('telegraph', 'T'); expect(h.next(0, true)?.id).toBe('telegraph');
+    h.request('trait-crab', 'C');
+    expect(h.next(1, true)).toBeNull();                                    // inside the gap: it waits
+    h.request('trait-crab', 'C', true);                                    // the first SHELL Bite: now a priority
+    expect(h.next(1.2, false, undefined, true)?.id).toBe('trait-crab');
+    h.request('trait-eel', 'E', true); expect(h.next(1.3, false, undefined, false)).toBeNull();   // never over a critical toast
+  });
+});

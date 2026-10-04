@@ -546,6 +546,27 @@ check('hints', async () => {
   assert.deepEqual(errors, []);
 });
 
+// Follow-up fix round 1 (spec §11.8): a carnivore Speck Bites a Peach crab from the front; the floater reads "SHELL −2" on a dark pill
+// (class `trait`), the hit log names the trait, and the crab's hint shows at once.
+check('trait-floater', async () => {
+  const { page, errors } = await newPage();
+  await play(page, { mouth: { 0: 'mouth_snapper' } }, 'qaEncounter=1:crab&qaStartGrace=0');
+  const w0 = Date.now(); let seen = null;
+  while (!seen && Date.now() - w0 < 60000) {
+    const s = await state(page), e = s.combat.encounter; if (!e || e.eaten) break;
+    const v = await page.evaluate(p => window.__tinyTide.screenOf(p), { x: e.x, y: e.y + .2 * e.bodyLength, z: e.z });
+    if (v.visible) { await page.mouse.move(v.x, v.y); await page.mouse.down(); await page.mouse.up(); }
+    seen = await page.evaluate(() => { const f = [...document.querySelectorAll('.bite-floater.trait')].find(x => x.textContent.startsWith('SHELL')); return f ? { text: f.textContent, bg: getComputedStyle(f).backgroundColor } : null; });
+    await page.waitForTimeout(40);
+  }
+  assert.ok(seen, 'a SHELL floater showed within 60 s');
+  assert.match(seen.text, /^SHELL −\d/); assert.notEqual(seen.bg, 'rgba(0, 0, 0, 0)', 'the trait floater has its dark pill');
+  const s = await untilGameTime(page, s => s.combat.hints.includes('trait-crab'), 10, 'the crab hint shows');
+  assert.ok(s.combat.hits.some(h => h.trait === 'shell' && h.attacker === 'player'), 'the hit log names the shell');
+  facts.traitFloater = seen;
+  assert.deepEqual(errors, []);
+});
+
 /** Frame time (plan review R18): the game's work per frame (the requestAnimationFrame callback, timed in the page) and the frame interval,
  *  with 13 or more live combat bodies within 6 L of the player (`qaCrowd`: every sardine and puffer, or every drifter and spiny snail at size 0,
  *  on a ring of 3 L). Budgets: desktop median callback ≤ 16.7 ms (controller ruling); a phone with 4× CPU throttle ≤ 33.3 ms (set here: two

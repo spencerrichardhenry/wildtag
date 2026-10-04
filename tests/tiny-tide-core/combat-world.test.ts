@@ -732,8 +732,9 @@ describe('telegraph = hit volume for every species attack (plan review R11)', ()
 // player at once.
 describe('the squid escape rule in the tick (spec §11.8)', () => {
   const FIN = { id: 'fin_side', t: .45, angle: Math.PI / 2 + .2, scale: 1, mirror: true };
-  function held(escape: boolean) {
-    const s = speck([FIN]);
+  const SPIKE = { id: 'spike', t: .5, angle: 0, scale: 1, mirror: false };
+  function held(escape: boolean, parts: typeof FIN[] = [FIN]) {
+    const s = speck(parts);
     const fx = FX_BEHAVIOURS['fx-hunter']!;
     s.combat = new CombatWorld({ ...FX_BEHAVIOURS, 'fx-hunter': { ...fx, traits: escape ? { hint: 'fixture squid', grabEscape: 'dash-or-counter' } : undefined } });
     const squid = entity(41, { ...FX_HUNTER, hp: 50 }, ahead(1.2)), c = s.combat.stateOf(squid)!;
@@ -741,7 +742,7 @@ describe('the squid escape rule in the tick (spec §11.8)', () => {
     let now = 0; for (let i = 0; i < 50 && s.rt.heldBy === null; i++) { now += 1 / 60; tick(s, [squid], now); }
     expect(s.rt.heldBy).toBe('e41');
     while (now < s.rt.hitStopUntil) tick(s, [squid], now += 1 / 60);
-    return { s, squid, now, dash: playerMoves(s).slots.slots.indexOf('dash') };
+    return { s, squid, now, dash: playerMoves(s).slots.slots.indexOf('dash'), counter: playerMoves(s).slots.slots.indexOf('counter') };
   }
   it('Chomp presses do not free the player; a Dash press does, at once', () => {
     const { s, squid, now, dash } = held(true);
@@ -751,6 +752,13 @@ describe('the squid escape rule in the tick (spec §11.8)', () => {
     expect(s.rt.heldBy).toBe('e41'); expect(s.rt.breakProgress).toBe(0);
     const press: CombatInput['activePressed'] = [false, false, false, false]; press[dash] = true;
     expect(tick(s, [squid], t += 1 / 60, { activePressed: press }).r.brokeFree).toBe(true);
+    expect(s.rt.heldBy).toBeNull();
+  });
+  it('a Counter press frees the player at once too (fix round 1)', () => {
+    const { s, squid, now, counter } = held(true, [SPIKE]);
+    expect(counter).toBeGreaterThanOrEqual(0);
+    const press: CombatInput['activePressed'] = [false, false, false, false]; press[counter] = true;
+    expect(tick(s, [squid], now + 1 / 60, { activePressed: press }).r.brokeFree).toBe(true);
     expect(s.rt.heldBy).toBeNull();
   });
   it('without the rule, Chomp mashing still frees the player (four presses)', () => {

@@ -72,13 +72,16 @@ export function floaterText(outcome: HitOutcome, unit: 'hp' | 'half-heart', amou
   if (trait === 'slip') return 'SLIPPED FREE';
   if (trait === 'bounce') return 'BOUNCED!';
   if (trait === 'stun') return 'STUNNED!';
+  if (trait === 'soft') return `SOFT BODY ${damageText(outcome, unit, amount)}`;
   if (outcome === 'blocked' || outcome === 'countered' || outcome === 'evaded') return damageText(outcome, unit, amount);
   if (outcome === 'immune') return 'IMMUNE';
   return amount > 0 ? damageText(outcome, unit, amount) : null;
 }
-/** The break-free prompt (spec §6.6, §11.8): mash Chomp, or (the squid's hold) a Dash or Counter press. */
-export function breakPromptText(escape: SpeciesTraits['grabEscape'] | 'mash', touch: boolean): string {
-  return escape === 'dash-or-counter' ? `${touch ? 'Tap ' : ''}Dash or Counter to slip free!` : 'Wiggle free! Tap CHOMP';
+/** The break-free prompt (spec §6.6, §11.8): mash Chomp, or (the squid's hold) a Dash or Counter press; `canEscape` false (neither is
+ *  slotted, fix round 1): "Hold on!" (the hold runs out). */
+export function breakPromptText(escape: SpeciesTraits['grabEscape'] | 'mash', touch: boolean, canEscape = true): string {
+  if (escape !== 'dash-or-counter') return 'Wiggle free! Tap CHOMP';
+  return canEscape ? `${touch ? 'Tap ' : ''}Dash or Counter to slip free!` : 'Hold on!';
 }
 /** Damage numbers (T16b fix round 1, readability): the damage the player deals and the damage it takes have clearly different colours.
  *  `dealt`: a pale yellow; `taken`: a strong red. Any other event (species on species) is `dealt`'s neutral twin. */

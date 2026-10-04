@@ -785,8 +785,11 @@ Bite (6 damage).
 
 Each hunter and alpha has one strength and one weakness (owner, 2026-10-03;
 spec §11.8). A body that matches an enemy wins faster or takes less damage.
-Any body can still win. The first wind-up of each of these creatures at you
-shows its hint once, also in a fight.
+Any body can still win. Each of these creatures shows its hint once, also in
+a fight: at its first wind-up at you, or at once at the first trait event (a
+"SHELL" Bite, a bounce, a stun), whatever comes first. A trait floater
+(SHELL, SOFT BODY, BOUNCED!, STUNNED!, SLIPPED FREE) sits on a dark pill so it
+reads on a pale creature, and the combat diagnostics (`hits`) list the trait.
 
 | Creature | Strength | Weakness | Good match |
 | --- | --- | --- | --- |
@@ -941,7 +944,7 @@ hazard encounters (`pickHazard(spec)`). The tests write a fixture into
 `node e2e/tiny-tide-combat.mjs` runs 10 checks with real mouse, keyboard and
 touch events. Each check has a time cap and prints its seed (`TIDE_SEED`,
 default 1501) and the numbers it measured. A full run takes 3 to 5 minutes. It
-prints `PASSED: all 11 combat checks`. Pass check ids to run some.
+prints `PASSED: all 12 combat checks`. Pass check ids to run some.
 
 | Check | What it proves |
 | --- | --- |
@@ -955,6 +958,7 @@ prints `PASSED: all 11 combat checks`. Pass check ids to run some.
 | `alpha` | The Clawmother goes through phases 0, 1 and 2, burrows and enrages. The defeat unlocks `claw_mother` and pays 40 DNA. After a reload it is gone. |
 | `editor-moves` | The moves panel changes with the size slider. A drag swap persists after Done and a reload. |
 | `hints` | The first telegraph hint shows once and not again after a reload. |
+| `trait-floater` | A carnivore Speck Bites a Peach crab from the front: a "SHELL −n" floater shows on its dark pill, the hit log names the shell, and the crab hint shows. |
 | `frame-time` | The median and p95 of the game frame callback in a crowd (`qaCrowd`): desktop at most 16.7 ms median and 33 ms p95; a phone at 4 times CPU slowdown at most 33.3 ms median and 50 ms p95. At stage 1 the JS heap grows by at most 800 KB per frame (about 600 KB after the final-review allocation cuts; 1340 KB before). |
 
 The check bots dodge: they strafe, press Dash once for each wind-up and aim with

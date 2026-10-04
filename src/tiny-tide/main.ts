@@ -142,9 +142,9 @@ let qaEncounterId: number | null = null;
 let qaCrowdKeys: string[] | null = qaParams.get('qaCrowd')?.split(',').filter(Boolean) ?? null;
 /** The entities that `qaCrowd` installed (diagnostics). */
 let qaCrowdIds: number[] = [];
-/** `?qaAlphaHealth=<0..1>`: at the first start of this page load, every live alpha starts with that fraction of its HP (at least 1). */
 /** `?qaFollowScale=<n>` (.5 to 2): a fixed play-camera follow scale (the camera-away check keeps the old size-0 distance, scale 1). */
 world.followOverride = (() => { const v = Number(qaParams.get('qaFollowScale')); return qaParams.has('qaFollowScale') && Number.isFinite(v) ? Math.min(2, Math.max(.5, v)) : null; })();
+/** `?qaAlphaHealth=<0..1>`: at the first start of this page load, every live alpha starts with that fraction of its HP (at least 1). */
 let qaAlpha: number | null = (() => { const v = Number(qaParams.get('qaAlphaHealth')); return qaParams.has('qaAlphaHealth') && Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : null; })();
 /** The part catalog (every shipped part has its real grants since sub-project 3a; `?qaGrantCatalog` is gone, D32). */
 const CATALOG = PARTS;
@@ -630,7 +630,9 @@ function presentCombat(t: CombatTick) {
   for (const e of t.events) {
     const local = new T.Vector3(e.point.x, e.point.y, e.point.z).divideScalar(world.scale), pos = world.screenPoint(local);
     const toPlayer = e.targetId === PLAYER_ID, fromPlayer = e.attackerId === PLAYER_ID, text = floaterText(e.outcome, e.unit, e.amount, e.trait);
-    if (text && pos.visible) { const cls = floaterClass(e.attackerId, e.targetId); floater(text, pos.x, pos.y, `${toPlayer ? 'hurt' : 'hit'} ${cls}`, FLOATER_COLOURS[cls]); }
+    if (text && pos.visible) { const cls = floaterClass(e.attackerId, e.targetId); floater(text, pos.x, pos.y, `${toPlayer ? 'hurt' : 'hit'} ${cls}${e.trait ? ' trait' : ''}`, FLOATER_COLOURS[cls]); }
+    // Spec §11.8 (fix round 1): the first trait event of a species explains it at once (no 6 s hint gap).
+    if (e.trait) { const id = toPlayer ? e.attackerId : e.targetId, c = [...sim.combat.entities.values()].find(x => x.id === id), t = traitHint(c?.entity.spec.behaviourId); if (t) hints.request(t.id, t.text, true); }
     const colour = e.outcome === 'countered' ? IMPACT_COLOURS.counter : e.outcome === 'blocked' || e.outcome === 'guard-broken' ? IMPACT_COLOURS.block : toPlayer ? IMPACT_COLOURS.hurt : IMPACT_COLOURS.hit;
     if (e.outcome !== 'evaded' && e.outcome !== 'immune' ) world.impact(local.x, local.y, local.z, colour, IMPACT_PARTICLES);
     if (e.status === 'inked') world.impact(local.x, local.y, local.z, EFFECTS.ink!.particles, 24);   // the ink cloud (pooled particles)
@@ -806,7 +808,7 @@ function presentCombatView() {
     arrows.push({ ...at, color: v.color, fill: v.fill });
   }
   const grabber = rt.heldBy === null ? undefined : [...sim.combat.entities.values()].find(c => c.id === rt.heldBy);
-  overlay.sync(bars, arrows, playing && rt.heldBy !== null ? rt.breakProgress : null, breakPromptText(grabber?.behaviour.traits?.grabEscape ?? 'mash', touchMode || coarsePointer()));
+  overlay.sync(bars, arrows, playing && rt.heldBy !== null ? rt.breakProgress : null, breakPromptText(grabber?.behaviour.traits?.grabEscape ?? 'mash', touchMode || coarsePointer(), !!sim.moves && (sim.moves.slots.slots.includes('dash') || sim.moves.slots.slots.includes('counter'))));
 }
 el('start').onclick = () => begin(); el('fresh').onclick = () => { dialogReturn = 'menu'; confirmRestart(); };
 el('evolve').onclick = () => void edit('evolve'); el('edit').onclick = () => void edit('edit');
@@ -1178,7 +1180,7 @@ function combatDiagnostics() {
     telegraphs: telegraphViews.map(v => ({ action: v.actionId, attacker: v.attackerId, attack: v.attackId, phase: v.phase, shapes: clone(v.shapes), fill: v.fill, onScreen: v.onScreen, arrow: arrowed.has(v.actionId), targetsPlayer: v.targetsPlayer, flash: v.flash, color: v.color, pattern: v.pattern, locked: v.locked, cue: v.cue })),
     telegraphMeshes: world.telegraphs.counts,
     clocks: Object.fromEntries(actors.map(x => [x.actor, x.rt.actionClock])), hitStop: Object.fromEntries(actors.map(x => [x.actor, x.rt.hitStopUntil])),
-    hits: sim.combat.log.map(e => ({ outcome: e.outcome, attacker: e.attackerId, target: e.targetId, attack: e.attackId, amount: e.amount, unit: e.unit, time: e.time })),
+    hits: sim.combat.log.map(e => ({ outcome: e.outcome, attacker: e.attackerId, target: e.targetId, attack: e.attackId, amount: e.amount, unit: e.unit, time: e.time, trait: e.trait })),
     slots: sim.moves ? [...sim.moves.slots.slots] : [], tokens: sim.combat.director.tokens.map(t => ({ ...t })),
     heldBy: rt.heldBy, breakProgress: rt.breakProgress, hp: Object.fromEntries([...sim.combat.entities.values()].map(c => [c.id, c.entity.hp])), reducedMotion: reducedMotion.matches,
     alphas: [...sim.combat.entities.values()].filter(c => c.entity.spec.alpha).map(c => ({ id: c.id, key: c.entity.spec.key, hp: c.entity.hp, maxHp: c.maxHp, phase: c.ai?.phase ?? 0, state: c.ai?.name ?? 'idle', eaten: c.entity.eaten })),

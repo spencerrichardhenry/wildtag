@@ -92,6 +92,7 @@ describe('trait floaters and the escape prompt (spec §11.8)', () => {
     expect(floaterText('hit', 'hp', 2, 'slip')).toBe('SLIPPED FREE');
     expect(floaterText('blocked', 'half-heart', 0, 'bounce')).toBe('BOUNCED!');
     expect(floaterText('countered', 'half-heart', 0, 'stun')).toBe('STUNNED!');
+    expect(floaterText('hit', 'hp', 3, 'soft')).toBe('SOFT BODY −3');
     expect(floaterText('hit', 'hp', 4, null)).toBe('−4');
     expect(floaterText('blocked', 'half-heart', 0)).toBe('BLOCK');
   });
@@ -99,5 +100,6 @@ describe('trait floaters and the escape prompt (spec §11.8)', () => {
     expect(breakPromptText('mash', false)).toBe('Wiggle free! Tap CHOMP');
     expect(breakPromptText('dash-or-counter', false)).toBe('Dash or Counter to slip free!');
     expect(breakPromptText('dash-or-counter', true)).toBe('Tap Dash or Counter to slip free!');
+    expect(breakPromptText('dash-or-counter', false, false)).toBe('Hold on!');   // fix round 1: neither Dash nor Counter is slotted
   });
 });
