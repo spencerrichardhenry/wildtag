@@ -154,6 +154,9 @@ export function resolveHit(r: HitRequestIn, now: number, statusOf: (id: string) 
     if (shell && attacker.isPlayer && action.resolved.kind === 'bite' && target.rt.actionClock >= target.rt.staggerUntil && target.rt.heldBy === null && inFront(target, r.origin, shell.halfAngle)) {
       amount = Math.max(1, Math.ceil(attack.damage * shell.factor - 1e-9)); trait = 'shell';
     }
+    // Spec §11.8: a soft body (the squid) off balance takes more from a Bite.
+    const exposed = target.traits?.staggeredBiteFactor;
+    if (exposed && attacker.isPlayer && action.resolved.kind === 'bite' && target.rt.actionClock < target.rt.staggerUntil) { amount = Math.round(attack.damage * exposed); trait = 'soft'; }
     target.health -= amount;
   }
   action.connected = true;
@@ -161,8 +164,7 @@ export function resolveHit(r: HitRequestIn, now: number, statusOf: (id: string) 
   //    A catch gives no impulse and no poise (controller ruling, fix round 1): it returns before the stagger and impulse steps.
   if (catchHold) {
     record(action, key, now);
-    // Spec §11.8: a soft body (the squid) is held whatever its size.
-    const fits = (target.L <= catchHold.sizeFactor * attacker.L + 1e-9 || !!target.traits?.softBody) && target.grabbable && target.rt.heldBy === null && target.health > 0;
+    const fits = target.L <= catchHold.sizeFactor * attacker.L + 1e-9 && target.grabbable && target.rt.heldBy === null && target.health > 0;
     if (fits) {
       action.heldTarget = target.id; target.rt.heldBy = attacker.id; target.rt.breakProgress = 0;
       for (const a of target.rt.actions) if (interruptible(a)) endNow(target.rt, a);
@@ -175,7 +177,14 @@ export function resolveHit(r: HitRequestIn, now: number, statusOf: (id: string) 
   // 7. Stagger (not when blocked).
   if (guard !== 'blocked') {
     if (target.isPlayer) { if (attack.staggerSeconds > 0) freeHeld(target, stagger(target.rt, attack.staggerSeconds), attacker); }
-    else if (target.poise && addPoise(target.poise, amount * attack.poiseDamageMultiplier, target.rt.actionClock, target.poiseMax)) freeHeld(target, stagger(target.rt, attack.staggerSeconds * (1 - target.staggerResist)), attacker);
+    else if (target.poise) {
+      // Spec §11.8: a soft body (the squid) takes extra poise from a player Sweep.
+      const soft = attacker.isPlayer && action.resolved.kind === 'sweep' && target.traits?.sweepPoise ? target.traits.sweepPoise : 1;
+      if (addPoise(target.poise, amount * attack.poiseDamageMultiplier * soft, target.rt.actionClock, target.poiseMax)) {
+        const seconds = soft > 1 ? target.traits?.sweepStagger ?? attack.staggerSeconds : attack.staggerSeconds;
+        freeHeld(target, stagger(target.rt, seconds * (1 - target.staggerResist)), attacker); if (soft > 1) trait = 'soft';
+      }
+    }
   }
   // 8. Impulse: J = impulse × L_a × min(m_a, 2 m_t) along origin → point (horizontal for ground targets); Δv = J / m_t × (1 − kr).
   let dir = { x: r.point.x - r.origin.x, y: target.ground ? 0 : r.point.y - r.origin.y, z: r.point.z - r.origin.z };

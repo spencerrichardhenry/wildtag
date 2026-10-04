@@ -19,6 +19,7 @@ import { activeStartedAt, liveActions, RECOVERY_CANCELS, phaseRemaining, recover
 import { bandReach, closestOnSegment, shapeCentroid } from './combat-shapes';
 import { aiStarted } from './combat-ai';
 import { movementCapabilities } from './profiles';
+import { forwardOf } from './orientation';
 
 export const PROBE_DT = 1 / 30;
 const UP: Vec3 = { x: 0, y: 1, z: 0 };
@@ -181,8 +182,10 @@ export interface BotOptions {
   flee: Entity | null;
 }
 interface Response { kind: 'brace' | 'counter' | 'dash' | 'move'; actionId: string; attacker: Entity; pressAt: number; until: number; dir: Vec3; pressed: boolean }
-export interface Bot { previous: CombatInput; seen: Map<string, number>; response: Response | null; flick: number; responses: Record<Response['kind'], number> }
-export const newBot = (): Bot => ({ previous: RELEASED, seen: new Map(), response: null, flick: 0, responses: { brace: 0, counter: 0, dash: 0, move: 0 } });
+export interface Bot { previous: CombatInput; seen: Map<string, number>; response: Response | null; flick: number; responses: Record<Response['kind'], number>;
+  /** Fix round 1: a Sweep hits behind the body, so the bot first turns its back to the target (the time it began), then presses Sweep. */
+  sweepTurn: number | null }
+export const newBot = (): Bot => ({ previous: RELEASED, seen: new Map(), response: null, flick: 0, responses: { brace: 0, counter: 0, dash: 0, move: 0 }, sweepTurn: null });
 const slotOf = (s: SimState, kind: MoveKind): number => playerMoves(s).slots.slots.indexOf(kind);
 /** The action-clock seconds until a live action ends (every phase left; a held Brace: until it is let go, here Infinity). */
 function remainingOf(a: ActionState, tau: number): number {
@@ -270,10 +273,19 @@ export function botInput(p: ProbeWorld, bot: Bot, o: BotOptions): { intent: Comb
     if (gap > .8 * reach) wish = flat(to);
     // Spec §6.6: the grabber may Bite during its hold (the held creature cannot act), so the hold does not stop the bot's Bites.
     const mine = liveActions(s.rt), holding = mine.length === 1 && mine[0]!.phase === 'hold' && mine[0]!.heldTarget !== null;
-    if (gap <= 1.1 * reach && (!attacking || holding) && (!mine.length || holding)) {
+    // Fix round 1: a Sweep hits behind the body (aim 'body-back'). The bot turns its back to the target (it swims away, so the body faces
+    // away), presses Sweep when its back is within 35° of the target, and keeps its back turned through the Sweep's wind-up and active.
+    const away = flat({ x: -to.x, y: 0, z: -to.z }), fwd = forwardOf(s.rt.orientation), backOn = dot(unit({ x: fwd.x, y: 0, z: fwd.z }), unit(away)) >= Math.cos(35 * Math.PI / 180);
+    const sweeping = mine.some(a => a.resolved.kind === 'sweep' && (a.phase === 'windup' || a.phase === 'active'));
+    if (bot.sweepTurn !== null && (now - bot.sweepTurn > .8 || !moveReadyAt(s, 'sweep', now))) bot.sweepTurn = null;
+    if (sweeping || bot.sweepTurn !== null) {
+      wish = { x: away.x * .2, y: 0, z: away.z * .2 }; aim = unit({ x: -to.x, y: -to.y, z: -to.z });   // a slow turn on the spot
+      if (bot.sweepTurn !== null && backOn && gap <= .6 * L) { tapped[slotOf(s, 'sweep')] = true; bot.sweepTurn = null; }
+    } else if (gap <= 1.1 * reach && (!attacking || holding) && (!mine.length || holding)) {
       const grabbable = !!(t.spec.behaviourId && BEHAVIOURS[t.spec.behaviourId]?.grabbable) && !t.spec.alpha;
       if (o.useMoves && grabbable && moveReadyAt(s, 'grab', now) && (now * 10 | 0) % 7 === 0) tapped[slotOf(s, 'grab')] = true;
-      else if (o.useMoves && moveReadyAt(s, 'sweep', now) && (now * 10 | 0) % 5 === 0) tapped[slotOf(s, 'sweep')] = true;
+      // Spec §11.8: against a soft body (the squid) the bot Sweeps whenever it can; else now and then.
+      else if (o.useMoves && moveReadyAt(s, 'sweep', now) && (!!BEHAVIOURS[t.spec.behaviourId ?? '']?.traits?.sweepPoise || (now * 10 | 0) % 5 === 0)) bot.sweepTurn = now;
       else basic = true;
     }
     if (to.y > .3 * L) keys.add('KeyE'); else if (to.y < -.3 * L) keys.add('KeyQ');
@@ -547,7 +559,9 @@ export const P9_BUILDS: readonly { label: string; build: (stage: 0 | 1) => Probe
   { label: 'brace (shell)', build: p9Build('brace', [{ id: 'shell_plate', scale: 1 }]) },
   { label: 'counter (spike)', build: p9Build('counter', [{ id: 'spike', scale: 1 }]) },
   { label: 'sweep (fan tail)', build: p9Build('sweep', [{ id: 'tail_fan', scale: 1, t: .9 }]) },
-  { label: 'grab (pincer)', build: p9Build('grab', [{ id: 'claw_pincer', scale: 1, t: .5 }]) },
+  // Fix round 1 (review Important 2c): one Pincer at size .4 adds no Bite damage (1 × (.75 + .25 × .4) = .85, floored), so the Grab
+  // build Bites like the others and P9 measures the Grab, not the Pincer's Bite bonus (a mirrored pair at size 1 made the Snapper 4 → 6).
+  { label: 'grab (pincer)', build: p9Build('grab', [{ id: 'claw_pincer', scale: .4, t: .5, mirror: false }]) },
   { label: 'all four (shell, spike, pincer, tail Dash)', build: p9Build('all', [{ id: 'shell_plate', scale: 1 }, { id: 'spike', scale: 1 }, { id: 'claw_pincer', scale: 1, t: .5 }]) },
 ];
 /** The P9 hunters (the P5 hunter floor's species) and their size. */
@@ -577,23 +591,31 @@ function p9Md(rows: readonly P9Row[]): string[] {
   return ['## P9 Body-design tradeoffs (fight bot, .35 s reaction; spec §11.8 bar)', '', `| Build | ${P9_SPECIES.join(' | ')} |`, `| --- | ${P9_SPECIES.map(() => '---').join(' | ')} |`,
     ...builds.map(b => `| ${b} | ${P9_SPECIES.map(sp => cell(b, sp)).join(' | ')} |`), '', '| Hunter | Least damage | Most damage | Spread (proposed bar ≥ 30 %) |', '| --- | --- | --- | --- |',
     ...p9Spread(rows).map(x => `| ${x.species} | ${x.best} | ${x.worst} | ${Number.isFinite(x.spread) ? (x.spread * 100).toFixed(0) + ' %' : '∞'} |`), '',
-    '| Hunter | Matched build | Faster than the slowest | Less damage than the most hurt | Most losses (bar ≤ 10 %) | Bar (≥ 25 % time or damage) |', '| --- | --- | --- | --- | --- | --- |',
-    ...p9Bar(rows).map(x => `| ${x.species} | ${x.matched} | ${(x.ttkGain * 100).toFixed(0)} % (${x.worst}) | ${(x.damageGain * 100).toFixed(0)} % (${x.worstDamage}) | ${(x.maxLossShare * 100).toFixed(0)} % | ${x.pass ? 'pass' : 'FAIL'} |`), ''];
+    '| Hunter | Matched | Faster than the slowest (≥ 25 %) | Less damage (≥ 25 % and ≥ .5 ½♥) | Over the fastest single build (≤ 10 %) | Targeted build slower (≥ 15 %) | Most losses (≤ 10 %) | Bar |', '| --- | --- | --- | --- | --- | --- | --- | --- |',
+    ...p9Bar(rows).map(x => `| ${x.species} | ${x.matched} | ${(x.ttkGain * 100).toFixed(0)} % (${x.worst}) | ${(x.damageGain * 100).toFixed(0)} %, ${x.damageGap.toFixed(2)} ½♥ (${x.worstDamage}) | ${(x.overFastest * 100).toFixed(0)} % (${x.fastest}) | ${(x.targetedSlower * 100).toFixed(0)} % (${x.targeted}) | ${(x.maxLossShare * 100).toFixed(0)} % | ${x.pass ? 'pass' : 'FAIL'} |`), ''];
 }
-/** Spec §11.8 (owner 2026-10-03): the build that matches each P9 hunter's weakness. */
-export const P9_MATCHED: Readonly<Record<string, string>> = { '1:crab': 'grab (pincer)', '2:squid': 'grab (pincer)', '2:eel': 'counter (spike)' };
-/** The P9 bar per hunter (spec §11.8): the matched build beats the worst build by ≥ 25 % in median time to kill (worst by time) or in damage
- *  taken (worst by damage), and every build loses (a faint or the 90 s cap) at most 1 fight in 10. */
-export const P9_BAR = { gain: .25, maxLossShare: .1 } as const;
-export function p9Bar(rows: readonly P9Row[]): { species: string; matched: string; worst: string; worstDamage: string; ttkGain: number; damageGain: number; maxLossShare: number; pass: boolean; why: string }[] {
+/** Spec §11.8 (owner 2026-10-03; fix round 1): the build that matches each P9 hunter's weakness, and the build its strength targets. */
+export const P9_MATCHED: Readonly<Record<string, string>> = { '1:crab': 'counter (spike)', '2:squid': 'sweep (fan tail)', '2:eel': 'counter (spike)' };
+export const P9_TARGETED: Readonly<Record<string, string>> = { '1:crab': 'starter body', '2:squid': 'brace (shell)', '2:eel': 'grab (pincer)' };
+/** The P9 bar per hunter (spec §11.8, fix round 1): the matched build beats the worst build by ≥ 25 % in median time to kill, or in damage
+ *  taken by ≥ 25 % and ≥ .5 half-heart; (a) it is the fastest single-part build or within 10 % of it ("all four" is not a single-part
+ *  build); (b) the targeted build is ≥ 15 % slower than it; every build loses (a faint or the 90 s cap) at most 1 fight in 10. */
+export const P9_BAR = { gain: .25, minDamageGap: .5, nearFastest: .1, targetedSlower: .15, maxLossShare: .1 } as const;
+const ALL_FOUR = 'all four (shell, spike, pincer, tail Dash)';
+export function p9Bar(rows: readonly P9Row[]): { species: string; matched: string; worst: string; worstDamage: string; fastest: string; targeted: string; ttkGain: number; damageGain: number; damageGap: number; overFastest: number; targetedSlower: number; maxLossShare: number; pass: boolean; why: string }[] {
   return P9_SPECIES.flatMap(species => {
     const r = rows.filter(x => x.species === species && !x.unbuildable && x.trials > 0), m = r.find(x => x.build === P9_MATCHED[species]);
     if (!m) return [];
-    const byTtk = [...r].sort((a, b) => b.ttk - a.ttk)[0]!, byDamage = [...r].sort((a, b) => b.damage - a.damage)[0]!;
-    const ttkGain = Number.isFinite(byTtk.ttk) && byTtk.ttk > 0 ? 1 - m.ttk / byTtk.ttk : 0, damageGain = byDamage.damage > 0 ? 1 - m.damage / byDamage.damage : 0;
-    const maxLossShare = Math.max(...r.map(x => (x.trials - x.wins) / x.trials)), gainOk = ttkGain >= P9_BAR.gain - 1e-9 || damageGain >= P9_BAR.gain - 1e-9, lossOk = maxLossShare <= P9_BAR.maxLossShare + 1e-9;
-    const why = `${m.build} ${(ttkGain * 100).toFixed(0)} % faster than ${byTtk.build}, ${(damageGain * 100).toFixed(0)} % less damage than ${byDamage.build}; most losses ${(maxLossShare * 100).toFixed(0)} %`;
-    return [{ species, matched: m.build, worst: byTtk.build, worstDamage: byDamage.build, ttkGain, damageGain, maxLossShare, pass: gainOk && lossOk, why }];
+    const single = r.filter(x => x.build !== ALL_FOUR), byTtk = [...r].sort((a, b) => b.ttk - a.ttk)[0]!, byDamage = [...r].sort((a, b) => b.damage - a.damage)[0]!;
+    const fastest = [...single].sort((a, b) => a.ttk - b.ttk)[0]!, targeted = r.find(x => x.build === P9_TARGETED[species]);
+    const ttkGain = Number.isFinite(byTtk.ttk) && byTtk.ttk > 0 ? 1 - m.ttk / byTtk.ttk : 0, damageGain = byDamage.damage > 0 ? 1 - m.damage / byDamage.damage : 0, damageGap = byDamage.damage - m.damage;
+    const overFastest = m.ttk / fastest.ttk - 1, targetedSlower = targeted ? targeted.ttk / m.ttk - 1 : NaN;
+    const maxLossShare = Math.max(...r.map(x => (x.trials - x.wins) / x.trials));
+    const gainOk = ttkGain >= P9_BAR.gain - 1e-9 || (damageGain >= P9_BAR.gain - 1e-9 && damageGap >= P9_BAR.minDamageGap - 1e-9);
+    const pass = gainOk && overFastest <= P9_BAR.nearFastest + 1e-9 && targetedSlower >= P9_BAR.targetedSlower - 1e-9 && maxLossShare <= P9_BAR.maxLossShare + 1e-9;
+    const why = `${m.build}: ${(ttkGain * 100).toFixed(0)} % faster than ${byTtk.build}, ${(damageGain * 100).toFixed(0)} % / ${damageGap.toFixed(2)} ½♥ less damage than ${byDamage.build}; `
+      + `${(overFastest * 100).toFixed(0)} % over the fastest (${fastest.build}); ${targeted?.build ?? '—'} ${(targetedSlower * 100).toFixed(0)} % slower; most losses ${(maxLossShare * 100).toFixed(0)} %`;
+    return [{ species, matched: m.build, worst: byTtk.build, worstDamage: byDamage.build, fastest: fastest.build, targeted: targeted?.build ?? '—', ttkGain, damageGain, damageGap, overFastest, targetedSlower, maxLossShare, pass, why }];
   });
 }
 /** P9 per hunter: the best and worst build by damage taken and their spread (worst / best − 1); the review's proposed bar is ≥ 30 %. */

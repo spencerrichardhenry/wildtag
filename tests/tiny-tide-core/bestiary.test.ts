@@ -145,8 +145,8 @@ describe('Brace room on the .45 s hunter attacks (final review I7)', () => {
 describe('species traits (spec §11.8)', () => {
   const DEG = Math.PI / 180;
   it('gives the crab, squid, eel, puffer and both alphas their trait rows', () => {
-    expect(BEHAVIOURS.crab!.traits).toMatchObject({ frontShell: { halfAngle: 60 * DEG, factor: .5 } });
-    expect(BEHAVIOURS.squid!.traits).toMatchObject({ grabEscape: 'dash-or-counter', softBody: true }); expect(BEHAVIOURS.squid!.traits!.braceBounce).toBeUndefined();
+    expect(BEHAVIOURS.crab!.traits).toMatchObject({ frontShell: { halfAngle: 60 * DEG, factor: .5 } }); expect(BEHAVIOURS.crab!.traits!).not.toHaveProperty('grabStagger');
+    expect(BEHAVIOURS.squid!.traits).toMatchObject({ grabEscape: 'dash-or-counter', sweepPoise: 2, sweepStagger: 3, staggeredBiteFactor: 2.5 }); expect(BEHAVIOURS.squid!.traits!.braceBounce).toBeUndefined();
     expect(BEHAVIOURS.eel!.traits).toMatchObject({ slippery: true, counterStun: { attackIds: ['eel-ambush'], seconds: 2.5 } });
     expect(BEHAVIOURS.eel!.grabbable).toBe(false);
     expect(BEHAVIOURS.puffer!.traits).toMatchObject({ braceBounce: { attackIds: ['puffer-burst'], seconds: 1, fullBlock: true } });

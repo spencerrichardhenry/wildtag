@@ -790,8 +790,8 @@ shows its hint once, also in a fight.
 
 | Creature | Strength | Weakness | Good match |
 | --- | --- | --- | --- |
-| Peach crab | Front shell: a Bite from its front (60 degrees each side) does half damage, rounded up. The floater shows "SHELL". | A held or staggered crab takes full Bite damage. A Bite at its side, Sweep and Grab also do full damage. | Grab (Pincer), Counter |
-| Berry squid | Its grab is red, and you cannot wiggle out of it: Chomp and stick flicks do nothing. Only a Dash or Counter press frees you, at once. The prompt says "Dash or Counter to slip free!". | Soft body: your Grab holds it, big as it is (the size limit does not apply). | Grab (Pincer) |
+| Peach crab | Front shell: a Bite from its front (60 degrees each side) does half damage, rounded up. The floater shows "SHELL −2" on a dark pill. | A countered (staggered) crab takes full Bite damage. A Grab staggers it for .3 s (at size 0 it is too big to hold). Side Bites, Sweep and Grab damage are full. | Counter (Spike) |
+| Berry squid | Its grab is red, and you cannot wiggle out of it: Chomp and stick flicks do nothing. Only a Dash or Counter press frees you, at once. The prompt says "Dash or Counter to slip free!" ("Hold on!" with neither). | Soft body: one Sweep (× 2 poise) staggers it for 3 s and stops its grab; a Bite on a staggered squid does × 2.5 ("SOFT BODY"). | Sweep (Fan tail) |
 | Moray eel | Slippery: a Grab never holds it ("SLIPPED FREE"). The Grab still does its damage. | A countered ambush stuns it for 2.5 s ("STUNNED!"). | Counter (Spike) |
 | Puffer | Its burst hits all around it. A Dash avoids it, but takes you out of Bite range. | A Braced burst does no damage, and the puffer deflates for 1.0 s ("BOUNCED!"). | Brace |
 | Old Clawmother | Under the sand nothing can hit her, and her emerge is red. | A countered emerge stuns her for 2.5 s ("STUNNED!"). | Counter |
@@ -1003,7 +1003,7 @@ them in parallel, one process each. Each part writes
 | P6 | The same with a plant build: crab 45 s, squid 75. Others are reported. |
 | P7 | A journey bot becomes ready to evolve at size 0 and at size 1 within 600 s of play with at most 3 faints for each size. Swimmer and crawler lines, three diets, seeds 11 to 15 (30 runs). The bot drops a prey species for the rest of a size after it skipped one as unreachable (a ground mover), an omnivore eats the nearer of its food and its prey, and with nothing near it travels toward the nearest prey. |
 | P8 | At most 2 wind-ups at you at once, active starts at least .25 s apart, and off-screen wind-ups at least .6 s. |
-| P9 | For each build (starter body, Dash, Brace, Counter, Sweep, Grab, all four) and each hunter, the damage taken and the median time to kill with the fight bot at a .35 s reaction. Bar (owner, 2026-10-03): the matched build (crab: Grab, squid: Grab, eel: Counter) beats the worst build by at least 25 % in time to kill or in damage taken, and every build loses (a faint or the 90 s cap) at most 1 fight in 10. |
+| P9 | For each build (starter body, Dash, Brace, Counter, Sweep, Grab with one size-.4 Pincer and no Bite bonus, all four) and each hunter, the damage taken and the median time to kill with the fight bot at a .35 s reaction. Bar (owner 2026-10-03, fix round 1): the matched build (crab: Counter, squid: Sweep, eel: Counter) beats the worst build by at least 25 % in time (or in damage by 25 % and .5 half-heart), is within 10 % of the fastest single-part build, and the build that the enemy's strength targets (crab: starter body, squid: Brace, eel: Grab) is at least 15 % slower; every build loses at most 1 fight in 10. |
 
 The probe also reports the largest bot reaction time at which each attack still
 meets the P1, P2 and P3 bar, P1 with a reaction of .25 to .45 s, and DNA by
@@ -1016,13 +1016,13 @@ Moray eel 22 → 33, Berry squid 26 → 52 (× 2.0; × 1.75 = 46 gave 8.0 s, jus
 under the floor). Medians (meat build): crab 10.1 s, squid 8.5 s, eel 11.6 s;
 no hunter is staggered in any fight, and they start a median of 4 (crab), 1
 (squid) and 5 (eel) attacks per fight. Plant build: crab 13.4 s, squid 12.1 s.
-P9 (follow-up F2, strengths and weaknesses): every build takes 0 to .7
-half-hearts per hunter fight and wins every fight. The matched build is
-clearly faster: crab Grab 7.6 s against Dash 12.8 s (41 %), squid Grab 6.8 s
-against Sweep 9.9 s (31 %), eel Counter 5.1 s against Dash 12.0 s (57 %).
+P9 (follow-up F2, fix round 1): every build takes 0 to .7 half-hearts per
+hunter fight and wins every fight. The matched build is the fastest: crab
+Counter 5.1 s (Bite only 12.1 s), squid Sweep 5.3 s (Brace 7.9 s, Grab
+9.7 s), eel Counter 5.1 s (Grab 11.4 s).
 With the front shell the meat build needs 12.4 s for a crab (P5, was 10.1 s)
 and the plant build 17.4 s (P6, was 13.4 s). Probe files of this run:
-`.codex-drafts/tiny-tide-qa/followup-f2/`. Tuned numbers from the probe: Bite poise damage × .5; eel bite
+`.codex-drafts/tiny-tide-qa/followup-fr1/`. Tuned numbers from the probe: Bite poise damage × .5; eel bite
 and squid ink wind-ups .48 s (Brace threshold .36 s); the eel's leash 3 L and
 give-up 4 L, its ambush impulse 3; the Clawmother chain gap is .55 s, the puffer
 burst band is 0 to 1.35 L and the Tyrant whirl band is 0 to .3 L. Median time to

@@ -4,7 +4,7 @@
 // parallel); TIDE_PROBE_MERGE=1 merges every part file into the report and checks the bars.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { attackSetup, attackTrial, makeRun, hostileAttacks, isProbeHunter, P5_HUNTER_FLOOR, P9_BUILDS, p9Spread, ttkPass, journey, mergeReports, newWatch, onScreenFrom, probeMarkdown, PROBE_PARTS, runProbe, timeToKill, FULL_PROBE, P9_MATCHED, p9Bar, type ProbePart, type ProbeReport } from '../../src/tiny-tide/combat-probe';
+import { attackSetup, attackTrial, makeRun, hostileAttacks, isProbeHunter, P5_HUNTER_FLOOR, P9_BUILDS, p9Spread, ttkPass, journey, mergeReports, newWatch, onScreenFrom, probeMarkdown, PROBE_PARTS, runProbe, timeToKill, FULL_PROBE, P9_MATCHED, P9_TARGETED, p9Bar, type ProbePart, type ProbeReport } from '../../src/tiny-tide/combat-probe';
 
 const FULL = process.env.TIDE_COMBAT_PROBE === '1';
 const OUT = '.codex-drafts/tiny-tide-qa';
@@ -44,15 +44,22 @@ describe('combat probe (smoke)', () => {
   });
   // Owner 2026-10-03 (follow-up F2, spec §11.8): per hunter, the matched build beats the worst build by ≥ 25 % in median time to kill or in
   // damage taken, and every build wins with at most 1 loss (a faint or the 90 s cap) per 10 fights.
-  it('P9 bar: the matched build beats the worst by 25 % (time or damage); every build loses at most 1 fight in 10', () => {
-    expect(P9_MATCHED).toEqual({ '1:crab': 'grab (pincer)', '2:squid': 'grab (pincer)', '2:eel': 'counter (spike)' });
+  // Follow-up fix round 1 (review Important 2): also (a) the matched build is the fastest single-part build or within 10 % of it, (b) the build
+  // the enemy's strength targets is at least 15 % slower than the matched one, (c) the Grab build has no Bite bonus, (d) the damage half needs a
+  // difference of at least .5 half-heart.
+  it('P9 bar: 25 % over the worst (time, or damage by ≥ .5 ½♥), (a) within 10 % of the fastest, (b) targeted ≥ 15 % slower, ≤ 1 loss in 10', () => {
+    expect(P9_MATCHED).toEqual({ '1:crab': 'counter (spike)', '2:squid': 'sweep (fan tail)', '2:eel': 'counter (spike)' });
+    expect(P9_TARGETED).toEqual({ '1:crab': 'starter body', '2:squid': 'brace (shell)', '2:eel': 'grab (pincer)' });
     const row = (build: string, ttk: number, damage: number, trials = 60, wins = 60) => ({ build, species: '1:crab', size: 0, trials, damage, ttk, wins, faints: trials - wins });
-    const base = [row('starter body', 10, 0), row('dash (side fins)', 10.6, 0), row('counter (spike)', 5, 0)];
-    expect(p9Bar([...base, row('grab (pincer)', 7.9, 0)]).find(x => x.species === '1:crab')).toMatchObject({ matched: 'grab (pincer)', worst: 'dash (side fins)', pass: true });   // 25.5 % faster
-    expect(p9Bar([...base, row('grab (pincer)', 8.1, 0)]).find(x => x.species === '1:crab')!.pass).toBe(false);                                           // 23.6 %
-    expect(p9Bar([row('starter body', 8, 2), row('grab (pincer)', 8, 1.5)]).find(x => x.species === '1:crab')!.pass).toBe(true);                          // 25 % less damage
-    expect(p9Bar([...base, row('grab (pincer)', 5, 0, 60, 53)]).find(x => x.species === '1:crab')!.pass).toBe(false);                                     // 7 losses in 60
-    expect(p9Bar([...base, row('grab (pincer)', 5, 0, 60, 54)]).find(x => x.species === '1:crab')!.pass).toBe(true);
+    const crab = (rows: ReturnType<typeof row>[]) => p9Bar(rows).find(x => x.species === '1:crab')!;
+    const base = [row('starter body', 10, 0), row('dash (side fins)', 10.6, 0), row('grab (pincer)', 5.4, 0)];
+    expect(crab([...base, row('counter (spike)', 5.0, 0)])).toMatchObject({ matched: 'counter (spike)', worst: 'dash (side fins)', fastest: 'counter (spike)', pass: true });
+    expect(crab([...base, row('counter (spike)', 6.0, 0)]).pass).toBe(false);                                     // (a): 11 % over Grab 5.4
+    expect(crab([row('starter body', 5.6, 0), row('dash (side fins)', 10.6, 0), row('counter (spike)', 5, 0)]).pass).toBe(false);   // (b): starter only 12 % slower
+    expect(crab([row('starter body', 9.5, 2), row('counter (spike)', 8, 1.4)]).pass).toBe(true);                  // .6 ½♥ and 30 % less damage; (b) 18.75 %
+    expect(crab([row('starter body', 9.5, .4), row('counter (spike)', 8, 0)]).pass).toBe(false);                  // (d): 100 % less, but only .4 ½♥
+    expect(crab([...base, row('counter (spike)', 5, 0, 60, 53)]).pass).toBe(false);                               // 7 losses in 60
+    expect(crab([...base, row('all four (shell, spike, pincer, tail Dash)', 3, 0), row('counter (spike)', 5, 0)]).pass).toBe(true);   // all four is not a single-part build
   });
   it('runs one trial of each measure', () => {
     const watch = newWatch();

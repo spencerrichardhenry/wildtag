@@ -1422,8 +1422,8 @@ damage. A build that does not match is slower, but it still wins.
 
 | Enemy | Strength | Weakness | Matched build | How the player sees it |
 | --- | --- | --- | --- | --- |
-| Peach crab | **Front shell.** A player Bite whose origin is within 60° of the crab's front does half damage (rounded up), while the crab is not staggered and not held. | A Grab holds it: a Bite on a held crab does full damage. A Counter stagger also opens the shell. Sweep and Grab damage are full. | Grab (Pincer); Counter | A shell Bite shows "SHELL -2" (not "-4"). Hint. |
-| Berry squid | **Grab.** Brace does not stop it, and it cannot be mashed: Chomp and stick flicks do nothing. Only a Dash or Counter press breaks the hold (at once). | **Soft body.** A player Grab holds it whatever its size (the size rule of §6.6 does not apply; a size-1 Pincer could not hold a squid before). | Grab (Pincer) | Red grab telegraph (as before). While held: "Dash or Counter to slip free!". Hint. |
+| Peach crab | **Front shell.** A player Bite whose origin is within 60° of the crab's front does half damage (rounded up), while the crab is not staggered and not held. | **Counter.** A countered crab is staggered (1.0 s), so its shell is open: Bites do full damage. (A Grab staggers it for .3 s: at size 0 it is too big to hold.) | Counter (Spike) | A shell Bite shows "SHELL −2" on a dark pill. Hint. |
+| Berry squid | **Grab.** Brace does not stop it, and it cannot be mashed: Chomp and stick flicks do nothing. Only a Dash or Counter press breaks the hold (at once); with neither slotted the prompt says "Hold on!". | **Soft body.** A player Sweep does × 2 poise damage, so one Fan tail Sweep staggers it (poise 7) for 3 s and ends its red grab wind-up; a Bite on a staggered squid does × 2.5 (rounded). | Sweep (Fan tail) | Red grab telegraph; "Dash or Counter to slip free!"; "SOFT BODY −3" / "SOFT BODY −10". Hint. |
 | Moray eel | **Slippery.** A Grab never holds it: it slips free with no stagger (the catch damage still applies). | **Ambush.** A Countered ambush stuns it for 2.5 s (the Counter's own stagger is 1.0 s). | Counter (Spike) | "SLIPPED FREE" on a Grab; "STUNNED!" on the countered ambush. Hint. |
 | Puffer | **Burst.** A ball all around it; a Dash avoids it but leaves you out of Bite range. | A Braced burst does no damage, and the puffer deflates: it staggers for 1.0 s. | Brace | "BOUNCED!". Hint. |
 | Old Clawmother | **Burrow.** Under the sand nothing can hit her, and the emerge is red (Brace does not stop it). | **Stuck emerge.** A Countered emerge stuns her for 2.5 s. | Counter (Spike) | "STUNNED!". Hint. |
@@ -1434,11 +1434,16 @@ Rules:
 - The data is `traits` on the species behaviour (`bestiary.ts`). The resolver
   (§6.2) applies it: the front shell in step 5, the bounce in step 4 (a
   bounce stagger is forced, as a Counter's), the Counter stun in step 2, and
-  the slip and the soft body in the grab catch. The squid's escape rule is in the combat
+  the slip in the grab catch, the soft body's poise in step 6 and its Bite
+  factor in step 5. The squid's escape rule is in the combat
   world's break-free step (§6.6).
 - The Clawmother lives at size 0, where the Fan tail and the Fluke (Sweep)
   are still locked. So her weakness is the Counter, not a Sweep (the brief's
   example "weak to Sweep while burrow-emerging" cannot be used at size 0).
+- The puffer's `fullBlock` matters for a small Shell plate: at size .4 the
+  shell blocks 66 % and breaks at 3 half-hearts, so the 3-half-heart burst
+  would do 1 and break the guard; `fullBlock` makes it 0 and unbreakable. At
+  size 1 the plain block already gives 0.
 - A trait never changes a wind-up, a telegraph, an attack number or a probe
   bar. A bounce or a stun is a stagger of the attacker (an alpha too), as a
   Counter's.
@@ -1447,17 +1452,32 @@ Rules:
   The hint can show in a fight, as the telegraph hints.
 - The combat event carries `trait` (`shell`, `slip`, `bounce` or `stun`). The
   floater shows the word.
-- First design, measured and dropped: the squid's weakness was "a Braced
-  lunge bounces off". In P9 a squid starts about one attack per fight, so the
-  Brace build was 8.0 s against 9.9 s for the slowest (19 %, below the bar).
-- The probe's P9 bar: for each hunter, the matched build beats the worst
-  build by at least 25 % in median time to kill or in damage taken, and every
-  build wins with at most 1 loss (a faint or the 90 s cap) per 10 fights (bot
-  reaction .35 s). Matched: crab Grab, squid Grab, eel Counter.
+- Designs measured and dropped: the squid's weakness was "a Braced lunge
+  bounces off" (P9: Brace 8.0 s against 9.9 s, 19 %; a squid starts about
+  one attack per fight), then "a Grab holds it whatever its size" (fix round
+  1: Counter beat it, and most of the gap was the Pincer pair's Bite bonus,
+  4 → 6). The crab's match was Grab; with no Bite bonus the Grab build took
+  12.4 s and Counter 5.1 s, and a Grab stagger of 1.5 or 2.5 s did not close
+  it (10.97 s / about 10.6 s), so the crab's match is Counter.
+- Sweep with soft-body numbers in fix round 1: × 2 poise and a 2 s stagger
+  alone gave 12 s (the Sweep hits behind the body; the bot first had to turn
+  its back), × 2 Bites gave 7.8 s, × 2.5 Bites with a 3 s stagger gave 5.3 s
+  (one Sweep then about five Bites).
+- The probe's P9 bar (fix round 1): for each hunter, the matched build (a)
+  is the fastest single-part build or within 10 % of it, (b) the build that
+  the enemy's strength targets is at least 15 % slower than it, (c) the Grab
+  build has no Bite bonus (one Pincer at size .4), and it beats the worst
+  build by at least 25 % in median time to kill, or in damage taken by at
+  least 25 % and at least .5 half-heart (d). Every build loses (a faint or
+  the 90 s cap) at most 1 fight in 10 (bot reaction .35 s). Matched: crab
+  Counter, squid Sweep, eel Counter. Targeted: crab the starter body (Bites
+  only), squid Brace (the grab ignores it), eel Grab (slippery).
 - The probe bot reads the traits as a player who knows them: it Braces a
   bounce attack that cannot break the guard, it presses Counter to escape a
-  hold when it has no Dash, and it Bites the creature that its Grab holds
-  (§6.6 allows it).
+  hold when it has no Dash, it Bites the creature that its Grab holds (§6.6
+  allows it), and it turns its back to a target on the spot before a Sweep
+  (a Sweep hits behind the body; against a squid it Sweeps whenever the
+  Sweep is ready).
 
 ## 12. Editor and hints (R11)
 
@@ -1622,7 +1642,7 @@ field of view. It writes `.codex-drafts/tiny-tide-qa/combat-probe.json` and
 | P6 | Median time-to-kill, plant build (Nibbler at scale 1) | Crab ≤ 45 s; squid ≤ 75 s; the rest reported |
 | P7 | Completion: journey bot on Speck → Swimmer and Speck → Crawler, × three diet plans: herbivore (Nibbler at sizes 0 and 1), carnivore (Snapper at sizes 0 and 1), omnivore (Snapper at size 0, then the Beak from the evolution to size 1), × seeds 11–15 (30 runs; T23 fix round 1) | Every run becomes evolve-ready at size 0 and at size 1 within 600 s of active time per size, with at most 3 faints per size |
 | P8 | Director invariants over every probe run | Never more than 2 wind-ups at the player at once; active starts ≥ 0.25 s apart; off-screen wind-ups ≥ 0.6 s |
-| P9 | Tradeoffs (owner 2026-10-03, §11.8): seven builds against each hunter, fight bot at .35 s | The matched build beats the worst by ≥ 25 % in median time to kill or damage taken; every build loses ≤ 1 fight in 10 |
+| P9 | Tradeoffs (owner 2026-10-03, §11.8; fix round 1): seven builds against each hunter, fight bot at .35 s | The matched build beats the worst by ≥ 25 % in time (or in damage by ≥ 25 % and ≥ .5 ½♥), is within 10 % of the fastest single-part build, and the targeted build is ≥ 15 % slower; every build loses ≤ 1 fight in 10 |
 
 The probe also reports, per run and size: active time, faints, kills by
 species, damage taken, DNA by source (meals, kills, survivor, alpha) and the

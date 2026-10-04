@@ -415,12 +415,23 @@ describe('species traits (spec §11.8)', () => {
     const burst: AttackSpec = { ...POKE, id: 'puffer-burst', damage: 3 }, f = player({ health: 6 }), pu = crab({ traits: { hint: 'puffer', braceBounce: { attackIds: ['puffer-burst'], seconds: 1, fullBlock: true } } }); guard(f.rt, 'brace-shell');
     expect(resolveHit(req(pu, f, { ...burst, damage: 8 }), 1)!).toMatchObject({ outcome: 'blocked', amount: 0, trait: 'bounce' }); expect(f.health).toBe(6);
   });
-  it('squid soft body: a player Grab holds it whatever its size; without the trait a big creature breaks free', () => {
-    const gr = resolveMove({ abilityId: 'grab-pincer' }, 1), grab = (target: Fighter) => { const p = player(); return resolveHit(req(p, target, gr.attack!, { action: activeNow(act(p.rt, gr)) }), 1)!; };
-    const squid = crab({ L: 5.6, traits: { hint: 'squid', softBody: true } });   // 2.8 times the player's length
-    expect(grab(squid)).toMatchObject({ outcome: 'grabbed', held: true }); expect(squid.rt.heldBy).toBe('player');
-    expect(grab(crab({ L: 5.6 }))).toMatchObject({ outcome: 'hit', held: false });
-    expect(grab(crab({ L: 5.6, grabbable: false, traits: { hint: 'x', softBody: true } }))).toMatchObject({ held: false });   // never an alpha
+  it('squid soft body: a player Sweep does x2 poise: one Fan tail Sweep staggers a poise-7 squid and ends its red grab wind-up', () => {
+    const sweep = (target: Fighter) => { const p = player(), sw = resolveMove({ abilityId: 'sweep-fan-tail' }, 1); return resolveHit(req(p, target, sw.attack!, { action: activeNow(act(p.rt, sw)) }), 1)!; };
+    const squid = crab({ poiseMax: 7, traits: { hint: 'squid', sweepPoise: 2 } }), grab = act(squid.rt, speciesMove({ ...WRAP, id: 'squid-grab', interruptible: true }));
+    expect(sweep(squid)).toMatchObject({ outcome: 'hit', amount: 3, trait: 'soft' });
+    expect(squid.rt.staggerUntil).toBeCloseTo(.6); expect(grab.phase).toBe('interrupted');
+    const plain = crab({ poiseMax: 7 }); expect(sweep(plain)).toMatchObject({ trait: null }); expect(plain.rt.staggerUntil).toBe(0);   // 3 x 2 = 6 < 7
+    const p = player(), b = resolveMove({ attackId: 'bite-snapper' }, 1), bitten = crab({ poiseMax: 7, traits: { hint: 'squid', sweepPoise: 2 } });
+    expect(resolveHit(req(p, bitten, b.attack!, { action: activeNow(act(p.rt, b)) }), 1)!.trait).toBeNull();   // a Bite: normal poise
+  });
+  it('squid soft body: a Bite on a staggered squid does x2.5 (rounded); a squid that is not staggered takes the plain Bite', () => {
+    const SOFT: SpeciesTraits = { hint: 'squid', sweepPoise: 2, sweepStagger: 3, staggeredBiteFactor: 2.5 };
+    const bite = (target: Fighter) => { const p = player(), b = resolveMove({ attackId: 'bite-snapper' }, 1); return resolveHit(req(p, target, b.attack!, { action: activeNow(act(p.rt, b)) }), 1)!; };
+    const off = crab({ poiseMax: 7, traits: SOFT }); off.rt.staggerUntil = off.rt.actionClock + 1;
+    expect(bite(off)).toMatchObject({ amount: 10, trait: 'soft' });
+    expect(bite(crab({ poiseMax: 7, traits: SOFT }))).toMatchObject({ amount: 4, trait: null });
+    const p = player(), sw = resolveMove({ abilityId: 'sweep-fan-tail' }, 1), sq = crab({ poiseMax: 7, traits: SOFT });
+    resolveHit(req(p, sq, sw.attack!, { action: activeNow(act(p.rt, sw)) }), 1); expect(sq.rt.staggerUntil).toBeCloseTo(3);   // the soft-body stagger
   });
   it('counter stun: a countered listed attack staggers the attacker longer; other attacks keep the Counter\'s stagger', () => {
     const STUN: SpeciesTraits = { hint: 'eel', counterStun: { attackIds: ['eel-ambush'], seconds: 2.5 } };

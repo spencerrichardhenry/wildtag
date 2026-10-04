@@ -154,8 +154,12 @@ export interface SpeciesTraits {
   frontShell?: { halfAngle: number; factor: number };
   /** Strength: a hold of this species on the player ends only by a Dash or Counter press (at once); Chomp and stick flicks do nothing. */
   grabEscape?: 'dash-or-counter';
-  /** Weakness: a player Grab holds it whatever its size (the size rule of spec §6.6 does not apply). */
-  softBody?: boolean;
+  /** Weakness (the squid's soft body): a player Sweep does this many times its poise damage (one Fan tail Sweep staggers a squid). */
+  sweepPoise?: number;
+  /** With `sweepPoise`: the stagger of a Sweep that staggers it (seconds; default the Sweep's own). */
+  sweepStagger?: number;
+  /** With `sweepPoise`: a player Bite on it while it is staggered does this many times its damage. */
+  staggeredBiteFactor?: number;
   /** Strength: a Grab never holds it (it is not grabbable); it slips free with no stagger. */
   slippery?: boolean;
   /** Weakness: a Braced hit of one of these attacks staggers the attacker for `seconds` (forced, as a Counter's). `noBreak`: it never breaks
@@ -165,7 +169,7 @@ export interface SpeciesTraits {
   counterStun?: { attackIds: readonly string[]; seconds: number };
 }
 /** What a trait did to a hit (the floater word): a shelled Bite, a slipped Grab, a bounce off a Brace, a stun by a Counter. */
-export type TraitEffect = 'shell' | 'slip' | 'bounce' | 'stun';
+export type TraitEffect = 'shell' | 'slip' | 'bounce' | 'stun' | 'soft';
 /** `startedAt` is world time (the resolver's processing order); every other time is the actor's action clock.
  *  Ledger keys (hitCounts, lastHitAt) are `${instanceId}:${hitGroupId}:${targetId}`. */
 export interface ActionState { instanceId: string; definitionId: string; grantId: string; source: EmitterSource; phase: ActionPhase; startedAt: number; aim: MutVec3; committedPose: CombatPose | null;
