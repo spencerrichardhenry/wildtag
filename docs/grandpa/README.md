@@ -76,7 +76,7 @@ Aim at nearby ground, click to place, press R to rotate, or Esc to cancel.
 - `src/structures/trampolines.ts`: swept descending contact used by Grandpa;
   the same pad height, gravity-adjusted impulse and bounded apex as the child.
 
-Mobademo's reference is `/Users/spencerhenry/projects/mobademo/js/net.js`.
+Mobademo's reference is `/Users/spencerhenry/games/dungeon-run/js/net.js`.
 The child runs the simulation; Grandpa sends movement intents, receives state,
 and predicts movement locally with visual correction. Host snapshots run at
 20 Hz; input is sent at 30 Hz. Buildings, deployables, farm/pen state, rewards,
