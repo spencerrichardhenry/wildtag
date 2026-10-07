@@ -25,20 +25,16 @@ covers the Blender LODs, rendering fixes and measured before/after results.
 
 [Open Spencer’s Arcade](https://spencerrichardhenry.github.io/) for the full collection.
 
-| Game | Play |
-| --- | --- |
-| Tiny Tide | https://spencerrichardhenry.github.io/wildtag/tiny-tide.html |
-| Royal Yeet | https://spencerrichardhenry.github.io/wildtag/royal-yeet.html |
-| Dungeon Run (mobademo) | https://spencerrichardhenry.github.io/mobatest/ |
-| Wildtag | https://spencerrichardhenry.github.io/wildtag/ |
-| Moss & Maw | https://spencerrichardhenry.github.io/moss-and-maw/ |
+| Game | Play | Repo |
+| --- | --- | --- |
+| Wildtag | https://spencerrichardhenry.github.io/wildtag/ | this repo |
+| Tiny Tide | https://spencerrichardhenry.github.io/tiny-tide/ | [tiny-tide](https://github.com/spencerrichardhenry/tiny-tide) |
+| Royal Yeet | https://spencerrichardhenry.github.io/royal-yeet/ | [royal-yeet](https://github.com/spencerrichardhenry/royal-yeet) |
+| Dungeon Run (mobademo) | https://spencerrichardhenry.github.io/mobatest/ | [mobatest](https://github.com/spencerrichardhenry/mobatest) |
+| Moss & Maw | https://spencerrichardhenry.github.io/moss-and-maw/ | [moss-and-maw](https://github.com/spencerrichardhenry/moss-and-maw) |
 
-Tiny Tide has five animated forms and 50 original Blender assets. Read the
-[game guide](docs/TINY-TIDE.md) and [art notes](docs/TINY-TIDE-ART.md).
-Royal Yeet has its own [controls and game guide](docs/ROYAL-YEET.md).
-The original Wildtag game and its existing URL are preserved.
-
-For local development, use `/tiny-tide.html`, `/royal-yeet.html`, or `/`.
+Tiny Tide and Royal Yeet were built in this repo and moved to their own repos (with their history) on 2026-10-07.
+This repo now holds Wildtag and its Grandpa visit mode (`/grandpa.html`).
 
 **Wildtag** is a first-person, non-violent creature-tracking exploration game for
 the web. You wander a hand-shaped procedural island — meadow, forest, wetland,
@@ -67,13 +63,7 @@ npm i          # install dependencies (three.js + dev tooling)
 npm run dev    # start the vite dev server
 ```
 
-Open **http://localhost:5199/tiny-tide.html** to play Tiny Tide. For the original Wildtag
-game described below, open **http://localhost:5199/wildtag.html** and click the
-canvas to capture the mouse.
-
-Tiny Tide is a mobile 3D eat-and-evolve game with one continuous ocean-to-space
-world, five animated forms, and 50 original Blender MCP assets. See
-[the game guide](docs/TINY-TIDE.md) and [Blender art notes](docs/TINY-TIDE-ART.md).
+Open **http://localhost:5199/** (or `/wildtag.html`) and click the canvas to capture the mouse.
 
 Build a production bundle with `npm run build` (output in `dist/`), preview it
 with `npm run preview`.

@@ -1,19 +1,15 @@
 /// <reference types="vitest/config" />
 import { defineConfig } from 'vite';
-import { existsSync } from 'node:fs';
 
 // GitHub Pages serves the site at https://<user>.github.io/wildtag/, so
 // production builds and their local preview need the repo-name base path.
 // Dev and tests stay at '/'.
-export default defineConfig(({ command, isPreview, mode }) => ({
+export default defineConfig(({ command, isPreview }) => ({
   base: command === 'build' || isPreview ? '/wildtag/' : '/',
   build: {
     rollupOptions: {
       input: {
-        wildtag: 'index.html', tide: 'tiny-tide.html', siege: 'royal-yeet.html', wildtagAlias: 'wildtag.html', grandpa: 'grandpa.html',
-        ...(existsSync('mineral-wage.html') ? { miner: 'mineral-wage.html' } : {}),
-        // The Tiny Tide browser-test fixture page exists only in development builds (the dev server serves it as well).
-        ...(mode === 'development' ? { tideFixtures: 'tests-browser/fixtures.html' } : {}),
+        wildtag: 'index.html', wildtagAlias: 'wildtag.html', grandpa: 'grandpa.html',
       },
     },
   },

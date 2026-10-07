@@ -1,2 +1,0 @@
-{ "extends": "./tsconfig.json", "compilerOptions": { "composite": false, "noEmit": true, "tsBuildInfoFile": null },
-  "include": ["src", "src/**/*.json", "tests/tiny-tide.test.ts", "tests/tiny-tide-core"] }
