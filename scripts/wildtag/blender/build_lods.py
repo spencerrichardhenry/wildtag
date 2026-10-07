@@ -9,7 +9,7 @@ import bmesh
 import json
 from pathlib import Path
 
-ROOT = Path('/Users/spencerhenry/projects/wildtag')
+ROOT = Path('/Users/spencerhenry/games/wildtag')
 OUT = ROOT / 'public/wildtag/lod'
 OUT.mkdir(parents=True, exist_ok=True)
 manifest_path = ROOT / 'public/wildtag/asset-manifest.json'

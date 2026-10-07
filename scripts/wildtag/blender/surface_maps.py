@@ -2,7 +2,7 @@
 import bpy, math
 from mathutils import noise, Vector
 from pathlib import Path
-ROOT=Path('/Users/spencerhenry/projects/wildtag')
+ROOT=Path('/Users/spencerhenry/games/wildtag')
 OUT=ROOT/'public/wildtag/textures';OUT.mkdir(parents=True,exist_ok=True)
 size=256
 height=[]

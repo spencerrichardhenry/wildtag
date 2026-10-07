@@ -2,7 +2,7 @@
 import bpy, math, json
 from pathlib import Path
 from mathutils import Vector
-ROOT=Path('/Users/spencerhenry/projects/wildtag')
+ROOT=Path('/Users/spencerhenry/games/wildtag')
 scene=bpy.data.scenes.get('Wildtag Creature Review') or bpy.data.scenes.new('Wildtag Creature Review')
 bpy.context.window.scene=scene
 for obj in list(scene.objects):bpy.data.objects.remove(obj,do_unlink=True)

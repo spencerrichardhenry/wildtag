@@ -27,7 +27,7 @@ Run this from the project root through Blender MCP (adjust the absolute path if
 moving the checkout):
 
 ```sh
-.codex-drafts/blender-mcp/venv/bin/python scripts/wildtag/blender/mcp_client.py eval "import importlib.util; spec=importlib.util.spec_from_file_location('wildtag_art', '/Users/spencerhenry/projects/wildtag/scripts/wildtag/blender/build_assets.py'); wt=importlib.util.module_from_spec(spec); spec.loader.exec_module(wt); print(wt.build(0,120))"
+.codex-drafts/blender-mcp/venv/bin/python scripts/wildtag/blender/mcp_client.py eval "import importlib.util; spec=importlib.util.spec_from_file_location('wildtag_art', '/Users/spencerhenry/games/wildtag/scripts/wildtag/blender/build_assets.py'); wt=importlib.util.module_from_spec(spec); spec.loader.exec_module(wt); print(wt.build(0,120))"
 .codex-drafts/blender-mcp/venv/bin/python scripts/wildtag/blender/mcp_client.py code scripts/wildtag/blender/surface_maps.py
 .codex-drafts/blender-mcp/venv/bin/python scripts/wildtag/blender/mcp_client.py code scripts/wildtag/blender/build_lods.py
 .codex-drafts/blender-mcp/venv/bin/python scripts/wildtag/blender/mcp_client.py code scripts/wildtag/blender/render_review.py

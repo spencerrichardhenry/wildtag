@@ -2,7 +2,7 @@
 import bpy
 from mathutils import Vector
 from pathlib import Path
-ROOT=Path('/Users/spencerhenry/projects/wildtag')
+ROOT=Path('/Users/spencerhenry/games/wildtag')
 scene=bpy.data.scenes['Wildtag Atelier'];bpy.context.window.scene=scene
 for collection in scene.collection.children:
     if not collection.name.startswith('WT_'):continue
